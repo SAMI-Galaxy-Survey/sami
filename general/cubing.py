@@ -17,8 +17,8 @@ from scipy.stats import stats
 #import circ
 
 # LF's utilities code. Will eventually either be superceded or will become more complete.
-import utils
-#reload(utils)
+import sami.utils
+#reload(sami.utils)
 
 # Fitting code.
 import samifitting
