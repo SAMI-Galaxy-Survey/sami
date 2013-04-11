@@ -13,7 +13,8 @@ import argparse
 
 astropy_available = True
 try:
-    import astropy
+    import astropy.coordinates
+    import astropy.units
 except ImportError:
     astropy_available = False
 

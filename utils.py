@@ -4,10 +4,12 @@ import scipy as sp
 import pyfits as pf
 
 import os
-
 import sys
 import math
 import itertools
+from collections import namedtuple
+
+import sami.update_csv
 
 """
 This file is the utilities script for SAMI data. See below for description of functions.
@@ -112,49 +114,30 @@ class IFU:
 
         del hdulist
 
-def offset_hexa(csvfile, obj=None):
+def offset_hexa(csvfile, obj=None, linear=False):
+    """Print the offset to move a star from the guider to a hexabundle.
+    If no obj number is given, it uses the closest to the centre."""
 
-    # Prints the offset to move a star from the guider to a hexabundle. If no obj number is given, it uses the closest
-    # to the centre. Written by JTA 12/10/2012
+    csv = sami.update_csv.CSV(csvfile)
+    probe = csv.get_values('Probe', 'object')
+    probe_x = np.array(csv.get_values('Probe X', 'object'))
+    probe_y = np.array(csv.get_values('Probe Y', 'object'))
 
-    if not (type(csvfile) is str):
-        print 'ERROR: filename must be a string'
-        return
-    
-    if not (os.path.exists(csvfile)):
-        print 'ERROR: file not found'
-        return
-
-    skiprows = 12
-    probe_cols = (8,9,10)
-    n_obj = 9
-    plate_scale = 15.2                 # "/mm
-    plate_scale = plate_scale / 1000   # "/um
-
-    # Read positions from .csv file
-    probe, probe_x, probe_y = np.loadtxt(csvfile, skiprows=skiprows,
-                                         delimiter=',',
-                                         usecols=probe_cols, unpack=True)
-    probe = probe[:n_obj]
-    probe_x = probe_x[:n_obj]
-    probe_y = probe_y[:n_obj]
-
-    if obj == None:
-        # If no object number given, find the nearest one
+    if obj is None:
+        # No object number given, so find the closest to centre
         dist2 = probe_x**2 + probe_y**2
         obj = dist2.argmin()
     else:
         # Object numbers are 1-indexed
         obj = obj - 1
 
-    offset_x = probe_x[obj] * plate_scale * (-1)
-    offset_y = probe_y[obj] * plate_scale * (-1)
+    offset_x, offset_y = plate2sky(probe_x[obj], probe_y[obj], linear=linear)
     probe = probe[obj]
-    if offset_x >= 0:
+    if offset_x <= 0:
         direction_x = 'E'
     else:
         direction_x = 'W'
-    if offset_y >= 0:
+    if offset_y <= 0:
         direction_y = 'N'
     else:
         direction_y = 'S'
@@ -164,6 +147,52 @@ def offset_hexa(csvfile, obj=None):
     print 'The star will appear in probe number', int(probe)
 
     return
+    
+
+def plate2sky(x, y, linear=False):
+    """Convert position on plate to position on sky, relative to plate centre.
+
+    x and y are input as positions on the plate in microns, with (0, 0) at
+    the centre. Sign conventions are defined as in the CSV allocation files.
+    Return a named tuple (xi, eta) with the angular coordinates in arcseconds,
+    relative to plate centre with the same sign convention. If linear is set
+    to True then a simple linear scaling is used, otherwise pincushion
+    distortion model is applied."""
+
+    # Should implement something to cope with (0, 0)
+
+    # Define the return named tuple type
+    AngularCoords = namedtuple('AngularCoords', ['xi', 'eta'])
+
+    if linear:
+        # Just do a really simple transformation
+        plate_scale = 15.2 / 1000.0   # arcseconds per micron
+        coords = AngularCoords(x * plate_scale, y * plate_scale)
+    else:
+        # Include pincushion distortion, found by inverting:
+        #    x = xi * f * P(xi, eta)
+        #    y = eta * f * P(xi, eta)
+        # where:
+        #    P(xi, eta) = 1 + p * (xi**2 + eta**2)
+        #    p = 191.0
+        #    f = 13.515e6 microns, the telescope focal length
+        p = 191.0
+        f = 13.515e6
+        a = p * (x**2 + y**2) * f
+        twentyseven_a_squared_d = 27.0 * a**2 * (-x**3)
+        root = np.sqrt(twentyseven_a_squared_d**2 +
+                       4 * (3 * a * (x**2 * f))**3)
+        xi = - (1.0/(3.0*a)) * ((0.5*(twentyseven_a_squared_d +
+                                      root))**(1.0/3.0) -
+                                (-0.5*(twentyseven_a_squared_d -
+                                       root))**(1.0/3.0))
+        # Convert to arcseconds
+        xi *= (180.0 / np.pi) * 3600.0
+        eta = y * xi / x
+        coords = AngularCoords(xi, eta)
+
+    return coords
+    
 
 def comxyz(x,y,z):
     """Centre of mass given x, y and z vectors (all same size). x,y give position which has value z."""
