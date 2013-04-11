@@ -44,6 +44,9 @@ class IFU:
         self.cdelt1=primary_header['CDELT1']
         self.crpix1=primary_header['CRPIX1']
         self.naxis1=primary_header['NAXIS1']
+
+        self.meanra=primary_header['MEANRA']
+        self.meandec=primary_header['MEANDEC']
         
         # Wavelength range
         x=np.arange(self.naxis1)+1
@@ -109,6 +112,9 @@ class IFU:
         
         self.data=data_in[ind,:]/self.exptime
         self.var=variance_in[ind,:]/(self.exptime*self.exptime)
+
+        # Added for Iraklis, might need to check this.
+        self.fibtab=fibre_table
 
         del hdulist
 
@@ -525,41 +531,129 @@ def pairwise(iterable):
   next(b, None)
   return itertools.izip(a, b)
 
-## # The main function
-## def main(argv):
-##   if (len(argv) != 6):
-##     print "usage:",argv[0],"pix xc yc r fname"
-##     print "where pix is the size of each side of the square output map in pixels"
-##     print "      xc, yc is the centre of the circle in output pixels"
-##     print "      r is the radius of the circle in output pixels"
-##     print "      fname is the output filename"
-##     print ""
-##     print "note that the output is suitable for reading with numpy.loadtxt()"
-##     exit(1)
+# This is all the stuff for Andy's dome code. Hacked by Lisa to follow the same conventions as the rest of the code. 
 
-##   # Read in the argument list
-##   xpix = int(argv[1])
-##   ypix = xpix
-##   xc = float(argv[2])
-##   yc = float(argv[3])
-##   r = float(argv[4])
-##   fname = argv[5]
+degree = np.pi / 180.0
 
-##   out = resample_circle(xpix, ypix, xc, yc, r)
+# Distance between the polar and declination axes
+polar_declination_dist = 0.0625 # dome radii
 
-##   # Print the summary
-##   print "Resampled area=",np.sum(out)
-##   print "Actual area=",math.pi*r*r
-##   print "Difference=",np.sum(out)-math.pi*r*r
+# Distance between the declination axis & dome center on meridian
+declination_dome_dist = 0.0982  # dome radii
 
-##   # Save the output
-##   # We could generate a fits file here if we wanted
-##   np.savetxt(fname, out)
+# Latitude of SSO (based on AAT Zenith Position, may not be most accurate)
+latitude = -31.3275 * degree
 
-##   # Plot!
-##   py.imshow(out, origin='lower')
-##   py.colorbar()
-##   py..show()
+# This next function allows us to return angles between -180 and 180 easily.
+def bettermod(num, divisor, start):
+    """Return num mod divisor, with offset."""
+    res = np.mod(num,divisor)
+    if (res > start + divisor):
+        res -=divisor
+    return res
 
-## if __name__ == '__main__':
-##   main(sys.argv)
+def coord_rotate(x, y, z):
+    """Three dimensional coordinate rotation."""
+
+    xt  =  np.arcsin ( np.sin(x) * np.sin(y) +
+                  np.cos(x) * np.cos(y) * np.cos(z) )
+    yt  =  np.arccos ( ( np.sin(x) - np.sin(y) * np.sin(xt) ) /
+                  ( np.cos(y) * np.cos(xt) ) )
+
+    if  np.sin(z) > 0.0:
+        yt  =  2.0*np.pi - yt
+        
+    return (xt, yt)
+
+def altaz_from_hadec(ha, dec):
+    """Compute altitude and azimuth from hour angle and declination at AAT."""
+
+    alt, az = coord_rotate(dec * degree, latitude, ha * degree) 
+
+    return (alt / degree, az / degree)
+
+
+def hadec_from_altaz(alt, az):
+    """Compute hour angle and declination from altitude and azimuth at AAT."""
+
+    ha, dec = coord_rotate(alt * degree, latitude, az * degree)
+
+    return (ha / degree, dec / degree)
+
+def domewindscreenflat_pos(ha_h, ha_m, ha_s, dec_d, dec_m, dec_s):
+    """Compute dome coordinates for flat patch in front of AAT for given HA and DEC."""
+
+    # Convert sexagesimal to degrees
+    ha, dec=decimal_to_degree(ha_h, ha_m, ha_s, dec_d, dec_m, dec_s)
+
+    print "Hour Angle:", ha
+    print "Declination", dec
+    
+    # Convert to radians
+    ha = ha * degree
+    dec = dec * degree
+
+
+    xt = np.cos(ha) * np.cos(dec)
+    yt = np.sin(ha) * np.cos(dec)
+    zt = np.sin(dec)
+
+    # Rotate to Az-Alt
+    xta = -xt * np.sin(latitude) + zt * np.cos(latitude)
+    zta = xt * np.cos(latitude) + zt * np.sin(latitude)
+    
+    # Position of intersection of optical axis with declination axis
+    w = polar_declination_dist * (1.0 - np.cos(ha))
+    dx = w * np.sin(latitude)
+    dy = polar_declination_dist * np.sin(ha)
+    dz = -(w * np.cos(latitude) + declination_dome_dist)
+
+    # Compute coefficients of quadratic in r
+    b = 2.0 * ( xta * dx + yt * dy + zta * dz )
+    c = dx * dx + dy * dy + dz * dz - 1.0
+
+    # Positive solution is in front of the telescope
+    r = (-b + np.sqrt(b*b - 4.0 * c )) / 2.0
+
+    # Windscreen x, y, z of optical axis intersection
+    xw = r * xta + dx
+    yw = r * yt + dy
+    zw = r * zta + dz
+
+    print( (xw, yw, zw) )
+    
+    # Convert to azimuth and zenith distance
+    a = np.arctan2( -yw, xw)
+    z = np.arctan2( np.sqrt( xw*xw + yw*yw), zw)
+
+    # Convert back to degrees
+    a = bettermod(a * 180.0 / np.pi, 360, 0)
+    z = z * 180.0 / np.pi
+
+    # Offset for the windscreen
+    #   (tested by AWG on the real AAT, 7 March 2013, but may need tweaking)
+    z = z + 21
+
+    return a, z
+
+def _dome2(ha,dec):
+    """Alternate approach to computing flat positioning. Probably invalid."""
+
+    alt, az = altaz_from_hadec(ha,dec)
+    mha, mdec = hadec_from_altaz(alt-21,az)
+
+    return domewindscreenflat_pos(mha,mdec)
+
+def decimal_to_degree(ha_h, ha_m, ha_s, dec_d, dec_m, dec_s):
+
+    # Simple conversion
+    ha_deg=np.abs(ha_h)*15.0+np.abs(ha_m)*15.0/60.0+np.abs(ha_s)*15.0/3600.0
+    dec_deg=np.abs(dec_d)+np.abs(dec_m)/60.0+np.abs(dec_s)/3600.0
+    
+    if ha_h<0.0 or ha_m<0.0 or ha_s<0.0:
+        ha_deg=-1.0*ha_deg
+
+    if dec_d<0.0 or dec_m<0.0 or dec_s<0.0:
+        dec_deg=-1.0*dec_deg
+
+    return ha_deg, dec_deg

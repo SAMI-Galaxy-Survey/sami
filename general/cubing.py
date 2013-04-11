@@ -16,16 +16,11 @@ from scipy.stats import stats
 # JN's code to calculate the fraction of flux from each input spaxel in each output spaxel.
 #import circ
 
-# LF's utilities code. Will eventually either be superceded or will become more complete.
-import sami.utils
-#reload(sami.utils)
+# Utils code.
+import sami.utils as utils
 
 # Fitting code.
-import samifitting
-#reload(samifitting)
-
-#import fitting
-#reload(fitting)
+import sami.samifitting as samifitting
 
 #import com
 """ This should read in FITS files (RSS), pick out appropriate IFU, figure out co-ords for each RSS file,

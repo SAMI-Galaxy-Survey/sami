@@ -13,7 +13,9 @@ from matplotlib.patches import Circle
 
 import sami.utils as utils
 import sami.samifitting as fitting
-import sami.general.cubing as cubing
+
+# Import cubing from sami.general
+from sami.general import cubing
 
 """
 This file contains some functions used during SAMI observing. These revolve around fitting stars in the RSS data.
@@ -406,15 +408,18 @@ def centroid_fit(x,y,data,microns=True):
     # First guess at width of Gaussian - diameter of a core in degrees/microns (distance between core 1 and core 2?) in whichever direction that is larger....
     if microns==True:
         sigx=105.0
+        core_diam=52.5
 
     else:
         sigx=4.44e-4
+        core_diam=2.22e-4
         
     # First guess Gaussian parameters.
     p0=[data_sum[np.sum(np.where(dist==np.min(dist)))], com[0], com[1], sigx, 0.0]
        
     # Fit two circular 2D Gaussians.
     gf=fitting.TwoDGaussFitter(p0,x,y,data_sum)
+    fitting.fibre_integrator(gf, core_diam)
     gf.fit()
 
     # Make a linear grid to reconstruct the fitted Gaussian over.
