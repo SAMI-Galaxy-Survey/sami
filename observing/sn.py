@@ -8,14 +8,33 @@ import asciitable as tab
 from scipy.stats import stats
 from scipy.interpolate import griddata
 
+from matplotlib.patches import Circle
+
 import sami.utils as utils
 import sami.samifitting as fitting
 
+import sys
+
 """
-This file contains some S/N calculations used predominantly during SAMI observing runs.
+This file contains a S/N estimation code used predominantly during SAMI observing runs.
+
+UPDATED: 8/4/13, Iraklis Konstantopoulos
+         -- editing to comply with new conventions in sami_utils; 
+         -- edited to accept new target table format; 
+
+NOTES: 10/4/13, Iraklis Konstantopoulos
+       -- I no longer return SN_all, but sn_Re, the median SN @Re. 
+       -- I removed the SN_all array from the sn function. 
+
 """
 
 def sn_list(inlist, tablein, l1, l2, ifus='all'):
+    """ 
+    Wrapper function to provide S/N estimates for >1 file 
+    
+    inlist   [ascii] list of files (format?)
+    tablein  [ascii] 
+    """
 
     #To print only two decimal places in all numpy arrays
     np.set_printoptions(precision=2)
@@ -28,7 +47,8 @@ def sn_list(inlist, tablein, l1, l2, ifus='all'):
         
         files.append(np.str(cols[0]))
 
-    print "I have received", len(files), "files for which to calculate and combine S/N measurements."
+    print "I have received", len(files), \
+        "files for which to calculate and combine S/N measurements."
 
     # Define the list of IFUs to display
     if ifus == 'all':
@@ -53,278 +73,320 @@ def sn_list(inlist, tablein, l1, l2, ifus='all'):
     print IFUlist
     print SN_tot
     
-def sn(insami, tablein, l1, l2, plot=False, ifus='all', log='True', verbose=True):
+def sn(insami, tablein, l1, l2, plot=False, ifus='all', 
+       log=True, verbose=True, output=False, seek_centroid=True):
 
-    if verbose == True: 
-        print ''
-        print '-----------------------------------'
-        print 'Process: SAMI_utils. Function: SNR.'
-        print '-----------------------------------'
-        print ''
+    """ 
+    Purpose: Main function, estimates S/N for any or all probes in an RSS file. 
 
-    # Read FITS file
-    list1  = pf.open(insami)
-    data   = list1[0].data
-    var    = list1[1].data
-    hdr    = list1[0].header
+    Input variables:
 
-    # Read target table ## TESTER: "sami_sel_120807.out"
-    tabname = ['name', 'ra', 'dec', 'r_petro', 'z', 'M_r', 'Re', 
-               'med_mu_Re', 'mu_Re', 'mu_2Re', 'isel', 'A_g', 'group']
-    tabin = tab.read(tablein, names=tabname)
+     insami  [fits]  Input RSS file. 
+     tablein [ascii] Observations table. 
+     l1, l2  [flt]   Wavelength range for S/N estimation. 
+     ifus    [str]   Probe number, or 'all' for all 13. 
+     log     [bool]  Logarithimic scaling for plot -- CURRENTLY NOT ENVOKED. 
+     verbose [bool]  Toggles diagnostic verbosity. 
 
-    # Field of view centre
-    mra  = hdr['MEANRA']
-    mdec = hdr['MEANDEC']
-    #print mra, mdec
+    Process: 
+     1) Interpret input. 
+       [Set up plot]
+     2) Read target table (new format for SAMI survey),  
+       [Commence all-IFU loop, read data]
+     3) Identify wavelength range over which to estimate SNR, 
+     4) Calculate SNR for all cores in the RSS file. 
+     5) Locate galaxy centre as peak SNR core. 
+     6) Identify cores intercepted by Re (listed). 
+     7) Get SNR @Re as median of collapsed wavelength region. 
+       [End all-IFU loop]
+    """
 
-    # Wavelength range
-    x = np.arange(2048)
-
-    # Wavelength range
-    Lc  = hdr['CRVAL1']
-    pix = hdr['CRPIX1']
-    dL  = hdr['CDELT1']
-
-    L0 = Lc - pix*dL
-
-    L = L0 + x*dL
-
-    # Wavelength range for the cube
-    idx1 = SAMI_utils_V.find_nearest(L,l1)
-    idx2 = SAMI_utils_V.find_nearest(L,l2)
-
-    # Define the list of IFUs to display
+    # --------------------
+    # (1) Interpret input
+    # --------------------
     if ifus == 'all':
         IFUlist = [1,2,3,4,5,6,7,8,9,10,11,12,13]
     else:
-        IFUlist = [ifus]
-    #data_sum=np.nansum
+        IFUlist = ifu_num = [int(ifus)]
 
-    # Number of IFUs to display
-    n = len(IFUlist)
+    n_IFU = len(IFUlist)
 
-    # Diagnostic screen output
-    if verbose == True: 
-        if n == 1: print '-- Processing', n, 'IFU. Plotting is', 
-        if n > 1:  print '-- Processing', n, 'IFUs. Plotting is', 
-        if plot == False: print 'OFF.'
-        if plot == True:  print 'ON.'
+    if verbose: 
+        print('')
+        print('-----------------------------------')
+        print('Process: SAMI_utils. Function: SNR.')
+        print('-----------------------------------')
+        print('')
+        if n_IFU == 1: print 'Processing', n_IFU, 'IFU. Plotting is', 
+        if n_IFU > 1:  print 'Processing', n_IFU, 'IFUs. Plotting is', 
+        if not plot: print 'OFF.'
+        if plot:  print 'ON.'
+        print('')
 
-    # --ISK: some variables
-    ncore = 61                       # number of cores per bundle
-    rcore = 1.6                      # core diameter in asec
-    # ------
+    # --------------------
+    # Set up plot process
+    # --------------------
     
-    # To create the even grid to display the cubes on 
-    #  (accurate to 1/10th core diameter)
-    dx = 4.44e-5 /np.cos(np.pi *mdec /180)
-    dy = 4.44e-5
-    #print dx, dy
+    # Define number of cores, core diameter (in arcsec). 
+    # -- is this stored someplace in sami.utils/generic? 
+    n_core = 61
+    r_core = 1.6
     
     # Create the figure
-    if plot == True: fig = py.figure()
+    if plot: 
 
-    #LF - Adding an array to contian all SN values for each bundle
-    SN_all=np.empty((n))
-    
-    # Looping over all IFUs: 
-    for i in range(n):
+        # Get Field RA, DEC
+        hdulist = pf.open(insami)
+        primary_header = hdulist['PRIMARY'].header
+        field_dec = primary_header['MEANDEC']
 
-        # --ISK: Initialise a couple of arrays for this loop
-        dc      = np.zeros(ncore)
-        good_dc = np.zeros(ncore)
-        t_ra  = 0.
-        t_dec = 0.
-
-        x,y,data,var,num,fib_type,P,\
-            name=SAMI_utils_V.IFU_pick(insami, IFUlist[i])
-
-        # --ISK: Also read fibre table
-        fibtab = list1[2].data
-        n_fibtab = len(fibtab)           # N_lines in fibre table
+        # To create the even grid to display the cubes on 
+        #  (accurate to 1/10th core diameter)
+        dx = 4.44e-5 /np.cos(np.pi *field_dec /180.)
+        dy = 4.44e-5
         
-        # first isolate lines pertaining to each bundle
-        range_ = np.where(np.logical_and(
-                fibtab['PROBENUM'] == IFUlist[i],
-                fibtab['TYPE'] == "P"
-                ))
-
-        target = fibtab['NAME'][range_][0]       # target ID
-
-        c_ra  = fibtab['FIB_MRA'][range_]        # RA, Dec of each core
-        c_dec = fibtab['FIB_MDEC'][range_]
+        fig = py.figure()
+        # Number of rows and columns needed in the final display box
+        # This is a bit of a fudge...
+        if n_IFU==1:
+            im_n_row = 1
+            im_n_col = 1
+        elif n_IFU==2:
+            im_n_row = 1
+            im_n_col = 2
+        elif n_IFU==3:
+            im_n_row = 1
+            im_n_col = 3
+        elif n_IFU==4:
+            im_n_row = 2
+            im_n_col = 2
+        elif n_IFU>3 and n_IFU<=6:
+            im_n_row = 2
+            im_n_col = 3
+        elif n_IFU>6 and n_IFU<=9:
+            im_n_row = 3
+            im_n_col = 3
         
-        match = tabin.name == target             # get Table index
+        # ISK: trying to improve the rows and columns a bit: 
+        # def isodd(num): return num & 1 and True or False
+        # if n <= 3:
+        #     r = 1
+        #     c = n
+        # elif n > 6: 
+        #     r = 3
+        #     c = 3
         
-        # *** t_radec should be replaced with fib_radec of  brightest core
-        data_ = list1[0].data[range_]
-        # print np.nanmax(data_)
-        # centroid = np.where(data_ == np.nanmax(data_))
-        # print 'CENTROID FLUX = ', data_[centroid]
-        # t_ra  = fibtab['FIB_MRA'][centroid]
-        # t_dec = fibtab['FIB_MDEC'][centroid]
-        print 'DIAG: ', np.shape(fibtab), np.shape(data_)
+    # ----------------------
+    # (2) Read target table
+    # ----------------------
+    tabname = ['name', 'ra', 'dec', 'r_petro', 'r_auto', 'z', 'M_r', 
+               'Re', '<mu_Re>', 'mu(Re)', 'mu(2Re)', 'M*', 'g-i', 'A_g', 
+               'CATID', 'SURV_SAMI', 'PRI_SAMI', 'BAD_CLASS']
+    target_table = tab.read(tablein, names=tabname, data_start=0)
 
-        # t_ra = tabin.ra[match]                   # get RA, Dec of target
-        # t_dec = tabin.dec[match]
+    # Start a little counter to keep track 
+    # -- a fudge for the way the plot loop is set up... 
+    counter = 0
 
-        re_ = tabin.Re[match]                    # Re of target
-        # -------
+    # --------------------------
+    # Commence the all-IFU loop
+    # --------------------------
+    for ifu_num in IFUlist:
 
-        if verbose == True: 
-            print ' '
-            print '-- IFU =', IFUlist[i]
-            print '  > spectral range = [', l1, ',', l2, ']'
-            print '  > in rest frame  = [', np.round(l1/(1+tabin.z[match])),',',
-            print np.round(l2/(1+tabin.z[match])), ']'
+        counter = counter + 1
+
+        # Read single IFU
+        myIFU = utils.IFU(insami, ifu_num, flag_name=False)
+
+        # ----------------------------
+        # (3) Define wavelength range
+        # ----------------------------
+        z_target = target_table.z[target_table.CATID == myIFU.name]
+
+        l_range = myIFU.lambda_range
+        l_rest = l_range/(1+z_target)
+
+        # identify array elements closest to l1, l2 **in rest frame**
+        idx1 = (np.abs(l_rest - l1)).argmin()
+        idx2 = (np.abs(l_rest - l2)).argmin()
+
+        if verbose: 
+            this_gal_z = target_table.z[target_table.name == myIFU.name]
+            if n_IFU > 1: print('-- IFU #' + str(ifu_num))
+
+            print('   Spectral range: ' + 
+                  str(np.around([l_rest[idx1], l_rest[idx2]])))
+            print('   Observed at:    ' + 
+                  str(np.around([l_range[idx1], l_range[idx2]])))
+
+            print('')
+        
+        # -------------------------
+        # (4) Get SNR of all cores
+        # -------------------------
+        sn_spec = myIFU.data/np.sqrt(myIFU.var)
+        
+        # Sum up the data
+        #sum = np.nansum(myIFU.data[:, idx1:idx2], axis=1)
+        #med = stats.nanmedian(myIFU.data[:, idx1:idx2], axis=1)
+        
+        # Median SN over lambda range (per Angstrom)
+        sn = stats.nanmedian(sn_spec[:, idx1:idx2], axis=1) * (1./myIFU.cdelt1)
+
+        # ----------------------------------
+        # (5) Find galaxy centre (peak SNR)
+        # ----------------------------------
+        # Initialise a couple of arrays for this loop
+        core_distance = np.zeros(n_core)
+        good_core     = np.zeros(n_core)
+        centroid_ra  = 0.
+        centroid_dec = 0.
+        
+        # Get target Re from table (i.e., match entry by name)
+        re_target = target_table.Re[target_table.CATID == int(myIFU.name)]
+        # if Re is not listed (i.e., Re = -99.99), then quote centroid SNR. 
+        if re_target == -99.99: 
+            print("*** No Re listed, calculating at centroid instead.")
+
+        # Get either centroid, or table RA, DEC
+        if seek_centroid: 
+            centroid = np.where(sn == np.nanmax(sn))
+            centroid_ra  = myIFU.xpos[centroid]
+            centroid_dec = myIFU.ypos[centroid]
+
+        if not seek_centroid: 
+            centroid_ra = target_table.ra[target_table.CATID == int(myIFU.name)]
+            centroid_dec=target_table.dec[target_table.CATID == int(myIFU.name)]
+
+            test_distance = 3600.* np.sqrt(
+                (myIFU.xpos - centroid_ra)**2 +
+                (myIFU.ypos - centroid_dec)**2 )
+            centroid = np.abs(test_distance - 0).argmin()
+
+        if verbose: 
+            print '   S/N @Centroid =', np.round(sn[centroid]), '[/Angstrom]'
             print ''
 
-        sn_spec = data/np.sqrt(var)
+        # ---------------------------------------- 
+        # (6) Identify cores at approximately Re
+        # ---------------------------------------- 
 
-        # Sum up the data
-        sum = np.nansum(data[:, idx1:idx2], axis=1)
-        med = stats.nanmedian(data[:, idx1:idx2], axis=1)
+        core_distance = 3600.* np.sqrt(
+            (myIFU.xpos - centroid_ra)**2 +
+            (myIFU.ypos - centroid_dec)**2 )
 
-        # Median SN over lambda range
-        sn = stats.nanmedian(sn_spec[:, idx1:idx2], axis=1)
-
-        centroid = np.where(sn == np.nanmax(sn))
-        print 'S/N @CENTROID', sn[centroid]
-
-        t_ra  = c_ra[centroid]
-        t_dec = c_dec[centroid]
-        print ''
-
-        # Sum the variances
-        # varsum=np.nansum(var[:,idx1:idx2],axis=1)
-        # sn=sum/np.sqrt(varsum)
-
-        # -- ISK: identify cores at approximately Re: 
-        # ------------------------------------------- 
-        for k in range(ncore):
-            dc[k] = 3600.* np.math.sqrt( (c_ra[k] - t_ra)**2 + 
-                                         (c_dec[k] - t_dec)**2 )
-            
-            # Mark cores intersected by Re: 
-            if dc[k] >  re_ - 0.5*rcore and dc[k] <  re_ + 0.5*rcore: 
-                good_dc[k] = 1.
-            
-        # Get median S/N of cores @Re: 
-        sn_Re = stats.nanmedian(sn[good_dc == True])
-        SN_all[i]=sn_Re
+        good_core[(core_distance > re_target - 0.5*r_core) 
+                  & (core_distance < re_target + 0.5*r_core)] = True
         
+        # Get median S/N of cores @Re: 
+        sn_Re = stats.nanmedian(sn[good_core == True])        
+
         if verbose == True: 
             print '=> Min, Max, Median S/N @Re = ',
-            print '%0.2f' % min(sn[good_dc == True]), ',',
-            print '%0.2f' % max(sn[good_dc == True]), ',',
-            print '%0.2f' % sn_Re
-
-        # -- ISK: starting the plot loop here: 
-        # ------------------------------------
-        if plot == True: 
-
-            # Number of rows and columns needed in the final display box
-            # This is a bit of a fudge...
-            if n==1:
-                r=1
-                c=1
-            elif n==2:
-                r=1
-                c=2
-            elif n==3:
-                r=1
-                c=3
-            elif n==4:
-                r=2
-                c=2
-            elif n>3 and n<=6:
-                r=2
-                c=3
-            elif n>6 and n<=9:
-                r=3
-                c=3
-                
-            # ISK: trying to improve the rows and columns a bit: 
-            # def isodd(num): return num & 1 and True or False
-            # if n <= 3:
-            #     r = 1
-            #     c = n
-            # elif n > 6: 
-            #     r = 3
-            #     c = 3
-                
-            # Size of image - chosen to fit bundle.
-            size = 100
-            N = np.arange(size)
-    
-            # So now, linear grid
-            x_c = x[np.sum(np.where(num == 1))]
-            y_c = y[np.sum(np.where(num == 1))]
+            print '%0.2f' % min(sn[good_core == True]), ',',
+            print '%0.2f' % max(sn[good_core == True]), ',',
+            print '%0.2f' % sn_Re, '[/Angstrom]'
+            print('')
         
-            x_0 = x_c + (size/2)*dx #Highest RA number (leftmost point)
-            y_0 = y_c - (size/2)*dy #Lowest Dec Number (bottom point)
-
-            x_lin = x_0-N*dx #RA goes +ve to -ve
-            y_lin = y_0+N*dy #Dec goes -ve to +ve
+        # ----------
+        # DRAW PLOT 
+        # ----------
+        if plot:
+            # Set image size to fit the bundle.
+            size_im = 100
+            N_im = np.arange(size_im)
             
-            # Create image
-            # Find indices of nearest linear points to actual core positions.
-            b = 0 #reset index
+            # Create a linear grid, centred at Fibre #1.
+            x_ctr = myIFU.xpos[np.sum(np.where(myIFU.n == 1))]
+            y_ctr = myIFU.ypos[np.sum(np.where(myIFU.n == 1))]
+        
+            # Set axis origin: highest RA, lowest DEC.
+            x_0 = x_ctr + (size_im/2)*dx
+            y_0 = y_ctr - (size_im/2)*dy
+        
+            # Direction of each axis: RA decreases, DEC increases. 
+            x_lin = x_0-N_im*dx
+            y_lin = y_0+N_im*dy
+        
+            # Create image --
+            # 1) Find indices of nearest linear points to actual core positions.
+            b = 0        # (reset index)
             core_x = []
             core_y = []
-
-            for b in range(int(len(x))):
+            
+            for b in range(n_core):
                 
-                nx = SAMI_utils_V.find_nearest(x_lin, x[b])
-                ny = SAMI_utils_V.find_nearest(y_lin, y[b])
-                # print nx
+                nx = np.abs(x_lin - myIFU.xpos[b]).argmin()
+                ny = np.abs(y_lin - myIFU.ypos[b]).argmin()
+                
                 core_x.append(nx)
                 core_y.append(ny)
                 
-            print ' '
-            print "-- Displaying", IFUlist[i]
-
+            if verbose: 
+                print("Displaying IFU #" + str(ifu_num))
+                print('')
+            
             # Make empty image.
-            frame = np.empty((size,size)) + np.nan
-            ax = fig.add_subplot(r, c, i+1)
+            frame = np.empty((size_im,size_im)) + np.nan
+            ax = fig.add_subplot(im_n_row, im_n_col, counter)
+            ax.set_aspect('equal')
 
+            # Colorise all fibres according to S/N; negatives set to zero. 
+            sn_norm = sn/np.nanmax(sn)
+            sn_norm[sn < 0] = 0.0
+            
             # Loop through all cores: 
             a = 0 #reset index
-            for a in range(int(len(core_x))):
+            for a in range(n_core):
+
                 # Find indices of points in appropriate Bresenham circles
                 # Note 5 is chosen as the radius as 1 pixel=1/10th spaxel
 
+                # *** NEED to replace this with circle patches. 
+
+                # Make a Circle patch for each fibre in the bundle: 
+                art_core = Circle(xy = (core_x[a], core_y[a]), 
+                                  radius=4.8, color=str(sn_norm[a]))
+                ax.add_artist(art_core)
+
+                # and mark cores intersected by Re: 
+                if good_core[a]: 
+                    art_good = Circle(xy = (core_x[a], core_y[a]), 
+                                  radius=4.8, alpha=0.7)
+                    ax.add_artist(art_good)
+
+                frame[core_x[a], core_y[a]] = sn[a]   #sum[a]
+                
+                """
                 circle_x, \
                 circle_y=SAMI_utils_V.bresenham_circle(core_x[a],core_y[a],5)
-                
-                frame[circle_x, circle_y] = sn[a]   #sum[a]
 
+                frame[circle_x, circle_y] = sn[a]   #sum[a]
+                
                 # mark cores intersected by Re
-                if good_dc[a] == 1: 
-                    ax.plot(core_x[a], core_y[a], 'bo', ms=8, lw=3, mfc=None)
+                if good_core[a]: 
+                    ax.plot(core_x[a], core_y[a], 'bo', ms=20, lw=3, mfc=None)
+                """
                     
-            ax = fig.add_subplot(r, c, i+1)
+            ax = fig.add_subplot(im_n_row, im_n_col, counter)
             im = ax.imshow(np.transpose(frame), origin='lower', 
                            interpolation='nearest', cmap='gray')
-
-            ax.set_title(IFUlist[i])
-            fig.colorbar(im)
             
+            ax.set_title('Probe #'+str(ifu_num))
+            fig.colorbar(im)
+
             # Write images
-            # -- ISK: clobbering to overwrite existing file of same name
-            outsnfile='sn_'+np.str(l1)+'_'+np.str(l2)+'_'+\
-                np.str(IFUlist[i])+'_'+insami
-            pf.writeto(outsnfile, np.transpose(frame), clobber=True)
+            if output: 
+                outsnfile='sn_'+np.str(l1)+'_'+np.str(l2)+'_'+\
+                    str(ifu_num)+'_'+insami
+                pf.writeto(outsnfile, np.transpose(frame), clobber=True)
             
         # Super title for plot
-        py.suptitle(insami+'(S/N)')
+        py.suptitle(insami+', S/N map')
 
-    #Close the open hdu list
-    list1.close()
-
-    if verbose == True: 
+    if verbose: 
         print ''
         print '-----------------------------------'
 
-    return SN_all
+    #return SN_all
+    return('Median S/N @Re = '+str(np.round(sn_Re, decimals=1)))

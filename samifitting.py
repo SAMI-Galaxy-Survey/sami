@@ -1,30 +1,48 @@
 from scipy.optimize import leastsq
-import scipy
-from scipy.optimize.zeros import ridder
 import scipy as sp
-from scipy import arange
-from scipy.ndimage import gaussian_filter1d, shift
-
-from scipy import optimize
-
 import numpy as np
-import pylab as py
-# Revise which of these are needed for the functions we keep.
 
 """
 This file contains various fitting functions for general use with SAMI codes.
-What we need:
 
-Gaussian Fitter (1d)
-Gaussian Fitter (2d, w/ PA and different widths)
-Gaussian Fitter (2d, constrained to be circular?)
-Binned (integrated) Gaussian fitter (Have three from James, Julia, and Ned. The best one of these will be included.)
-Gauss-Hermite Fitter?
+Currently included:
 
-Example of the class format is below. Should have a list of things that can be accessed in all class definitions (chi-2
-etc.)
+GaussFitter - Gaussian Fitter (1d)
+GaussHermiteFitter - Fits a truncated Gauss-Hermite expansion (1d)
+TwoDGaussFitter - Gaussian Fitter (2d, optionally w/ PA and different widths)
 
+Would be nice:
 
+Exponential Fitter?
+Others?
+
+Example of the class format is below. Should have a list of things that can
+be accessed in all class definitions (chi-2 etc.)
+
+To use these fitting classes, initialise them using the initial guesses of the
+parameters, along with the coordinates, data and (optionally) weights. Then
+call the fit function to perform the fit. The best fit parameters are then
+stored in p. For example:
+
+my_fitter = TwoDGaussFitter(initial_p, x, y, data, weights)
+my_fitter.fit()
+best_fit_p = my_fitter.p
+
+If you want to integrate over each fibre, use the fibre_integrator function
+*before* performing the fit. The diameter must be provided in the same units
+that x and y will be in. For example:
+
+my_fitter = TwoDGaussFitter(initial_p, x, y, data, weights)
+fibre_integrator(my_fitter, 1.6)
+my_fitter.fit()
+best_fit_p = my_fitter.p
+
+Calling an instance of a fitter will return the model values at the provided
+coordinates. So, after either of the above examples:
+
+my_fitter(x, y)
+
+would return the best-fit model values at the coordinates (x, y).
 
 """
 
@@ -33,7 +51,7 @@ class FittingException(Exception):
     pass
 
 class GaussFitter:
-    """ To fit a 1d Gaussian to data. Params in form list p (amplitude, mean, sigma, offset). Offset is optional."""
+    """ Fits a 1d Gaussian to data. Params in form list p (amplitude, mean, sigma, offset). Offset is optional."""
 
     def __init__(self, p, x, y, weights=None):
         self.p_start = p
@@ -99,8 +117,86 @@ class GaussFitter:
     def __call__(self, x):
         return self.fitfunc(self.p, x)
 
+class GaussHermiteFitter:
+    """Parameters list p contains, in order, amplitude, mean, sigma, h3, h4, bias, where the bias is optional"""
+
+    def __init__(self, p, x, y, weights=None):
+        self.p_start = p
+        self.p = p
+        self.x = x
+        self.y = y
+        if weights == None:
+            self.weights = S.ones(len(self.y))
+        else:
+            self.weights = weights
+
+        self.perr = 0.
+        self.var_fit = 0.
+
+        # Which function to use depends on the input parameters 
+        if len(p) == 5 and p[0]>0.:
+            # Fit a truncated Gauss-Hermite sequence.
+            self.fitfunc = self.f1
+        elif len(p) == 6 and p[0]>0.:
+            # Fit a truncated Gauss-Hermite sequence with a bias.
+            self.fitfunc = self.f2
+        else:
+            raise Exception
+    
+    def f1(self, p, x):
+        w=(p[1]-x)/(p[2])
+        H3=(p[3]*sp.sqrt(2)/sp.sqrt(6))*((2*w**3)-(3*w))
+        H4=(p[4]/sp.sqrt(24))*(4*w**4-12*w**2+3)
+        gauss=p[0]*sp.exp(-w**2/2)
+        
+        gh=gauss*(1+H3+H4)
+        return gh
+
+    def f2(self, p, x):
+        w=(p[1]-x)/(p[2])
+        H3=(p[3]*sp.sqrt(2)/sp.sqrt(6))*((2*w**3)-(3*w))
+        H4=(p[4]/sp.sqrt(24))*(4*w**4-12*w**2+3)
+        gauss=p[0]*sp.exp(-w**2/2)
+        
+        gh2=gauss*(1+H3+H4)+p[5]
+        return gh2
+
+    def errfunc(self, p, x, y, weights):
+        if p[2] < 0. or p[0] < 0.:
+            # if we get a negative sigma value then penalise massively because
+            # that is silly.
+            return 1e99
+        else:
+            return weights*(self.fitfunc(p, x) - y)
+
+    def fit(self):
+
+        self.p, self.cov_x, self.infodict, self.mesg, self.success = \
+        leastsq(self.errfunc, self.p, \
+                args=(self.x, self.y, self.weights), full_output=1)
+
+        var_fit = (self.errfunc(self.p, self.x, \
+            self.y, self.weights)**2).sum()/(len(self.y)-len(self.p))
+
+        self.var_fit = var_fit
+
+        if self.cov_x != None:
+            self.perr = S.sqrt(self.cov_x.diagonal())*self.var_fit
+
+        # Would like to return the linestrength and associated error
+        gamma=self.p[0]*self.p[2]*S.sqrt(2*S.pi)
+        gamma_err=S.sqrt(gamma*gamma*((self.perr[0]/self.p[0])**2+(self.perr[1]/self.p[1])**2))
+        self.linestr=gamma*(1+S.sqrt(6)*self.p[4]/4)
+        self.line_err=S.sqrt(gamma_err**2*(1+S.sqrt(6)*self.p[4]/4)**2+self.perr[4]**2*(S.sqrt(6)*gamma_err/4)**2)
+
+        if not self.success in [1,2,3,4]:
+            raise ExpFittingException("Fit failed")
+
+    def __call__(self, x):
+        return self.fitfunc(self.p, x)
+
 class TwoDGaussFitter:
-    """ To fit a 2d Gaussian with PA and ellipticity. Params in form (amplitude, mean_x, mean_y, sigma_x, sigma_y,
+    """ Fits a 2d Gaussian with PA and ellipticity. Params in form (amplitude, mean_x, mean_y, sigma_x, sigma_y,
     rotation, offset). Offset is optional. To fit a circular Gaussian use (amplitude, mean_x, mean_y, sigma, offset),
     again offset is optional."""
 
@@ -161,7 +257,7 @@ class TwoDGaussFitter:
         rc_y=p[1]*sp.sin(rot_rad)+p[2]*sp.cos(rot_rad)
     
         return p[0]*sp.exp(-(((rc_x-(x*sp.cos(rot_rad)-y*sp.sin(rot_rad)))/p[3])**2\
-                                    +((rc_y-(x*sp.sin(rot_rad)+y*sp.cos(rot_rad)))/p[4])**2)/2)+p[6]
+                                    +((rc_y-(x*sp.sin(rot_rad)+y*sp.cos(rot_rad)))/p[4])**2)/2)
 
     def f3(self, p, x, y):
         # f3 is a circular Gaussian, p in form (amplitude, mean_x, mean_y, sigma, offset).
@@ -202,47 +298,41 @@ class TwoDGaussFitter:
 
     def __call__(self, x, y):
         return self.fitfunc(self.p, x, y)
+    
+def fibre_integrator(fitter, diameter):
+    """Edits a fitter's fitfunc so that it integrates over each SAMI fibre."""
 
-# Make this stuff into a class as well.  
-def rotgaussianfibre(height, c_x, c_y, w_x, w_y, rot, b, diameter):
-    # a 2d gaussian integrated over a fibre of diameter as given
-    def retfunc(x, y):
-        # this function will be returned, it has the parameters hardwired
-        # so only requires the fibre positions to be provided
-        n_pix = 51       # sampling points across the fibre
+    # Save the diameter; not used here but could be useful later
+    fitter.diameter = diameter
+
+    # Define the subsampling points to use
+    n_pix = 51       # Number of sampling points across the fibre
+    # First make a 1d array of subsample points
+    delta_x = np.linspace(-0.5 * (diameter * (1 - 1.0/n_pix)),
+                          0.5 * (diameter * (1 - 1.0/n_pix)),
+                          num=n_pix)
+    delta_y = delta_x
+    # Then turn that into a 2d grid of (delta_x, delta_y) centred on (0, 0)
+    delta_x = np.ravel(np.outer(delta_x, np.ones(n_pix)))
+    delta_y = np.ravel(np.outer(np.ones(n_pix), delta_y))
+    # Only keep the points within one radius
+    keep = np.where(delta_x**2 + delta_y**2 < (0.5 * diameter)**2)[0]
+    n_keep = np.size(keep)
+    delta_x = delta_x[keep]
+    delta_y = delta_y[keep]
+
+    old_fitfunc = fitter.fitfunc
+
+    def integrated_fitfunc(p, x, y):
+        # The fitter's fitfunc will be replaced by this one
         n_fib = np.size(x)
-        # first make a 1d array of subsample points
-        x_sub = np.linspace(-0.5 * (diameter * (1 - 1.0/n_pix)),
-                            0.5 * (diameter * (1 - 1.0/n_pix)),
-                            num=n_pix)
-        y_sub = x_sub
-        # then turn that into a 2d grid of (x_sub, y_sub) centred on (0, 0)
-        x_sub = ravel(np.outer(x_sub, np.ones(n_pix)))
-        y_sub = ravel(np.outer(np.ones(n_pix), y_sub))
-        # only keep the points within one radius
-        keep = np.where(x_sub**2 + y_sub**2 < (0.5 * diameter)**2)[0]
-        n_keep = np.size(keep)
-        x_sub = x_sub[keep]
-        y_sub = y_sub[keep]
-        # now centre this grid on each fibre position
-        x_sub = np.outer(x_sub, np.ones(n_fib)) + np.outer(np.ones(n_keep), x)
-        y_sub = np.outer(y_sub, np.ones(n_fib)) + np.outer(np.ones(n_keep), y)
-        # evaluate the gaussian at all of these positions
-        gauss = rotgaussian(height, c_x, c_y, w_x, w_y, rot, b)(x_sub, y_sub)
-        # take the mean in each fibre
-        gauss = np.mean(gauss, 0)
-        return gauss
-    return retfunc
+        x_sub = (np.outer(delta_x, np.ones(n_fib)) +
+                 np.outer(np.ones(n_keep), x))
+        y_sub = (np.outer(delta_y, np.ones(n_fib)) +
+                 np.outer(np.ones(n_keep), y))
+        return np.mean(old_fitfunc(p, x_sub, y_sub), 0)
 
-def fitrotgaussianfibre(params, x, y, data):
-    #as fitrotgaussianirr, but flux is integrated across the fibre
-    #params in form height, c_x, c_y, w_x, w_y, rot, bg, diameter
-    #diameter is kept fixed
-    params_short = params[:-1]
-    diameter = params[-1]
-    def errorfunction(p):
-        p_long = np.hstack((p, diameter))
-        return ravel(rotgaussianfibre(*p_long)(x, y) - data)
-    p, success = optimize.leastsq(errorfunction, params_short)
-    print success
-    return np.hstack((p, diameter))
+    # Replace the fitter's fitfunc
+    fitter.fitfunc = integrated_fitfunc
+
+    return

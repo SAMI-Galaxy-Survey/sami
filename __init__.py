@@ -1,11 +1,9 @@
 # sami package init file
-#__all__ = ['utils', 'samifitting', 'update_csv', 'observing', 'general']
-
+# import the modules at package level
 import utils
 import samifitting
 import update_csv
-import general
 
-from observing import *
+# Bring all subpackage modules up to the package name space.
 from general import *
-
+from observing import *
