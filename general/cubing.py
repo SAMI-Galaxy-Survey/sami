@@ -13,9 +13,6 @@ from scipy.signal import correlate
 # Stats functions from scipy
 from scipy.stats import stats
 
-# JN's code to calculate the fraction of flux from each input spaxel in each output spaxel.
-#import circ
-
 # Utils code.
 import sami.utils as utils
 
@@ -362,7 +359,7 @@ def dithered_cube_from_rss(inlist, sample_size=0.5, objects='all', plot=True, wr
             #print np.shape(data_slice), np.shape(overlap_array)
 
             data_slice_array=overlap_array*data_single_slice
-            var_slice_array=overlap_array*var_single_slice
+            var_slice_array=(overlap_array*overlap_array)*var_single_slice
             badpix_slice_array=overlap_array*badpix_single_slice
             #print np.shape(slices_array)
 
@@ -394,8 +391,10 @@ def dithered_cube_from_rss(inlist, sample_size=0.5, objects='all', plot=True, wr
         msk_badcols=np.where(badpix_cube!=1.0)
         badpix_cube[msk_badcols]=np.nan
 
-        flux_cube=flux_cube*badpix_cube/weight_cube
+        flux_cube=flux_cube*badpix_cube/weight_cube # flux cube scaling by weight map
         image=stats.nanmedian(flux_cube, axis=2)
+
+        var_cube=var_cube*badpix_cube/(weight_cube*weight_cube) # variance cube scaling by weight map
 
         #py.imshow(image, interpolation='nearest', origin='lower')
 
