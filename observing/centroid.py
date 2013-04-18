@@ -11,11 +11,11 @@ from scipy.stats import stats
 # Circular patch.
 from matplotlib.patches import Circle
 
-import sami.utils as utils
-import sami.samifitting as fitting
+from .. import utils
+from .. import samifitting as fitting
 
-# Import cubing from sami.general
-from sami.general import cubing
+# importing everything defined in the config file
+from ..config import *
 
 """
 This file contains some functions used during SAMI observing. These revolve around fitting stars in the RSS data.
@@ -79,9 +79,6 @@ You shouldn't need to touch this one, it is called by the two functions above.
 def centroid(infile, ifus='all', outfile=None, plot=True):
     """Fits to positions of the stars in ifus for infile. Primary purpose is to produce the files needed as imput for
     Tony's code."""
-
-    #Create an instance of the overlap map used for cubing. This is to get the plate scale.
-    overlapmap=cubing.fibre_overlap_map(0.5, 100)
 
     # Define IFUs.
     if ifus=='all':
@@ -159,8 +156,8 @@ def centroid(infile, ifus='all', outfile=None, plot=True):
         x_off=3600*(xout_sky-ifu_data.xpos[np.sum(np.where(ifu_data.n==1))])*np.cos(np.pi*ifu_data.ypos[np.sum(np.where(ifu_data.n==1))]/180)
         y_off=3600*(yout_sky-ifu_data.ypos[np.sum(np.where(ifu_data.n==1))])
 
-        xm_off=-1*(xout_mic-ifu_data.x_microns[np.where(ifu_data.n==1)])*overlapmap.plate_scale/1000
-        ym_off=(yout_mic-ifu_data.y_microns[np.where(ifu_data.n==1)])*overlapmap.plate_scale/1000
+        xm_off=-1*(xout_mic-ifu_data.x_microns[np.where(ifu_data.n==1)])*plate_scale/1000
+        ym_off=(yout_mic-ifu_data.y_microns[np.where(ifu_data.n==1)])*plate_scale/1000
 
         # Find the widths
         x_w=sig_sky*3600

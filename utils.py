@@ -7,9 +7,10 @@ import os
 import sys
 import math
 import itertools
+
 from collections import namedtuple
 
-import sami.update_csv
+from .. import update_csv
 
 """
 This file is the utilities script for SAMI data. See below for description of functions.

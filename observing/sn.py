@@ -1,19 +1,20 @@
 import pylab as py
 import numpy as np
 import scipy as sp
-import pyfits as pf
 
-import asciitable as tab
+# use astropy for all astronomy related things.
+import astropy.io.fits as pf
+import astropy.io.ascii as tab
+
+import sys
 
 from scipy.stats import stats
-from scipy.interpolate import griddata
 
 from matplotlib.patches import Circle
 
-import sami.utils as utils
-import sami.samifitting as fitting
-
-import sys
+# Relative imports from sami package
+from .. import utils
+from .. import samifitting as fitting
 
 """
 This file contains a S/N estimation code used predominantly during SAMI observing runs.
@@ -197,11 +198,15 @@ def sn(insami, tablein, l1, l2, plot=False, ifus='all',
 
         # Read single IFU
         myIFU = utils.IFU(insami, ifu_num, flag_name=False)
-
+        
         # ----------------------------
         # (3) Define wavelength range
         # ----------------------------
-        z_target = target_table.z[target_table.CATID == myIFU.name]
+        #z_target=target_table.field('z')==myIFU.name
+        #print z_target
+
+        z_target=target_table['z'][target_table['CATID']==myIFU.name]
+        print z_target
 
         l_range = myIFU.lambda_range
         l_rest = l_range/(1+z_target)
@@ -211,7 +216,7 @@ def sn(insami, tablein, l1, l2, plot=False, ifus='all',
         idx2 = (np.abs(l_rest - l2)).argmin()
 
         if verbose: 
-            this_gal_z = target_table.z[target_table.name == myIFU.name]
+            this_gal_z = target_table['z'][target_table['name'] == myIFU.name]
             if n_IFU > 1: print('-- IFU #' + str(ifu_num))
 
             print('   Spectral range: ' + 
@@ -243,7 +248,7 @@ def sn(insami, tablein, l1, l2, plot=False, ifus='all',
         centroid_dec = 0.
         
         # Get target Re from table (i.e., match entry by name)
-        re_target = target_table.Re[target_table.CATID == int(myIFU.name)]
+        re_target = target_table['Re'][target_table['CATID'] == int(myIFU.name)]
         # if Re is not listed (i.e., Re = -99.99), then quote centroid SNR. 
         if re_target == -99.99: 
             print("*** No Re listed, calculating at centroid instead.")
@@ -255,8 +260,8 @@ def sn(insami, tablein, l1, l2, plot=False, ifus='all',
             centroid_dec = myIFU.ypos[centroid]
 
         if not seek_centroid: 
-            centroid_ra = target_table.ra[target_table.CATID == int(myIFU.name)]
-            centroid_dec=target_table.dec[target_table.CATID == int(myIFU.name)]
+            centroid_ra = target_table['ra'][target_table['CATID'] == int(myIFU.name)]
+            centroid_dec=target_table['dec'][target_table['CATID'] == int(myIFU.name)]
 
             test_distance = 3600.* np.sqrt(
                 (myIFU.xpos - centroid_ra)**2 +

@@ -2,8 +2,8 @@ import pylab as py
 import numpy as np
 import scipy as sp
 
-import pyfits as pf
-import pywcs as pw
+import astropy.io.fits as pf
+import astropy.wcs as pw
 
 import itertools
 
@@ -14,12 +14,12 @@ from scipy.signal import correlate
 from scipy.stats import stats
 
 # Utils code.
-import sami.utils as utils
+from .. import utils
+from .. import samifitting as fitting
 
-# Fitting code.
-import sami.samifitting as samifitting
+# importing everything defined in the config file
+from ..config import *
 
-#import com
 """ This should read in FITS files (RSS), pick out appropriate IFU, figure out co-ords for each RSS file,
     find the offsets, feed data to the dithered slice maker and combine everything. Maybe more. Or less."""
 
@@ -193,7 +193,7 @@ def dithered_cube_from_rss(inlist, sample_size=0.5, objects='all', plot=True, wr
             # First guess Gaussian parameters.
             p0=[data_good[np.sum(np.where(dist==np.min(dist)))], com_distr[0], com_distr[1], sigx, sigx, 45.0, 0.0]
    
-            gf1=samifitting.TwoDGaussFitter(p0, x_good, y_good, data_good)
+            gf1=fitting.TwoDGaussFitter(p0, x_good, y_good, data_good)
             gf1.fit()
             
             if plot==True:
@@ -538,7 +538,7 @@ def _plotcentroids(inlist, probe):
         # First guess Gaussian parameters.
         p0=[data_good[np.sum(np.where(dist==np.min(dist)))], com_distr[0], com_distr[1], sigx, sigx, 45.0, 0.0]
    
-        gf1=samifitting.TwoDGaussFitter(p0, x_good, y_good, data_good)
+        gf1=fitting.TwoDGaussFitter(p0, x_good, y_good, data_good)
         gf1.fit()
 
         p_out=gf1.p
@@ -613,7 +613,7 @@ class fibre_overlap_map:
         self.size_of_grid=size_of_grid
 
         # Some unchanging SAMI stuff
-        self.plate_scale=15.22 # (in arcseconds per mm)
+        self.plate_scale=plate_scale # (in arcseconds per mm)
         self.fib_diam_arcsec=1.6 # (in arcseconds)
 
         # Work out stuff for the resampling 

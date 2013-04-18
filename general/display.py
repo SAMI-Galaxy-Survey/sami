@@ -1,7 +1,8 @@
 import pylab as py
 import numpy as np
 import scipy as sp
-import pyfits as pf
+
+import astropy.io.fits as pf
 
 import string
 import itertools
@@ -11,8 +12,7 @@ from scipy.stats import stats
 # Circular patch.
 from matplotlib.patches import Circle
 
-import sami.utils as utils # Module containing utilities functions for SAMI
-import sami.samifitting as fitting # Module containing common samifitting routines used for SAMI
+from .. import utils # Module containing utilities functions for SAMI
 
 """
 This script contains the display functions for SAMI data.

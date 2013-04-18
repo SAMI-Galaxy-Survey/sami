@@ -4,6 +4,10 @@ import utils
 import samifitting
 import update_csv
 
+# the config file which contains some constants and stuff
+import config
+
 # Bring all subpackage modules up to the package name space.
 from general import *
 from observing import *
+
