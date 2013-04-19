@@ -145,8 +145,9 @@ def centroid(infile, ifus='all', outfile=None, plot=True):
 
         # Feed the wrapped fitter both the micron and sky values
         p_sky, data_sky, xlin_sky, ylin_sky, model_sky=centroid_fit(ifu_data.xpos, ifu_data.ypos, ifu_data.data,
-                                                                    microns=False)
-        p_mic, data_mic, xlin_mic, ylin_mic, model_mic=centroid_fit(ifu_data.x_microns, ifu_data.y_microns, ifu_data.data)
+                                                                    microns=False, circular=True)
+        p_mic, data_mic, xlin_mic, ylin_mic, model_mic=centroid_fit(ifu_data.x_microns, ifu_data.y_microns,
+                                                                    ifu_data.data, circular=True)
 
         # Expand out the returned fitted values.
         amplitude_sky, xout_sky, yout_sky, sig_sky, bias_sky=p_sky
@@ -306,8 +307,9 @@ def focus(inlist, ifu):
 
         # Feed the wrapped fitter both the micron and sky values
         p_sky, data_sky, xlin_sky, ylin_sky, model_sky=centroid_fit(ifu_data.xpos, ifu_data.ypos, ifu_data.data,
-                                                                    microns=False)
-        p_mic, data_mic, xlin_mic, ylin_mic, model_mic=centroid_fit(ifu_data.x_microns, ifu_data.y_microns, ifu_data.data)
+                                                                    microns=False, circular=True)
+        p_mic, data_mic, xlin_mic, ylin_mic, model_mic=centroid_fit(ifu_data.x_microns, ifu_data.y_microns,
+                                                                    ifu_data.data, circular=True)
 
         # Expand out the returned fitted values.
         amplitude_sky, xout_sky, yout_sky, sig_sky, bias_sky=p_sky
@@ -384,7 +386,7 @@ def focus(inlist, ifu):
 
     print "Focus value at minimum of fitted parabola: ", focus_lin[np.where(fit==np.min(fit))]
 
-def centroid_fit(x,y,data,microns=True):
+def centroid_fit(x,y,data,microns=True, circular=True):
     """Fit the x,y,data values, regardless of what they are and return some useful stuff. Data is an array of spectra"""
 
     # Smooth the data spectrally to get rid of cosmics
@@ -410,10 +412,15 @@ def centroid_fit(x,y,data,microns=True):
     else:
         sigx=4.44e-4
         core_diam=2.22e-4
-        
+
+    
     # First guess Gaussian parameters.
-    p0=[data_sum[np.sum(np.where(dist==np.min(dist)))], com[0], com[1], sigx, 0.0]
-       
+    if circular==True:
+        p0=[data_sum[np.sum(np.where(dist==np.min(dist)))], com[0], com[1], sigx, 0.0]
+
+    elif circular==False:
+        p0=[data_sum[np.sum(np.where(dist==np.min(dist)))], com[0], com[1], sigx, sigx, 45.0, 0.0]
+        
     # Fit two circular 2D Gaussians.
     gf=fitting.TwoDGaussFitter(p0,x,y,data_sum)
     fitting.fibre_integrator(gf, core_diam)

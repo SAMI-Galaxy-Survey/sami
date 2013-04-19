@@ -10,7 +10,10 @@ import itertools
 
 from collections import namedtuple
 
-from .. import update_csv
+import update_csv
+
+# import constants defined in the config file.
+from config import *
 
 """
 This file is the utilities script for SAMI data. See below for description of functions.
@@ -155,7 +158,6 @@ def offset_hexa(csvfile, obj=None, linear=False):
 
     return
     
-
 def plate2sky(x, y, linear=False):
     """Convert position on plate to position on sky, relative to plate centre.
 
@@ -562,17 +564,8 @@ def pairwise(iterable):
   return itertools.izip(a, b)
 
 # This is all the stuff for Andy's dome code. Hacked by Lisa to follow the same conventions as the rest of the code. 
-
-degree = np.pi / 180.0
-
-# Distance between the polar and declination axes
-polar_declination_dist = 0.0625 # dome radii
-
-# Distance between the declination axis & dome center on meridian
-declination_dome_dist = 0.0982  # dome radii
-
-# Latitude of SSO (based on AAT Zenith Position, may not be most accurate)
-latitude = -31.3275 * degree
+# Want to put this stuff somewhere else, e.g. the config.py
+degree = np.pi / 180.0 # this converts to and from radians *degree means answer in radians...not a fan, could use astropy?
 
 # This next function allows us to return angles between -180 and 180 easily.
 def bettermod(num, divisor, start):
@@ -598,45 +591,49 @@ def coord_rotate(x, y, z):
 def altaz_from_hadec(ha, dec):
     """Compute altitude and azimuth from hour angle and declination at AAT."""
 
-    alt, az = coord_rotate(dec * degree, latitude, ha * degree) 
+    alt, az = coord_rotate(dec * degree, latitude_radians, ha * degree) 
 
     return (alt / degree, az / degree)
-
 
 def hadec_from_altaz(alt, az):
     """Compute hour angle and declination from altitude and azimuth at AAT."""
 
-    ha, dec = coord_rotate(alt * degree, latitude, az * degree)
+    ha, dec = coord_rotate(alt * degree, latitude_radians, az * degree)
 
     return (ha / degree, dec / degree)
 
 def domewindscreenflat_pos(ha_h, ha_m, ha_s, dec_d, dec_m, dec_s):
     """Compute dome coordinates for flat patch in front of AAT for given HA and DEC."""
 
+    DomeCoords=namedtuple('DomeCoords', ['azimuth', 'zd'])
+
     # Convert sexagesimal to degrees
     ha, dec=decimal_to_degree(ha_h, ha_m, ha_s, dec_d, dec_m, dec_s)
 
+    print
+    print "---------------------------------------------------------------------------"
+    print "INPUT"
     print "Hour Angle:", ha
-    print "Declination", dec
+    print "Declination:", dec
+    print "---------------------------------------------------------------------------"
     
     # Convert to radians
     ha = ha * degree
     dec = dec * degree
-
 
     xt = np.cos(ha) * np.cos(dec)
     yt = np.sin(ha) * np.cos(dec)
     zt = np.sin(dec)
 
     # Rotate to Az-Alt
-    xta = -xt * np.sin(latitude) + zt * np.cos(latitude)
-    zta = xt * np.cos(latitude) + zt * np.sin(latitude)
+    xta = -xt * np.sin(latitude_radians) + zt * np.cos(latitude_radians)
+    zta = xt * np.cos(latitude_radians) + zt * np.sin(latitude_radians)
     
     # Position of intersection of optical axis with declination axis
     w = polar_declination_dist * (1.0 - np.cos(ha))
-    dx = w * np.sin(latitude)
+    dx = w * np.sin(latitude_radians)
     dy = polar_declination_dist * np.sin(ha)
-    dz = -(w * np.cos(latitude) + declination_dome_dist)
+    dz = -(w * np.cos(latitude_radians) + declination_dome_dist)
 
     # Compute coefficients of quadratic in r
     b = 2.0 * ( xta * dx + yt * dy + zta * dz )
@@ -650,7 +647,7 @@ def domewindscreenflat_pos(ha_h, ha_m, ha_s, dec_d, dec_m, dec_s):
     yw = r * yt + dy
     zw = r * zta + dz
 
-    print( (xw, yw, zw) )
+    #print( (xw, yw, zw) )
     
     # Convert to azimuth and zenith distance
     a = np.arctan2( -yw, xw)
@@ -664,15 +661,13 @@ def domewindscreenflat_pos(ha_h, ha_m, ha_s, dec_d, dec_m, dec_s):
     #   (tested by AWG on the real AAT, 7 March 2013, but may need tweaking)
     z = z + 21
 
-    return a, z
+    output=DomeCoords(a,z) # output is a named tuple
 
-def _dome2(ha,dec):
-    """Alternate approach to computing flat positioning. Probably invalid."""
-
-    alt, az = altaz_from_hadec(ha,dec)
-    mha, mdec = hadec_from_altaz(alt-21,az)
-
-    return domewindscreenflat_pos(mha,mdec)
+    print
+    print "---------------------------------------------------------------------------"
+    print "OUTPUT"
+    print output
+    print "---------------------------------------------------------------------------"
 
 def decimal_to_degree(ha_h, ha_m, ha_s, dec_d, dec_m, dec_s):
 
@@ -687,3 +682,23 @@ def decimal_to_degree(ha_h, ha_m, ha_s, dec_d, dec_m, dec_s):
         dec_deg=-1.0*dec_deg
 
     return ha_deg, dec_deg
+
+# ----------------------------------------------------------------------------------------
+# This function returns the probe numbers and objects observed in them.
+
+def get_probes_objects(infile, ifus='all'):
+
+    if ifus=='all':
+        # List of probe numbers.
+        ifus=[1,2,3,4,5,6,7,8,9,10,11,12,13]
+
+    else:
+        ifus=ifus
+
+    
+    print "Probe   Object"
+    print "-----------------------------------"
+    for ifu in ifus:
+
+        ifu_data=IFU(infile, ifu, flag_name=False)
+        print ifu,"\t", ifu_data.name
