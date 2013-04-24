@@ -109,7 +109,7 @@ class GaussFitter:
 
         if not self.success in [1,2,3,4]:
             print "Fit Failed" 
-            #raise ExpFittingException("Fit failed") # This does nothing.
+            #raise FittingException("Fit failed") # This does nothing.
             
         self.linestr=self.p[0]*self.p[2]*sp.sqrt(2*S.pi)
         #self.line_err=S.sqrt(self.linestr*self.linestr*((self.perr[0]/self.p[0])**2+(self.perr[2]/self.p[2])**2))
@@ -190,7 +190,8 @@ class GaussHermiteFitter:
         self.line_err=S.sqrt(gamma_err**2*(1+S.sqrt(6)*self.p[4]/4)**2+self.perr[4]**2*(S.sqrt(6)*gamma_err/4)**2)
 
         if not self.success in [1,2,3,4]:
-            raise ExpFittingException("Fit failed")
+            print "Fit Failed..."
+            #raise FittingException("Fit failed")
 
     def __call__(self, x):
         return self.fitfunc(self.p, x)
@@ -293,8 +294,8 @@ class TwoDGaussFitter:
             self.perr = sp.sqrt(self.cov_x.diagonal())*self.var_fit
 
         if not self.success in [1,2,3,4]:
-            #print "Fit Failed" 
-            raise ExpFittingException("Fit failed")
+            print "Fit Failed..." 
+            #raise ExpFittingException("Fit failed")
 
     def __call__(self, x, y):
         return self.fitfunc(self.p, x, y)
