@@ -7,6 +7,7 @@ import os
 import sys
 import math
 import itertools
+import subprocess
 
 from collections import namedtuple
 
@@ -702,3 +703,15 @@ def get_probes_objects(infile, ifus='all'):
 
         ifu_data=IFU(infile, ifu, flag_name=False)
         print ifu,"\t", ifu_data.name
+
+
+def hg_changeset():
+    """Return the changeset ID for the current version of the code."""
+    try:
+        changeset = subprocess.check_output(['hg', '-q', 'id'],
+                                            cwd=os.path.dirname(__file__))
+        changeset = changeset[:-1]
+    except (subprocess.CalledProcessError, OSError):
+        changeset = ''
+    return changeset
+        
