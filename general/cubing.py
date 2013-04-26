@@ -20,8 +20,31 @@ from .. import samifitting as fitting
 # importing everything defined in the config file
 from ..config import *
 
-""" This should read in FITS files (RSS), pick out appropriate IFU, figure out co-ords for each RSS file,
-    find the offsets, feed data to the dithered slice maker and combine everything. Maybe more. Or less."""
+"""
+This module covers functions required to create cubes from a dithered set of RSS frames.
+
+USAGE:
+The relevant function is dithered_cube_from_rss. It has the following inputs:
+
+inlist: A text file with a list of RSS frames (one per line, typically a dither set) for which to make cubes.
+sample_size: Size of the output pixel (defaults to 0.5 arcseconds).
+objects: Which objects to make cubes for. Default is all objects, or provide a list of strings.
+plot: Make plots? Defaults to True.
+write: Write FITS files of the resulting data cubes? Defaults to False.
+
+Example call 1:
+
+dithered_cube_from_rss('all_rss_files.list', write=True)
+
+will make cubes for all objects with the default output pixel size and writes the files to disk.
+
+Example call 2:
+
+dithered_cube_from_rss('all_rss_files.list', sample_size=0.8, write=True)
+
+Varies the sample size from above.
+
+"""
 
 def get_object_names(infile):
     """Get the object names observed in the file infile."""
