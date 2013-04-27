@@ -6,6 +6,7 @@ import astropy.io.fits as pf
 import astropy.wcs as pw
 
 import itertools
+import os
 
 # Cross-correlation function from scipy.signal (slow)
 from scipy.signal import correlate
@@ -473,7 +474,7 @@ def dithered_cube_from_rss(inlist, sample_size=0.5, objects='all', plot=True, wr
                 #print files[num]
                 rss_key='HIERARCH RSS_FILE '+str(num+1)
                 rss_string='Input RSS file '+str(num+1)
-                hdr_new.update(rss_key, files[num], rss_string)
+                hdr_new.update(rss_key, os.path.basename(files[num]), rss_string)
             
             # Create HDUs for each cube - note headers generated automatically for now.
             # Note - there is a 90-degree rotation in the cube, which I can't track down. I'm rolling the axes before
