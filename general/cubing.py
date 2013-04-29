@@ -473,7 +473,7 @@ def dithered_cube_from_rss(inlist, sample_size=0.5, objects='all', plot=True, wr
             hdr_new.update('NAME', name, 'Object ID')
 
             # Add the mercurial changeset ID to the header
-            hdr_new.update('HGCUBING', HG_CHANGESET, 'Hg changeset ID for cubing code'
+            hdr_new.update('HGCUBING', HG_CHANGESET, 'Hg changeset ID for cubing code')
 
             # Put the RSS files into the header
             for num in xrange(len(files)):
