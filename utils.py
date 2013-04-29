@@ -705,11 +705,11 @@ def get_probes_objects(infile, ifus='all'):
         print ifu,"\t", ifu_data.name
 
 
-def hg_changeset():
+def hg_changeset(path=__file__):
     """Return the changeset ID for the current version of the code."""
     try:
         changeset = subprocess.check_output(['hg', '-q', 'id'],
-                                            cwd=os.path.dirname(__file__))
+                                            cwd=os.path.dirname(path))
         changeset = changeset[:-1]
     except (subprocess.CalledProcessError, OSError):
         changeset = ''
