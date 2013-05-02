@@ -300,7 +300,7 @@ class TwoDGaussFitter:
     def __call__(self, x, y):
         return self.fitfunc(self.p, x, y)
     
-def fibre_integrator(fitter, diameter):
+def fibre_integrator(fitter, diameter, pixel=False):
     """Edits a fitter's fitfunc so that it integrates over each SAMI fibre."""
 
     # Save the diameter; not used here but could be useful later
@@ -316,11 +316,15 @@ def fibre_integrator(fitter, diameter):
     # Then turn that into a 2d grid of (delta_x, delta_y) centred on (0, 0)
     delta_x = np.ravel(np.outer(delta_x, np.ones(n_pix)))
     delta_y = np.ravel(np.outer(np.ones(n_pix), delta_y))
-    # Only keep the points within one radius
-    keep = np.where(delta_x**2 + delta_y**2 < (0.5 * diameter)**2)[0]
-    n_keep = np.size(keep)
-    delta_x = delta_x[keep]
-    delta_y = delta_y[keep]
+    if pixel:
+        # Square pixels; keep everything
+        n_keep = n_pix**2
+    else:
+        # Round fibres; only keep the points within one radius
+        keep = np.where(delta_x**2 + delta_y**2 < (0.5 * diameter)**2)[0]
+        n_keep = np.size(keep)
+        delta_x = delta_x[keep]
+        delta_y = delta_y[keep]
 
     old_fitfunc = fitter.fitfunc
 
@@ -337,3 +341,4 @@ def fibre_integrator(fitter, diameter):
     fitter.fitfunc = integrated_fitfunc
 
     return
+
