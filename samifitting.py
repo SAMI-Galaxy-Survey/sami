@@ -37,6 +37,9 @@ fibre_integrator(my_fitter, 1.6)
 my_fitter.fit()
 best_fit_p = my_fitter.p
 
+For integration over square pixels rather than round fibres, use:
+fibre_integrator(my_fitter, 0.7, pixel=True)
+
 Calling an instance of a fitter will return the model values at the provided
 coordinates. So, after either of the above examples:
 
