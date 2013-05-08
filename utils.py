@@ -11,6 +11,8 @@ import subprocess
 
 from collections import namedtuple
 
+from scipy.stats import stats
+
 from sami import update_csv
 
 # import constants defined in the config file.
