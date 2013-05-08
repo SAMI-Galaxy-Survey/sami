@@ -541,3 +541,4 @@ class fibre_overlap_map:
         output_frac_map=overlap_map/1.0 # divided by area of ind. sq. (output) pixel.
 
         return input_frac_map, output_frac_map
+    

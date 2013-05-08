@@ -11,9 +11,7 @@ import subprocess
 
 from collections import namedtuple
 
-from scipy.stats import stats
-
-import update_csv
+from sami import update_csv
 
 # import constants defined in the config file.
 from config import *
@@ -127,37 +125,135 @@ class IFU:
 
         del hdulist
 
-def offset_hexa(csvfile, obj=None, linear=False):
-    """Print the offset to move a star from the guider to a hexabundle.
-    If no obj number is given, it uses the closest to the centre."""
+def offset_hexa(csvfile, guide=None, obj=None, linear=False,
+                ignore_allocations=False):
+    """Print the offsets to move a star from the centre,
+    to a guide position, to a hexabundle.
+    Guide and obj numbers must match those on the plate, *not* the probes.
+    If the guide number is "skip" (or no guiders are found), that step is skipped.
+    If no guide or obj number is given, it uses the closest to the centre.
+    If ignore_allocations is True, any hole will be used, regardless of
+    whether there is a probe there."""
 
-    csv = sami.update_csv.CSV(csvfile)
-    probe = csv.get_values('Probe', 'object')
-    probe_x = np.array(csv.get_values('Probe X', 'object'))
-    probe_y = np.array(csv.get_values('Probe Y', 'object'))
+    print '-' * 70
 
+    csv = update_csv.CSV(csvfile)
+    guide_probe = np.array(csv.get_values('Probe', 'guide'))
+    guide_x = np.array(csv.get_values('Probe X', 'guide'))
+    guide_y = np.array(csv.get_values('Probe Y', 'guide'))
+    object_probe = np.array(csv.get_values('Probe', 'object'))
+    object_x = np.array(csv.get_values('Probe X', 'object'))
+    object_y = np.array(csv.get_values('Probe Y', 'object'))
+
+    if ignore_allocations:
+        valid_guides = np.arange(guide_probe.size)
+        invalid_guides = np.array([])
+    else:
+        valid_guides = np.where(guide_probe != '')[0]
+        invalid_guides = np.where(guide_probe == '')[0]
+    n_valid_guides = valid_guides.size
+    n_invalid_guides = invalid_guides.size
+        
+    if guide is None:
+        if n_valid_guides == 0:
+            # Asked to find a guide but there aren't any to find!
+            print 'No guide probes found! Skipping that step'
+            guide = 'skip'
+        else:
+            # Find the closest valid guide to the centre
+            dist2 = guide_x**2 + guide_y**2
+            if n_invalid_guides > 0:
+                dist2[invalid_guides] = np.inf
+            # 1-indexed for now, this will be taken off in a few lines
+            guide = dist2.argmin() + 1
+            
+    if guide == 'skip':
+        guide_name = 'the central hole'
+        guide_x = 0.0
+        guide_y = 0.0
+        guide_offset_x, guide_offset_y = plate2sky(
+            guide_x, guide_y, linear=linear)
+    else:
+        # Make the 1-indexed guide number 0-indexed
+        guide = guide - 1
+        guide_name = 'G' + str(guide+1) + ' on plate'
+        try:
+            guide_name = ('guider ' + str(int(guide_probe[guide])) +
+                          ' (' + guide_name + ')')
+        except ValueError:
+            # No guider was assigned to this hole
+            guide_name = guide_name + ' (no guide probe assigned!)'
+        guide_x = guide_x[guide]
+        guide_y = guide_y[guide]
+
+        guide_offset_x, guide_offset_y = plate2sky(
+            guide_x, guide_y, linear=linear)
+
+        if guide_offset_x <= 0:
+            offset_direction_x = 'E'
+        else:
+            offset_direction_x = 'W'
+        if guide_offset_y <= 0:
+            offset_direction_y = 'N'
+        else:
+            offset_direction_y = 'S'
+
+        print 'Move the telescope', abs(guide_offset_x), 'arcsec', offset_direction_x, \
+            'and', abs(guide_offset_y), 'arcsec', offset_direction_y
+        print 'The star will move from the central hole'
+        print '    to', guide_name
+
+    if ignore_allocations:
+        valid_objects = np.arange(object_probe.size)
+        invalid_objects = np.array([])
+    else:
+        valid_objects = np.where(object_probe != '')[0]
+        invalid_objects = np.where(object_probe == '')[0]
+        if valid_objects.size == 0:
+            print 'No allocated object probes found! Using closest hole.'
+            valid_objects = np.arange(object_probe.size)
+            invalid_objects = np.array([])
+    n_valid_objects = valid_objects.size
+    n_invalid_objects = invalid_objects.size
+        
     if obj is None:
-        # No object number given, so find the closest to centre
-        dist2 = probe_x**2 + probe_y**2
-        obj = dist2.argmin()
-    else:
-        # Object numbers are 1-indexed
-        obj = obj - 1
+        # Find the closest valid object to the guide
+        dist2 = (object_x - guide_x)**2 + (object_y - guide_y)**2
+        if n_invalid_objects > 0:
+            dist2[invalid_objects] = np.inf
+        # 1-indexed for now, this will be taken off in a few lines
+        obj = dist2.argmin() + 1
 
-    offset_x, offset_y = plate2sky(probe_x[obj], probe_y[obj], linear=linear)
-    probe = probe[obj]
+    obj = obj - 1
+    object_name = 'P' + str(obj+1) + ' on plate'
+    try:
+        object_name = ('object probe ' + str(int(object_probe[obj])) +
+                      ' (' + object_name + ')')
+    except ValueError:
+        # No object was assigned to this hole
+        object_name = object_name + ' (no object probe assigned!)'
+    object_x = object_x[obj]
+    object_y = object_y[obj]
+
+    object_offset_x, object_offset_y = plate2sky(
+        object_x, object_y, linear=linear)
+    offset_x = object_offset_x - guide_offset_x
+    offset_y = object_offset_y - guide_offset_y
+    
     if offset_x <= 0:
-        direction_x = 'E'
+        offset_direction_x = 'E'
     else:
-        direction_x = 'W'
+        offset_direction_x = 'W'
     if offset_y <= 0:
-        direction_y = 'N'
+        offset_direction_y = 'N'
     else:
-        direction_y = 'S'
+        offset_direction_y = 'S'
 
-    print 'Move the telescope', abs(offset_x), 'arcsec', direction_x, \
-        'and', abs(offset_y), 'arcsec', direction_y
-    print 'The star will appear in probe number', int(probe)
+    print 'Move the telescope', abs(offset_x), 'arcsec', offset_direction_x, \
+        'and', abs(offset_y), 'arcsec', offset_direction_y
+    print 'The star will move from', guide_name
+    print '    to', object_name
+    print '-' * 70
 
     return
     
@@ -175,6 +271,10 @@ def plate2sky(x, y, linear=False):
 
     # Define the return named tuple type
     AngularCoords = namedtuple('AngularCoords', ['xi', 'eta'])
+
+    if x == 0.0 and y == 0.0:
+        # Plate centre, return zeros before you get an error
+        return AngularCoords(0.0, 0.0)
 
     if linear:
         # Just do a really simple transformation
@@ -688,7 +788,6 @@ def decimal_to_degree(ha_h, ha_m, ha_s, dec_d, dec_m, dec_s):
 
 # ----------------------------------------------------------------------------------------
 # This function returns the probe numbers and objects observed in them.
-
 def get_probes_objects(infile, ifus='all'):
 
     if ifus=='all':
@@ -716,7 +815,7 @@ def hg_changeset(path=__file__):
     except (subprocess.CalledProcessError, OSError):
         changeset = ''
     return changeset
-        
+
 def mad(a, c=0.6745, axis=0):
     """
     Median Absolute Deviation:
@@ -731,3 +830,4 @@ def mad(a, c=0.6745, axis=0):
     a.shape = _shape
 
     return m
+
