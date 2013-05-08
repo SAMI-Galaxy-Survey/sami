@@ -111,7 +111,7 @@ class GaussFitter:
             print "Fit Failed" 
             #raise FittingException("Fit failed") # This does nothing.
             
-        self.linestr=self.p[0]*self.p[2]*sp.sqrt(2*S.pi)
+        self.linestr=self.p[0]*self.p[2]*sp.sqrt(2*sp.pi)
         #self.line_err=S.sqrt(self.linestr*self.linestr*((self.perr[0]/self.p[0])**2+(self.perr[2]/self.p[2])**2))
 
     def __call__(self, x):

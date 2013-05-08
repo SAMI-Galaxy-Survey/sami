@@ -7,8 +7,11 @@ import os
 import sys
 import math
 import itertools
+import subprocess
 
 from collections import namedtuple
+
+from scipy.stats import stats
 
 import update_csv
 
@@ -702,3 +705,29 @@ def get_probes_objects(infile, ifus='all'):
 
         ifu_data=IFU(infile, ifu, flag_name=False)
         print ifu,"\t", ifu_data.name
+
+
+def hg_changeset(path=__file__):
+    """Return the changeset ID for the current version of the code."""
+    try:
+        changeset = subprocess.check_output(['hg', '-q', 'id'],
+                                            cwd=os.path.dirname(path))
+        changeset = changeset[:-1]
+    except (subprocess.CalledProcessError, OSError):
+        changeset = ''
+    return changeset
+        
+def mad(a, c=0.6745, axis=0):
+    """
+    Median Absolute Deviation:
+
+    median(abs(a - median(a))) / c
+
+    """
+    
+    _shape = a.shape
+    a.shape = np.product(a.shape,axis=0)
+    m = stats.nanmedian(np.fabs(a - stats.nanmedian(a))) / c
+    a.shape = _shape
+
+    return m
