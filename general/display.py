@@ -96,13 +96,22 @@ def display(infile, ifus='all', log=True):
         data_norm=data_sum/np.nanmax(data_sum)
         mycolormap=py.get_cmap('YlGnBu_r')
 
+
+        fibres=[]
         # Iterate over the x, y positions making a circle patch for each fibre, with the appropriate color.
         for xval, yval, dataval in itertools.izip(x_m, y_m, data_norm):
             #Add the fibre patch.
             fibre=Circle(xy=(xval,yval), radius=52.5)
-            ax.add_artist(fibre)
+            fibres.append(fibre)
+            
+            #fibre.set_facecolor(mycolormap(dataval))
 
-            fibre.set_facecolor(mycolormap(dataval))
+
+        allpatches=PatchCollection(fibres, cmap=mycolormap) 
+        allpatches.set_array(SN)
+
+        ax.add_collection(allpatches)
+        py.colorbar(allpatches)
 
         # Give each subplot a title (necessary?).
         title_string=string.join(['Probe ', str(ifu_data.ifu)])

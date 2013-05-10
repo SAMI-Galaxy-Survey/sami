@@ -1,7 +1,9 @@
 import pylab as py
 import numpy as np
 import scipy as sp
-import pyfits as pf
+
+# astropy fits file io (replacement for pyfits)
+import astropy.io.fits as pf
 
 import os
 import sys
