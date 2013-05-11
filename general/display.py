@@ -11,6 +11,7 @@ from scipy.stats import stats
 
 # Circular patch.
 from matplotlib.patches import Circle
+from matplotlib.collections import PatchCollection
 
 from .. import utils # Module containing utilities functions for SAMI
 
@@ -96,7 +97,6 @@ def display(infile, ifus='all', log=True):
         data_norm=data_sum/np.nanmax(data_sum)
         mycolormap=py.get_cmap('YlGnBu_r')
 
-
         fibres=[]
         # Iterate over the x, y positions making a circle patch for each fibre, with the appropriate color.
         for xval, yval, dataval in itertools.izip(x_m, y_m, data_norm):
@@ -106,9 +106,8 @@ def display(infile, ifus='all', log=True):
             
             #fibre.set_facecolor(mycolormap(dataval))
 
-
         allpatches=PatchCollection(fibres, cmap=mycolormap) 
-        allpatches.set_array(SN)
+        allpatches.set_array(data_norm)
 
         ax.add_collection(allpatches)
         py.colorbar(allpatches)
