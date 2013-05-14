@@ -276,7 +276,11 @@ def plate2sky(x, y, linear=False):
     # Define the return named tuple type
     AngularCoords = namedtuple('AngularCoords', ['xi', 'eta'])
 
-    if x == 0.0 and y == 0.0:
+    # Make sure we're dealing with floats
+    x = np.array(x, dtype='d')
+    y = np.array(y, dtype='d')
+
+    if np.size(x) == 1 and np.size(y) == 1 and x == 0.0 and y == 0.0:
         # Plate centre, return zeros before you get an error
         return AngularCoords(0.0, 0.0)
 
