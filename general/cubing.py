@@ -106,6 +106,8 @@ def dithered_cube_from_rss(inlist, sample_size=0.5, objects='all', plot=True, wr
         cols[0]=str.strip(cols[0])
 
         files.append(np.str(cols[0]))
+        
+    n_files = len(files)
 
     # For first files get the names of galaxies observed - assuming these are the same in all RSS files.
     if objects=='all':
@@ -174,6 +176,16 @@ def dithered_cube_from_rss(inlist, sample_size=0.5, objects='all', plot=True, wr
 
         ifus_all=[]
 
+        # The following loop:
+        #
+        #   1. Loads the fibre data from file
+        #   2. Uses a Centre of Mass to as an initial guess to gaussian fit the position 
+        #      of the object within the bundle
+        #   3. Computes the positions of the fibres within each file including an offset
+        #      for the galaxy position from the gaussian fit (e.g., everything is now on 
+        #      the same coordiante system.
+        #
+
         # Read in data for each file
         for j in xrange(len(files)):
 
@@ -194,7 +206,7 @@ def dithered_cube_from_rss(inlist, sample_size=0.5, objects='all', plot=True, wr
             y_good=galaxy_data.y_microns[goodfibres]
             data_good=data_med[goodfibres]
         
-            # First try to get rid of the bias laval in the data, by subtracting a median
+            # First try to get rid of the bias level in the data, by subtracting a median
             data_bias=np.median(data_good)
             if data_bias<0.0:
                 data_good=data_good-data_bias
@@ -284,6 +296,9 @@ def dithered_cube_from_rss(inlist, sample_size=0.5, objects='all', plot=True, wr
         badpix_all=np.copy(data_all)
         badpix_all_final=np.zeros_like(badpix_all)
 
+        # @TODO: This next section of code is wrong: The order of the ifus_used list is not necessarily the same
+        #        as the order of the other lists it addresses here.
+
         # Now, find what the discrete IFUs used were
         ifus_used=list(set(ifus_all))
         
@@ -332,16 +347,17 @@ def dithered_cube_from_rss(inlist, sample_size=0.5, objects='all', plot=True, wr
         data_norm=np.zeros_like(data_all)
         print np.shape(data_all)
         
-        # Now, want to normalise each spectrum by its median and perform a clipped mean.
-        for ii in xrange(np.shape(data_all)[0]):
+        # Now, want to normalise each spectrum by its median
+        for ii in xrange(n_files):
 
-            spectrum=data_all[ii,:]
+            spectrum = data_all[ii,:]
             med_spectrum=stats.nanmedian(spectrum)
 
             spec_norm=spectrum/med_spectrum
 
             # Put into the array
             data_norm[ii,:]=spec_norm
+        
         
         # Now feed all x,y fibre position values to the overlap_maps class instance.
         for p, xfib, yfib in itertools.izip(itertools.count(), xfibre_all, yfibre_all):
@@ -370,17 +386,33 @@ def dithered_cube_from_rss(inlist, sample_size=0.5, objects='all', plot=True, wr
         flux_cube=np.zeros((size_of_grid, size_of_grid, np.shape(data_all)[1]))
         var_cube=np.zeros((size_of_grid, size_of_grid, np.shape(data_all)[1]))
         
+        print("data_all.shape: ", np.shape(data_all))
+               
+        # This loops over wavelength slices (e.g., 2048). 
         for l in xrange(np.shape(data_all)[1]):
+
+            # In this loop, we will map the RSS fluxes from individual fibres
+            # onto the output grid.
+            #
+            # Variables with "grid" are on the output grid, and variables with
+            # "rss" are in the input fibres space. The "fibres" part of the name
+            # shows variables with individual planes for each fibre.
+            #
+            # e.g., 
+            #     np.shape(data_rss_slice)         -> (n_fibres * n_files)
+            #     np.shape(data_grid_slice_fibres) -> (outsize, outsize, n_fibres * n_files)
+            #     np.shape(data_rss_slice_final)   -> (outsize, outsize)
+            
 
             print l
 
             # Normalised spectra.
-            norm_single_slice=data_norm[:,l]
+            norm_rss_slice=data_norm[:,l]
 
             # Spectra and variance.
-            data_single_slice=data_all[:,l]
-            var_single_slice=var_all[:,l]
-            badpix_single_slice=badpix_all_final[:,l]
+            data_rss_slice=data_all[:,l]
+            var_rss_slice=var_all[:,l]
+            badpix_rss_slice=badpix_all_final[:,l]
 
             # Weight map parameters for a single slice - copy the output frac array each time.
             # This will NOT be correct for each slice when ADC is implemented, will have to calculate it several times.
@@ -390,36 +422,43 @@ def dithered_cube_from_rss(inlist, sample_size=0.5, objects='all', plot=True, wr
             # Find the pixel which need to be clipped using the normalised spectra.
 
             # Make the normalised slice array (need to determine deviant pixels using this array not the good data)
-            data_norm_slice_array=overlap_array*norm_single_slice
+            norm_grid_slice_fibres=overlap_array*norm_rss_slice
+            
+            print(np.shape(norm_grid_slice_fibres))
 
-            # Sigma clip it - pixel by pixel and make a master mask array. Current clipping, sigma=5 and 1 iteration.
-            mask_master=[[sigma_clip(subarrj, sig=5, cenfunc=stats.nanmedian, varfunc=utils.mad)[1]
-                          for subarrj in subarri] for subarri in data_norm_slice_array]
+            return
+            # Sigma clip it - pixel by pixel and make a master mask
+            # array. Current clipping, sigma=5 and 1 iteration.
+            mask_master=[
+                [sigma_clip(pixel_fibres, sig=5, cenfunc=stats.nanmedian, varfunc=utils.mad)[1]
+                 for pixel_fibres in row]
+                for row in norm_grid_slice_fibres
+                ]
             mask_master=np.asanyarray(mask_master).astype(float)
             mask_master[np.where(mask_master==0.0)]=np.nan
             # NOTE - mask_master is an array of ones and NaNs.
 
             # Apply the mask to the data slice array and variance slice array
-            data_slice_array=overlap_array*data_single_slice*mask_master
-            var_slice_array=(overlap_array*overlap_array)*var_single_slice*mask_master
+            data_grid_slice_fibres=overlap_array*data_rss_slice*mask_master
+            var_grid_slice_fibres=(overlap_array*overlap_array)*var_rss_slice*mask_master
 
             # Now, at this stage want to identify ALL positions in the data array (before we collapse it) where there
             # are NaNs (from clipping, cosmics flagged by 2dfdr and bad columns flagged by 2dfdr). This allows the
             # correct weight map to be created for the wavelength slice in question.
-            data_total_nanmask=np.copy(data_slice_array)
+            data_total_nanmask=np.copy(data_grid_slice_fibres)
             data_total_nanmask[np.where(np.isfinite(data_total_nanmask))]=1.0
 
             # data_total_nanmask should now be an array of ones and NaNs. This should be applied to the weight map.
-            weight_slice_array=weight_single_slice*data_total_nanmask
+            weight_grid_slice_fibres=weight_single_slice*data_total_nanmask
 
             # Collapse the slice arrays
-            data_slice_final=np.nansum(data_slice_array, axis=2)
-            var_slice_final=np.nansum(var_slice_array, axis=2)
-            weight_map_final=np.nansum(weight_slice_array, axis=2)
+            data_grid_slice_final=np.nansum(data_grid_slice_fibres, axis=2)
+            var_grid_slice_final=np.nansum(var_grid_slice_fibres, axis=2)
+            weight_grid_slice_final=np.nansum(weight_grid_slice_fibres, axis=2)
             
-            flux_cube[:,:,l]=data_slice_final
-            var_cube[:,:,l]=var_slice_final
-            weight_cube[:,:,l]=weight_map_final
+            flux_cube[:,:,l]=data_grid_slice_final
+            var_cube[:,:,l]=var_grid_slice_final
+            weight_cube[:,:,l]=weight_grid_slice_final
 
         # Now need to scale the cubes by the weight cube
         flux_cube=flux_cube/weight_cube # flux cube scaling by weight map

@@ -56,8 +56,9 @@ class IFU:
         self.crpix1=primary_header['CRPIX1']
         self.naxis1=primary_header['NAXIS1']
 
-        self.meanra=primary_header['MEANRA']
-        self.meandec=primary_header['MEANDEC']
+        # NOTE This is not the probe's mean RA and DEC
+        self.field_meanra = primary_header['MEANRA']
+        self.field_meandec = primary_header['MEANDEC']
         
         # Wavelength range
         x=np.arange(self.naxis1)+1
@@ -128,6 +129,9 @@ class IFU:
         self.fibtab=fibre_table
 
         del hdulist
+        
+    def valid_science_fibres(self):
+        
 
 def offset_hexa(csvfile, guide=None, obj=None, linear=False,
                 ignore_allocations=False):
