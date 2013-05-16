@@ -130,9 +130,6 @@ class IFU:
 
         del hdulist
         
-    def valid_science_fibres(self):
-        
-
 def offset_hexa(csvfile, guide=None, obj=None, linear=False,
                 ignore_allocations=False):
     """Print the offsets to move a star from the centre,
