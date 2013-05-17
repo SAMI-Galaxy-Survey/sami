@@ -15,6 +15,15 @@ from collections import namedtuple
 
 from scipy.stats import stats
 
+# Attempt to import bottleneck to improve speed, but fall back to old routines
+# if bottleneck isn't present
+try:
+    import bottleneck as bn
+except:
+    bn.nanmedian = stats.nanmedian
+    print("Not Using bottleneck: Speed will be improved if you install bottleneck")
+
+
 from sami import update_csv
 
 # import constants defined in the config file.
@@ -835,7 +844,7 @@ def mad(a, c=0.6745, axis=0):
     
     _shape = a.shape
     a.shape = np.product(a.shape,axis=0)
-    m = stats.nanmedian(np.fabs(a - stats.nanmedian(a))) / c
+    m = bn.nanmedian(np.fabs(a - bn.nanmedian(a))) / c
     a.shape = _shape
 
     return m

@@ -17,6 +17,15 @@ from scipy.stats import stats
 # Import the sigma clipping algorithm from astropy
 from astropy.stats import sigma_clip
 
+# Attempt to import bottleneck to improve speed, but fall back to old routines
+# if bottleneck isn't present
+try:
+    import bottleneck as bn
+except:
+    bn.nanmedian = stats.nanmedian
+    print("Not Using bottleneck: Speed will be improved if you install bottleneck")
+
+
 # Utils code.
 from .. import utils
 from .. import samifitting as fitting
@@ -455,7 +464,7 @@ def dithered_cube_from_rss(ifu_list, sample_size=0.5, plot=True, write=False, of
         
         # Sigma clip it - pixel by pixel and make a master mask
         # array. Current clipping, sigma=5 and 1 iteration.
-        mask_master = sigma_clip_slice_fibres(norm_grid_slice_fibres)
+        mask_master = sigma_clip_mask_slice_fibres(norm_grid_slice_fibres)
         
         mask_master=np.asanyarray(mask_master).astype(float)
         mask_master[np.where(mask_master==0.0)]=np.nan
@@ -496,12 +505,19 @@ def dithered_cube_from_rss(ifu_list, sample_size=0.5, plot=True, write=False, of
 def sigma_clip_mask_slice_fibres(grid_slice_fibres):
     """Return a mask with outliers removed."""
 
-    return [
-            [sigma_clip(pixel_fibres, sig=5, cenfunc=stats.nanmedian, varfunc=utils.mad)[1]
-             for pixel_fibres in row]
-            for row in grid_slice_fibres
-            ]
+    med = bn.nanmedian(grid_slice_fibres, axis=2)
+    var = utils.mad(grid_slice_fibres, axis=2)
 
+    # We rearrange the axes so that numpy.broadcasting works in the subsequent
+    # operations. See: http://docs.scipy.org/doc/numpy/user/basics.broadcasting.html
+    t_grid_slice_fibres = np.transpose(grid_slice_fibres, axes=(2,0,1))
+    
+    mask = np.transpose( 
+            (t_grid_slice_fibres - med)/var < 5,
+            axes=(1,2,0))
+    
+    return mask
+          
 class fibre_overlap_map:
     """Make an overlap map for a single fibre. This is the same at all lambda slices for that fibre (neglecting
     DAR)""" 
