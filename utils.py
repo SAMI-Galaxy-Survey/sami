@@ -824,18 +824,39 @@ def hg_changeset(path=__file__):
         changeset = ''
     return changeset
 
-def mad(a, c=0.6745, axis=0):
+def mad(a, c=0.6745, axis=None):
     """
-    Median Absolute Deviation:
+    Compute the median absolute deviation along the specified axis.
 
     median(abs(a - median(a))) / c
 
+    Returns the median absolute deviation of the array elements.
+
+    Parameters
+    ----------
+    a : array_like
+        Input array or object that can be converted to an array.
+    axis : int, optional
+        Axis along which the medians are computed. The default (axis=None)
+        is to compute the median along a flattened version of the array.
+    c : float, optional
+        The scaling factor applied to the raw median aboslute deviation.
+        The default is to scale to match the standard deviation.
+
+    Returns
+    -------
+    mad : ndarray
+        A new array holding the result. 
+
     """
-    
-    _shape = a.shape
-    a.shape = np.product(a.shape,axis=0)
-    m = stats.nanmedian(np.fabs(a - stats.nanmedian(a))) / c
-    a.shape = _shape
+    if (axis is None):
+        _shape = a.shape
+        a.shape = np.product(a.shape,axis=0)
+        m = stats.nanmedian(np.fabs(a - stats.nanmedian(a))) / c
+        a.shape = _shape
+    else:
+        m = np.apply_along_axis(
+            lambda x: stats.nanmedian(np.fabs(x - stats.nanmedian(x))) / c, 
+            axis, a)
 
     return m
-
