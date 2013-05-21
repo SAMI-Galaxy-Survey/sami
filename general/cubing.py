@@ -458,7 +458,7 @@ def dithered_cube_from_rss(ifu_list, sample_size=0.5, plot=True, write=False, of
 
         # Weight map parameters for a single slice - copy the output frac array each time.
         # This will NOT be correct for each slice when ADC is implemented, will have to calculate it several times.
-        weight_single_slice=np.copy(output_frac_array)
+        weight_grid_slice=np.copy(output_frac_array)
 
         # ----------------------------------------------------------------------------------------------------------
         # Find the pixel which need to be clipped using the normalised spectra.
@@ -466,11 +466,19 @@ def dithered_cube_from_rss(ifu_list, sample_size=0.5, plot=True, write=False, of
         # Make the normalised slice array (need to determine deviant pixels using this array not the good data)
         norm_grid_slice_fibres=overlap_array*norm_rss_slice
         
-        unmasked_pixels_before_clipping = np.isfinite(overlap_array*data_rss_slice).sum()
+        data_grid_slice_fibres = overlap_array*data_rss_slice
+        
+        unmasked_pixels_before_clipping = np.isfinite(data_grid_slice_fibres).sum()
         
         # Sigma clip it - pixel by pixel and make a master mask
         # array. Current clipping, sigma=5 and 1 iteration.
-        mask_master = sigma_clip_mask_slice_fibres(norm_grid_slice_fibres)
+        
+        #mask_master = sigma_clip_mask_slice_fibres(norm_grid_slice_fibres/weight_grid_slice)
+        
+        
+        
+        mask_master = sigma_clip_mask_slice_fibres(data_grid_slice_fibres/weight_grid_slice)
+        
         
         mask_master=np.asanyarray(mask_master).astype(float)
         mask_master[np.where(mask_master==0.0)]=np.nan
@@ -487,7 +495,10 @@ def dithered_cube_from_rss(ifu_list, sample_size=0.5, plot=True, write=False, of
         diagnostic_info['unmasked_pixels_before_sigma_clip'] += unmasked_pixels_before_clipping
         diagnostic_info['unmasked_pixels_after_sigma_clip'] += unmasked_pixels_after_clipping
 
-        print("Pixels Clipped: ", unmasked_pixels_before_clipping - unmasked_pixels_after_clipping)
+        print("Pixels Clipped: {0} ({1}%)".format(\
+            unmasked_pixels_before_clipping - unmasked_pixels_after_clipping,
+            (unmasked_pixels_before_clipping - unmasked_pixels_after_clipping) / float(unmasked_pixels_before_clipping)
+            ))
 
         # Now, at this stage want to identify ALL positions in the data array (before we collapse it) where there
         # are NaNs (from clipping, cosmics flagged by 2dfdr and bad columns flagged by 2dfdr). This allows the
@@ -496,7 +507,7 @@ def dithered_cube_from_rss(ifu_list, sample_size=0.5, plot=True, write=False, of
         data_total_nanmask[np.where(np.isfinite(data_total_nanmask))]=1.0
 
         # data_total_nanmask should now be an array of ones and NaNs. This should be applied to the weight map.
-        weight_grid_slice_fibres=weight_single_slice*data_total_nanmask
+        weight_grid_slice_fibres=weight_grid_slice*data_total_nanmask
 
         # Collapse the slice arrays
         data_grid_slice_final=np.nansum(data_grid_slice_fibres, axis=2)
