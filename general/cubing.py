@@ -219,8 +219,9 @@ def dithered_cubes_from_rss_files(inlist, sample_size=0.5, objects='all', plot=T
 def dithered_cube_from_rss(ifu_list, sample_size=0.5, plot=True, write=False, offsets='fit'):
         
     # When resampling need to know the size of the grid in square output pixels
-    size_of_grid=40 # should prob calculate this somehow?? Maybe when the cube is created, collapse
-
+    # @TODO: Compute the size of the grid instead of hard code it!
+    size_of_grid=40 
+    
     # Create an instance of fibre_overlap_map for use later to create individual overlap maps for each fibre.
     # The attributes of this instance don't change from ifu to ifu.
     overlap_maps=fibre_overlap_map(sample_size, size_of_grid)
@@ -246,7 +247,7 @@ def dithered_cube_from_rss(ifu_list, sample_size=0.5, plot=True, write=False, of
     #      the same coordiante system.
     #
 
-    for j in xrange(len(ifu_list)):
+    for j in xrange(n_obs):
 
         # Get the data.
         galaxy_data=ifu_list[j]
@@ -312,74 +313,41 @@ def dithered_cube_from_rss(ifu_list, sample_size=0.5, plot=True, write=False, of
         ifus_all.append(galaxy_data.ifu)
 
 
-    print ifus_all
-
     xfibre_all=np.asanyarray(xfibre_all)
     yfibre_all=np.asanyarray(yfibre_all)
     data_all=np.asanyarray(data_all)
     var_all=np.asanyarray(var_all)
 
-    # For debugging run on only a subset of the data
-    ##data_all=data_all[:,:,500:700]
-
     ifus_all=np.asanyarray(ifus_all)
 
-    print "Data shape", np.shape(data_all)
+    # @TODO: Rescaling between observations.
+    #
+    #     This may be done here (_before_ the reshaping below). There also may
+    #     be a case to do it for whole files, although that may have other
+    #     difficulties.
 
-    # Use data_all to find a bad pixel mask per IFU
-    badpix_all=np.copy(data_all)
-    badpix_all_final=np.zeros_like(badpix_all)
-
-    # @TODO: This next section of code is wrong: The order of the ifus_used list is not necessarily the same
-    #        as the order of the other lists it addresses here.
-
-    # Now, find what the discrete IFUs used were
-    ifus_used=list(set(ifus_all))
-    
-    k0=0
-    k1=0
-    for j in xrange(len(ifus_used)):
-
-        ifu_single=ifus_used[j]
-        
-        msk_ifu_single=np.where(ifus_all==ifu_single)
-        
-        k1=k0+(np.shape(msk_ifu_single)[1])
-
-        # Note badpix_all and ifu_all are in the same order.
-        badpix_ifu_single=np.squeeze(badpix_all[msk_ifu_single,:,:])
-        badpix_ifu_single_med=nanmedian(badpix_ifu_single, axis=0)
-
-        # Replicate this y times where y is the number of frames the galaxy was observed in this ifu.
-        badpix_ifu_final=np.tile(badpix_ifu_single_med, (np.shape(msk_ifu_single)[1],1,1))
-
-        # Put the replicated array into the final array.
-        badpix_all_final[k0:k1,:,:]=badpix_ifu_final
-
-        k0=k1
-
-    # Convert the bad pixel mask into ones and zeros.
-    badpix_all_final[np.where(np.isfinite(badpix_all_final))]=1.0
-    badpix_all_final[np.where(np.isnan(badpix_all_final))]=0.0
 
     # Reshape the arrays
+    #
+    #     What we are doing is combining the first two dimensions, which are
+    #     files and fibres. Effectively, what we will do is treat each fibre in
+    #     each file as a completely independent observation for the purposes of
+    #     building grided data cube.
+    #
+    #     old.shape -> (n_files,            n_fibres, n_slices)
+    #     new.shape -> (n_files * n_fibres, n_slices)
     xfibre_all=np.reshape(xfibre_all,(np.shape(xfibre_all)[0]*np.shape(xfibre_all)[1]))
     yfibre_all=np.reshape(yfibre_all,(np.shape(yfibre_all)[0]*np.shape(yfibre_all)[1]))
     data_all=np.reshape(data_all,(np.shape(data_all)[0]*np.shape(data_all)[1], np.shape(data_all)[2]))
     var_all=np.reshape(var_all,(np.shape(var_all)[0]*np.shape(var_all)[1], np.shape(var_all)[2]))
 
-    badpix_all_final=np.reshape(badpix_all_final,(np.shape(badpix_all_final)[0]*np.shape(badpix_all_final)[1],
-                                                  np.shape(badpix_all_final)[2]))
     
     # Empty array for all overlap maps - i.e. need one for each fibre!
     overlap_array=np.zeros((size_of_grid, size_of_grid, np.shape(xfibre_all)[0]))
     output_frac_array=np.zeros((size_of_grid, size_of_grid, np.shape(xfibre_all)[0]))
 
-    #print "Galaxy is", name
-
-    # An array of zeros, same size as the data.
-    data_norm=np.zeros_like(data_all)
-    print np.shape(data_all)
+    # An empty array with same size as the data.
+    data_norm=np.empty_like(data_all)
     
     # Now, want to normalise each spectrum by its median
     for ii in xrange(n_obs):
@@ -391,8 +359,7 @@ def dithered_cube_from_rss(ifu_list, sample_size=0.5, plot=True, write=False, of
 
         # Put into the array
         data_norm[ii,:]=spec_norm
-    
-    
+        
     # Now feed all x,y fibre position values to the overlap_maps class instance.
     for p, xfib, yfib in itertools.izip(itertools.count(), xfibre_all, yfibre_all):
 
@@ -409,9 +376,6 @@ def dithered_cube_from_rss(ifu_list, sample_size=0.5, plot=True, write=False, of
 
         overlap_array[:,:,p]=input_frac_map_fib
         output_frac_array[:,:,p]=output_frac_map_fib
-
-    print "OVERLAP ARRAY:", np.shape(overlap_array)
-    #return
 
     # Create an empty weight cube
     weight_cube=np.zeros((size_of_grid, size_of_grid, np.shape(data_all)[1]))
@@ -450,7 +414,6 @@ def dithered_cube_from_rss(ifu_list, sample_size=0.5, plot=True, write=False, of
         #norm_rss_slice = data_norm[:,l]
         data_rss_slice = data_all[:,l]
         var_rss_slice = var_all[:,l]
-        badpix_rss_slice = badpix_all_final[:,l]
 
         # Weight map parameters for a single slice - copy the output frac array
         # each time. This will NOT be correct for each slice when ADC is
@@ -480,10 +443,10 @@ def dithered_cube_from_rss(ifu_list, sample_size=0.5, plot=True, write=False, of
             unmasked_pixels_before_clipping - unmasked_pixels_after_clipping
         diagnostic_info['unmasked_pixels_before_sigma_clip'] += unmasked_pixels_before_clipping
         diagnostic_info['unmasked_pixels_after_sigma_clip'] += unmasked_pixels_after_clipping
-        print("Pixels Clipped: {0} ({1}%)".format(\
-            unmasked_pixels_before_clipping - unmasked_pixels_after_clipping,
-            (unmasked_pixels_before_clipping - unmasked_pixels_after_clipping) / float(unmasked_pixels_before_clipping)
-            ))
+#         print("Pixels Clipped: {0} ({1}%)".format(\
+#             unmasked_pixels_before_clipping - unmasked_pixels_after_clipping,
+#             (unmasked_pixels_before_clipping - unmasked_pixels_after_clipping) / float(unmasked_pixels_before_clipping)
+#             ))
 
         # Now, at this stage want to identify ALL positions in the data array
         # (before we collapse it) where there are NaNs (from clipping, cosmics
