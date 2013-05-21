@@ -11,19 +11,16 @@ import os
 # Cross-correlation function from scipy.signal (slow)
 from scipy.signal import correlate
 
-# Stats functions from scipy
-from scipy.stats import stats
-
 # Import the sigma clipping algorithm from astropy
 from astropy.stats import sigma_clip
 
 # Attempt to import bottleneck to improve speed, but fall back to old routines
 # if bottleneck isn't present
 try:
-    from bottleneck import nanmedian
+    from bottleneck import nanmedian, nansum
 except:
-    nanmedian = stats.nanmedian
-    print("Not Using bottleneck: Speed will be improved if you install bottleneck")
+    from scipy.stats import nanmedian
+    nansum = np.nansum
 
 
 # Utils code.
@@ -260,7 +257,7 @@ def dithered_cube_from_rss(ifu_list, sample_size=0.5, plot=True, write=False, of
             data_smoothed[p,:]=utils.smooth(galaxy_data.data[p,:], 10) #default hanning
 
         # Collapse the smoothed data over a large wavelength range to get continuum data
-        data_med=stats.nanmedian(data_smoothed[:,300:1800], axis=1)
+        data_med=nanmedian(data_smoothed[:,300:1800], axis=1)
 
         # Pick out only good fibres (i.e. those allocated as P)
         goodfibres=np.where(galaxy_data.fib_type=='P')
@@ -351,7 +348,7 @@ def dithered_cube_from_rss(ifu_list, sample_size=0.5, plot=True, write=False, of
 
         # Note badpix_all and ifu_all are in the same order.
         badpix_ifu_single=np.squeeze(badpix_all[msk_ifu_single,:,:])
-        badpix_ifu_single_med=stats.nanmedian(badpix_ifu_single, axis=0)
+        badpix_ifu_single_med=nanmedian(badpix_ifu_single, axis=0)
 
         # Replicate this y times where y is the number of frames the galaxy was observed in this ifu.
         badpix_ifu_final=np.tile(badpix_ifu_single_med, (np.shape(msk_ifu_single)[1],1,1))
@@ -388,7 +385,7 @@ def dithered_cube_from_rss(ifu_list, sample_size=0.5, plot=True, write=False, of
     for ii in xrange(n_obs):
 
         spectrum = data_all[ii,:]
-        med_spectrum=stats.nanmedian(spectrum)
+        med_spectrum=nanmedian(spectrum)
 
         spec_norm=spectrum/med_spectrum
 
@@ -500,9 +497,9 @@ def dithered_cube_from_rss(ifu_list, sample_size=0.5, plot=True, write=False, of
         weight_grid_slice_fibres=weight_grid_slice*data_total_nanmask
 
         # Collapse the slice arrays
-        data_grid_slice_final=np.nansum(data_grid_slice_fibres, axis=2)
-        var_grid_slice_final=np.nansum(var_grid_slice_fibres, axis=2)
-        weight_grid_slice_final=np.nansum(weight_grid_slice_fibres, axis=2)
+        data_grid_slice_final = nansum(data_grid_slice_fibres, axis=2)
+        var_grid_slice_final = nansum(var_grid_slice_fibres, axis=2)
+        weight_grid_slice_final = nansum(weight_grid_slice_fibres, axis=2)
         
         flux_cube[:,:,l]=data_grid_slice_final
         var_cube[:,:,l]=var_grid_slice_final
@@ -510,7 +507,7 @@ def dithered_cube_from_rss(ifu_list, sample_size=0.5, plot=True, write=False, of
 
     # Now need to scale the cubes by the weight cube
     flux_cube=flux_cube/weight_cube # flux cube scaling by weight map
-    image=stats.nanmedian(flux_cube, axis=2)
+    image=nanmedian(flux_cube, axis=2)
 
     var_cube=var_cube/(weight_cube*weight_cube) # variance cube scaling by weight map
 
