@@ -7,6 +7,8 @@ import astropy.wcs as pw
 
 import itertools
 import os
+import sys
+import datetime
 
 # Cross-correlation function from scipy.signal (slow)
 from scipy.signal import correlate
@@ -104,6 +106,8 @@ def get_probe(infile, object_name, verbose=True):
 def dithered_cubes_from_rss_files(inlist, sample_size=0.5, objects='all', plot=True, write=False):
     """A wrapper to make a cube from reduced RSS files. Only input files that go together - ie have the same objects."""
 
+    start_time = datetime.datetime.now()
+
     # Set a few numpy printing to terminal things
     np.seterr(divide='ignore', invalid='ignore') # don't print division or invalid warnings.
     np.set_printoptions(linewidth=120) # can also use to set precision of numbers printed to screen
@@ -144,7 +148,7 @@ def dithered_cubes_from_rss_files(inlist, sample_size=0.5, objects='all', plot=T
         for j in xrange(len(files)):
             ifu_list.append(utils.IFU(files[j], name, flag_name=True))
     
-        flux_cube, var_cube, weight_cube = dithered_cube_from_rss(ifu_list,sample_size=sample_size, plot=plot, write=write)
+        flux_cube, var_cube, weight_cube, diagnostics = dithered_cube_from_rss(ifu_list,sample_size=sample_size, plot=plot, write=write)
         
         
         if write==True:
@@ -217,6 +221,8 @@ def dithered_cubes_from_rss_files(inlist, sample_size=0.5, objects='all', plot=T
     
             # Close the open file
             list1.close()
+            
+    print("Time dithered_cubes_from_files wall time: {0}".format(datetime.datetime.now() - start_time))
 
 
 def dithered_cube_from_rss(ifu_list, sample_size=0.5, plot=True, write=False, offsets='fit'):
@@ -232,6 +238,7 @@ def dithered_cube_from_rss(ifu_list, sample_size=0.5, plot=True, write=False, of
     diagnostic_info = {}
 
     n_obs = len(ifu_list)
+    n_slices = np.shape(ifu_list[0].data)[1]
 
     # Empty lists for positions and data. Could be arrays, might be faster? Should test...
     xfibre_all=[]
@@ -381,7 +388,8 @@ def dithered_cube_from_rss(ifu_list, sample_size=0.5, plot=True, write=False, of
         output_frac_array[:,:,p]=output_frac_map_fib
 
     # Create an empty weight cube
-    weight_cube=np.zeros((size_of_grid, size_of_grid, np.shape(data_all)[1]))
+    weight_cube=np.empty((size_of_grid, size_of_grid, np.shape(data_all)[1]))
+    
 
     # Now create a new array to hold the final data cube and build it slice by slice
     flux_cube=np.zeros((size_of_grid, size_of_grid, np.shape(data_all)[1]))
@@ -409,8 +417,18 @@ def dithered_cube_from_rss(ifu_list, sample_size=0.5, plot=True, write=False, of
         #     np.shape(data_grid_slice_fibres) -> (outsize, outsize, n_fibres * n_files)
         #     np.shape(data_rss_slice_final)   -> (outsize, outsize)
         
+        # Estimate time to loop completion, and display to user:
+        if (l == 1):
+            start_time = datetime.datetime.now()
+        elif (l == 10):
+            time_diff = datetime.datetime.now() - start_time
+            print("Mapping slices onto output grid, wavelength slice by slice...")
+            print("Estimated time to complete all {0} slices: {1}".format(
+                n_slices, n_slices * time_diff / 9))
+            sys.stdout.flush()
+            del start_time
+            del time_diff
 
-        print l
 
         # Create pointers to slices of the RSS data for convenience (these are
         # NOT copies)
@@ -429,26 +447,26 @@ def dithered_cube_from_rss(ifu_list, sample_size=0.5, plot=True, write=False, of
         data_grid_slice_fibres=overlap_array*data_rss_slice
         var_grid_slice_fibres=(overlap_array*overlap_array)*var_rss_slice
         
-        unmasked_pixels_before_clipping = np.isfinite(data_grid_slice_fibres).sum()
+        n_unmasked_pixels_before_clipping = np.isfinite(data_grid_slice_fibres).sum()
         
         # Sigma clip it - pixel by pixel and make a master mask
         # array. Current clipping, sigma=5 and 1 iteration.        
-        #mask_master = sigma_clip_mask_slice_fibres(norm_grid_slice_fibres/weight_grid_slice)
-        mask_master = sigma_clip_mask_slice_fibres(data_grid_slice_fibres/weight_grid_slice)
+        #mask_grid_slice_fibres = sigma_clip_mask_slice_fibres(norm_grid_slice_fibres/weight_grid_slice)
+        mask_grid_slice_fibres = sigma_clip_mask_slice_fibres(data_grid_slice_fibres/weight_grid_slice)
         
 #        # Apply the mask to the data slice array and variance slice array
-        data_grid_slice_fibres[np.logical_not(mask_master)] = np.NaN 
-        var_grid_slice_fibres[np.logical_not(mask_master)] = np.NaN # Does this matter?
+        data_grid_slice_fibres[np.logical_not(mask_grid_slice_fibres)] = np.NaN 
+        var_grid_slice_fibres[np.logical_not(mask_grid_slice_fibres)] = np.NaN # Does this matter?
 
         # Record diagnostic information about the number of pixels masked
-        unmasked_pixels_after_clipping = np.isfinite(data_grid_slice_fibres).sum()
+        n_unmasked_pixels_after_clipping = np.isfinite(data_grid_slice_fibres).sum()
         diagnostic_info['n_pixels_sigma_clipped'] = \
-            unmasked_pixels_before_clipping - unmasked_pixels_after_clipping
-        diagnostic_info['unmasked_pixels_before_sigma_clip'] += unmasked_pixels_before_clipping
-        diagnostic_info['unmasked_pixels_after_sigma_clip'] += unmasked_pixels_after_clipping
+            n_unmasked_pixels_before_clipping - n_unmasked_pixels_after_clipping
+        diagnostic_info['unmasked_pixels_before_sigma_clip'] += n_unmasked_pixels_before_clipping
+        diagnostic_info['unmasked_pixels_after_sigma_clip'] += n_unmasked_pixels_after_clipping
 #         print("Pixels Clipped: {0} ({1}%)".format(\
-#             unmasked_pixels_before_clipping - unmasked_pixels_after_clipping,
-#             (unmasked_pixels_before_clipping - unmasked_pixels_after_clipping) / float(unmasked_pixels_before_clipping)
+#             n_unmasked_pixels_before_clipping - n_unmasked_pixels_after_clipping,
+#             (n_unmasked_pixels_before_clipping - n_unmasked_pixels_after_clipping) / float(n_unmasked_pixels_before_clipping)
 #             ))
 
         # Now, at this stage want to identify ALL positions in the data array
