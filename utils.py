@@ -15,6 +15,15 @@ from collections import namedtuple
 
 from scipy.stats import stats
 
+# Attempt to import bottleneck to improve speed, but fall back to old routines
+# if bottleneck isn't present
+try:
+    import bottleneck as bn
+except:
+    bn.nanmedian = stats.nanmedian
+    print("Not Using bottleneck: Speed will be improved if you install bottleneck")
+
+
 from sami import update_csv
 
 # import constants defined in the config file.
@@ -56,8 +65,9 @@ class IFU:
         self.crpix1=primary_header['CRPIX1']
         self.naxis1=primary_header['NAXIS1']
 
-        self.meanra=primary_header['MEANRA']
-        self.meandec=primary_header['MEANDEC']
+        # NOTE This is not the probe's mean RA and DEC
+        self.field_meanra = primary_header['MEANRA']
+        self.field_meandec = primary_header['MEANDEC']
         
         # Wavelength range
         x=np.arange(self.naxis1)+1
@@ -128,7 +138,7 @@ class IFU:
         self.fibtab=fibre_table
 
         del hdulist
-
+        
 def offset_hexa(csvfile, guide=None, obj=None, linear=False,
                 ignore_allocations=False):
     """Print the offsets to move a star from the centre,
