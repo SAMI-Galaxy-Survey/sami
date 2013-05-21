@@ -58,6 +58,9 @@ Varies the sample size from above.
 
 HG_CHANGESET = utils.hg_changeset(__file__)
 
+epsilon = np.finfo(np.float).eps
+# Store the value of epsilon for quick access.
+
 def get_object_names(infile):
     """Get the object names observed in the file infile."""
 
@@ -452,17 +455,21 @@ def dithered_cube_from_rss(ifu_list, sample_size=0.5, plot=True, write=False, of
         # (before we collapse it) where there are NaNs (from clipping, cosmics
         # flagged by 2dfdr and bad columns flagged by 2dfdr). This allows the
         # correct weight map to be created for the wavelength slice in question.
-        data_total_nanmask=np.copy(data_grid_slice_fibres)
-        data_total_nanmask[np.where(np.isfinite(data_total_nanmask))]=1.0
+        valid_grid_slice_fibres=np.isfinite(data_grid_slice_fibres).astype(int)
 
-        # data_total_nanmask should now be an array of ones and NaNs. This
-        # should be applied to the weight map.
-        weight_grid_slice_fibres=weight_grid_slice*data_total_nanmask
+        # valid_grid_slice_fibres should now be an array of ones and zeros
+        # reflecting where there is any valid input data. We multiply this by
+        # the fibre weighting to get the final weighting.
+        weight_grid_slice_fibres=weight_grid_slice*valid_grid_slice_fibres
 
         # Collapse the slice arrays
         data_grid_slice_final = nansum(data_grid_slice_fibres, axis=2)
         var_grid_slice_final = nansum(var_grid_slice_fibres, axis=2)
         weight_grid_slice_final = nansum(weight_grid_slice_fibres, axis=2)
+        
+        # Where the weight map is within epsilon of zero, set it to NaN to
+        # prevent divide by zero errors later.
+        weight_grid_slice_final[weight_grid_slice_final < epsilon] = np.NaN
         
         flux_cube[:,:,l]=data_grid_slice_final
         var_cube[:,:,l]=var_grid_slice_final
