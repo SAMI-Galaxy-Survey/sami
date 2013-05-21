@@ -448,65 +448,55 @@ def dithered_cube_from_rss(ifu_list, sample_size=0.5, plot=True, write=False, of
 
         print l
 
-        # Normalised spectra.
-        norm_rss_slice=data_norm[:,l]
+        # Create pointers to slices of the RSS data for convenience (these are
+        # NOT copies)
+        #norm_rss_slice = data_norm[:,l]
+        data_rss_slice = data_all[:,l]
+        var_rss_slice = var_all[:,l]
+        badpix_rss_slice = badpix_all_final[:,l]
 
-        # Spectra and variance.
-        data_rss_slice=data_all[:,l]
-        var_rss_slice=var_all[:,l]
-        badpix_rss_slice=badpix_all_final[:,l]
+        # Weight map parameters for a single slice - copy the output frac array
+        # each time. This will NOT be correct for each slice when ADC is
+        # implemented, will have to calculate it several times.
+        weight_grid_slice = np.copy(output_frac_array)
 
-        # Weight map parameters for a single slice - copy the output frac array each time.
-        # This will NOT be correct for each slice when ADC is implemented, will have to calculate it several times.
-        weight_grid_slice=np.copy(output_frac_array)
-
-        # ----------------------------------------------------------------------------------------------------------
-        # Find the pixel which need to be clipped using the normalised spectra.
-
-        # Make the normalised slice array (need to determine deviant pixels using this array not the good data)
-        norm_grid_slice_fibres=overlap_array*norm_rss_slice
         
-        data_grid_slice_fibres = overlap_array*data_rss_slice
+        # Map RSS slices onto gridded slices
+        #norm_grid_slice_fibres=overlap_array*norm_rss_slice        
+        data_grid_slice_fibres=overlap_array*data_rss_slice
+        var_grid_slice_fibres=(overlap_array*overlap_array)*var_rss_slice
         
         unmasked_pixels_before_clipping = np.isfinite(data_grid_slice_fibres).sum()
         
         # Sigma clip it - pixel by pixel and make a master mask
-        # array. Current clipping, sigma=5 and 1 iteration.
-        
+        # array. Current clipping, sigma=5 and 1 iteration.        
         #mask_master = sigma_clip_mask_slice_fibres(norm_grid_slice_fibres/weight_grid_slice)
-        
-        
-        
         mask_master = sigma_clip_mask_slice_fibres(data_grid_slice_fibres/weight_grid_slice)
         
-        
-        mask_master=np.asanyarray(mask_master).astype(float)
-        mask_master[np.where(mask_master==0.0)]=np.nan
-        # NOTE - mask_master is an array of ones and NaNs.
+#        # Apply the mask to the data slice array and variance slice array
+        data_grid_slice_fibres[np.logical_not(mask_master)] = np.NaN 
+        var_grid_slice_fibres[np.logical_not(mask_master)] = np.NaN # Does this matter?
 
-        # Apply the mask to the data slice array and variance slice array
-        data_grid_slice_fibres=overlap_array*data_rss_slice*mask_master
-        var_grid_slice_fibres=(overlap_array*overlap_array)*var_rss_slice*mask_master
-
+        # Record diagnostic information about the number of pixels masked
         unmasked_pixels_after_clipping = np.isfinite(data_grid_slice_fibres).sum()
-
         diagnostic_info['n_pixels_sigma_clipped'] = \
             unmasked_pixels_before_clipping - unmasked_pixels_after_clipping
         diagnostic_info['unmasked_pixels_before_sigma_clip'] += unmasked_pixels_before_clipping
         diagnostic_info['unmasked_pixels_after_sigma_clip'] += unmasked_pixels_after_clipping
-
         print("Pixels Clipped: {0} ({1}%)".format(\
             unmasked_pixels_before_clipping - unmasked_pixels_after_clipping,
             (unmasked_pixels_before_clipping - unmasked_pixels_after_clipping) / float(unmasked_pixels_before_clipping)
             ))
 
-        # Now, at this stage want to identify ALL positions in the data array (before we collapse it) where there
-        # are NaNs (from clipping, cosmics flagged by 2dfdr and bad columns flagged by 2dfdr). This allows the
+        # Now, at this stage want to identify ALL positions in the data array
+        # (before we collapse it) where there are NaNs (from clipping, cosmics
+        # flagged by 2dfdr and bad columns flagged by 2dfdr). This allows the
         # correct weight map to be created for the wavelength slice in question.
         data_total_nanmask=np.copy(data_grid_slice_fibres)
         data_total_nanmask[np.where(np.isfinite(data_total_nanmask))]=1.0
 
-        # data_total_nanmask should now be an array of ones and NaNs. This should be applied to the weight map.
+        # data_total_nanmask should now be an array of ones and NaNs. This
+        # should be applied to the weight map.
         weight_grid_slice_fibres=weight_grid_slice*data_total_nanmask
 
         # Collapse the slice arrays
