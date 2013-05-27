@@ -231,15 +231,16 @@ def dithered_cube_from_rss(ifu_list, sample_size=0.5, plot=True, write=False, of
     # @TODO: Compute the size of the grid instead of hard code it!
     size_of_grid=40 
     
-    # Create an instance of fibre_overlap_map for use later to create individual overlap maps for each fibre.
-    # The attributes of this instance don't change from ifu to ifu.
-    overlap_maps=fibre_overlap_map(sample_size, size_of_grid)
 
     diagnostic_info = {}
 
     n_obs = len(ifu_list)
     n_slices = np.shape(ifu_list[0].data)[1]
     n_fibres = ifu_list[0].data.shape[0]
+
+    # Create an instance of SAMIDrizzler for use later to create individual overlap maps for each fibre.
+    # The attributes of this instance don't change from ifu to ifu.
+    overlap_maps=SAMIDrizzler(sample_size, size_of_grid, n_obs * n_fibres)
 
     # Empty lists for positions and data. Could be arrays, might be faster? Should test...
     xfibre_all=[]
@@ -353,9 +354,6 @@ def dithered_cube_from_rss(ifu_list, sample_size=0.5, plot=True, write=False, of
     var_all=np.reshape(var_all,(np.shape(var_all)[0]*np.shape(var_all)[1], np.shape(var_all)[2]))
 
     
-    # Empty array for all overlap maps - i.e. need one for each fibre!
-    overlap_array=np.zeros((size_of_grid, size_of_grid, np.shape(xfibre_all)[0]))
-    output_frac_array=np.zeros((size_of_grid, size_of_grid, np.shape(xfibre_all)[0]))
     
     # We must renormalise the spectra in order to sigma_clip the data.
     #
@@ -370,30 +368,11 @@ def dithered_cube_from_rss(ifu_list, sample_size=0.5, plot=True, write=False, of
     for ii in xrange(n_obs * n_fibres):
         data_norm[ii,:] = data_all[ii,:] / nanmedian( data_all[ii,:])
         
-    # Now feed all x,y fibre position values to the overlap_maps class instance.
-    for p, xfib, yfib in itertools.izip(itertools.count(), xfibre_all, yfibre_all):
-
-        # Feed the x and y fibre positions to the overlap_maps instance.
-        input_frac_map_fib, output_frac_map_fib=overlap_maps.create_overlap_map(xfib, yfib)
-
-        # These lines are ONLY for debugging. The plotting and overwriting is very slow! 
-        #py.imshow(input_frac_map_fib, origin='lower', interpolation='nearest')
-        #py.draw()
-
-        # Padding with NaNs instead of zeros (do I really need to do this? Probably not...)
-        input_frac_map_fib[np.where(input_frac_map_fib==0)]=np.nan
-        output_frac_map_fib[np.where(output_frac_map_fib==0)]=np.nan
-
-        overlap_array[:,:,p]=input_frac_map_fib
-        output_frac_array[:,:,p]=output_frac_map_fib
-
-    # Create an empty weight cube
-    weight_cube=np.empty((size_of_grid, size_of_grid, np.shape(data_all)[1]))
-    
 
     # Now create a new array to hold the final data cube and build it slice by slice
     flux_cube=np.zeros((size_of_grid, size_of_grid, np.shape(data_all)[1]))
     var_cube=np.zeros((size_of_grid, size_of_grid, np.shape(data_all)[1]))
+    weight_cube=np.empty((size_of_grid, size_of_grid, np.shape(data_all)[1]))
     
     print("data_all.shape: ", np.shape(data_all))
 
@@ -436,11 +415,8 @@ def dithered_cube_from_rss(ifu_list, sample_size=0.5, plot=True, write=False, of
         data_rss_slice = data_all[:,l]
         var_rss_slice = var_all[:,l]
 
-        # Weight map parameters for a single slice - copy the output frac array
-        # each time. This will NOT be correct for each slice when ADC is
-        # implemented, will have to calculate it several times.
-        weight_grid_slice = np.copy(output_frac_array)
-
+        overlap_array, weight_grid_slice = overlap_maps.drizzle(xfibre_all, yfibre_all)
+        # Compute drizzle map for this wavelength slice.
         
         # Map RSS slices onto gridded slices
         norm_grid_slice_fibres=overlap_array*norm_rss_slice        
@@ -509,7 +485,7 @@ def sigma_clip_mask_slice_fibres(grid_slice_fibres):
     # However, squaring this leads to a stupid number of pixels being rejected
     # in the clipping.
     var = np.power( utils.mad(grid_slice_fibres, axis=2), 1.0)
-    
+ 
     # We rearrange the axes so that numpy.broadcasting works in the subsequent
     # operations. See: http://docs.scipy.org/doc/numpy/user/basics.broadcasting.html
     t_grid_slice_fibres = np.transpose(grid_slice_fibres, axes=(2,0,1))
@@ -520,11 +496,24 @@ def sigma_clip_mask_slice_fibres(grid_slice_fibres):
     
     return mask
           
-class fibre_overlap_map:
+class SAMIDrizzler:
     """Make an overlap map for a single fibre. This is the same at all lambda slices for that fibre (neglecting
     DAR)""" 
 
-    def __init__(self, sample_size_arcsec, size_of_grid):
+    
+
+    def __init__(self, sample_size_arcsec, size_of_grid, n_fibres):
+        """Construct a new SAMIDrizzler isntance with the necessary information.
+        
+        Parameters
+        ----------
+        sample_sie_arcsec: the size of each output pixel in arcseconds
+        size_of_grid: the number of pixels along each dimension of the 
+            square output pixel grid
+        n_fibres: the total number of unique fibres which will be 
+            mapped onto the grid (usually n_fibres * n_obs) 
+        
+        """
 
         # The input values
         self.sample_size_arcsec=sample_size_arcsec
@@ -548,19 +537,72 @@ class fibre_overlap_map:
         # Output grid in microns
         self.x=(np.arange(self.size_of_grid)-self.size_of_grid/2)*self.dx
         self.y=(np.arange(self.size_of_grid)-self.size_of_grid/2)*self.dx
+        
+        # Empty array for all overlap maps - i.e. need one for each fibre!
+        self.drop_to_pixel=np.empty((self.size_of_grid, self.size_of_grid, n_fibres))
+        self.pixel_coverage=np.empty((self.size_of_grid, self.size_of_grid, n_fibres))
+        
+        self._last_drizzle = np.empty(1)
+        # This is used to cache the arguments for the last drizzle.
 
-    def create_overlap_map(self, fibrex, fibrey):
+    def single_overlap_map(self, fibrex, fibrey):
+        """Compute the mapping from a single input drop to output pixel grid.
+        
+        (drop_fraction, pixel_fraction) = single_overlap_map(fibrex, fibrey)
+        
+        Parameters
+        ----------
+        fibrex: (float) The x-coordinate of the fibre.
+        fibery: (float) The y-coordinate of the fibre.
+        
+        Returns
+        -------
+        
+        This returns a tuple of two arrays. Both arrays have the same dimensions
+        (that of the output pixel grid). 
+        
+        drop_fraction: (array) The fraction of the input drop in each output pixel.
+        pixel_fraction: (arra) The fraction of each output pixel covered by the drop.
+                
+        """
 
         # Map fibre positions onto pixel positions in the output grid.
-        self.xfib=(fibrex-self.x[0])/self.dx
-        self.yfib=(fibrey-self.y[0])/self.dx
+        xfib=(fibrex-self.x[0])/self.dx
+        yfib=(fibrey-self.y[0])/self.dx
         
         # Create the overlap map from the circ.py code
-        overlap_map=utils.resample_circle(self.size_of_grid, self.size_of_grid, self.xfib, self.yfib, \
+        overlap_map=utils.resample_circle(self.size_of_grid, self.size_of_grid, xfib, yfib, \
                                          self.oversample/2.0)
         
-        input_frac_map=overlap_map/self.fib_area_pix # Fraction of input pixel in each output pixel
+        input_frac_map=overlap_map/self.fib_area_pix # Fraction of input fibre/drop in each output pixel
         output_frac_map=overlap_map/1.0 # divided by area of ind. sq. (output) pixel.
 
         return input_frac_map, output_frac_map
     
+    def drizzle(self, xfibre_all, yfibre_all):
+        """Compute a mapping from fibre drops to output pixels for all given fibre locations."""
+            
+        if (np.array_equal(self._last_drizzle,np.asarray([xfibre_all,yfibre_all]))):
+            # We've been asked to recompute the same answer as last time, so don't recompute.
+            return self.drop_to_pixel, self.pixel_coverage
+        
+        for i_fibre, xfib, yfib in itertools.izip(itertools.count(), xfibre_all, yfibre_all):
+    
+            # Feed the x and y fibre positions to the overlap_maps instance.
+            drop_to_pixel_fibre, pixel_coverage_fibre=self.single_overlap_map(xfib, yfib)
+    
+            # These lines are ONLY for debugging. The plotting and overwriting is very slow! 
+            #py.imshow(drop_to_pixel_fibre, origin='lower', interpolation='nearest')
+            #py.draw()
+    
+            # Padding with NaNs instead of zeros (do I really need to do this? Probably not...)
+            drop_to_pixel_fibre[np.where(drop_to_pixel_fibre < epsilon)]=np.nan
+            pixel_coverage_fibre[np.where(pixel_coverage_fibre < epsilon)]=np.nan
+    
+            self.drop_to_pixel[:,:,i_fibre]=drop_to_pixel_fibre
+            self.pixel_coverage[:,:,i_fibre]=pixel_coverage_fibre
+    
+        self._last_drizzle = np.asarray([xfibre_all, yfibre_all])
+    
+        return self.drop_to_pixel, self.pixel_coverage
+
