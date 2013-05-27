@@ -8,7 +8,13 @@ import subprocess
 
 from collections import namedtuple
 
-from scipy.stats import stats
+# Attempt to import bottleneck to improve speed, but fall back to old routines
+# if bottleneck isn't present
+try:
+    from bottleneck import nanmedian
+except:
+    from scipy.stats import nanmedian
+    print("Not Using bottleneck: Speed will be improved if you install bottleneck")
 
 from sami import update_csv
 
@@ -463,11 +469,11 @@ def mad(a, c=0.6745, axis=None):
     if (axis is None):
         _shape = a.shape
         a.shape = np.product(a.shape,axis=0)
-        m = stats.nanmedian(np.fabs(a - stats.nanmedian(a))) / c
+        m = nanmedian(np.fabs(a - nanmedian(a))) / c
         a.shape = _shape
     else:
         m = np.apply_along_axis(
-            lambda x: stats.nanmedian(np.fabs(x - stats.nanmedian(x))) / c, 
+            lambda x: nanmedian(np.fabs(x - nanmedian(x))) / c, 
             axis, a)
 
     return m
