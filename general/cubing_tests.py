@@ -9,6 +9,7 @@ Individual tests described with each function.
 # Absolute Imports
 import numpy as np
 from numpy.random import standard_normal
+from scipy.special import erfc
 from random import randint
 import cProfile
 import timeit
@@ -55,7 +56,7 @@ def speed_test():
                     filename='dithered_cube_from_rss.pstats')
     print("Wall time: ", (datetime.datetime.now() - start_time).seconds, " seconds")
 
-def hot_pixel_clipping(n_obs=7, n_hot=10):
+def hot_pixel_clipping(n_obs=7, n_hot=10,verbose=False):
     """Test that hot pixels are clipped.
     
     This creates a small number of very hot pixels in otherwise almost uniform
@@ -86,10 +87,17 @@ def hot_pixel_clipping(n_obs=7, n_hot=10):
     before = diagnostic_info['unmasked_pixels_before_sigma_clip']
     after = diagnostic_info['unmasked_pixels_after_sigma_clip']
 
-    if (before - after > 100) or (before - after < 0):
+    expected_rej = n_obs * np.asarray(ifu_list[0].data.shape).prod() * erfc(5.0/np.sqrt(2))
+
+    if (before - after > expected_rej) or (before - after < 0):
         print("Failed test: hot_pixel_clipping 1")
-        print("The sigma clipping removed {0} pixels, should be near, but not less than, zero.".format(
-            before - after))
+        print("    The sigma clipping removed {0} pixels, expected {1}.".format(
+            before - after, expected_rej))
+    elif verbose:
+        print("Passed test: hot_pixel_clipping 1")
+        print("    The sigma clipping removed {0} pixels, expected {1}.".format(
+            before - after, expected_rej))
+        
 
 
     # Test 2:
@@ -119,6 +127,12 @@ def hot_pixel_clipping(n_obs=7, n_hot=10):
         print("    Expected number of pixels clipped: {0}, actual number clipped: {1}".format(
             n_masked_expected,
             before - after))
+    elif verbose:
+        print("Passed test: hot_pixel_clipping 2")
+        print("    Expected number of pixels clipped: {0}, actual number clipped: {1}".format(
+            n_masked_expected,
+            before - after))
+        
 
             
             

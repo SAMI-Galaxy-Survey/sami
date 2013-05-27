@@ -19,9 +19,9 @@ from astropy.stats import sigma_clip
 # Attempt to import bottleneck to improve speed, but fall back to old routines
 # if bottleneck isn't present
 try:
-    from bottleneck import nanmedian, nansum
+    from bottleneck import nanmedian, nansum, nanmean
 except:
-    from scipy.stats import nanmedian
+    from scipy.stats import nanmedian, nanmean
     nansum = np.nansum
 
 
@@ -239,6 +239,7 @@ def dithered_cube_from_rss(ifu_list, sample_size=0.5, plot=True, write=False, of
 
     n_obs = len(ifu_list)
     n_slices = np.shape(ifu_list[0].data)[1]
+    n_fibres = ifu_list[0].data.shape[0]
 
     # Empty lists for positions and data. Could be arrays, might be faster? Should test...
     xfibre_all=[]
@@ -355,20 +356,19 @@ def dithered_cube_from_rss(ifu_list, sample_size=0.5, plot=True, write=False, of
     # Empty array for all overlap maps - i.e. need one for each fibre!
     overlap_array=np.zeros((size_of_grid, size_of_grid, np.shape(xfibre_all)[0]))
     output_frac_array=np.zeros((size_of_grid, size_of_grid, np.shape(xfibre_all)[0]))
-
-    # An empty array with same size as the data.
-    data_norm=np.empty_like(data_all)
     
-    # Now, want to normalise each spectrum by its median
-    for ii in xrange(n_obs):
-
-        spectrum = data_all[ii,:]
-        med_spectrum=nanmedian(spectrum)
-
-        spec_norm=spectrum/med_spectrum
-
-        # Put into the array
-        data_norm[ii,:]=spec_norm
+    # We must renormalise the spectra in order to sigma_clip the data.
+    #
+    # Because the data is undersampled, there is an aliasing effect when making
+    # offsets which are smaller than the sampling. The result is that multiple
+    # sub-pixels can have wildly different values. These differences are not
+    # physical, but rather just an effect of the sampling, and so we do not want
+    # to clip devient pixels purely because of this variation. Renormalising the
+    # spectra first allow us to flag devient pixels in a sensible way. See the
+    # data reduction paper for a full description of this reasoning.
+    data_norm=np.empty_like(data_all)
+    for ii in xrange(n_obs * n_fibres):
+        data_norm[ii,:] = data_all[ii,:] / nanmedian( data_all[ii,:])
         
     # Now feed all x,y fibre position values to the overlap_maps class instance.
     for p, xfib, yfib in itertools.izip(itertools.count(), xfibre_all, yfibre_all):
@@ -432,7 +432,7 @@ def dithered_cube_from_rss(ifu_list, sample_size=0.5, plot=True, write=False, of
 
         # Create pointers to slices of the RSS data for convenience (these are
         # NOT copies)
-        #norm_rss_slice = data_norm[:,l]
+        norm_rss_slice = data_norm[:,l]
         data_rss_slice = data_all[:,l]
         var_rss_slice = var_all[:,l]
 
@@ -443,7 +443,7 @@ def dithered_cube_from_rss(ifu_list, sample_size=0.5, plot=True, write=False, of
 
         
         # Map RSS slices onto gridded slices
-        #norm_grid_slice_fibres=overlap_array*norm_rss_slice        
+        norm_grid_slice_fibres=overlap_array*norm_rss_slice        
         data_grid_slice_fibres=overlap_array*data_rss_slice
         var_grid_slice_fibres=(overlap_array*overlap_array)*var_rss_slice
         
@@ -451,10 +451,10 @@ def dithered_cube_from_rss(ifu_list, sample_size=0.5, plot=True, write=False, of
         
         # Sigma clip it - pixel by pixel and make a master mask
         # array. Current clipping, sigma=5 and 1 iteration.        
-        #mask_grid_slice_fibres = sigma_clip_mask_slice_fibres(norm_grid_slice_fibres/weight_grid_slice)
-        mask_grid_slice_fibres = sigma_clip_mask_slice_fibres(data_grid_slice_fibres/weight_grid_slice)
+        mask_grid_slice_fibres = sigma_clip_mask_slice_fibres(norm_grid_slice_fibres/weight_grid_slice)
+        #mask_grid_slice_fibres = sigma_clip_mask_slice_fibres(data_grid_slice_fibres/weight_grid_slice)
         
-#        # Apply the mask to the data slice array and variance slice array
+        # Apply the mask to the data slice array and variance slice array
         data_grid_slice_fibres[np.logical_not(mask_grid_slice_fibres)] = np.NaN 
         var_grid_slice_fibres[np.logical_not(mask_grid_slice_fibres)] = np.NaN # Does this matter?
 
@@ -505,14 +505,17 @@ def sigma_clip_mask_slice_fibres(grid_slice_fibres):
     """Return a mask with outliers removed."""
 
     med = nanmedian(grid_slice_fibres, axis=2)
-    var = utils.mad(grid_slice_fibres, axis=2)
-
+    # @TODO: The following is not the variance, but the standard deviation.
+    # However, squaring this leads to a stupid number of pixels being rejected
+    # in the clipping.
+    var = np.power( utils.mad(grid_slice_fibres, axis=2), 1.0)
+    
     # We rearrange the axes so that numpy.broadcasting works in the subsequent
     # operations. See: http://docs.scipy.org/doc/numpy/user/basics.broadcasting.html
     t_grid_slice_fibres = np.transpose(grid_slice_fibres, axes=(2,0,1))
     
     mask = np.transpose( 
-            np.less_equal(t_grid_slice_fibres - med, var * 5 **2),
+            np.less_equal(t_grid_slice_fibres - med, var * (5**2) ),
             axes=(1,2,0))
     
     return mask
