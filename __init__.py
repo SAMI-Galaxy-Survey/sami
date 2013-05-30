@@ -3,6 +3,7 @@
 import utils
 import samifitting
 import update_csv
+import manager
 
 # the config file which contains some constants and stuff
 import config
