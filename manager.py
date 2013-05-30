@@ -28,7 +28,7 @@ class Manager:
     to put its data, e.g.:
 
     >>> import sami
-    >>> manager = sami.manager.Manager('data_directory')
+    >>> mngr = sami.manager.Manager('data_directory')
 
     In this case, 'data_directory' should be non-existent or empty. If you
     quit python and want to get back to where you were, just enter the same
@@ -37,7 +37,7 @@ class Manager:
 
     After creating the manager, you can import data into it:
 
-    >>> manager.import_dir('path/to/data')
+    >>> mngr.import_dir('path/to/data')
 
     It will copy the data into the data_directory you defined earlier,
     putting it into a neat directory structure.
@@ -49,12 +49,12 @@ class Manager:
     then reduce all darks and combine them, then reduce all long-slit flats
     and combine them. To do this:
 
-    >>> manager.reduce_bias()
-    >>> manager.combine_bias()
-    >>> manager.reduce_dark()
-    >>> manager.combine_dark()
-    >>> manager.reduce_lflat()
-    >>> manager.combine_lflat()
+    >>> mngr.reduce_bias()
+    >>> mngr.combine_bias()
+    >>> mngr.reduce_dark()
+    >>> mngr.combine_dark()
+    >>> mngr.reduce_lflat()
+    >>> mngr.combine_lflat()
 
     The manager will put in symbolic links as it goes, to ensure the
     combined files are available wherever they need to be.
@@ -66,14 +66,14 @@ class Manager:
     reduced file already exists. To override this behaviour, set the
     overwrite keyword, e.g.
 
-    >>> manager.reduce_bias(overwrite=True)
+    >>> mngr.reduce_bias(overwrite=True)
 
     If you later import more data that goes into new directories, you'll
     need to update the links:
 
-    >>> manager.link_bias()
-    >>> manager.link_dark()
-    >>> manager.link_lflat()
+    >>> mngr.link_bias()
+    >>> mngr.link_dark()
+    >>> mngr.link_lflat()
 
     Reducing fibre flat, arc and offset sky frames
     ==============================================
@@ -82,15 +82,15 @@ class Manager:
     reducing the arc frames, then re-reducing the fibre flat fields. After
     this the offset skies (twilights) can also be reduced.
 
-    >>> manager.make_tlm()
-    >>> manager.reduce_arc()
-    >>> manager.reduce_fflat()
-    >>> manager.reduce_sky()
+    >>> mngr.make_tlm()
+    >>> mngr.reduce_arc()
+    >>> mngr.reduce_fflat()
+    >>> mngr.reduce_sky()
 
     In any of these commands, keywords can be used to restrict the files
     that get reduced, e.g.
 
-    >>> manager.reduce_arc(ccd='ccd_1', date='130306',
+    >>> mngr.reduce_arc(ccd='ccd_1', date='130306',
                            field_id='Y13SAR1_P002_09T004')
 
     will only reduce arc frames for the blue CCD that were taken on the
@@ -119,7 +119,7 @@ class Manager:
     Once all calibration files have been reduced, object frames can be
     reduced in a similar manner:
 
-    >>> manager.reduce_object()
+    >>> mngr.reduce_object()
 
     This function takes the same keywords as described above for fibre
     flats etc.
@@ -131,13 +131,13 @@ class Manager:
     noted in the log or because they wont reduce properly, you can disable
     them, preventing them from being used in any later reductions:
 
-    >>> manager.disable_files(['06mar10003', '06mar20003', '06mar10047'])
+    >>> mngr.disable_files(['06mar10003', '06mar20003', '06mar10047'])
 
     If you only have one file you want to disable, you still need the
     square brackets. You can disable lots of files at a time using the
     files generator:
 
-    >>> manager.disable_files(manager.files(
+    >>> mngr.disable_files(mngr.files(
                 date='130306', field_id='Y13SAR1_P002_09T004'))
 
     This allows the same keywords as described earlier, as well as:
@@ -152,7 +152,7 @@ class Manager:
 
     To re-enable files:
 
-    >>> manager.enable_files(['06mar10003', '06mar20003', '06mar10047'])
+    >>> mngr.enable_files(['06mar10003', '06mar20003', '06mar10047'])
 
     This function follows exactly the same syntax as disable_files.
 
@@ -161,7 +161,7 @@ class Manager:
 
     You can perform all of the above reduction tasks with a single command:
 
-    >>> manager.reduce_all()
+    >>> mngr.reduce_all()
 
     You should only do this for re-reducing data that you have previously
     checked and are confident that nothing will go wrong, and after
