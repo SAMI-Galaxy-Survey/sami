@@ -18,19 +18,22 @@ try:
 except ImportError:
     astropy_available = False
 
+min_central = 1
+max_central = float("inf")
+
+min_hexa = 1
+max_hexa = 13
+
 min_sky = 1
 max_sky = 26
 
 min_guide = 1
 max_guide = float("inf")
 
-min_hexa = 1
-max_hexa = 13
-
 max_rows = 13
 
-def allocate(infile, outfile, do_guide=False, do_object=True, do_sky=True,
-             zero_rotations=False, blank_rotations=False):
+def allocate(infile, outfile, do_central=False, do_object=True, do_sky=True,
+             do_guide=True, zero_rotations=False, blank_rotations=False):
     """Main function for interactive allocations.
     Typically called from command line."""
     # Set up Tkinter
@@ -50,9 +53,10 @@ def allocate(infile, outfile, do_guide=False, do_object=True, do_sky=True,
     # Bring the Tk window back again
     root.deiconify()
     # Run the interactive allocator
-    csvfile.update_allocation_interactive(do_guide=do_guide,
+    csvfile.update_allocation_interactive(do_central=do_central,
                                           do_object=do_object,
                                           do_sky=do_sky,
+                                          do_guide=do_guide,
                                           root=root)
     # Done with the interactive part, so destroy the Tkinter interface
     root.destroy()
@@ -73,9 +77,10 @@ class CSV:
     def __init__(self, infile):
         # Dump all the contents of the file into a list
         self.contents = read_file(infile)
-        self.guide = []
+        self.central = []
         self.object = []
         self.sky = []
+        self.guide = []
         self.unknown = []
         # Remove the newline characters from the contents
         for line_no, line in enumerate(self.contents):
@@ -110,26 +115,29 @@ class CSV:
             # Append the data dictionary to the relevant list of targets
             if data.has_key('Type'):
                 if data['Type'] == 'F':
-                    self.guide.append(data)
+                    self.central.append(data)
                 elif data['Type'] == 'P':
                     self.object.append(data)
                 elif data['Type'] == 'S':
                     self.sky.append(data)
+                elif data['Type'] == 'G':
+                    self.guide.append(data)
                 else:
                     self.unknown.append(data)
             else:
                 self.unknown.append(data)
         # Set the default titles for different windows
-        self.title_list = {'guide':[self.label, self.plateid, 'Guide probes'],
+        self.title_list = {'central':[self.label, self.plateid, 'Central probes'],
                            'object':[self.label, self.plateid, 'Object probes'],
-                           'sky':[self.label, self.plateid, 'Sky probes']}
+                           'sky':[self.label, self.plateid, 'Sky probes'],
+                           'guide':[self.label, self.plateid, 'Guide probes']}
         # Store a list of the valid target types
-        self.target_type_list = ['guide', 'object', 'sky']
+        self.target_type_list = ['central', 'object', 'sky', 'guide']
 
         return
 
-    def update_allocation_interactive(self, do_guide=False, do_object=True,
-                                      do_sky=True, root=None):
+    def update_allocation_interactive(self, do_central=False, do_object=True,
+                                      do_sky=True, do_guide=True, root=None):
         """Update the probe allocations in an interactive manner."""
 
         # Set up Tkinter, if not already done
@@ -141,7 +149,8 @@ class CSV:
         self.ok = True
 
         # Store which target types will be examined
-        do_target = {'guide':do_guide, 'object':do_object, 'sky':do_sky}
+        do_target = {'central':do_central, 'object':do_object,
+                     'sky':do_sky, 'guide':do_guide}
 
         # Make a list of all the entry and check windows to be produced
         window_list = []
@@ -271,7 +280,7 @@ class CSV:
             for degrees in dec_str:
                 dec_decimal.append(astropy.coordinates.Dec(
                     degrees, unit=astropy.units.degree).degrees)
-                ### BUG IN ASTROPY!!! ###
+                ### BUG IN ASTROPY v0.2.0!!! ###
                 if '-' in degrees and dec_decimal[-1] > 0:
                     dec_decimal[-1] *= -1
             return dec_decimal
@@ -289,9 +298,10 @@ class CSV:
 
     def target_type_to_list(self, target_type):
         """Convert a target type string to the relevant list of targets."""
-        return {'guide':self.guide,
+        return {'central':self.central,
                 'object':self.object,
-                'sky':self.sky}[target_type]
+                'sky':self.sky,
+                'guide':self.guide}[target_type]
 
 
 
@@ -309,14 +319,17 @@ class AllocationEntry(Tkinter.Frame):
         self.check = check
         self.probe_type = self.target_list[0]['Type']
         if self.probe_type == 'F':
-            self.min_probe = min_guide
-            self.max_probe = max_guide
+            self.min_probe = min_central
+            self.max_probe = max_central
         elif self.probe_type == 'P':
             self.min_probe = min_hexa
             self.max_probe = max_hexa
         elif self.probe_type == 'S':
             self.min_probe = min_sky
             self.max_probe = max_sky
+        elif self.probe_type == 'G':
+            self.min_probe = min_guide
+            self.max_probe = max_guide
         else:
             # Should raise an exception really
             pass
@@ -511,8 +524,9 @@ def repeated_elements(s):
 # If run from the command line, do enter_allocation_order
 if __name__ == "__main__":
     description = """Update a SAMI .csv allocation file.
-    By default, the hexabundles and sky fibres are allocated but the guide
-    star is not; and the hexabundles are set to a rotation of 180.0."""
+    By default, the hexabundles, sky fibres and guide probes are allocated
+    but the central hole is not; and the hexabundles are set to a rotation
+    of 180.0."""
     parser = argparse.ArgumentParser(description=description)
     parser.add_argument('infile', help='Input .csv file')
     parser.add_argument('outfile', help='Output .csv file')
@@ -520,16 +534,19 @@ if __name__ == "__main__":
                         help='Set all rotation values to 0.0')
     parser.add_argument('-b', '--blankrotations', action='store_true',
                         help='Do not set anything in rotation values')
-    parser.add_argument('-g', '--guide', action='store_true',
-                        help='Allocate guide star probes')
+    parser.add_argument('-c', '--central', action='store_true',
+                        help='Allocate central probes')
     parser.add_argument('--noobject', action='store_true',
                         help='Do not allocate object probes')
     parser.add_argument('--nosky', action='store_true',
                         help='Do not allocate sky probes')
+    parser.add_argument('--noguide', action='store_true',
+                        help='Do not allocate guide probes')
     args = parser.parse_args()
 
-    allocate(args.infile, args.outfile, do_guide=args.guide,
+    allocate(args.infile, args.outfile, do_central=args.central,
              do_object=(not args.noobject), do_sky=(not args.nosky),
+             do_guide=(not args.noguide),
              zero_rotations=args.zerorotations,
              blank_rotations=args.blankrotations)
     

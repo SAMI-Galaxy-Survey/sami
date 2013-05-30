@@ -37,6 +37,9 @@ fibre_integrator(my_fitter, 1.6)
 my_fitter.fit()
 best_fit_p = my_fitter.p
 
+For integration over square pixels rather than round fibres, use:
+fibre_integrator(my_fitter, 0.7, pixel=True)
+
 Calling an instance of a fitter will return the model values at the provided
 coordinates. So, after either of the above examples:
 
@@ -111,7 +114,7 @@ class GaussFitter:
             print "Fit Failed" 
             #raise FittingException("Fit failed") # This does nothing.
             
-        self.linestr=self.p[0]*self.p[2]*sp.sqrt(2*S.pi)
+        self.linestr=self.p[0]*self.p[2]*sp.sqrt(2*sp.pi)
         #self.line_err=S.sqrt(self.linestr*self.linestr*((self.perr[0]/self.p[0])**2+(self.perr[2]/self.p[2])**2))
 
     def __call__(self, x):
@@ -300,7 +303,7 @@ class TwoDGaussFitter:
     def __call__(self, x, y):
         return self.fitfunc(self.p, x, y)
     
-def fibre_integrator(fitter, diameter):
+def fibre_integrator(fitter, diameter, pixel=False):
     """Edits a fitter's fitfunc so that it integrates over each SAMI fibre."""
 
     # Save the diameter; not used here but could be useful later
@@ -316,11 +319,15 @@ def fibre_integrator(fitter, diameter):
     # Then turn that into a 2d grid of (delta_x, delta_y) centred on (0, 0)
     delta_x = np.ravel(np.outer(delta_x, np.ones(n_pix)))
     delta_y = np.ravel(np.outer(np.ones(n_pix), delta_y))
-    # Only keep the points within one radius
-    keep = np.where(delta_x**2 + delta_y**2 < (0.5 * diameter)**2)[0]
-    n_keep = np.size(keep)
-    delta_x = delta_x[keep]
-    delta_y = delta_y[keep]
+    if pixel:
+        # Square pixels; keep everything
+        n_keep = n_pix**2
+    else:
+        # Round fibres; only keep the points within one radius
+        keep = np.where(delta_x**2 + delta_y**2 < (0.5 * diameter)**2)[0]
+        n_keep = np.size(keep)
+        delta_x = delta_x[keep]
+        delta_y = delta_y[keep]
 
     old_fitfunc = fitter.fitfunc
 
@@ -337,3 +344,4 @@ def fibre_integrator(fitter, diameter):
     fitter.fitfunc = integrated_fitfunc
 
     return
+

@@ -6,12 +6,16 @@ import astropy.io.fits as pf
 import astropy.wcs as pw
 
 import itertools
+import os
 
 # Cross-correlation function from scipy.signal (slow)
 from scipy.signal import correlate
 
 # Stats functions from scipy
 from scipy.stats import stats
+
+# Import the sigma clipping algorithm from astropy
+from astropy.stats import sigma_clip
 
 # Utils code.
 from .. import utils
@@ -45,6 +49,8 @@ dithered_cube_from_rss('all_rss_files.list', sample_size=0.8, write=True)
 Varies the sample size from above.
 
 """
+
+HG_CHANGESET = utils.hg_changeset(__file__)
 
 def get_object_names(infile):
     """Get the object names observed in the file infile."""
@@ -101,8 +107,6 @@ def dithered_cube_from_rss(inlist, sample_size=0.5, objects='all', plot=True, wr
 
         files.append(np.str(cols[0]))
 
-    #N=len(files)
-
     # For first files get the names of galaxies observed - assuming these are the same in all RSS files.
     if objects=='all':
         object_names=get_object_names(files[0])
@@ -119,7 +123,7 @@ def dithered_cube_from_rss(inlist, sample_size=0.5, objects='all', plot=True, wr
     print "--------------------------------------------------------------"
 
     # When resampling need to know the size of the grid in square output pixels
-    size_of_grid=60 # should prob calculate this somehow??
+    size_of_grid=40 # should prob calculate this somehow?? Maybe when the cube is created, collapse
 
     # Create an instance of fibre_overlap_map for use later to create individual overlap maps for each fibre.
     # The attributes of this instance don't change from ifu to ifu.
@@ -133,7 +137,6 @@ def dithered_cube_from_rss(inlist, sample_size=0.5, objects='all', plot=True, wr
         print "Starting with object:", name
 
         # Pull out the data for the galaxy in question.
-        
         if plot==True:
             # Make a figure to plot the images and fits to galaxy position.
             f1=py.figure()
@@ -270,6 +273,9 @@ def dithered_cube_from_rss(inlist, sample_size=0.5, objects='all', plot=True, wr
         data_all=np.asanyarray(data_all)
         var_all=np.asanyarray(var_all)
 
+        # For debugging run on only a subset of the data
+        ##data_all=data_all[:,:,500:700]
+
         ifus_all=np.asanyarray(ifus_all)
 
         print "Data shape", np.shape(data_all)
@@ -286,14 +292,10 @@ def dithered_cube_from_rss(inlist, sample_size=0.5, objects='all', plot=True, wr
         for j in xrange(len(ifus_used)):
 
             ifu_single=ifus_used[j]
-            #print str(ifu_single)
             
             msk_ifu_single=np.where(ifus_all==ifu_single)
-            #print np.shape(msk_ifu_single)[1]
-            
             
             k1=k0+(np.shape(msk_ifu_single)[1])
-            #print k0, k1
 
             # Note badpix_all and ifu_all are in the same order.
             badpix_ifu_single=np.squeeze(badpix_all[msk_ifu_single,:,:])
@@ -311,14 +313,6 @@ def dithered_cube_from_rss(inlist, sample_size=0.5, objects='all', plot=True, wr
         badpix_all_final[np.where(np.isfinite(badpix_all_final))]=1.0
         badpix_all_final[np.where(np.isnan(badpix_all_final))]=0.0
 
-        ## # test only
-        ## test=np.reshape(badpix_all_final, (np.shape(badpix_all_final)[0]*np.shape(badpix_all_final)[1], np.shape(badpix_all_final)[2]))
-        ## print np.shape(test)
-        ## f2=py.figure()
-
-        ## ax2=f2.add_subplot(111)
-        ## im2=ax2.imshow(test, origin='lower', interpolation='nearest')
-        
         # Reshape the arrays
         xfibre_all=np.reshape(xfibre_all,(np.shape(xfibre_all)[0]*np.shape(xfibre_all)[1]))
         yfibre_all=np.reshape(yfibre_all,(np.shape(yfibre_all)[0]*np.shape(yfibre_all)[1]))
@@ -333,11 +327,24 @@ def dithered_cube_from_rss(inlist, sample_size=0.5, objects='all', plot=True, wr
         output_frac_array=np.zeros((size_of_grid, size_of_grid, np.shape(xfibre_all)[0]))
 
         #print "Galaxy is", name
+
+        # An array of zeros, same size as the data.
+        data_norm=np.zeros_like(data_all)
+        print np.shape(data_all)
         
-        # Now feed all x,y values to the overlap_maps class instance.
-        for p in xrange(len(xfibre_all)):
-            xfib=xfibre_all[p]
-            yfib=yfibre_all[p]
+        # Now, want to normalise each spectrum by its median and perform a clipped mean.
+        for ii in xrange(np.shape(data_all)[0]):
+
+            spectrum=data_all[ii,:]
+            med_spectrum=stats.nanmedian(spectrum)
+
+            spec_norm=spectrum/med_spectrum
+
+            # Put into the array
+            data_norm[ii,:]=spec_norm
+        
+        # Now feed all x,y fibre position values to the overlap_maps class instance.
+        for p, xfib, yfib in itertools.izip(itertools.count(), xfibre_all, yfibre_all):
 
             # Feed the x and y fibre positions to the overlap_maps instance.
             input_frac_map_fib, output_frac_map_fib=overlap_maps.create_overlap_map(xfib, yfib)
@@ -346,95 +353,89 @@ def dithered_cube_from_rss(inlist, sample_size=0.5, objects='all', plot=True, wr
             #py.imshow(input_frac_map_fib, origin='lower', interpolation='nearest')
             #py.draw()
 
+            # Padding with NaNs instead of zeros (do I really need to do this? Probably not...)
             input_frac_map_fib[np.where(input_frac_map_fib==0)]=np.nan
             output_frac_map_fib[np.where(output_frac_map_fib==0)]=np.nan
 
             overlap_array[:,:,p]=input_frac_map_fib
             output_frac_array[:,:,p]=output_frac_map_fib
 
-            #del(input_frac_map_fib)
-            #del(output_frac_map_fib)
-            #print test.fib_area_pix
+        print "OVERLAP ARRAY:", np.shape(overlap_array)
+        #return
 
-        # Create the final weight map. This is the same for each wavelength slice
-        weight_map_final=np.nansum(output_frac_array, axis=2)
-        #py.imshow(weight_map_final, interpolation='nearest', origin='lower')
-        
-        # Create a weight cube - for now containing the same weight map at each wavelength as positions of fibres
-        # do not vary with wavelength. This will change when we are accounting for DAR.
+        # Create an empty weight cube
         weight_cube=np.zeros((size_of_grid, size_of_grid, np.shape(data_all)[1]))
-        #weightcube=weightcube*weight_map_final
 
         # Now create a new array to hold the final data cube and build it slice by slice
         flux_cube=np.zeros((size_of_grid, size_of_grid, np.shape(data_all)[1]))
         var_cube=np.zeros((size_of_grid, size_of_grid, np.shape(data_all)[1]))
-
-        # Array to hold mosaiced bad pixel cube
-        badpix_cube=np.zeros((size_of_grid, size_of_grid, np.shape(data_all)[1]))
         
         for l in xrange(np.shape(data_all)[1]):
 
+            print l
+
+            # Normalised spectra.
+            norm_single_slice=data_norm[:,l]
+
+            # Spectra and variance.
             data_single_slice=data_all[:,l]
             var_single_slice=var_all[:,l]
             badpix_single_slice=badpix_all_final[:,l]
-            #print np.shape(data_single_slice), np.shape(badpix_single_slice)
-            
-            #print np.shape(data_slice), np.shape(overlap_array)
 
-            data_slice_array=overlap_array*data_single_slice
-            var_slice_array=(overlap_array*overlap_array)*var_single_slice
-            badpix_slice_array=overlap_array*badpix_single_slice
-            #print np.shape(slices_array)
+            # Weight map parameters for a single slice - copy the output frac array each time.
+            # This will NOT be correct for each slice when ADC is implemented, will have to calculate it several times.
+            weight_single_slice=np.copy(output_frac_array)
 
+            # ----------------------------------------------------------------------------------------------------------
+            # Find the pixel which need to be clipped using the normalised spectra.
+
+            # Make the normalised slice array (need to determine deviant pixels using this array not the good data)
+            data_norm_slice_array=overlap_array*norm_single_slice
+
+            # Sigma clip it - pixel by pixel and make a master mask array. Current clipping, sigma=5 and 1 iteration.
+            mask_master=[[sigma_clip(subarrj, sig=5, cenfunc=stats.nanmedian, varfunc=utils.mad)[1]
+                          for subarrj in subarri] for subarri in data_norm_slice_array]
+            mask_master=np.asanyarray(mask_master).astype(float)
+            mask_master[np.where(mask_master==0.0)]=np.nan
+            # NOTE - mask_master is an array of ones and NaNs.
+
+            # Apply the mask to the data slice array and variance slice array
+            data_slice_array=overlap_array*data_single_slice*mask_master
+            var_slice_array=(overlap_array*overlap_array)*var_single_slice*mask_master
+
+            # Now, at this stage want to identify ALL positions in the data array (before we collapse it) where there
+            # are NaNs (from clipping, cosmics flagged by 2dfdr and bad columns flagged by 2dfdr). This allows the
+            # correct weight map to be created for the wavelength slice in question.
+            data_total_nanmask=np.copy(data_slice_array)
+            data_total_nanmask[np.where(np.isfinite(data_total_nanmask))]=1.0
+
+            # data_total_nanmask should now be an array of ones and NaNs. This should be applied to the weight map.
+            weight_slice_array=weight_single_slice*data_total_nanmask
+
+            # Collapse the slice arrays
             data_slice_final=np.nansum(data_slice_array, axis=2)
             var_slice_final=np.nansum(var_slice_array, axis=2)
-            badpix_slice_final=np.nansum(badpix_slice_array, axis=2)
+            weight_map_final=np.nansum(weight_slice_array, axis=2)
             
             flux_cube[:,:,l]=data_slice_final
             var_cube[:,:,l]=var_slice_final
             weight_cube[:,:,l]=weight_map_final
-            badpix_cube[:,:,l]=badpix_slice_final
 
-        # badpix_cube is still not quite what I want, want to normalise each spectrum separately to get an idea of
-        # where bad columns are spectrally for each spaxel.
-
-        for mm in xrange(np.shape(badpix_cube)[0]):
-            for nn in xrange(np.shape(badpix_cube)[1]):
-                badpix_spectrum=badpix_cube[mm,nn,:]
-
-                if np.isnan(np.nansum(badpix_spectrum)):
-                    pass
-                else:
-                    badpix_spectrum_max=np.nanmax(badpix_spectrum)
-                    badpix_spectrum_norm=badpix_spectrum/badpix_spectrum_max
-
-                    badpix_cube[mm,nn,:]=badpix_spectrum_norm
-
-        # Mask the bad columns
-        msk_badcols=np.where(badpix_cube!=1.0)
-        badpix_cube[msk_badcols]=np.nan
-
-        flux_cube=flux_cube*badpix_cube/weight_cube # flux cube scaling by weight map
+        # Now need to scale the cubes by the weight cube
+        flux_cube=flux_cube/weight_cube # flux cube scaling by weight map
         image=stats.nanmedian(flux_cube, axis=2)
 
-        var_cube=var_cube*badpix_cube/(weight_cube*weight_cube) # variance cube scaling by weight map
-
-        #py.imshow(image, interpolation='nearest', origin='lower')
-
-        #Write the bad pixel cube
-        hdu1=pf.PrimaryHDU(np.transpose(badpix_cube, (2,0,1)))
-
-        # Put individual HDUs into a HDU list
-        hdulist=pf.HDUList([hdu1])
-        
-        #hdulist.writeto('TEST_2_badpix.fits')
+        var_cube=var_cube/(weight_cube*weight_cube) # variance cube scaling by weight map
 
         if write==True:
             # NOTE - At this point we will want to generate accurate WCS information and create a proper header.
+            # The addition of ancillary data to the header will be valuable. I think the creation of the header should
+            # be separated off into a separate function (make_cube_header?)
+            
             # This could proceed several ways, depending on what the WCS coders want from us and what we want back.
             # Need to liase.
 
-            # For now create a rudimentary WCS with at least the correct wavelength scale.
+            # For now create a rudimentary WCS with ONLY the correct wavelength scale.
 
             # First get some info from one of the headers.
             list1=pf.open(files[0])
@@ -468,12 +469,15 @@ def dithered_cube_from_rss(inlist, sample_size=0.5, objects='all', plot=True, wr
             # Add the name to the header
             hdr_new.update('NAME', name, 'Object ID')
 
+            # Add the mercurial changeset ID to the header
+            hdr_new.update('HGCUBING', HG_CHANGESET, 'Hg changeset ID for cubing code')
+
             # Put the RSS files into the header
             for num in xrange(len(files)):
                 #print files[num]
                 rss_key='HIERARCH RSS_FILE '+str(num+1)
                 rss_string='Input RSS file '+str(num+1)
-                hdr_new.update(rss_key, files[num], rss_string)
+                hdr_new.update(rss_key, os.path.basename(files[num]), rss_string)
             
             # Create HDUs for each cube - note headers generated automatically for now.
             # Note - there is a 90-degree rotation in the cube, which I can't track down. I'm rolling the axes before
@@ -494,136 +498,6 @@ def dithered_cube_from_rss(inlist, sample_size=0.5, objects='all', plot=True, wr
             # Close the open file
             list1.close()
 
-def _plotcentroids(inlist, probe):
-    """A test of the new samifitting code."""
-
-    f1=py.figure()
-    
-    # The list of all the RSS files input by the user.
-    files=[]
-    for line in open(inlist):
-        cols=line.split(' ')
-        cols[0]=str.strip(cols[0])
-
-        files.append(np.str(cols[0]))
-
-    N=len(files)
-    r=3.0
-    c=np.ceil(N/r)
-
-    # Read in data for each file
-    for j in xrange(len(files)):
-
-        # Pick out data for that particular file.
-        probe_properties=utils.IFU(files[j],probe)
-        #xm,ym,xpos,ypos,data,var,num,fib_type,P,name=utils_IV.IFU_pick(files[j], ifu)
-        
-        # Collapse the data over a large wavelength range to get continuum data
-        # Smooth the spectra and median.
-        data_smoothed=np.zeros_like(probe_properties.data)
-        for p in xrange(np.shape(probe_properties.data)[0]):
-            data_smoothed[p,:]=utils.smooth(probe_properties.data[p,:], 10) #default hanning
-            
-            data_med=stats.nanmedian(data_smoothed[:,300:1800], axis=1)
-            
-        # Pick out only good fibres (i.e. those allocated as P)
-        goodfibres=np.where(probe_properties.fib_type=='P')
-        x_good=probe_properties.x_microns[goodfibres]
-        y_good=probe_properties.y_microns[goodfibres]
-        data_good=data_med[goodfibres]
-        
-        # First try to get rid of the bias laval in the data, by subtracting a median
-        data_bias=np.median(data_good)
-        if data_bias<0.0:
-            # print data_bias
-            data_good=data_good-data_bias
-            
-        # Mask out any "cold" spaxels - defined as negative, due to poor throughtput calibration from CR taking out 5577.
-        msk_notcold=np.where(data_good>0.0)
-        
-        # Apply the mask to x,y,data
-        x_good=x_good[msk_notcold]
-        y_good=y_good[msk_notcold]
-        data_good=data_good[msk_notcold]
-        
-        # Find the centroid for the file - using micron positions and smoothed, median collapsed data.
-        # Returned fitted_params in format [peak_flux, x_position, y_position, x_sigma, y_sigma, angle, offset]
-
-        # Fit parameter estimates from a crude centre of mass
-        com_distr=utils.comxyz(x_good,y_good,data_good) #-data_bias)
-    
-        # First guess sigma
-        sigx=100.0
-        
-        # Peak height guess could be closest fibre to com position.
-        dist=(x_good-com_distr[0])**2+(y_good-com_distr[1])**2 # distance between com and all fibres.
-        
-        # First guess Gaussian parameters.
-        p0=[data_good[np.sum(np.where(dist==np.min(dist)))], com_distr[0], com_distr[1], sigx, sigx, 45.0, 0.0]
-   
-        gf1=fitting.TwoDGaussFitter(p0, x_good, y_good, data_good)
-        gf1.fit()
-
-        p_out=gf1.p
-        print p0
-        print p_out
-    
-        #params_guess, gfit=find_centroid(x_good,y_good,data_good)
-        
-        # Make two figures.
-        ax=f1.add_subplot(r,c,j+1)
-        scatterplot=ax.scatter(x_good,y_good,s=24,c=data_good)
-        #start_pos=ax.scatter(fit_guess[1], fit_guess[2], c='k')
-        # Reconstruct the Gaussian
-        # Make an even (x,y) grid spanning the entire range and reconstruct the Gaussian on it.
-        
-        # dx=overlap_maps.dx #fudge the fineness of the grid to make a pretty plot
-
-        overlap_maps=fibre_overlap_map(0.5, 60)
-
-        #x0=np.median(xm)-24*overlap_maps.dx
-        #y0=np.median(ym)-24*overlap_maps.dx
-        
-        #xlin=x0+overlap_maps.dx*np.arange(50)
-        #ylin=y0+overlap_maps.dx*np.arange(50)
-        
-        x0=np.median(probe_properties.x_microns)-24*overlap_maps.dx
-        y0=np.median(probe_properties.y_microns)-24*overlap_maps.dx
-        
-        xlin=x0+overlap_maps.dx*np.arange(50)
-        ylin=y0+overlap_maps.dx*np.arange(50)
-        print np.shape(xlin)
-        
-        # Reconstruct the model.
-        model=np.zeros((len(xlin), len(ylin))) # 2d Gaussian
-        
-        # Reconstruct the Gaussian fit.
-        #print gfit
-        #print gfit.p
-        print gf1
-        
-
-        #print fit_out
-        #print np.shape(xlin), np.shape(fit_out)
-        for ii in xrange(len(xlin)):
-            x_val=xlin[ii]
-            for jj in xrange(len(ylin)):
-                y_val=ylin[jj]
-                model[ii,jj]=gf1.fitfunc(p_out, x_val, y_val)
-                #model[ii,jj]=fit_out[x_val, y_val]
-
-        print np.shape(model)
-        print xlin, ylin, model
-        con=ax.contour(xlin, ylin, np.transpose(model), cmap=py.cm.winter)
-
-        # Get rid of the tick labels.
-        py.setp(ax.get_xticklabels(), visible=False)
-        py.setp(ax.get_yticklabels(), visible=False)
-        
-        #py.title(ifu)
-
-    #pass
-    
 class fibre_overlap_map:
     """Make an overlap map for a single fibre. This is the same at all lambda slices for that fibre (neglecting
     DAR)""" 
@@ -667,3 +541,4 @@ class fibre_overlap_map:
         output_frac_map=overlap_map/1.0 # divided by area of ind. sq. (output) pixel.
 
         return input_frac_map, output_frac_map
+    

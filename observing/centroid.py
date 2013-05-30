@@ -1,7 +1,9 @@
 import pylab as py
 import numpy as np
 import scipy as sp
-import pyfits as pf
+
+# astropy fits file io (replacement for pyfits)
+import astropy.io.fits as pf
 
 import string
 import itertools
@@ -143,6 +145,8 @@ def centroid(infile, ifus='all', outfile=None, plot=True):
         # Use the utils module to extract data from a single IFU.
         ifu_data=utils.IFU(infile, ifu, flag_name=False)
 
+        #print ifu_data.xpos
+
         # Feed the wrapped fitter both the micron and sky values
         p_sky, data_sky, xlin_sky, ylin_sky, model_sky=centroid_fit(ifu_data.xpos, ifu_data.ypos, ifu_data.data,
                                                                     microns=False, circular=True)
@@ -152,14 +156,31 @@ def centroid(infile, ifus='all', outfile=None, plot=True):
         # Expand out the returned fitted values.
         amplitude_sky, xout_sky, yout_sky, sig_sky, bias_sky=p_sky
         amplitude_mic, xout_mic, yout_mic, sig_mic, bias_mic=p_mic
+
+        #print p_sky
+
+        #print
+        #print np.where(ifu_data.n==1)
+        #print
+
+        #print ifu_data.xpos[np.sum(np.where(ifu_data.n==1))]
+        #print ifu_data.ypos[np.sum(np.where(ifu_data.n==1))]
         
         # Find offsets in arcseconds using both methods
-        x_off=3600*(xout_sky-ifu_data.xpos[np.sum(np.where(ifu_data.n==1))])*np.cos(np.pi*ifu_data.ypos[np.sum(np.where(ifu_data.n==1))]/180)
+        x_off=3600*(xout_sky-ifu_data.xpos[np.sum(np.where(ifu_data.n==1))]) #*np.cos(np.pi*ifu_data.ypos[np.sum(np.where(ifu_data.n==1))]/180)
         y_off=3600*(yout_sky-ifu_data.ypos[np.sum(np.where(ifu_data.n==1))])
 
         xm_off=-1*(xout_mic-ifu_data.x_microns[np.where(ifu_data.n==1)])*plate_scale/1000
         ym_off=(yout_mic-ifu_data.y_microns[np.where(ifu_data.n==1)])*plate_scale/1000
 
+        # Use the micron values to calculate the offsets...
+        centroid_microns_converted=utils.plate2sky(xout_mic, yout_mic)
+        hexa_centre_microns_converted=utils.plate2sky(ifu_data.x_microns[np.where(ifu_data.n==1)][0],
+                                                      ifu_data.y_microns[np.where(ifu_data.n==1)][0])
+
+        x_off_conv=hexa_centre_microns_converted[0]-centroid_microns_converted[0]
+        y_off_conv=hexa_centre_microns_converted[1]-centroid_microns_converted[1]
+        
         # Find the widths
         x_w=sig_sky*3600
         xm_w=sig_mic*15.22/1000
@@ -171,7 +192,7 @@ def centroid(infile, ifus='all', outfile=None, plot=True):
         # Compare the offsets and widths. Do something with these?!
         #print "Differences (x,y,width)", np.abs(x_off-xm_off), np.abs(y_off-ym_off), np.abs(x_w-xm_w)
 
-        print "Probe", ifu_data.ifu, x_off, y_off #, xm_off, ym_off, x_w, xm_w
+        print "Probe", ifu_data.ifu, x_off_conv, y_off_conv
 
         # Make an image of the bundle with the fit overlaid in contours. NOTE - plotting is done with the fit using
         # the micron values. This is more aesthetic and simple.
@@ -214,7 +235,7 @@ def centroid(infile, ifus='all', outfile=None, plot=True):
         # Write the results to file
         if outfile!=None:
             # Probe number, offset in RA ("), offset in Dec (")
-            s=str(ifu_data.ifu)+' '+str(x_off)+' '+str(y_off)+'\n' # the data to write to file
+            s=str(ifu_data.ifu)+' '+str(x_off_conv)+' '+str(y_off_conv)+'\n' # the data to write to file
             f.write(s)
 
 
@@ -407,23 +428,24 @@ def centroid_fit(x,y,data,microns=True, circular=True):
     # First guess at width of Gaussian - diameter of a core in degrees/microns (distance between core 1 and core 2?) in whichever direction that is larger....
     if microns==True:
         sigx=105.0
-        core_diam=52.5
+        core_diam=105.0
 
     else:
         sigx=4.44e-4
-        core_diam=2.22e-4
-
-    
+        core_diam=4.44e-4
+  
     # First guess Gaussian parameters.
     if circular==True:
         p0=[data_sum[np.sum(np.where(dist==np.min(dist)))], com[0], com[1], sigx, 0.0]
+        #print "Guess Parameters:", p0
 
     elif circular==False:
         p0=[data_sum[np.sum(np.where(dist==np.min(dist)))], com[0], com[1], sigx, sigx, 45.0, 0.0]
-        
+        #print "Guess Parameters:", p0
+    
     # Fit two circular 2D Gaussians.
     gf=fitting.TwoDGaussFitter(p0,x,y,data_sum)
-    fitting.fibre_integrator(gf, core_diam)
+    fitting.fibre_integrator(gf, core_diam) # fibre integrator
     gf.fit()
 
     # Make a linear grid to reconstruct the fitted Gaussian over.
