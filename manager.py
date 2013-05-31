@@ -1201,7 +1201,7 @@ class FITSFile:
         """Return a dictionary of options used to reduce the file."""
         if not os.path.exists(self.reduced_path):
             return None
-        return dict(pf.getdata(ff.reduced_path))
+        return dict(pf.getdata(self.reduced_path, 'REDUCTION_ARGS'))
 
 
 def find_fibre_table(hdulist):
