@@ -911,9 +911,10 @@ class Manager:
         bias  -- Find a combined bias frame
         dark  -- Find a combined dark frame
         lflat -- Find a combined long-slit flat frame
+        fcal  -- Find a reduced spectrophotometric standard star frame
 
         The return type depends on what is asked for:
-        tlmap, wavel, fflat, thput, thput_object -- A FITS file object
+        tlmap, wavel, fflat, thput, thput_object, fcal -- A FITS file object
         bias, dark, lflat       -- The path to the combined file
         """
         ff_match = None
@@ -928,6 +929,9 @@ class Manager:
         reduced_dir = None
         reduced = None
         tlm_created = None
+        flux_calibrated = None
+        telluric_corrected = None
+        spectrophotometric = None
         # Define some functions for figures of merit
         time_difference = lambda ff, ff_test: (
             abs(ff_test.epoch - ff.epoch))
@@ -943,7 +947,6 @@ class Manager:
         # Determine what actually needs to be matched, depending on match_class
         if match_class.lower() == 'tlmap':
             # Find a tramline map, so need a fibre flat field
-            return_type = 'fits_file'
             ndf_class = 'MFFFF'
             date = ff.date
             plate_id = ff.plate_id
@@ -953,7 +956,6 @@ class Manager:
             fom = time_difference
         elif match_class.lower() == 'wavel':
             # Find a reduced arc field
-            return_type = 'fits_file'
             ndf_class = 'MFARC'
             date = ff.date
             plate_id = ff.plate_id
@@ -963,7 +965,6 @@ class Manager:
             fom = time_difference
         elif match_class.lower() == 'fflat':
             # Find a reduced fibre flat field
-            return_type = 'fits_file'
             ndf_class = 'MFFFF'
             date = ff.date
             plate_id = ff.plate_id
@@ -973,7 +974,6 @@ class Manager:
             fom = time_difference
         elif match_class.lower() == 'thput':
             # Find a reduced offset sky field
-            return_type = 'fits_file'
             ndf_class = 'MFSKY'
             date = ff.date
             plate_id = ff.plate_id
@@ -983,7 +983,6 @@ class Manager:
             fom = recent_reduction
         elif match_class.lower() == 'thput_object':
             # Find a reduced object field to take the throughput from
-            return_type = 'fits_file'
             ndf_class = 'MFOBJECT'
             date = ff.date
             plate_id = ff.plate_id
@@ -991,9 +990,16 @@ class Manager:
             ccd = ff.ccd
             reduced = True
             fom = time_difference_min_exposure(899.0)
+        elif match_class.lower() == 'fcal':
+            # Find a spectrophotometric standard star
+            ndf_class = 'MFOBJECT'
+            date = ff.date
+            ccd = ff.ccd
+            reduced = True
+            spectrophotometric = True
+            fom = time_difference
         elif match_class.lower() == 'bias':
             # Just return the standard BIAScombined filename
-            return_type = 'file_path'
             filename = self.bias_combined_filename()
             if os.path.exists(os.path.join(ff.reduced_dir, filename)):
                 return filename
@@ -1002,7 +1008,6 @@ class Manager:
         elif match_class.lower() == 'dark':
             # This works a bit differently. Return the filename of the
             # combined dark frame with the closest exposure time.
-            return_type = 'file_path'
             best_fom = np.inf
             for exposure_str in self.dark_exposure_strs(ccd=ff.ccd):
                 test_fom = abs(float(exposure_str) - ff.exposure)
@@ -1016,7 +1021,6 @@ class Manager:
                 return None
         elif match_class.lower() == 'lflat':
             # Just return the standard LFLATcombined filename
-            return_type = 'file_path'
             filename = self.lflat_combined_filename()
             if os.path.exists(os.path.join(ff.reduced_dir, filename)):
                 return filename
@@ -1038,6 +1042,9 @@ class Manager:
                 reduced_dir=reduced_dir,
                 reduced=reduced,
                 tlm_created=tlm_created,
+                flux_calibrated=flux_calibrated,
+                telluric_corrected=telluric_corrected,
+                spectrophotometric=spectrophotometric,
                 do_not_use=False,
                 ):
             test_fom = fom(ff, ff_test)
@@ -1054,28 +1061,31 @@ class Manager:
             return None
         if match_class.lower() in ['bias', 'dark', 'lflat']:
             # matchmaker returns a filename in these cases; send it straight on
-            return ff_match
-        if match_class.lower() == 'tlmap':
+            filename = ff_match
+        elif match_class.lower() == 'tlmap':
             filename = ff_match.tlm_filename
         else:
             filename = ff_match.reduced_filename
-        link_path = os.path.join(ff.reduced_dir, filename)
-        source_path = os.path.join(ff_match.reduced_dir, filename)
-        raw_link_path = os.path.join(ff.reduced_dir, ff_match.filename)
-        raw_source_path = os.path.join(ff_match.raw_dir, ff_match.filename)
-        # If the link path is occupied by a link, delete it
-        # Leave actual files in place
-        if os.path.islink(link_path):
-            os.remove(link_path)
-        if os.path.islink(raw_link_path):
-            os.remove(raw_link_path)
-        # Make a link, unless the file is already there
-        if not os.path.exists(link_path):
-            os.symlink(os.path.relpath(source_path, ff.reduced_dir),
-                       link_path)
-        if not os.path.exists(raw_link_path):
-            os.symlink(os.path.relpath(raw_source_path, ff.reduced_dir),
-                       raw_link_path)
+        if match_class.lower() in ['tlmap', 'fflat', 'wavel', 'thput',
+                                   'thput_object']:
+            # These are the cases where we do want to make a link
+            link_path = os.path.join(ff.reduced_dir, filename)
+            source_path = os.path.join(ff_match.reduced_dir, filename)
+            raw_link_path = os.path.join(ff.reduced_dir, ff_match.filename)
+            raw_source_path = os.path.join(ff_match.raw_dir, ff_match.filename)
+            # If the link path is occupied by a link, delete it
+            # Leave actual files in place
+            if os.path.islink(link_path):
+                os.remove(link_path)
+            if os.path.islink(raw_link_path):
+                os.remove(raw_link_path)
+            # Make a link, unless the file is already there
+            if not os.path.exists(link_path):
+                os.symlink(os.path.relpath(source_path, ff.reduced_dir),
+                           link_path)
+            if not os.path.exists(raw_link_path):
+                os.symlink(os.path.relpath(raw_source_path, ff.reduced_dir),
+                           raw_link_path)
         return filename
 
 class FITSFile:
