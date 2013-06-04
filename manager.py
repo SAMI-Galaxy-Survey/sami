@@ -302,7 +302,7 @@ class Manager:
         if ff.name is None:
             # Failing that, see if the telescope was pointing in the right
             # direction
-	    elif (ff.coords.separation(ff.cfg_coords) < self.matching_radius):
+	    if (ff.coords.separation(ff.cfg_coords) < self.matching_radius):
                 # Yes it was
 	        ff.name = 'main'
             else:
