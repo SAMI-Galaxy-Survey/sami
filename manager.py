@@ -290,6 +290,7 @@ class Manager:
     def set_name(self, ff, trust_header=True):
         """Set the object name for a FITS file."""
         ff.name = None
+        ff.spectrophotometric = None
         if ff.ndf_class != 'MFOBJECT':
             # Don't try to set a name for calibration files
             return
@@ -297,14 +298,17 @@ class Manager:
         if trust_header:
             try:
                 ff.name = pf.getval(ff.raw_path, 'MNGRNAME')
+                ff.spectrophotometric = pf.getval(ff.raw_path, 'MNGRSPMS')
             except KeyError:
-                pass
+                # Make sure we either set both or neither
+                ff.name = None
         if ff.name is None:
             # Failing that, see if the telescope was pointing in the right
             # direction
 	    if (ff.coords.separation(ff.cfg_coords) < self.matching_radius):
                 # Yes it was
 	        ff.name = 'main'
+                ff.spectrophotometric = False
             else:
                 # No it wasn't. Now see if it matches any previous fields
 		for extra in self.extra_list:
@@ -312,23 +316,31 @@ class Manager:
 			self.matching_radius):
                         # Yes it does
 			ff.name = extra['name']
+                        ff.spectrophotometric = extra['spectrophotometric']
                         break
                 else:
                     # No match. As a last resort, ask the user
                     ff.name = raw_input('Enter object name for file ' +
                                         ff.filename + '\n > ')
+                    yn = raw_input('Is this object a spectrophotometric '
+                                   'standard? (y/n)\n > ')
+                    ff.spectrophotometric = (yn.lower()[0] == 'y')
             # At this point, a name has definitely been set.
             # Put it in the header.
             self.add_header_item(ff, 'MNGRNAME', ff.name,
                                  'Object name set by SAMI_Manager')
+            self.add_header_item(ff, 'MNGRSPMS', ff.spectrophotometric,
+                                 'Flag set if a spectrophotometric star')
         # Check if the field was new
         for extra in self.extra_list:
             if ff.coords.separation(extra['coords']) < self.matching_radius:
                 break
         else:
             # No match found: field was new, so add it to the list.
-            self.extra_list.append({'name':ff.name,
-                                    'coords':ff.coords})
+            self.extra_list.append(
+                {'name':ff.name,
+                 'coords':ff.coords,
+                 'spectrophotometric':ff.spectrophotometric})
         return
 
     def set_reduced_path(self, ff):
@@ -749,7 +761,8 @@ class Manager:
               ccd=None, exposure_str=None, do_not_use=None,
               min_exposure=None, max_exposure=None,
               reduced_dir=None, reduced=None, tlm_created=None,
-              flux_calibrated=None, telluric_corrected=None):
+              flux_calibrated=None, telluric_corrected=None,
+              spectrophotometric=spectrophotometric):
         """Generator for FITS files that satisfy requirements."""
         for ff in self.file_list:
             if ff.ndf_class is None:
@@ -786,7 +799,10 @@ class Manager:
                  (telluric_corrected and hasattr(ff, 'telluric_path') and
                   os.path.exists(ff.telluric_path)) or
                  (not telluric_corrected and hasattr(ff, 'telluric_path') and
-                  not os.path.exists(ff.telluric_path)))):
+                  not os.path.exists(ff.telluric_path))) and
+                (spectrophotometric is None or
+                 (hasattr(ff, 'spectrophotometric') and
+                  (ff.spectrophotometric == spectrophotometric)))):
                 yield ff
         return
 
