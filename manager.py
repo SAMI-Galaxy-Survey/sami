@@ -822,7 +822,7 @@ class Manager:
                          'spectrophotometric': 'MFOBJECT'}[dir_type.lower()]
         for ff in self.files(ndf_class=ndf_class, **kwargs):
             if (dir_type.lower() == 'spectrophotometric' and
-                (ff.name == 'main' or 'ngc' in ff.name.lower()):
+                (ff.name == 'main' or 'ngc' in ff.name.lower())):
                 # This is a galaxy field, not a spectrophotometric standard
                 continue
             if ff.reduced_dir not in reduced_dir_list:
