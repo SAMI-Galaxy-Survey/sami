@@ -195,7 +195,7 @@ class Manager:
         for dirname, subdirname_list, filename_list in os.walk(reduced_path):
             for filename in filename_list:
                 if self.file_filter(filename):
-                    self.import_file(dirname, filename, trust_dirname=True,
+                    self.import_file(dirname, filename,
                                      trust_header=True, copy_files=copy_files,
                                      move_files=move_files)
         raw_path = os.path.join(self.root, 'raw')
@@ -204,7 +204,7 @@ class Manager:
                 if self.file_filter_raw(filename):
                     try:
                         self.import_file(
-                            dirname, filename, trust_dirname=False,
+                            dirname, filename,
                             trust_header=True, copy_files=copy_files,
                             move_files=move_files)
                     except Exception as e:
@@ -224,7 +224,7 @@ class Manager:
         """Return True if the raw file should be added."""
         return self.file_filter(filename) and self.fits_file(filename) is None
 
-    def import_file(self, dirname, filename, trust_dirname=False,
+    def import_file(self, dirname, filename,
                     trust_header=True, copy_files=True, move_files=False):
         """Add details of a file to the manager"""
         source_path = os.path.join(dirname, filename)
@@ -246,8 +246,7 @@ class Manager:
                 ff.raw_path = ff.source_path
         else:
             print 'Adding file: ', filename
-        self.set_name(ff, trust_dirname=trust_dirname,
-                      trust_header=trust_header)
+        self.set_name(ff, trust_header=trust_header)
         self.set_reduced_path(ff)
         if not ff.do_not_use:
             ff.make_reduced_link()
@@ -288,7 +287,7 @@ class Manager:
         shutil.move(source_path, dest_path)
         return
 
-    def set_name(self, ff, trust_dirname=False, trust_header=True):
+    def set_name(self, ff, trust_header=True):
         """Set the object name for a FITS file."""
         ff.name = None
         if ff.ndf_class != 'MFOBJECT':
@@ -301,10 +300,6 @@ class Manager:
             except KeyError:
                 pass
         if ff.name is None:
-            # Then check if we can just use the directory name
-            if trust_dirname:
-                ff.name = os.path.basename(
-                    os.path.dirname(os.path.dirname(ff.input_path)))
             # Failing that, see if the telescope was pointing in the right
             # direction
 	    elif (ff.coords.separation(ff.cfg_coords) < self.matching_radius):
@@ -366,7 +361,7 @@ class Manager:
         for dirname, subdirname_list, filename_list in os.walk(source_dir):
             for filename in filename_list:
                 if self.file_filter(filename):
-                    self.import_file(dirname, filename, trust_dirname=False,
+                    self.import_file(dirname, filename,
                                      trust_header=trust_header,
                                      copy_files=True, move_files=False)
         return
