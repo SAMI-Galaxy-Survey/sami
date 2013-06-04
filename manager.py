@@ -142,11 +142,13 @@ class Manager:
 
     This allows the same keywords as described earlier, as well as:
 
-        ndf_class       'MFFFF'
-        reduced         False
-        tlm_created     False
+        ndf_class           'MFFFF'
+        reduced             False
+        tlm_created         False
+        flux_calibrated     False
+        telluric_corrected  False
 
-    For example, specifying these three options as given would disable all
+    For example, specifying these options as given would disable all
     fibre flat fields that had not yet been reduced and had not yet had
     tramline maps created.
 
@@ -353,6 +355,10 @@ class Manager:
         ff.reduced_path = os.path.join(ff.reduced_dir, ff.reduced_filename)
         if ff.ndf_class == 'MFFFF':
             ff.tlm_path = os.path.join(ff.reduced_dir, ff.tlm_filename)
+        elif ff.ndf_class == 'MFOBJECT':
+            ff.fluxcal_path = os.path.join(ff.reduced_dir, ff.fluxcal_filename)
+            ff.telluric_path = os.path.join(ff.reduced_dir,
+                                            ff.telluric_filename)
         return
 
     def import_dir(self, source_dir, trust_header=True):
@@ -617,7 +623,7 @@ class Manager:
                     continue
                 elif match_class == 'thput':
                     # Try to find a suitable object frame instead
-                    filename_match = self.match_link(ff, 'thpt_object')
+                    filename_match = self.match_link(ff, 'thput_object')
                     if filename_match is None:
                         # Still nothing
                         print ('Warning: Offsky (or substitute) frame not '
@@ -747,7 +753,8 @@ class Manager:
               plate_id_short=None, field_no=None, field_id=None,
               ccd=None, exposure_str=None, do_not_use=None,
               min_exposure=None, max_exposure=None,
-              reduced_dir=None, reduced=None, tlm_created=None):
+              reduced_dir=None, reduced=None, tlm_created=None,
+              flux_calibrated=None, telluric_corrected=None):
         """Generator for FITS files that satisfy requirements."""
         for ff in self.file_list:
             if ff.ndf_class is None:
@@ -774,7 +781,17 @@ class Manager:
                  (tlm_created and hasattr(ff, 'tlm_path') and
                   os.path.exists(ff.tlm_path)) or
                  (not tlm_created and hasattr(ff, 'tlm_path') and
-                  not os.path.exists(ff.tlm_path)))):
+                  not os.path.exists(ff.tlm_path))) and
+                (flux_calibrated is None or
+                 (flux_calibrated and hasattr(ff, 'fluxcal_path') and
+                  os.path.exists(ff.fluxcal_path)) or
+                 (not flux_calibrated and hasattr(ff, 'fluxcal_path') and
+                  not os.path.exists(ff.fluxcal_path))) and
+                (telluric_corrected is None or
+                 (telluric_corrected and hasattr(ff, 'telluric_path') and
+                  os.path.exists(ff.telluric_path)) or
+                 (not telluric_corrected and hasattr(ff, 'telluric_path') and
+                  not os.path.exists(ff.telluric_path)))):
                 yield ff
         return
 
@@ -787,11 +804,12 @@ class Manager:
                 yield ff.ccd
         return
 
-    def reduced_dirs(self, dir_type=None, ccd=None, date=None,
-                     do_not_use=None):
+    def reduced_dirs(self, dir_type=None, **kwargs):
         """Generator for reduced directories containing particular files."""
         reduced_dir_list = []
-        try:
+        if dir_type is None:
+            ndf_class = None
+        else:
             ndf_class = {'bias': 'BIAS',
                          'dark': 'DARK',
                          'lflat': 'LFLAT',
@@ -800,11 +818,13 @@ class Manager:
                          'mffff': 'MFFFF',
                          'mfarc': 'MFARC',
                          'mfsky': 'MFSKY',
-                         'mfobject': 'MFOBJECT'}[dir_type.lower()]
-        except (AttributeError, KeyError):
-            ndf_class = None
-        for ff in self.files(ndf_class=ndf_class, ccd=ccd, date=date,
-                             do_not_use=do_not_use):
+                         'mfobject': 'MFOBJECT',
+                         'spectrophotometric': 'MFOBJECT'}[dir_type.lower()]
+        for ff in self.files(ndf_class=ndf_class, **kwargs):
+            if (dir_type.lower() == 'spectrophotometric' and
+                (ff.name == 'main' or 'ngc' in ff.name.lower()):
+                # This is a galaxy field, not a spectrophotometric standard
+                continue
             if ff.reduced_dir not in reduced_dir_list:
                 reduced_dir_list.append(ff.reduced_dir)
                 yield ff.reduced_dir
@@ -872,13 +892,18 @@ class Manager:
         """Return the file that should be used to help reduce the FITS file ff.
 
         match_class is one of the following:
-        tlm   -- Find a tramline map
-        wave  -- Find a reduced arc file
+        tlmap -- Find a tramline map
+        wavel -- Find a reduced arc file
         fflat -- Find a reduced fibre flat field
-        thpt  -- Find a reduced offset sky (twilight) file
+        thput -- Find a reduced offset sky (twilight) file
+        thput_object -- As thput, but find a suitable object frame
         bias  -- Find a combined bias frame
         dark  -- Find a combined dark frame
         lflat -- Find a combined long-slit flat frame
+
+        The return type depends on what is asked for:
+        tlmap, wavel, fflat, thput, thput_object -- A FITS file object
+        bias, dark, lflat       -- The path to the combined file
         """
         ff_match = None
         # The following are the things that could potentially be matched
@@ -907,6 +932,7 @@ class Manager:
         # Determine what actually needs to be matched, depending on match_class
         if match_class.lower() == 'tlmap':
             # Find a tramline map, so need a fibre flat field
+            return_type = 'fits_file'
             ndf_class = 'MFFFF'
             date = ff.date
             plate_id = ff.plate_id
@@ -916,6 +942,7 @@ class Manager:
             fom = time_difference
         elif match_class.lower() == 'wavel':
             # Find a reduced arc field
+            return_type = 'fits_file'
             ndf_class = 'MFARC'
             date = ff.date
             plate_id = ff.plate_id
@@ -925,6 +952,7 @@ class Manager:
             fom = time_difference
         elif match_class.lower() == 'fflat':
             # Find a reduced fibre flat field
+            return_type = 'fits_file'
             ndf_class = 'MFFFF'
             date = ff.date
             plate_id = ff.plate_id
@@ -934,6 +962,7 @@ class Manager:
             fom = time_difference
         elif match_class.lower() == 'thput':
             # Find a reduced offset sky field
+            return_type = 'fits_file'
             ndf_class = 'MFSKY'
             date = ff.date
             plate_id = ff.plate_id
@@ -941,8 +970,9 @@ class Manager:
             ccd = ff.ccd
             reduced = True
             fom = recent_reduction
-        elif match_class.lower() == 'thpt_object':
+        elif match_class.lower() == 'thput_object':
             # Find a reduced object field to take the throughput from
+            return_type = 'fits_file'
             ndf_class = 'MFOBJECT'
             date = ff.date
             plate_id = ff.plate_id
@@ -952,6 +982,7 @@ class Manager:
             fom = time_difference_min_exposure(899.0)
         elif match_class.lower() == 'bias':
             # Just return the standard BIAScombined filename
+            return_type = 'file_path'
             filename = self.bias_combined_filename()
             if os.path.exists(os.path.join(ff.reduced_dir, filename)):
                 return filename
@@ -960,6 +991,7 @@ class Manager:
         elif match_class.lower() == 'dark':
             # This works a bit differently. Return the filename of the
             # combined dark frame with the closest exposure time.
+            return_type = 'file_path'
             best_fom = np.inf
             for exposure_str in self.dark_exposure_strs(ccd=ff.ccd):
                 test_fom = abs(float(exposure_str) - ff.exposure)
@@ -973,6 +1005,7 @@ class Manager:
                 return None
         elif match_class.lower() == 'lflat':
             # Just return the standard LFLATcombined filename
+            return_type = 'file_path'
             filename = self.lflat_combined_filename()
             if os.path.exists(os.path.join(ff.reduced_dir, filename)):
                 return filename
@@ -1087,6 +1120,9 @@ class FITSFile:
         self.reduced_filename = self.filename_root + 'red.fits'
         if self.ndf_class == 'MFFFF':
             self.tlm_filename = self.filename_root + 'tlm.fits'
+        elif self.ndf_class == 'MFOBJECT':
+            self.fluxcal_filename = self.filename_root + 'fcal.fits'
+            self.telluric_filename = self.filename_root + 'sci.fits'
         return
 
     def set_date(self):
