@@ -10,6 +10,7 @@ import astropy.coordinates as coord
 from astropy import units
 import astropy.io.fits as pf
 import numpy as np
+from sami.utils.other import find_fibre_table
 
 
 IDX_FILES = {'1': 'sami580V_v1_2.idx',
@@ -1233,24 +1234,6 @@ class FITSFile:
         if not os.path.exists(self.reduced_path):
             return None
         return dict(pf.getdata(self.reduced_path, 'REDUCTION_ARGS'))
-
-
-def find_fibre_table(hdulist):
-    """Returns the extension number for FIBRES_IFU or MORE.FIBRES_IFU,
-    whichever is found. Returns -1 if neither is found."""
-
-    # Position of the extension name and number in the info that pyfits returns
-    name_pos = 1
-    extno_pos = 0
-
-    extno = -1
-    info_list = hdulist.info(False)
-    for info in info_list:
-        if (info[name_pos] == 'MORE.FIBRES_IFU' or
-            info[name_pos] == 'FIBRES_IFU'):
-            extno = info[extno_pos]
-
-    return extno
 
 
 class MatchException(Exception):

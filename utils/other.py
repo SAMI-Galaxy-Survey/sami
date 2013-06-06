@@ -473,3 +473,23 @@ def mad(a, c=0.6745, axis=None):
             axis, a)
 
     return m
+
+
+def find_fibre_table(hdulist):
+    """Returns the extension number for FIBRES_IFU or MORE.FIBRES_IFU,
+    whichever is found. Raises KeyError if neither is found."""
+
+    extno = None
+    try:
+        extno = hdulist.index_of('FIBRES_IFU')
+    except KeyError:
+        pass
+    if extno is None:
+        try:
+            extno = hdulist.index_of('MORE.FIBRES_IFU')
+        except KeyError:
+            raise KeyError("Extensions 'FIBRES_IFU' and "
+                           "'MORE.FIBRES_IFU' both not found")
+    return extno
+
+
