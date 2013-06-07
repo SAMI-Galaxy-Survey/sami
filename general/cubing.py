@@ -103,7 +103,7 @@ def get_probe(infile, object_name, verbose=True):
     # Return the probe number
     return ifu
 
-def dithered_cubes_from_rss_files(inlist, sample_size=0.5, objects='all', plot=True, write=False):
+def dithered_cubes_from_rss_files(inlist, sample_size=0.5, drop_factor=0.5, objects='all', plot=True, write=False):
     """A wrapper to make a cube from reduced RSS files. Only input files that go together - ie have the same objects."""
 
     start_time = datetime.datetime.now()
@@ -147,10 +147,12 @@ def dithered_cubes_from_rss_files(inlist, sample_size=0.5, objects='all', plot=T
         
         for j in xrange(len(files)):
             ifu_list.append(utils.IFU(files[j], name, flag_name=True))
-    
-        flux_cube, var_cube, weight_cube, diagnostics = dithered_cube_from_rss(ifu_list,sample_size=sample_size, plot=plot, write=write)
+
+        # Call dithered_cube_from_rss to create the flux, variance and weight cubes for the object.
+        flux_cube, var_cube, weight_cube, diagnostics = dithered_cube_from_rss(ifu_list, sample_size=sample_size,
+                                                                               drop_factor=drop_factor, plot=plot, write=write)
         
-        
+        # Write out FITS files.
         if write==True:
             # NOTE - At this point we will want to generate accurate WCS information and create a proper header.
             # The addition of ancillary data to the header will be valuable. I think the creation of the header should
@@ -225,11 +227,11 @@ def dithered_cubes_from_rss_files(inlist, sample_size=0.5, objects='all', plot=T
     print("Time dithered_cubes_from_files wall time: {0}".format(datetime.datetime.now() - start_time))
 
 
-def dithered_cube_from_rss(ifu_list, sample_size=0.5, plot=True, write=False, offsets='fit'):
+def dithered_cube_from_rss(ifu_list, sample_size=0.5, drop_factor=0.5, plot=True, write=False, offsets='fit'):
         
     # When resampling need to know the size of the grid in square output pixels
     # @TODO: Compute the size of the grid instead of hard code it!
-    size_of_grid=40 
+    size_of_grid=50 
     
     # Create an instance of fibre_overlap_map for use later to create individual overlap maps for each fibre.
     # The attributes of this instance don't change from ifu to ifu.
@@ -310,7 +312,10 @@ def dithered_cube_from_rss(ifu_list, sample_size=0.5, plot=True, write=False, of
             # Adjust the micron positions of the fibres - for use in making final cubes.
             xm=galaxy_data.x_microns-gf1.p[1]
             ym=galaxy_data.y_microns-gf1.p[2]
+
         else:
+            # Perhaps use this place to allow definition of the offsets manually??
+            # Hopefull only useful for test purposes. LF 05/06/2013
             xm=galaxy_data.x_microns - np.mean(galaxy_data.x_microns)
             ym=galaxy_data.y_microns - np.mean(galaxy_data.y_microns)
     
@@ -493,7 +498,13 @@ def dithered_cube_from_rss(ifu_list, sample_size=0.5, plot=True, write=False, of
         var_cube[:,:,l]=var_grid_slice_final
         weight_cube[:,:,l]=weight_grid_slice_final
 
-    # Now need to scale the cubes by the weight cube
+    # I have now got: flux cube, variance cube, weight cube. These have been made assuming no drop-size reduction factor.
+    # Apply the drop size reduction factor to all three cubes.
+    flux_cube=flux_cube/(drop_factor**2)
+    var_cube=var_cube/(drop_factor**4)
+    weight_cube=weight_cube/(drop_factor**2)
+
+    # Now need to scale the flux and variance cubes appropriately by the weight cube
     flux_cube=flux_cube/weight_cube # flux cube scaling by weight map
     image=nanmedian(flux_cube, axis=2)
 
