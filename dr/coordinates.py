@@ -2,8 +2,10 @@
 
 import astropy.io.fits as pf
 import numpy as np
-from sami.utils.other import find_fibre_table
+from sami.utils.other import find_fibre_table, hg_changeset
 from scipy.optimize import leastsq
+
+HG_CHANGESET = hg_changeset(__file__)
 
 def reverse_probes(fibre_table):
     """Reverse the order of the probes in the fibre table.
@@ -18,7 +20,7 @@ def reverse_probes(fibre_table):
         probenum_0 = fibre['PROBENUM'] - 1
         # This is the correct mapping for the fibre numbers
         if 'SKY' in fibre['PROBENAME']:
-            fibre['SPEC_ID'] = 819 - fibre['SPEC_ID']
+            fibre['SPEC_ID'] = 820 - fibre['SPEC_ID']
         else:
             rel_spec_id = fibre['SPEC_ID'] - 63 * probenum_0
             fibre['SPEC_ID'] = 63 * (12 - probenum_0) + rel_spec_id
@@ -141,43 +143,65 @@ def interpolate(fibre_table_hexa, x_name, y_name, new_fibpos_x, new_fibpos_y):
     fibre_table_hexa[y_name][:] = new_coords_y
     return
     
-def copy_coords(fibre_table, destination=None):
-    """Copy the fibre coordinate information from a given fibre table.
+def copy_coords(hdulist):
+    """Copy the fibre coordinate information into a new fibre table."""
+    fibre_table_extension = hdulist[find_fibre_table(hdulist)]
+    new_extension = fibre_table_extension.copy()
+    # Name the extension so it can be found later
+    new_extension.update_ext_name('OLD_COORDS')
+    hdulist.append(new_extension)
+    return
     
-    Destination is a different existing fibre table. If no destination is
-    provided, a new hdu containing the coordinate data is returned."""
-    name_list = ['XPOS', 'YPOS',
-                 'FIBPOS_X', 'FIBPOS_Y',
-                 'FIB_MRA', 'FIB_MDEC',
-                 'FIB_ARA', 'FIB_ADEC',
-                 'PORIENT']
-    fmt_list = ['1D', '1D',
-                '1J', '1J',
-                '1D', '1D',
-                '1D', '1D',
-                '1D']
-    if destination == None:
-        # No destination is provided so we need to make a new hdu
-        col_list = []
-        for name, fmt in zip(name_list, fmt_list):
-            col_list.append(pf.Column(name=name, format=fmt,
-                                      array=fibre_table[name].copy()))
-        tbhdu = pf.new_table(col_list)
-        # Name the extension so it can be found later
-        tbhdu.update_ext_name('OLD_COORDS')
-        return tbhdu
-    else:
-        # We have an existing table to copy the coordinates into
-        for name in name_list:
-            for entry, value in zip(destination, fibre_table.field(name)):
-                entry[name] = value
-        return
-
 def correct_coordinates(filename):
     """See which corrections are necessary and apply them to the file.
 
     If the hexabundles have PORIENT = 0.0, they will be rotated 180
     degrees. If the probes are in the wrong order, they will be
-    re-ordered. If neither of these is the case, nothing is done."""
-    pass
+    re-ordered. If neither of these is the case, nothing is done.
+    If either has been done, the old coordinates will be put in an
+    extension named OLD_COORDS."""
+    hdulist = pf.open(filename, 'update')
+    fibre_table_extno = find_fibre_table(hdulist)
+    fibre_table = hdulist[fibre_table_extno].data
+    epoch = hdulist[0].header['EPOCH']
+    # Check if the probes need to be rotated
+    if np.all(fibre_table['PORIENT'] == 0.0) and epoch >= 2013.0:
+        do_rotate = True
+    else:
+        do_rotate = False
+    # Check if the probes need to be switched
+    if (np.all(fibre_table['PROBENUM'][31+63*np.arange(13)] ==
+               (1+np.arange(13))) and epoch >= 2013.0):
+        do_switch = True
+    else:
+        do_switch = False
+    # If anything needs doing...
+    if do_rotate or do_switch:
+        header = hdulist[0].header
+        # We will edit the file, so record which version of the code was used
+        header.update('HGCOORDS', HG_CHANGESET,
+                      'Hg changeset ID for coordinates code')
+        try:
+            # First try to copy the old coordinates back into the fibre table
+            hdulist[fibre_table_extno].data = hdulist['OLD_COORDS'].data
+        except KeyError:
+            # That didn't work, so we must need to create the OLD_COORDS
+            # extension instead
+            copy_coords(hdulist)
+        # Do the manipulations
+        if do_rotate:
+            rotate_all_hexas(fibre_table)
+            header.update('COORDROT', True,
+                          'The hexabundle coordinates were rotated')
+        else:
+            header.update('COORDROT', False,
+                          'The hexabundle coordinates were rotated')
+        if do_switch:
+            reverse_probes(fibre_table)
+            header.update('COORDREV', True,
+                          'The hexabundle probe allocations were reversed')
+        else:
+            header.update('COORDREV', False,
+                          'The hexabundle probe allocations were reversed')
+        hdulist.close()
     
