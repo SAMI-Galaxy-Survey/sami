@@ -4,6 +4,7 @@ import utils
 import samifitting
 import update_csv
 import manager
+import dr
 
 # the config file which contains some constants and stuff
 import config
