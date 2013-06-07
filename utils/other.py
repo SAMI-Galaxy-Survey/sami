@@ -13,6 +13,7 @@ except:
     from scipy.stats import nanmedian
     print("Not Using bottleneck: Speed will be improved if you install bottleneck")
 
+from sami.utils.ifu import IFU
 
 from sami import update_csv
 
@@ -425,7 +426,6 @@ def get_probes_objects(infile, ifus='all'):
 
         ifu_data=IFU(infile, ifu, flag_name=False)
         print ifu,"\t", ifu_data.name
-
 
 def hg_changeset(path=__file__):
     """Return the changeset ID for the current version of the code."""
