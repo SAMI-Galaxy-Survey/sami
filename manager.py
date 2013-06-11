@@ -1096,6 +1096,7 @@ class FITSFile:
         self.set_exposure()
         self.set_epoch()
         self.set_do_not_use()
+        self.set_coords_flags()
 	self.hdulist.close()
 	del self.hdulist
 
@@ -1218,6 +1219,18 @@ class FITSFile:
         except KeyError:
             # By default, don't use fast readout files
             self.do_not_use = (self.hdulist[0].header['SPEED'] != 'NORMAL')
+        return
+
+    def set_coords_flags(self):
+        """Set whether coordinate corrections have been done."""
+        try:
+            self.coord_rot = self.hdulist[0].header['COORDROT']
+        except KeyError:
+            self.coord_rot = None
+        try:
+            self.coord_rev = self.hdulist[0].header['COORDREV']
+        except KeyError:
+            self.coord_rev = None
         return
 
     def make_reduced_link(self):
