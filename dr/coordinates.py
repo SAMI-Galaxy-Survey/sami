@@ -161,7 +161,11 @@ def correct_coordinates(filename):
     If either has been done, the old coordinates will be put in an
     extension named OLD_COORDS."""
     hdulist = pf.open(filename, 'update')
-    fibre_table_extno = find_fibre_table(hdulist)
+    try:
+        fibre_table_extno = find_fibre_table(hdulist)
+    except ValueError:
+        # No fibres to correct
+        return
     fibre_table = hdulist[fibre_table_extno].data
     epoch = hdulist[0].header['EPOCH']
     # Check if the probes need to be rotated
