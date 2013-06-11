@@ -4,6 +4,7 @@ import astropy.io.fits as pf
 import numpy as np
 from sami.utils.other import find_fibre_table, hg_changeset
 from scipy.optimize import leastsq
+import os
 
 HG_CHANGESET = hg_changeset(__file__)
 
@@ -164,7 +165,7 @@ def correct_coordinates(filename):
     hdulist = pf.open(filename, 'update')
     try:
         fibre_table_extno = find_fibre_table(hdulist)
-    except ValueError:
+    except KeyError:
         # No fibres to correct
         return
     fibre_table = hdulist[fibre_table_extno].data
@@ -210,3 +211,11 @@ def correct_coordinates(filename):
                           'The hexabundle probe allocations were reversed')
         hdulist.close()
     
+def correct_all_coordinates(root='.'):
+    """Run correct_coordinates on all files in all subdirectories."""
+    for dirname, subdir_list, filename_list in os.walk(root):
+        for filename in filename_list:
+            if filename.endswith('.fits'):
+                print filename
+                correct_coordinates(os.path.join(dirname, filename))
+    return
