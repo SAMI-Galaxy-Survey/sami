@@ -37,8 +37,9 @@ def rotate_all_hexas(fibre_table):
         # Have to do things as a slice to avoid copying the data back and forth
         this_probe = np.where((fibre_table['PROBENUM'] == probenum) &
                               (fibre_table['TYPE'] == 'P'))[0]
-        fibre_table_hexa = fibre_table[this_probe[0]:this_probe[-1]+1]
-        rotate_hexa(fibre_table_hexa)
+        if np.size(this_probe) > 0:
+            fibre_table_hexa = fibre_table[this_probe[0]:this_probe[-1]+1]
+            rotate_hexa(fibre_table_hexa)
     return
 
 def rotate_hexa(fibre_table_hexa):
