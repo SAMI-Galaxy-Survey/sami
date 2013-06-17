@@ -41,7 +41,16 @@ class Manager:
     >>> mngr.import_dir('path/to/data')
 
     It will copy the data into the data_directory you defined earlier,
-    putting it into a neat directory structure.
+    putting it into a neat directory structure. You will typically need to
+    import all of your data before you start to reduce anything, to ensure
+    you have all the bias, dark and lflat frames.
+
+    When importing data, the manager will do its best to work out what the
+    telescope was pointing at in each frame. Sometimes it wont be able to
+    and will ask you for the object name to go with a particular file.
+    Depending on the file, you should give an actual object name - e.g.
+    HR7950 or NGC2701 - or a more general description - e.g. SNAFU or
+    blank_sky.
 
     Reducing bias, dark and lflat frames
     ====================================
