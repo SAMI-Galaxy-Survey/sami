@@ -1161,29 +1161,40 @@ class FITSFile:
     def set_plate_id(self):
 	"""Save the plate ID."""
 	self.plate_id = self.hdulist[self.fibres_extno].header['PLATEID']
+        if self.plate_id == '':
+            self.plate_id = 'none'
 
     def set_plate_id_short(self):
 	"""Save the shortened plate ID."""
-	finish = self.plate_id.find('_', self.plate_id.find('_')+1)
-	self.plate_id_short = self.plate_id[:finish]
+        if self.plate_id == 'none':
+            self.plate_id_short = 'none'
+        else:
+            finish = self.plate_id.find('_', self.plate_id.find('_')+1)
+            self.plate_id_short = self.plate_id[:finish]
 
     def set_field_no(self):
 	"""Save the field number."""
 	filename = self.hdulist[self.fibres_extno].header['FILENAME']
-	start = filename.rfind('_f') + 2
-	self.field_no = int(filename[start:filename.find('.', start)])
+        if filename == '':
+            self.field_no = 0
+        else:
+            start = filename.rfind('_f') + 2
+            self.field_no = int(filename[start:filename.find('.', start)])
 
     def set_field_id(self):
 	"""Save the field ID."""
-	start = len(self.plate_id_short)
-	for i in range(self.field_no):
-	    start = self.plate_id.find('_', start) + 1
-	finish = self.plate_id.find('_', start)
-	if finish == -1:
-	    field_id = self.plate_id[start:]
-	else:
-	    field_id = self.plate_id[start:finish]
-        self.field_id = self.plate_id_short + '_' + field_id
+        if self.plate_id == 'none':
+            self.field_id = 'none'
+        else:
+            start = len(self.plate_id_short)
+            for i in range(self.field_no):
+                start = self.plate_id.find('_', start) + 1
+            finish = self.plate_id.find('_', start)
+            if finish == -1:
+                field_id = self.plate_id[start:]
+            else:
+                field_id = self.plate_id[start:finish]
+            self.field_id = self.plate_id_short + '_' + field_id
         
     def set_coords(self):
 	"""Save the RA/Dec and config RA/Dec."""
