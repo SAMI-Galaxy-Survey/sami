@@ -31,10 +31,23 @@ class Manager:
     >>> import sami
     >>> mngr = sami.manager.Manager('data_directory')
 
-    In this case, 'data_directory' should be non-existent or empty. If you
-    quit python and want to get back to where you were, just enter the same
-    command again and it will search through the subdirectories and restore
-    its state.
+    In this case, 'data_directory' should be non-existent or empty. At this
+    point the manager is not aware of any actual data - skip to "Importing
+    data" and carry on from there.
+
+    Continuing a previous session
+    =============================
+
+    If you quit python and want to get back to where you were, just restart
+    the manager on the same directory (after importing sami):
+
+    >>> mngr = sami.manager.Manager('data_directory')
+
+    It will search through the subdirectories and restore its previous
+    state.
+
+    Importing data
+    ==============
 
     After creating the manager, you can import data into it:
 
