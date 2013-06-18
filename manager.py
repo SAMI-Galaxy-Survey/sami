@@ -469,7 +469,7 @@ class Manager:
                                ndf_class=calibrator_type.upper(),
                                reduced=True, do_not_use=False),
                     path)
-        self.link_calibrator(self, calibrator_type, overwrite)
+        self.link_calibrator(calibrator_type, overwrite)
         return
 
     def link_calibrator(self, calibrator_type, overwrite=False):
