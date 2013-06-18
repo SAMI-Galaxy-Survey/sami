@@ -10,6 +10,7 @@ import astropy.coordinates as coord
 from astropy import units
 import astropy.io.fits as pf
 import numpy as np
+from sami.utils.other import find_fibre_table
 
 
 IDX_FILES = {'1': 'sami580V_v1_2.idx',
@@ -30,17 +31,39 @@ class Manager:
     >>> import sami
     >>> mngr = sami.manager.Manager('data_directory')
 
-    In this case, 'data_directory' should be non-existent or empty. If you
-    quit python and want to get back to where you were, just enter the same
-    command again and it will search through the subdirectories and restore
-    its state.
+    In this case, 'data_directory' should be non-existent or empty. At this
+    point the manager is not aware of any actual data - skip to "Importing
+    data" and carry on from there.
+
+    Continuing a previous session
+    =============================
+
+    If you quit python and want to get back to where you were, just restart
+    the manager on the same directory (after importing sami):
+
+    >>> mngr = sami.manager.Manager('data_directory')
+
+    It will search through the subdirectories and restore its previous
+    state.
+
+    Importing data
+    ==============
 
     After creating the manager, you can import data into it:
 
     >>> mngr.import_dir('path/to/data')
 
     It will copy the data into the data_directory you defined earlier,
-    putting it into a neat directory structure.
+    putting it into a neat directory structure. You will typically need to
+    import all of your data before you start to reduce anything, to ensure
+    you have all the bias, dark and lflat frames.
+
+    When importing data, the manager will do its best to work out what the
+    telescope was pointing at in each frame. Sometimes it wont be able to
+    and will ask you for the object name to go with a particular file.
+    Depending on the file, you should give an actual object name - e.g.
+    HR7950 or NGC2701 - or a more general description - e.g. SNAFU or
+    blank_sky.
 
     Reducing bias, dark and lflat frames
     ====================================
@@ -1121,6 +1144,7 @@ class FITSFile:
         self.set_exposure()
         self.set_epoch()
         self.set_do_not_use()
+        self.set_coords_flags()
 	self.hdulist.close()
 	del self.hdulist
 
@@ -1163,29 +1187,40 @@ class FITSFile:
     def set_plate_id(self):
 	"""Save the plate ID."""
 	self.plate_id = self.hdulist[self.fibres_extno].header['PLATEID']
+        if self.plate_id == '':
+            self.plate_id = 'none'
 
     def set_plate_id_short(self):
 	"""Save the shortened plate ID."""
-	finish = self.plate_id.find('_', self.plate_id.find('_')+1)
-	self.plate_id_short = self.plate_id[:finish]
+        if self.plate_id == 'none':
+            self.plate_id_short = 'none'
+        else:
+            finish = self.plate_id.find('_', self.plate_id.find('_')+1)
+            self.plate_id_short = self.plate_id[:finish]
 
     def set_field_no(self):
 	"""Save the field number."""
 	filename = self.hdulist[self.fibres_extno].header['FILENAME']
-	start = filename.rfind('_f') + 2
-	self.field_no = int(filename[start:filename.find('.', start)])
+        if filename == '':
+            self.field_no = 0
+        else:
+            start = filename.rfind('_f') + 2
+            self.field_no = int(filename[start:filename.find('.', start)])
 
     def set_field_id(self):
 	"""Save the field ID."""
-	start = len(self.plate_id_short)
-	for i in range(self.field_no):
-	    start = self.plate_id.find('_', start) + 1
-	finish = self.plate_id.find('_', start)
-	if finish == -1:
-	    field_id = self.plate_id[start:]
-	else:
-	    field_id = self.plate_id[start:finish]
-        self.field_id = self.plate_id_short + '_' + field_id
+        if self.plate_id == 'none':
+            self.field_id = 'none'
+        else:
+            start = len(self.plate_id_short)
+            for i in range(self.field_no):
+                start = self.plate_id.find('_', start) + 1
+            finish = self.plate_id.find('_', start)
+            if finish == -1:
+                field_id = self.plate_id[start:]
+            else:
+                field_id = self.plate_id[start:finish]
+            self.field_id = self.plate_id_short + '_' + field_id
         
     def set_coords(self):
 	"""Save the RA/Dec and config RA/Dec."""
@@ -1245,6 +1280,18 @@ class FITSFile:
             self.do_not_use = (self.hdulist[0].header['SPEED'] != 'NORMAL')
         return
 
+    def set_coords_flags(self):
+        """Set whether coordinate corrections have been done."""
+        try:
+            self.coord_rot = self.hdulist[0].header['COORDROT']
+        except KeyError:
+            self.coord_rot = None
+        try:
+            self.coord_rev = self.hdulist[0].header['COORDREV']
+        except KeyError:
+            self.coord_rev = None
+        return
+
     def make_reduced_link(self):
         """Make the link in the reduced directory."""
         if not os.path.exists(self.reduced_dir):
@@ -1259,24 +1306,6 @@ class FITSFile:
         if not os.path.exists(self.reduced_path):
             return None
         return dict(pf.getdata(self.reduced_path, 'REDUCTION_ARGS'))
-
-
-def find_fibre_table(hdulist):
-    """Returns the extension number for FIBRES_IFU or MORE.FIBRES_IFU,
-    whichever is found. Returns -1 if neither is found."""
-
-    # Position of the extension name and number in the info that pyfits returns
-    name_pos = 1
-    extno_pos = 0
-
-    extno = -1
-    info_list = hdulist.info(False)
-    for info in info_list:
-        if (info[name_pos] == 'MORE.FIBRES_IFU' or
-            info[name_pos] == 'FIBRES_IFU'):
-            extno = info[extno_pos]
-
-    return extno
 
 
 class MatchException(Exception):
