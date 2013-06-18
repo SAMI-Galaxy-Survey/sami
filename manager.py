@@ -463,7 +463,10 @@ class Manager:
         """Produce and link necessary XXXXcombined.fits files."""
         for ccd, exposure_str, filename, path in self.combined_filenames_paths(
                 calibrator_type, do_not_use=False):
-            if overwrite or not os.path.exists(path):
+            if overwrite and os.path.exists(path):
+                # Delete the existing file
+                os.remove(path)
+            if not os.path.exists(path):
                 self.run_2dfdr_combine(
                     self.files(ccd=ccd, exposure_str=exposure_str,
                                ndf_class=calibrator_type.upper(),
