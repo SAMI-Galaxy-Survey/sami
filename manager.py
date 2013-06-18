@@ -114,7 +114,7 @@ class Manager:
     that get reduced, e.g.
 
     >>> mngr.reduce_arc(ccd='ccd_1', date='130306',
-                           field_id='Y13SAR1_P002_09T004')
+                        field_id='Y13SAR1_P002_09T004')
 
     will only reduce arc frames for the blue CCD that were taken on the
     6th March 2013 for the field ID Y13SAR1_P002_09T004. Allowed keywords
@@ -747,6 +747,8 @@ class Manager:
                        'set task DREXEC1',
                        'global Auto',
                        'set Auto(state) 1',
+                       'global AutoScript',
+                       'set AutoScript(TimeOut) 300',
                        ('ExecCombine $task $glist ' + output_filename +
                         ' -success Quit')])
         script_filename = '2dfdr_script.tcl'
