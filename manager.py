@@ -44,7 +44,10 @@ class Manager:
     >>> mngr = sami.manager.Manager('data_directory')
 
     It will search through the subdirectories and restore its previous
-    state.
+    state. By default it will restore previously-assigned object names that
+    were stored in the headers. To re-assign all names:
+
+    >>> mngr = sami.manager.Manager('data_directory', trust_header=False)
 
     Importing data
     ==============
@@ -212,14 +215,15 @@ class Manager:
         self.inspect_root(copy_files, move_files)
         self.cwd = os.getcwd()
 
-    def inspect_root(self, copy_files, move_files):
+    def inspect_root(self, copy_files, move_files, trust_header=True):
         """Add details of existing files to internal lists."""
         reduced_path = os.path.join(self.root, 'reduced')
         for dirname, subdirname_list, filename_list in os.walk(reduced_path):
             for filename in filename_list:
                 if self.file_filter(filename):
                     self.import_file(dirname, filename,
-                                     trust_header=True, copy_files=copy_files,
+                                     trust_header=trust_header,
+                                     copy_files=copy_files,
                                      move_files=move_files)
         raw_path = os.path.join(self.root, 'raw')
         for dirname, subdirname_list, filename_list in os.walk(raw_path):
@@ -317,49 +321,67 @@ class Manager:
         if ff.ndf_class != 'MFOBJECT':
             # Don't try to set a name for calibration files
             return
-        # First check if there's already a name in the header
-        if trust_header:
-            try:
-                ff.name = pf.getval(ff.raw_path, 'MNGRNAME')
-                ff.spectrophotometric = pf.getval(ff.raw_path, 'MNGRSPMS')
-            except KeyError:
-                # Make sure we either set both or neither
-                ff.name = None
-        if ff.name is None:
-            # Failing that, see if the telescope was pointing in the right
-            # direction
-	    if (ff.coords.separation(ff.cfg_coords) < self.matching_radius):
-                # Yes it was
-	        ff.name = 'main'
-                ff.spectrophotometric = False
+        # Check if there's already a name in the header
+        try:
+            name_header = pf.getval(ff.raw_path, 'MNGRNAME')
+        except KeyError:
+            name_header = None
+        try:
+            spectrophotometric_header = pf.getval(ff.raw_path, 'MNGRSPMS')
+        except KeyError:
+            spectrophotometric_header = None
+        # Check if the telescope was pointing in the right direction
+        if (ff.coords.separation(ff.cfg_coords) < self.matching_radius):
+            # Yes it was
+            name_coords = 'main'
+            spectrophotometric_coords = False
+        else:
+            # No it wasn't
+            name_coords = None
+            spectrophotometric_coords = None
+        # See if it matches any previous fields
+        for extra in self.extra_list:
+            if (ff.coords.separation(extra['coords']) < self.matching_radius):
+                # Yes it does
+                name_extra = extra['name']
+                spectrophotometric_extra = extra['spectrophotometric']
+                break
             else:
-                # No it wasn't. Now see if it matches any previous fields
-		for extra in self.extra_list:
-		    if (ff.coords.separation(extra['coords']) <
-			self.matching_radius):
-                        # Yes it does
-			ff.name = extra['name']
-                        ff.spectrophotometric = extra['spectrophotometric']
-                        break
-                else:
-                    # No match. As a last resort, ask the user
-                    ff.name = raw_input('Enter object name for file ' +
-                                        ff.filename + '\n > ')
-                    yn = raw_input('Is this object a spectrophotometric '
-                                   'standard? (y/n)\n > ')
-                    ff.spectrophotometric = (yn.lower()[0] == 'y')
-            # At this point, a name has definitely been set.
-            # Put it in the header.
+                # No match
+                name_extra = None
+                spectrophotometric_extra = None
+        # Now choose the best name
+        if name_header and trust_header:
+            ff.name = name_header
+        elif name_coords:
+            ff.name = name_coords
+        elif name_extra:
+            ff.name = name_extra
+        else:
+            # As a last resort, ask the user
+            ff.name = raw_input('Enter object name for file ' +
+                                ff.filename + '\n > ')
+        # Now choose the best spectrophotometric flag
+        if spectrophotometric_header is not None and trust_header:
+            ff.spectrophotometric = spectrophotometric_header
+        elif spectrophotometric_coords is not None:
+            ff.spectrophotometric = spectrophotometric_coords
+        elif spectrophotometric_extra is not None:
+            ff.spectrophotometric = spectrophotometric_extra
+        else:
+            # Ask the user whether this is a spectrophotometric standard
+            yn = raw_input('Is ' + ff.name + ' in file ' + ff.filename +
+                           ' a spectrophotometric standard? (y/n)\n > ')
+            ff.spectrophotometric = (yn.lower()[0] == 'y')
+        # Update the header if necessary
+        if name_header is None:
             self.add_header_item(ff, 'MNGRNAME', ff.name,
                                  'Object name set by SAMI_Manager')
+        if spectrophotometric_header is None:
             self.add_header_item(ff, 'MNGRSPMS', ff.spectrophotometric,
                                  'Flag set if a spectrophotometric star')
-        # Check if the field was new
-        for extra in self.extra_list:
-            if ff.coords.separation(extra['coords']) < self.matching_radius:
-                break
-        else:
-            # No match found: field was new, so add it to the list.
+        # If the field was new and it's not a "main", add it to the list
+        if name_extra is None and name_coords is None:
             self.extra_list.append(
                 {'name':ff.name,
                  'coords':ff.coords,
