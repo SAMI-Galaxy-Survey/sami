@@ -744,6 +744,11 @@ class Manager:
                                          ' found for ' + fits.filename)
             options.extend(['-'+match_class.upper()+'_FILENAME',
                             filename_match])
+            if filename_match is not None:
+                # Note we can't use else for the above line, because
+                # filename_match might have changed
+                options.extend(['-'+match_class.upper()+'_FILENAME',
+                                filename_match])
         # All options have been set, so run 2dfdr
         self.run_2dfdr_single(fits, overwrite, options)
         if fits.ndf_class == 'MFFFF' and tlm and not leave_reduced:
@@ -837,8 +842,7 @@ class Manager:
                        'set task DREXEC1',
                        'global Auto',
                        'set Auto(state) 1',
-                       'global AutoScript',
-                       'set AutoScript(TimeOut) 300',
+                       'AutoScript:SetTimeOut 300',
                        ('ExecCombine $task $glist ' + output_filename +
                         ' -success Quit')])
         script_filename = '2dfdr_script.tcl'
