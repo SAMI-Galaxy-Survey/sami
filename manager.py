@@ -655,8 +655,11 @@ class Manager:
                     # Anything else missing is fatal
                     raise MatchException('No matching ' + match_class +
                                          ' found for ' + ff.filename)
-            options.extend(['-'+match_class.upper()+'_FILENAME',
-                            filename_match])
+            if filename_match is not None:
+                # Note we can't use else for the above line, because
+                # filename_match might have changed
+                options.extend(['-'+match_class.upper()+'_FILENAME',
+                                filename_match])
         # All options have been set, so run 2dfdr
         self.run_2dfdr_single(ff, overwrite, options)
         if ff.ndf_class == 'MFFFF' and tlm and not leave_reduced:
