@@ -661,7 +661,7 @@ class Manager:
                 options.extend(['-'+match_class.upper()+'_FILENAME',
                                 filename_match])
         # All options have been set, so run 2dfdr
-        self.run_2dfdr_single(ff, overwrite, options)
+        self.run_2dfdr_single(ff, options)
         if ff.ndf_class == 'MFFFF' and tlm and not leave_reduced:
             os.remove(ff.reduced_path)
         return
