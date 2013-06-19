@@ -750,8 +750,7 @@ class Manager:
                        'set task DREXEC1',
                        'global Auto',
                        'set Auto(state) 1',
-                       'global AutoScript',
-                       'set AutoScript(TimeOut) 300',
+                       'AutoScript:SetTimeOut 300',
                        ('ExecCombine $task $glist ' + output_filename +
                         ' -success Quit')])
         script_filename = '2dfdr_script.tcl'
