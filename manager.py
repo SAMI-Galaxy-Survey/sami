@@ -5,6 +5,7 @@ import os
 import re
 import subprocess
 from contextlib import contextmanager
+from itertools import defaultdict
 
 import astropy.coordinates as coord
 from astropy import units
@@ -663,8 +664,48 @@ class Manager:
 
     def cube(self, overwrite=False, **kwargs):
         """Make datacubes from the given RSS files."""
-        pass
-        
+        tmp_dir = os.path.join(self.root, 'cubed', 'tmp')
+        target_dir = os.path.join(self.root, 'cubed')
+        rel_target_dir = os.path.relpath(target_dir, tmp_dir)
+        # By default, only use 'main' exposures of at least 10 minutes
+        if 'min_exposure' in kwargs:
+            min_exposure = kwargs['min_exposure']
+            del kwargs['min_exposure']
+        else:
+            min_exposure = 599.0
+        if 'name' in kwargs:
+            name = kwargs['name']
+            del kwargs['name']
+        else:
+            name = 'main'
+        field_dict = defaultdict(list)
+        for fits in self.files(ndf_class='MFOBJECT', do_not_use=False,
+                               reduced=True, min_exposure=min_exposure, 
+                               name=name, **kwargs):
+            if fits.telluric_corrected:
+                path = fits.telluric_path
+            elif fits.flux_calibrated:
+                path = fits.fluxcal_path
+            else:
+                path = fits.reduced_path
+            path = os.path.relpath(path, tmp_dir)
+            field_dict[fits.field_id].append(path)
+        os.makedirs(tmp_dir)
+        with self.visit_dir(tmp_dir):
+            for field in field_dict:
+                dithered_cubes_from_rss_files(field_dict[field], write=True)
+                for filename in os.listdir('.'):
+                    if filename.lower().endswith(('.fit', '.fits')):
+                        target_path = os.path.join(rel_target_dir, filename)
+                        if os.path.exists(target_path):
+                            if overwrite:
+                                os.remove(target_path)
+                            else:
+                                os.remove(filename)
+                            self.move(filename, target_path)
+        os.rmdir(tmp_dir)
+        return
+
     def reduce_all(self, overwrite=False, **kwargs):
         """Reduce everything, in order. Don't use unless you're sure."""
         self.reduce_bias(overwrite)
@@ -678,6 +719,7 @@ class Manager:
         self.reduce_fflat(overwrite, **kwargs)
         self.reduce_sky(overwrite, **kwargs)
         self.reduce_object(overwrite, **kwargs)
+        self.cube(overwrite, **kwargs)
         return
 
     def reduce_file(self, fits, overwrite=False, tlm=False,
