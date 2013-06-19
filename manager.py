@@ -66,7 +66,9 @@ class Manager:
     and will ask you for the object name to go with a particular file.
     Depending on the file, you should give an actual object name - e.g.
     HR7950 or NGC2701 - or a more general description - e.g. SNAFU or
-    blank_sky.
+    blank_sky. It will also ask you which of these objects should be used
+    as spectrophotometric standards for flux calibration; simply enter y or
+    n as appropriate.
 
     Reducing bias, dark and lflat frames
     ====================================
@@ -171,18 +173,42 @@ class Manager:
         ndf_class           'MFFFF'
         reduced             False
         tlm_created         False
-        flux_calibrated     False
-        telluric_corrected  False
+        flux_calibrated     True
+        telluric_corrected  True
+        name                'LTT2179'
 
-    For example, specifying these options as given would disable all
-    fibre flat fields that had not yet been reduced and had not yet had
-    tramline maps created.
+    For example, specifying the first three of these options as given
+    would disable all fibre flat fields that had not yet been reduced and
+    had not yet had tramline maps created. Specifying the last three
+    would disable all observations of LTT2179 that had already been flux
+    calibrated and telluric corrected.
 
     To re-enable files:
 
     >>> mngr.enable_files(['06mar10003', '06mar20003', '06mar10047'])
 
     This function follows exactly the same syntax as disable_files.
+
+    Changing object names and spectrophotometric flags
+    ==================================================
+
+    If you want to change the object names for one or more files, or change
+    whether they should be used as spectrophotometric standards, use the
+    following commands:
+
+    >>> mngr.update_name(['06mar10003', '06mar20003'], 'new_name')
+    >>> mngr.update_spectrophotometric(['06mar10003', '06mar20003'], True)
+
+    In the above example, the given files are set to have the name
+    'new_name' and they are listed as spectrophotometric standards. The
+    options for spectrophotometric flags must be entered as True or
+    False (without quote marks, with capital letter). You can use the
+    same file generator syntax as for disabling/enabling files
+    (above), so for example if you realise that on importing some
+    files you entered LTT2197 instead of LTT2179 you can correct all
+    affected files at once:
+
+    >>> mngr.update_name(mngr.files(name='LTT2197'), 'LTT2179')
 
     Reducing everything in one go
     =============================
@@ -234,7 +260,7 @@ class Manager:
                             dirname, filename,
                             trust_header=True, copy_files=copy_files,
                             move_files=move_files)
-                    except Exception as e:
+                    except Exception:
                         print 'Error importing file:', \
                             os.path.join(dirname, filename)
         return
@@ -353,40 +379,62 @@ class Manager:
                 spectrophotometric_extra = None
         # Now choose the best name
         if name_header and trust_header:
-            fits.name = name_header
+            fits.update_name(name_header)
         elif name_coords:
-            fits.name = name_coords
+            fits.update_name(name_coords)
         elif name_extra:
-            fits.name = name_extra
+            fits.update_name(name_extra)
         else:
             # As a last resort, ask the user
-            fits.name = raw_input('Enter object name for file ' +
-                                fits.filename + '\n > ')
+            name_input = raw_input('Enter object name for file ' +
+                                   fits.filename + '\n > ')
+            fits.update_name(name_input)
         # Now choose the best spectrophotometric flag
         if spectrophotometric_header is not None and trust_header:
-            fits.spectrophotometric = spectrophotometric_header
+            fits.update_spectrophotometric(spectrophotometric_header)
         elif spectrophotometric_coords is not None:
-            fits.spectrophotometric = spectrophotometric_coords
+            fits.update_spectrophotometric(spectrophotometric_coords)
         elif spectrophotometric_extra is not None:
-            fits.spectrophotometric = spectrophotometric_extra
+            fits.update_spectrophotometric(spectrophotometric_extra)
         else:
             # Ask the user whether this is a spectrophotometric standard
             yn = raw_input('Is ' + fits.name + ' in file ' + fits.filename +
                            ' a spectrophotometric standard? (y/n)\n > ')
-            fits.spectrophotometric = (yn.lower()[0] == 'y')
-        # Update the header if necessary
-        if name_header is None:
-            self.add_header_item(fits, 'MNGRNAME', fits.name,
-                                 'Object name set by SAMI_Manager')
-        if spectrophotometric_header is None:
-            self.add_header_item(fits, 'MNGRSPMS', fits.spectrophotometric,
-                                 'Flag set if a spectrophotometric star')
+            spectrophotometric_input = (yn.lower()[0] == 'y')
+            fits.update_spectrophotometric(spectrophotometric_input)
         # If the field was new and it's not a "main", add it to the list
         if name_extra is None and name_coords is None:
             self.extra_list.append(
                 {'name':fits.name,
                  'coords':fits.coords,
-                 'spectrophotometric':fits.spectrophotometric})
+                 'spectrophotometric':fits.spectrophotometric,
+                 'fitsfile':fits})
+        return
+
+    def update_name(self, file_iterable, name):
+        """Change the object name for a set of FITSFile objects."""
+        for fits in file_iterable:
+            if isinstance(fits, str):
+                fits = self.fits_file(fits)
+            # Update the name
+            fits.update_name(name)
+            # Update the extra list if necessary
+            for extra in self.extra_list:
+                if extra['fitsfile'] is fits:
+                    extra['name'] = name
+        return
+
+    def update_spectrophotometric(self, file_iterable, spectrophotometric):
+        """Change the spectrophotometric flag for FITSFile objects."""
+        for fits in file_iterable:
+            if isinstance(fits, str):
+                fits = self.fits_file(fits)
+            # Update the flag
+            fits.update_spectrophotometric(spectrophotometric)
+            # Update the extra list if necessary
+            for extra in self.extra_list:
+                if extra['fitsfile'] is fits:
+                    extra['spectrophotometric'] = spectrophotometric
         return
 
     def set_reduced_path(self, fits):
@@ -440,11 +488,7 @@ class Manager:
         for fits in file_iterable:
             if isinstance(fits, str):
                 fits = self.fits_file(fits)
-            fits.do_not_use = True
-            if os.path.exists(fits.reduced_link):
-                os.remove(fits.reduced_link)
-            self.add_header_item(fits, 'DONOTUSE', True,
-                                 'Do Not Use flag for SAMI_manager')
+            fits.update_do_not_use(True)
         return
 
     def enable_files(self, file_iterable):
@@ -452,10 +496,7 @@ class Manager:
         for fits in file_iterable:
             if isinstance(fits, str):
                 fits = self.fits_file(fits)
-            fits.do_not_use = False
-            fits.make_reduced_link()
-            self.add_header_item(fits, 'DONOTUSE', False,
-                                 'Do Not Use flag for SAMI_manager')
+            fits.update_do_not_use(False)
         return
 
     def bias_combined_filename(self):
@@ -818,7 +859,7 @@ class Manager:
               min_exposure=None, max_exposure=None,
               reduced_dir=None, reduced=None, tlm_created=None,
               flux_calibrated=None, telluric_corrected=None,
-              spectrophotometric=spectrophotometric):
+              spectrophotometric=None, name=None):
         """Generator for FITS files that satisfy requirements."""
         for fits in self.file_list:
             if fits.ndf_class is None:
@@ -858,7 +899,8 @@ class Manager:
                   not os.path.exists(fits.telluric_path))) and
                 (spectrophotometric is None or
                  (hasattr(fits, 'spectrophotometric') and
-                  (fits.spectrophotometric == spectrophotometric)))):
+                  (fits.spectrophotometric == spectrophotometric))) and
+                (name is None or fits.name in name)):
                 yield fits
         return
 
@@ -942,18 +984,6 @@ class Manager:
         with open(os.devnull, 'w') as f:
             subprocess.call(['cleanup'], stdout=f)
         os.chdir(self.cwd)
-        return
-
-    def add_header_item(self, fits, key, value, comment=None):
-        """Add a header item to the FITS file."""
-        if comment is None:
-            value_comment = value
-        else:
-            value_comment = (value, comment)
-        hdulist = pf.open(fits.raw_path, 'update',
-                          do_not_scale_image_data=True)
-        hdulist[0].header[key] = value_comment
-        hdulist.close()
         return
 
     def matchmaker(self, fits, match_class):
@@ -1341,6 +1371,54 @@ class FITSFile:
         if not os.path.exists(self.reduced_path):
             return None
         return dict(pf.getdata(self.reduced_path, 'REDUCTION_ARGS'))
+
+    def update_name(self, name):
+        """Change the object name assigned to this file."""
+        if self.name != name:
+            # Update the FITS header
+            self.add_header_item('MNGRNAME', name,
+                                 'Object name set by SAMI manager')
+            # Update the object
+            self.name = name
+        return
+
+    def update_spectrophotometric(self, spectrophotometric):
+        """Change the spectrophotometric flag assigned to this file."""
+        if self.photometric != photometric:
+            # Update the FITS header
+            self.add_header_item('MNGRSPMS', spectrophotometric,
+                                 'Flag set if a spectrophotometric star')
+            # Update the object
+            self.spectrophotometric = spectrophotometric
+        return
+
+    def update_do_not_use(self, do_not_use):
+        """Change the do_not_use flag assigned to this file."""
+        if self.do_not_use != do_not_use:
+            # Update the FITS header
+            self.add_header_item('DONOTUSE', do_not_use,
+                                 'Do Not Use flag for SAMI manager')
+            # Update the object
+            self.do_not_use = do_not_use
+            # Update the file system
+            if do_not_use:
+                if os.path.exists(self.reduced_link):
+                    os.remove(self.reduced_link)
+            else:
+                self.make_reduced_link()
+        return
+
+    def add_header_item(self, key, value, comment=None):
+        """Add a header item to the FITS file."""
+        if comment is None:
+            value_comment = value
+        else:
+            value_comment = (value, comment)
+        hdulist = pf.open(self.raw_path, 'update',
+                          do_not_scale_image_data=True)
+        hdulist[0].header[key] = value_comment
+        hdulist.close()
+        return
 
 
 class MatchException(Exception):
