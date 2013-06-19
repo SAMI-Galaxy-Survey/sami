@@ -291,16 +291,16 @@ class Manager:
         return
 
     def update_copy(self, source_path, dest_path):
-	"""Copy the file, unless a more recent version exists."""
-	dest_dir = os.path.dirname(dest_path)
-	if not os.path.exists(dest_dir):
-	    os.makedirs(dest_dir)
-	elif os.path.exists(dest_path):
-	    if os.path.getmtime(source_path) <= os.path.getmtime(dest_path):
-		# File has already been copied and no update to be done
-		return
-	shutil.copy2(source_path, dest_path)
-	return
+        """Copy the file, unless a more recent version exists."""
+        dest_dir = os.path.dirname(dest_path)
+        if not os.path.exists(dest_dir):
+            os.makedirs(dest_dir)
+        elif os.path.exists(dest_path):
+            if os.path.getmtime(source_path) <= os.path.getmtime(dest_path):
+                # File has already been copied and no update to be done
+                return
+        shutil.copy2(source_path, dest_path)
+        return
 
     def move(self, source_path, dest_path):
         """Move the file."""
@@ -325,16 +325,16 @@ class Manager:
         if ff.name is None:
             # Failing that, see if the telescope was pointing in the right
             # direction
-	    if (ff.coords.separation(ff.cfg_coords) < self.matching_radius):
+            if (ff.coords.separation(ff.cfg_coords) < self.matching_radius):
                 # Yes it was
-	        ff.name = 'main'
+                ff.name = 'main'
             else:
                 # No it wasn't. Now see if it matches any previous fields
-		for extra in self.extra_list:
-		    if (ff.coords.separation(extra['coords']) <
-			self.matching_radius):
+                for extra in self.extra_list:
+                    if (ff.coords.separation(extra['coords']) <
+                        self.matching_radius):
                         # Yes it does
-			ff.name = extra['name']
+                        ff.name = extra['name']
                         break
                 else:
                     # No match. As a last resort, ask the user
@@ -1095,47 +1095,47 @@ class FITSFile:
 
     def __init__(self, input_path):
         self.input_path = input_path
-	self.source_path = os.path.realpath(input_path)
-	self.filename = os.path.basename(self.source_path)
+        self.source_path = os.path.realpath(input_path)
+        self.filename = os.path.basename(self.source_path)
         self.filename_root = self.filename[:self.filename.rfind('.')]
-	try:
-	    self.hdulist = pf.open(self.source_path)
-	except IOError:
-	    self.ndf_class = None
-	    return
+        try:
+            self.hdulist = pf.open(self.source_path)
+        except IOError:
+            self.ndf_class = None
+            return
         self.set_ndf_class()
         self.set_reduced_filename()
-	self.set_date()
-	if self.ndf_class and self.ndf_class not in ['BIAS', 'DARK', 'LFLAT']:
-	    self.set_fibres_extno()
-	    self.set_plate_id()
-	    self.set_plate_id_short()
-	    self.set_field_no()
-	    self.set_field_id()
-	else:
-	    self.fibres_extno = None
-	    self.plate_id = None
-	    self.plate_id_short = None
-	    self.field_no = None
-	    self.field_id = None
-	self.set_ccd()
-	self.set_coords()
+        self.set_date()
+        if self.ndf_class and self.ndf_class not in ['BIAS', 'DARK', 'LFLAT']:
+            self.set_fibres_extno()
+            self.set_plate_id()
+            self.set_plate_id_short()
+            self.set_field_no()
+            self.set_field_id()
+        else:
+            self.fibres_extno = None
+            self.plate_id = None
+            self.plate_id_short = None
+            self.field_no = None
+            self.field_id = None
+        self.set_ccd()
+        self.set_coords()
         self.set_exposure()
         self.set_epoch()
         self.set_do_not_use()
         self.set_coords_flags()
-	self.hdulist.close()
-	del self.hdulist
+        self.hdulist.close()
+        del self.hdulist
 
     def set_ndf_class(self):
-	"""Save the NDF_CLASS of an AAT fits file."""
-	for hdu in self.hdulist:
-	    if ('EXTNAME' in hdu.header.keys() and
-		(hdu.header['EXTNAME'] == 'STRUCT.MORE.NDF_CLASS' or
-		 hdu.header['EXTNAME'] == 'NDF_CLASS')):
-		 # It has a class
+        """Save the NDF_CLASS of an AAT fits file."""
+        for hdu in self.hdulist:
+            if ('EXTNAME' in hdu.header.keys() and
+                (hdu.header['EXTNAME'] == 'STRUCT.MORE.NDF_CLASS' or
+                 hdu.header['EXTNAME'] == 'NDF_CLASS')):
+                # It has a class
                 self.ndf_class = hdu.data['NAME'][0]
-		break
+                break
         else:
             self.ndf_class = None
 
@@ -1150,27 +1150,27 @@ class FITSFile:
         return
 
     def set_date(self):
-	"""Save the observation date as a 6-digit string yymmdd."""
+        """Save the observation date as a 6-digit string yymmdd."""
         try:
             file_orig = self.hdulist[0].header['FILEORIG']
             finish = file_orig.rfind('/', 0, file_orig.rfind('/'))
             self.date = file_orig[finish-6:finish]
         except KeyError:
             self.date = None
-	return
+        return
 
     def set_fibres_extno(self):
         """Save the extension number for the fibre table."""
-	self.fibres_extno = find_fibre_table(self.hdulist)
+        self.fibres_extno = find_fibre_table(self.hdulist)
 	
     def set_plate_id(self):
-	"""Save the plate ID."""
-	self.plate_id = self.hdulist[self.fibres_extno].header['PLATEID']
+        """Save the plate ID."""
+        self.plate_id = self.hdulist[self.fibres_extno].header['PLATEID']
         if self.plate_id == '':
             self.plate_id = 'none'
 
     def set_plate_id_short(self):
-	"""Save the shortened plate ID."""
+        """Save the shortened plate ID."""
         if self.plate_id == 'none':
             self.plate_id_short = 'none'
         else:
@@ -1178,8 +1178,8 @@ class FITSFile:
             self.plate_id_short = self.plate_id[:finish]
 
     def set_field_no(self):
-	"""Save the field number."""
-	filename = self.hdulist[self.fibres_extno].header['FILENAME']
+        """Save the field number."""
+        filename = self.hdulist[self.fibres_extno].header['FILENAME']
         if filename == '':
             self.field_no = 0
         else:
@@ -1187,7 +1187,7 @@ class FITSFile:
             self.field_no = int(filename[start:filename.find('.', start)])
 
     def set_field_id(self):
-	"""Save the field ID."""
+        """Save the field ID."""
         if self.plate_id == 'none':
             self.field_id = 'none'
         else:
@@ -1202,35 +1202,35 @@ class FITSFile:
             self.field_id = self.plate_id_short + '_' + field_id
         
     def set_coords(self):
-	"""Save the RA/Dec and config RA/Dec."""
-	if self.ndf_class == 'MFOBJECT':
-	    header = self.hdulist[self.fibres_extno].header
-	    self.coords = \
-		coord.ICRSCoordinates(ra=header['CENRA'],
-				      dec=header['CENDEC'],
-				      unit=(units.radian, units.radian))
-	    self.cfg_coords = \
-		coord.ICRSCoordinates(ra=header['CFGCENRA'],
-				      dec=header['CFGCENDE'],
-				      unit=(units.radian, units.radian))
-	else:
-	    self.coords = None
-	    self.cfg_coords = None
-	return
+        """Save the RA/Dec and config RA/Dec."""
+        if self.ndf_class == 'MFOBJECT':
+            header = self.hdulist[self.fibres_extno].header
+            self.coords = \
+                coord.ICRSCoordinates(ra=header['CENRA'],
+                                      dec=header['CENDEC'],
+                                      unit=(units.radian, units.radian))
+            self.cfg_coords = \
+                coord.ICRSCoordinates(ra=header['CFGCENRA'],
+                                      dec=header['CFGCENDE'],
+                                      unit=(units.radian, units.radian))
+        else:
+            self.coords = None
+            self.cfg_coords = None
+        return
     
     def set_ccd(self):
-	"""Set the CCD name."""
-	if self.ndf_class:
-	    spect_id = self.hdulist[0].header['SPECTID']
-	    if spect_id == 'BL':
-		self.ccd = 'ccd_1'
-	    elif spect_id == 'RD':
-		self.ccd = 'ccd_2'
-	    else:
-		self.ccd = 'unknown_ccd'
-	else:
-	    self.ccd = None
-	return
+        """Set the CCD name."""
+        if self.ndf_class:
+            spect_id = self.hdulist[0].header['SPECTID']
+            if spect_id == 'BL':
+                self.ccd = 'ccd_1'
+            elif spect_id == 'RD':
+                self.ccd = 'ccd_2'
+            else:
+                self.ccd = 'unknown_ccd'
+        else:
+            self.ccd = None
+        return
 
     def set_exposure(self):
         """Set the exposure time."""
