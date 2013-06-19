@@ -11,6 +11,8 @@ from astropy import units
 import astropy.io.fits as pf
 import numpy as np
 from sami.utils.other import find_fibre_table
+from sami.general.cubing import dithered_cubes_from_rss_files
+import SAMI_fluxcal   # This one will need updating when Ned sends new code
 
 
 IDX_FILES = {'1': 'sami580V_v1_2.idx',
@@ -659,6 +661,10 @@ class Manager:
             self.reduce_file(fits, overwrite)
         return
 
+    def cube(self, overwrite=False, **kwargs):
+        """Make datacubes from the given RSS files."""
+        pass
+        
     def reduce_all(self, overwrite=False, **kwargs):
         """Reduce everything, in order. Don't use unless you're sure."""
         self.reduce_bias(overwrite)
