@@ -29,11 +29,19 @@ class Manager:
     to put its data, e.g.:
 
     >>> import sami
-    >>> mngr = sami.manager.Manager('data_directory')
+    >>> mngr = sami.manager.Manager('130305_130317')
 
-    In this case, 'data_directory' should be non-existent or empty. At this
-    point the manager is not aware of any actual data - skip to "Importing
-    data" and carry on from there.
+    The directory name you give it should normally match the dates of the
+    observing run that you will be reducing.
+
+    IMPORTANT: When starting a new manager, the directory you give it should be 
+    non-existent or empty. Inside that directory it will create "raw" and
+    "reduced" directories, and all the subdirectories described on the SAMI wiki
+    (http://sami-survey.org/wiki/staging-disk-file-structure). You do not need
+    to create the subdirectories yourself.
+
+    At this point the manager is not aware of any actual data - skip to
+    "Importing data" and carry on from there.
 
     Continuing a previous session
     =============================
@@ -41,7 +49,7 @@ class Manager:
     If you quit python and want to get back to where you were, just restart
     the manager on the same directory (after importing sami):
 
-    >>> mngr = sami.manager.Manager('data_directory')
+    >>> mngr = sami.manager.Manager('130305_130317')
 
     It will search through the subdirectories and restore its previous
     state.
@@ -51,9 +59,9 @@ class Manager:
 
     After creating the manager, you can import data into it:
 
-    >>> mngr.import_dir('path/to/data')
+    >>> mngr.import_dir('path/to/raw/data')
 
-    It will copy the data into the data_directory you defined earlier,
+    It will copy the data into the data directory you defined earlier,
     putting it into a neat directory structure. You will typically need to
     import all of your data before you start to reduce anything, to ensure
     you have all the bias, dark and lflat frames.
@@ -129,7 +137,7 @@ class Manager:
         exposure_str    '10'
         min_exposure    5.0
         max_exposure    20.0
-        reduced_dir     ('data_directory/reduced/130305/'
+        reduced_dir     ('130305_130317/reduced/130305/'
                          'Y13SAR1_P001_09T012_15T001/Y13SAR1_P001_09T012/'
                          'calibrators/ccd_1')
 
