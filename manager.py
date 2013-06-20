@@ -747,6 +747,8 @@ class Manager:
     def run_2dfdr_combine(self, file_iterable, output_path):
         """Use 2dfdr to combine the specified FITS files."""
         output_dir, output_filename = os.path.split(output_path)
+        # Need to extend the default timeout value; set to 5 hours here
+        timeout = '300'
         # Write the 2dfdr AutoScript
         script = []
         for ff in file_iterable:
@@ -761,7 +763,6 @@ class Manager:
                        'set task DREXEC1',
                        'global Auto',
                        'set Auto(state) 1',
-                       'AutoScript:SetTimeOut 300',
                        ('ExecCombine $task $glist ' + output_filename +
                         ' -success Quit')])
         script_filename = '2dfdr_script.tcl'
@@ -774,7 +775,9 @@ class Manager:
             command = ['drcontrol',
                        '-AutoScript',
                        '-ScriptName',
-                       script_filename]
+                       script_filename,
+                       '-Timeout',
+                       timeout]
             print 'Combining files to create', output_path
             with open(os.devnull, 'w') as f:
                 subprocess.call(command, stdout=f)
