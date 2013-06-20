@@ -162,11 +162,12 @@ class Manager:
     noted in the log or because they wont reduce properly, you can disable
     them, preventing them from being used in any later reductions:
 
-    >>> mngr.disable_files(['06mar10003', '06mar20003', '06mar10047'])
+    >>> mngr.disable_files(['06mar10003', '06mar20003.fits', '06mar10047'])
 
     If you only have one file you want to disable, you still need the
-    square brackets. You can disable lots of files at a time using the
-    files generator:
+    square brackets. The filenames can be with or without the extension (.fits)
+    but must be without the directory. You can disable lots of files at a time
+    using the files generator:
 
     >>> mngr.disable_files(mngr.files(
                 date='130306', field_id='Y13SAR1_P002_09T004'))
