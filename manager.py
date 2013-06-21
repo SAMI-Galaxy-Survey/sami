@@ -40,6 +40,13 @@ class Manager:
     (http://sami-survey.org/wiki/staging-disk-file-structure). You do not need
     to create the subdirectories yourself.
 
+    Note that the manager carries out many I/O tasks that will fail if you
+    change directories during your python session. If you do need to change
+    directory, make sure you change back before running any further manager
+    tasks. This limitation may be addressed in a future update, if enough people
+    want it. You may be able to avoid it by providing an absolute path when you
+    create the manager, but no guarantee is made.
+
     At this point the manager is not aware of any actual data - skip to
     "Importing data" and carry on from there.
 
@@ -604,7 +611,12 @@ class Manager:
         return
 
     def reduce_file(self, ff, overwrite=False, tlm=False, leave_reduced=False):
-        """Select appropriate options and reduce the given file."""
+        """Select appropriate options and reduce the given file.
+
+        For MFFFF files, if tlm is True then a tramline map is produced; if it
+        is false then a full reduction is done. If tlm is True and leave_reduced
+        is false, then any reduced MFFFF produced as a side-effect will be
+        removed."""
         if ff.ndf_class == 'MFFFF' and tlm:
             target = ff.tlm_path
         else:
@@ -671,7 +683,8 @@ class Manager:
                                 filename_match])
         # All options have been set, so run 2dfdr
         self.run_2dfdr_single(ff, options)
-        if ff.ndf_class == 'MFFFF' and tlm and not leave_reduced:
+        if (ff.ndf_class == 'MFFFF' and tlm and not leave_reduced and
+            os.path.exists(ff.reduced_path)):
             os.remove(ff.reduced_path)
         return
 
