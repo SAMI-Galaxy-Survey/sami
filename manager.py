@@ -32,11 +32,26 @@ class Manager:
     to put its data, e.g.:
 
     >>> import sami
-    >>> mngr = sami.manager.Manager('data_directory')
+    >>> mngr = sami.manager.Manager('130305_130317')
 
-    In this case, 'data_directory' should be non-existent or empty. At this
-    point the manager is not aware of any actual data - skip to "Importing
-    data" and carry on from there.
+    The directory name you give it should normally match the dates of the
+    observing run that you will be reducing.
+
+    IMPORTANT: When starting a new manager, the directory you give it should be 
+    non-existent or empty. Inside that directory it will create "raw" and
+    "reduced" directories, and all the subdirectories described on the SAMI wiki
+    (http://sami-survey.org/wiki/staging-disk-file-structure). You do not need
+    to create the subdirectories yourself.
+
+    Note that the manager carries out many I/O tasks that will fail if you
+    change directories during your python session. If you do need to change
+    directory, make sure you change back before running any further manager
+    tasks. This limitation may be addressed in a future update, if enough people
+    want it. You may be able to avoid it by providing an absolute path when you
+    create the manager, but no guarantee is made.
+
+    At this point the manager is not aware of any actual data - skip to
+    "Importing data" and carry on from there.
 
     Continuing a previous session
     =============================
@@ -44,7 +59,7 @@ class Manager:
     If you quit python and want to get back to where you were, just restart
     the manager on the same directory (after importing sami):
 
-    >>> mngr = sami.manager.Manager('data_directory')
+    >>> mngr = sami.manager.Manager('130305_130317')
 
     It will search through the subdirectories and restore its previous
     state. By default it will restore previously-assigned object names that
@@ -57,9 +72,9 @@ class Manager:
 
     After creating the manager, you can import data into it:
 
-    >>> mngr.import_dir('path/to/data')
+    >>> mngr.import_dir('path/to/raw/data')
 
-    It will copy the data into the data_directory you defined earlier,
+    It will copy the data into the data directory you defined earlier,
     putting it into a neat directory structure. You will typically need to
     import all of your data before you start to reduce anything, to ensure
     you have all the bias, dark and lflat frames.
@@ -137,7 +152,7 @@ class Manager:
         exposure_str    '10'
         min_exposure    5.0
         max_exposure    20.0
-        reduced_dir     ('data_directory/reduced/130305/'
+        reduced_dir     ('130305_130317/reduced/130305/'
                          'Y13SAR1_P001_09T012_15T001/Y13SAR1_P001_09T012/'
                          'calibrators/ccd_1')
 
@@ -162,11 +177,12 @@ class Manager:
     noted in the log or because they wont reduce properly, you can disable
     them, preventing them from being used in any later reductions:
 
-    >>> mngr.disable_files(['06mar10003', '06mar20003', '06mar10047'])
+    >>> mngr.disable_files(['06mar10003', '06mar20003.fits', '06mar10047'])
 
     If you only have one file you want to disable, you still need the
-    square brackets. You can disable lots of files at a time using the
-    files generator:
+    square brackets. The filenames can be with or without the extension (.fits)
+    but must be without the directory. You can disable lots of files at a time
+    using the files generator:
 
     >>> mngr.disable_files(mngr.files(
                 date='130306', field_id='Y13SAR1_P002_09T004'))
@@ -724,7 +740,12 @@ class Manager:
 
     def reduce_file(self, fits, overwrite=False, tlm=False,
                     leave_reduced=False):
-        """Select appropriate options and reduce the given file."""
+        """Select appropriate options and reduce the given file.
+
+        For MFFFF files, if tlm is True then a tramline map is produced; if it
+        is false then a full reduction is done. If tlm is True and leave_reduced
+        is false, then any reduced MFFFF produced as a side-effect will be
+        removed."""
         if fits.ndf_class == 'MFFFF' and tlm:
             target = fits.tlm_path
         else:
@@ -792,8 +813,9 @@ class Manager:
                 options.extend(['-'+match_class.upper()+'_FILENAME',
                                 filename_match])
         # All options have been set, so run 2dfdr
-        self.run_2dfdr_single(fits, overwrite, options)
-        if fits.ndf_class == 'MFFFF' and tlm and not leave_reduced:
+        self.run_2dfdr_single(fits, options)
+        if (fits.ndf_class == 'MFFFF' and tlm and not leave_reduced and
+            os.path.exists(fits.reduced_path)):
             os.remove(fits.reduced_path)
         return
 
@@ -870,6 +892,8 @@ class Manager:
     def run_2dfdr_combine(self, file_iterable, output_path):
         """Use 2dfdr to combine the specified FITS files."""
         output_dir, output_filename = os.path.split(output_path)
+        # Need to extend the default timeout value; set to 5 hours here
+        timeout = '300'
         # Write the 2dfdr AutoScript
         script = []
         for fits in file_iterable:
@@ -884,7 +908,6 @@ class Manager:
                        'set task DREXEC1',
                        'global Auto',
                        'set Auto(state) 1',
-                       'AutoScript:SetTimeOut 300',
                        ('ExecCombine $task $glist ' + output_filename +
                         ' -success Quit')])
         script_filename = '2dfdr_script.tcl'
@@ -897,7 +920,9 @@ class Manager:
             command = ['drcontrol',
                        '-AutoScript',
                        '-ScriptName',
-                       script_filename]
+                       script_filename,
+                       '-Timeout',
+                       timeout]
             print 'Combining files to create', output_path
             with open(os.devnull, 'w') as f:
                 subprocess.call(command, stdout=f)
