@@ -18,6 +18,9 @@ IDX_FILES = {'1': 'sami580V_v1_2.idx',
              'ccd_1': 'sami580V_v1_2.idx',
              'ccd_2': 'sami1000R_v1_2.idx'}
 
+GRATLPMM = {'ccd_1', 582.0,
+            'ccd_2', 1001.0}
+
 
 class Manager:
     """Object for organising and reducing SAMI data.
@@ -217,6 +220,7 @@ class Manager:
 
     def __init__(self, root, copy_files=False, move_files=False):
         self.idx_files = IDX_FILES
+        self.gratlpmm = GRATLPMM
         self.root = root
         # Match objects within 1'
         self.matching_radius = \
@@ -268,6 +272,7 @@ class Manager:
         """Add details of a file to the manager"""
         source_path = os.path.join(dirname, filename)
         ff = FITSFile(source_path)
+        self.add_header_item(ff, 'GRATLPMM', self.gratlpmm[ff.ccd])
         if ff.ndf_class == 'DARK':
             if ff.exposure_str not in self.dark_exposure_str_list:
                 self.dark_exposure_str_list.append(ff.exposure_str)
@@ -591,7 +596,12 @@ class Manager:
 
     def reduce_object(self, overwrite=False, **kwargs):
         """Reduce all object frames matching given criteria."""
-        for ff in self.files(ndf_class='MFOBJECT', do_not_use=False, **kwargs):
+        # Reduce them in reverse order of exposure time, to ensure the best
+        # possible throughput measurements are always available
+        key = lambda ff: ff.exposure
+        for ff in sorted(self.files(ndf_class='MFOBJECT', do_not_use=False, 
+                                    **kwargs),
+                         key=key, reverse=True):
             self.reduce_file(ff, overwrite)
         return
 
@@ -650,17 +660,17 @@ class Manager:
                 # What to do if no match was found
                 if match_class == 'bias':
                     print ('Warning: Bias frame not found. '
-                           'Turning off bias subtraction.')
+                           'Turning off bias subtraction for '+ff.filename)
                     options.extend(['-USEBIASIM', '0'])
                     continue
                 elif match_class == 'dark':
                     print ('Warning: Dark frame not found. '
-                           'Turning off dark subtraction.')
+                           'Turning off dark subtraction for '+ff.filename)
                     options.extend(['-USEDARKIM', '0'])
                     continue
                 elif match_class == 'lflat':
                     print ('Warning: LFlat frame not found. '
-                           'Turning off LFlat division.')
+                           'Turning off LFlat division for '+ff.filename)
                     options.extend(['-USEFLATIM', '0'])
                     continue
                 elif match_class == 'thput':
@@ -669,8 +679,9 @@ class Manager:
                     if filename_match is None:
                         # Still nothing
                         print ('Warning: Offsky (or substitute) frame not '
-                               'found. Turning off throughput calibration.')
-                        options.extend('THRUPUT', '0')
+                               'found. Turning off throughput calibration '
+                               'for '+ff.filename)
+                        options.extend(['-THRUPUT', '0'])
                         continue
                 else:
                     # Anything else missing is fatal
@@ -716,7 +727,7 @@ class Manager:
         else:
             raise ValueError('Unrecognised NDF_CLASS')
         command = ['drcontrol', task, ff.filename,
-                   '-idxfile', IDX_FILES[ff.ccd]]
+                   '-idxfile', self.idx_files[ff.ccd]]
         if options is not None:
             command.extend(options)
         with self.visit_dir(ff.reduced_dir):
