@@ -272,7 +272,6 @@ class Manager:
         """Add details of a file to the manager"""
         source_path = os.path.join(dirname, filename)
         ff = FITSFile(source_path)
-        self.add_header_item(ff, 'GRATLPMM', self.gratlpmm[ff.ccd])
         if ff.ndf_class == 'DARK':
             if ff.exposure_str not in self.dark_exposure_str_list:
                 self.dark_exposure_str_list.append(ff.exposure_str)
@@ -294,6 +293,7 @@ class Manager:
         self.set_reduced_path(ff)
         if not ff.do_not_use:
             ff.make_reduced_link()
+        self.add_header_item(ff, 'GRATLPMM', self.gratlpmm[ff.ccd])
         self.file_list.append(ff)
         return
 
