@@ -18,8 +18,8 @@ IDX_FILES = {'1': 'sami580V_v1_2.idx',
              'ccd_1': 'sami580V_v1_2.idx',
              'ccd_2': 'sami1000R_v1_2.idx'}
 
-GRATLPMM = {'ccd_1', 582.0,
-            'ccd_2', 1001.0}
+GRATLPMM = {'ccd_1': 582.0,
+            'ccd_2': 1001.0}
 
 
 class Manager:
