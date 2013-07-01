@@ -271,44 +271,44 @@ class Manager:
                     trust_header=True, copy_files=True, move_files=False):
         """Add details of a file to the manager"""
         source_path = os.path.join(dirname, filename)
-        ff = FITSFile(source_path)
-        if ff.ndf_class == 'DARK':
-            if ff.exposure_str not in self.dark_exposure_str_list:
-                self.dark_exposure_str_list.append(ff.exposure_str)
-                self.dark_exposure_list.append(ff.exposure)
-        self.set_raw_path(ff)
-        if os.path.abspath(ff.source_path) != os.path.abspath(ff.raw_path):
+        fits = FITSFile(source_path)
+        if fits.ndf_class == 'DARK':
+            if fits.exposure_str not in self.dark_exposure_str_list:
+                self.dark_exposure_str_list.append(fits.exposure_str)
+                self.dark_exposure_list.append(fits.exposure)
+        self.set_raw_path(fits)
+        if os.path.abspath(fits.source_path) != os.path.abspath(fits.raw_path):
             if copy_files:
                 print 'Copying file:', filename
-                self.update_copy(ff.source_path, ff.raw_path)
+                self.update_copy(fits.source_path, fits.raw_path)
             if move_files:
                 print 'Moving file: ', filename
-                self.move(ff.source_path, ff.raw_path)
+                self.move(fits.source_path, fits.raw_path)
             if not copy_files and not move_files:
                 print 'Warning! Adding', filename, 'in unexpected location'
-                ff.raw_path = ff.source_path
+                fits.raw_path = fits.source_path
         else:
             print 'Adding file: ', filename
-        self.set_name(ff, trust_header=trust_header)
-        self.set_reduced_path(ff)
-        if not ff.do_not_use:
-            ff.make_reduced_link()
-        self.add_header_item(ff, 'GRATLPMM', self.gratlpmm[ff.ccd])
-        self.file_list.append(ff)
+        self.set_name(fits, trust_header=trust_header)
+        self.set_reduced_path(fits)
+        if not fits.do_not_use:
+            fits.make_reduced_link()
+        self.add_header_item(fits, 'GRATLPMM', self.gratlpmm[fits.ccd])
+        self.file_list.append(fits)
         return
 
-    def set_raw_path(self, ff):
+    def set_raw_path(self, fits):
         """Set the raw path for a FITS file."""
-        if ff.ndf_class == 'BIAS':
-            rel_path = os.path.join('bias', ff.ccd, ff.date)
-        elif ff.ndf_class == 'DARK':
-            rel_path = os.path.join('dark', ff.ccd, ff.exposure_str, ff.date)
-        elif ff.ndf_class == 'LFLAT':
-            rel_path = os.path.join('lflat', ff.ccd, ff.date)
+        if fits.ndf_class == 'BIAS':
+            rel_path = os.path.join('bias', fits.ccd, fits.date)
+        elif fits.ndf_class == 'DARK':
+            rel_path = os.path.join('dark', fits.ccd, fits.exposure_str, fits.date)
+        elif fits.ndf_class == 'LFLAT':
+            rel_path = os.path.join('lflat', fits.ccd, fits.date)
         else:
-            rel_path = os.path.join(ff.date, ff.ccd)
-        ff.raw_dir = os.path.join(self.root, 'raw', rel_path)
-        ff.raw_path = os.path.join(ff.raw_dir, ff.filename)
+            rel_path = os.path.join(fits.date, fits.ccd)
+        fits.raw_dir = os.path.join(self.root, 'raw', rel_path)
+        fits.raw_path = os.path.join(fits.raw_dir, fits.filename)
         return
 
     def update_copy(self, source_path, dest_path):
@@ -331,73 +331,76 @@ class Manager:
         shutil.move(source_path, dest_path)
         return
 
-    def set_name(self, ff, trust_header=True):
+    def set_name(self, fits, trust_header=True):
         """Set the object name for a FITS file."""
-        ff.name = None
-        if ff.ndf_class != 'MFOBJECT':
+        fits.name = None
+        if fits.ndf_class != 'MFOBJECT':
             # Don't try to set a name for calibration files
             return
         # First check if there's already a name in the header
         if trust_header:
             try:
-                ff.name = pf.getval(ff.raw_path, 'MNGRNAME')
+                fits.name = pf.getval(fits.raw_path, 'MNGRNAME')
             except KeyError:
                 pass
-        if ff.name is None:
+        if fits.name is None:
             # Failing that, see if the telescope was pointing in the right
             # direction
-            if (ff.coords.separation(ff.cfg_coords) < self.matching_radius):
+            if (fits.coords.separation(fits.cfg_coords) < self.matching_radius):
                 # Yes it was
-                ff.name = 'main'
+                fits.name = 'main'
             else:
                 # No it wasn't. Now see if it matches any previous fields
                 for extra in self.extra_list:
-                    if (ff.coords.separation(extra['coords']) <
+                    if (fits.coords.separation(extra['coords']) <
                         self.matching_radius):
                         # Yes it does
-                        ff.name = extra['name']
+                        fits.name = extra['name']
                         break
                 else:
                     # No match. As a last resort, ask the user
-                    ff.name = raw_input('Enter object name for file ' +
-                                        ff.filename + '\n > ')
+                    fits.name = raw_input('Enter object name for file ' +
+                                        fits.filename + '\n > ')
             # At this point, a name has definitely been set.
             # Put it in the header.
-            self.add_header_item(ff, 'MNGRNAME', ff.name,
+            self.add_header_item(fits, 'MNGRNAME', fits.name,
                                  'Object name set by SAMI_Manager')
         # Check if the field was new
         for extra in self.extra_list:
-            if ff.coords.separation(extra['coords']) < self.matching_radius:
+            if fits.coords.separation(extra['coords']) < self.matching_radius:
                 break
         else:
             # No match found: field was new, so add it to the list.
-            self.extra_list.append({'name':ff.name,
-                                    'coords':ff.coords})
+            self.extra_list.append({'name':fits.name,
+                                    'coords':fits.coords})
         return
 
-    def set_reduced_path(self, ff):
+    def set_reduced_path(self, fits):
         """Set the reduced path for a FITS file."""
-        if ff.ndf_class == 'BIAS':
-            rel_path = os.path.join('bias', ff.ccd, ff.date)
-        elif ff.ndf_class == 'DARK':
-            rel_path = os.path.join('dark', ff.ccd, ff.exposure_str, ff.date)
-        elif ff.ndf_class == 'LFLAT':
-            rel_path = os.path.join('lflat', ff.ccd, ff.date)
-        elif ff.ndf_class in ['MFFFF', 'MFARC', 'MFSKY']:
-            rel_path = os.path.join(ff.date, ff.plate_id, ff.field_id,
-                                    'calibrators', ff.ccd)
+        if fits.ndf_class == 'BIAS':
+            rel_path = os.path.join('bias', fits.ccd, fits.date)
+        elif fits.ndf_class == 'DARK':
+            rel_path = os.path.join('dark', fits.ccd, fits.exposure_str, 
+                                    fits.date)
+        elif fits.ndf_class == 'LFLAT':
+            rel_path = os.path.join('lflat', fits.ccd, fits.date)
+        elif fits.ndf_class in ['MFFFF', 'MFARC', 'MFSKY']:
+            rel_path = os.path.join(fits.date, fits.plate_id, fits.field_id,
+                                    'calibrators', fits.ccd)
         else:
-            rel_path = os.path.join(ff.date, ff.plate_id, ff.field_id,
-                                    ff.name, ff.ccd)
-        ff.reduced_dir = os.path.join(self.root, 'reduced', rel_path)
-        ff.reduced_link = os.path.join(ff.reduced_dir, ff.filename)
-        ff.reduced_path = os.path.join(ff.reduced_dir, ff.reduced_filename)
-        if ff.ndf_class == 'MFFFF':
-            ff.tlm_path = os.path.join(ff.reduced_dir, ff.tlm_filename)
-        elif ff.ndf_class == 'MFOBJECT':
-            ff.fluxcal_path = os.path.join(ff.reduced_dir, ff.fluxcal_filename)
-            ff.telluric_path = os.path.join(ff.reduced_dir,
-                                            ff.telluric_filename)
+            rel_path = os.path.join(fits.date, fits.plate_id, fits.field_id,
+                                    fits.name, fits.ccd)
+        fits.reduced_dir = os.path.join(self.root, 'reduced', rel_path)
+        fits.reduced_link = os.path.join(fits.reduced_dir, fits.filename)
+        fits.reduced_path = os.path.join(fits.reduced_dir, 
+                                         fits.reduced_filename)
+        if fits.ndf_class == 'MFFFF':
+            fits.tlm_path = os.path.join(fits.reduced_dir, fits.tlm_filename)
+        elif fits.ndf_class == 'MFOBJECT':
+            fits.fluxcal_path = os.path.join(fits.reduced_dir, 
+                                             fits.fluxcal_filename)
+            fits.telluric_path = os.path.join(fits.reduced_dir,
+                                              fits.telluric_filename)
         return
 
     def import_dir(self, source_dir, trust_header=True):
@@ -414,30 +417,30 @@ class Manager:
         """Return the FITSFile object that corresponds to the given filename."""
         filename_options = [filename, filename+'.fit', filename+'.fits',
                             filename+'.FIT', filename+'.FITS']
-        for ff in self.file_list:
-            if ff.filename in filename_options:
-                return ff
+        for fits in self.file_list:
+            if fits.filename in filename_options:
+                return fits
 
     def disable_files(self, file_iterable):
         """Disable (delete links to) files in provided list (or iterable)."""
-        for ff in file_iterable:
-            if isinstance(ff, str):
-                ff = self.fits_file(ff)
-            ff.do_not_use = True
-            if os.path.exists(ff.reduced_link):
-                os.remove(ff.reduced_link)
-            self.add_header_item(ff, 'DONOTUSE', True,
+        for fits in file_iterable:
+            if isinstance(fits, str):
+                fits = self.fits_file(fits)
+            fits.do_not_use = True
+            if os.path.exists(fits.reduced_link):
+                os.remove(fits.reduced_link)
+            self.add_header_item(fits, 'DONOTUSE', True,
                                  'Do Not Use flag for SAMI_manager')
         return
 
     def enable_files(self, file_iterable):
         """Enable files in provided list (or iterable)."""
-        for ff in file_iterable:
-            if isinstance(ff, str):
-                ff = self.fits_file(ff)
-            ff.do_not_use = False
-            ff.make_reduced_link()
-            self.add_header_item(ff, 'DONOTUSE', False,
+        for fits in file_iterable:
+            if isinstance(fits, str):
+                fits = self.fits_file(fits)
+            fits.do_not_use = False
+            fits.make_reduced_link()
+            self.add_header_item(fits, 'DONOTUSE', False,
                                  'Do Not Use flag for SAMI_manager')
         return
 
@@ -473,9 +476,9 @@ class Manager:
         self.check_calibrator_type(calibrator_type)
         if overwrite:
             # Delete all the old reduced files
-            for ff in self.files(ndf_class=calibrator_type.upper(),
-                                 reduced=True):
-                os.remove(ff.reduced_path)
+            for fits in self.files(ndf_class=calibrator_type.upper(),
+                                   reduced=True):
+                os.remove(fits.reduced_path)
         for dir_path in self.reduced_dirs(calibrator_type.lower()):
             self.run_2dfdr_auto(dir_path)
         return
@@ -571,38 +574,38 @@ class Manager:
 
     def make_tlm(self, overwrite=False, leave_reduced=False, **kwargs):
         """Make TLMs from all files matching given criteria."""
-        for ff in self.files(ndf_class='MFFFF', do_not_use=False, **kwargs):
-            self.reduce_file(ff, overwrite=overwrite, tlm=True,
+        for fits in self.files(ndf_class='MFFFF', do_not_use=False, **kwargs):
+            self.reduce_file(fits, overwrite=overwrite, tlm=True,
                              leave_reduced=leave_reduced)
         return
 
     def reduce_arc(self, overwrite=False, **kwargs):
         """Reduce all arc frames matching given criteria."""
-        for ff in self.files(ndf_class='MFARC', do_not_use=False, **kwargs):
-            self.reduce_file(ff, overwrite)
+        for fits in self.files(ndf_class='MFARC', do_not_use=False, **kwargs):
+            self.reduce_file(fits, overwrite)
         return
 
     def reduce_fflat(self, overwrite=False, **kwargs):
         """Reduce all fibre flat frames matching given criteria."""
-        for ff in self.files(ndf_class='MFFFF', do_not_use=False, **kwargs):
-            self.reduce_file(ff, overwrite)
+        for fits in self.files(ndf_class='MFFFF', do_not_use=False, **kwargs):
+            self.reduce_file(fits, overwrite)
         return
 
     def reduce_sky(self, overwrite=False, **kwargs):
         """Reduce all offset sky frames matching given criteria."""
-        for ff in self.files(ndf_class='MFSKY', do_not_use=False, **kwargs):
-            self.reduce_file(ff, overwrite)
+        for fits in self.files(ndf_class='MFSKY', do_not_use=False, **kwargs):
+            self.reduce_file(fits, overwrite)
         return
 
     def reduce_object(self, overwrite=False, **kwargs):
         """Reduce all object frames matching given criteria."""
         # Reduce them in reverse order of exposure time, to ensure the best
         # possible throughput measurements are always available
-        key = lambda ff: ff.exposure
-        for ff in sorted(self.files(ndf_class='MFOBJECT', do_not_use=False, 
-                                    **kwargs),
+        key = lambda fits: fits.exposure
+        for fits in sorted(self.files(ndf_class='MFOBJECT', do_not_use=False, 
+                                      **kwargs),
                          key=key, reverse=True):
-            self.reduce_file(ff, overwrite)
+            self.reduce_file(fits, overwrite)
         return
 
     def reduce_all(self, overwrite=False, **kwargs):
@@ -620,32 +623,33 @@ class Manager:
         self.reduce_object(overwrite, **kwargs)
         return
 
-    def reduce_file(self, ff, overwrite=False, tlm=False, leave_reduced=False):
+    def reduce_file(self, fits, overwrite=False, tlm=False, 
+                    leave_reduced=False):
         """Select appropriate options and reduce the given file.
 
         For MFFFF files, if tlm is True then a tramline map is produced; if it
         is false then a full reduction is done. If tlm is True and leave_reduced
         is false, then any reduced MFFFF produced as a side-effect will be
         removed."""
-        if ff.ndf_class == 'MFFFF' and tlm:
-            target = ff.tlm_path
+        if fits.ndf_class == 'MFFFF' and tlm:
+            target = fits.tlm_path
         else:
-            target = ff.reduced_path
+            target = fits.reduced_path
         if os.path.exists(target) and not overwrite:
             # File to be created already exists, abandon this.
             return
         options = []
-        if ff.ndf_class == 'MFFFF' and tlm:
+        if fits.ndf_class == 'MFFFF' and tlm:
             files_to_match = ['bias', 'dark', 'lflat']
-        elif ff.ndf_class == 'MFARC':
+        elif fits.ndf_class == 'MFARC':
             files_to_match = ['bias', 'dark', 'lflat', 'tlmap']
-        elif ff.ndf_class == 'MFFFF' and not tlm:
+        elif fits.ndf_class == 'MFFFF' and not tlm:
             files_to_match = ['bias', 'dark', 'lflat', 'tlmap', 'wavel']
-        elif ff.ndf_class == 'MFSKY':
+        elif fits.ndf_class == 'MFSKY':
             files_to_match = ['bias', 'dark', 'lflat', 'tlmap', 'wavel',
                               'fflat']
-        elif ff.ndf_class == 'MFOBJECT':
-            if ff.exposure <= 899.0:
+        elif fits.ndf_class == 'MFOBJECT':
+            if fits.exposure <= 899.0:
                 files_to_match = ['bias', 'dark', 'lflat', 'tlmap', 'wavel',
                                   'fflat', 'thput']
                 options.extend(['-TPMETH', 'OFFSKY'])
@@ -653,84 +657,84 @@ class Manager:
                 files_to_match = ['bias', 'dark', 'lflat', 'tlmap', 'wavel',
                                   'fflat']
         else:
-            raise ValueError('Unrecognised NDF_CLASS: '+ff.ndf_class)
+            raise ValueError('Unrecognised NDF_CLASS: '+fits.ndf_class)
         for match_class in files_to_match:
-            filename_match = self.match_link(ff, match_class)
+            filename_match = self.match_link(fits, match_class)
             if filename_match is None:
                 # What to do if no match was found
                 if match_class == 'bias':
                     print ('Warning: Bias frame not found. '
-                           'Turning off bias subtraction for '+ff.filename)
+                           'Turning off bias subtraction for '+fits.filename)
                     options.extend(['-USEBIASIM', '0'])
                     continue
                 elif match_class == 'dark':
                     print ('Warning: Dark frame not found. '
-                           'Turning off dark subtraction for '+ff.filename)
+                           'Turning off dark subtraction for '+fits.filename)
                     options.extend(['-USEDARKIM', '0'])
                     continue
                 elif match_class == 'lflat':
                     print ('Warning: LFlat frame not found. '
-                           'Turning off LFlat division for '+ff.filename)
+                           'Turning off LFlat division for '+fits.filename)
                     options.extend(['-USEFLATIM', '0'])
                     continue
                 elif match_class == 'thput':
                     # Try to find a suitable object frame instead
-                    filename_match = self.match_link(ff, 'thput_object')
+                    filename_match = self.match_link(fits, 'thput_object')
                     if filename_match is None:
                         # Still nothing
                         print ('Warning: Offsky (or substitute) frame not '
                                'found. Turning off throughput calibration '
-                               'for '+ff.filename)
+                               'for '+fits.filename)
                         options.extend(['-THRUPUT', '0'])
                         continue
                 else:
                     # Anything else missing is fatal
                     raise MatchException('No matching ' + match_class +
-                                         ' found for ' + ff.filename)
+                                         ' found for ' + fits.filename)
             if filename_match is not None:
                 # Note we can't use else for the above line, because
                 # filename_match might have changed
                 options.extend(['-'+match_class.upper()+'_FILENAME',
                                 filename_match])
         # All options have been set, so run 2dfdr
-        self.run_2dfdr_single(ff, options)
-        if (ff.ndf_class == 'MFFFF' and tlm and not leave_reduced and
-            os.path.exists(ff.reduced_path)):
-            os.remove(ff.reduced_path)
+        self.run_2dfdr_single(fits, options)
+        if (fits.ndf_class == 'MFFFF' and tlm and not leave_reduced and
+            os.path.exists(fits.reduced_path)):
+            os.remove(fits.reduced_path)
         return
 
-    def extra_options(self, ff):
+    def extra_options(self, fits):
         """Return a list of extra reduction options suitable for the file."""
         options = []
-        if ff.ndf_class == 'MFOBJECT' and ff.exposure <= 899.0:
+        if fits.ndf_class == 'MFOBJECT' and fits.exposure <= 899.0:
             # Use offsky throughput values for short exposures
             options.extend(['-TPMETH', 'OFFSKY'])
         return options
 
-    def run_2dfdr_single(self, ff, options=None):
+    def run_2dfdr_single(self, fits, options=None):
         """Run 2dfdr on a single FITS file."""
-        print 'Reducing file:', ff.filename
-        if ff.ndf_class == 'BIAS':
+        print 'Reducing file:', fits.filename
+        if fits.ndf_class == 'BIAS':
             task = 'reduce_bias'
-        elif ff.ndf_class == 'DARK':
+        elif fits.ndf_class == 'DARK':
             task = 'reduce_dark'
-        elif ff.ndf_class == 'LFLAT':
+        elif fits.ndf_class == 'LFLAT':
             task = 'reduce_lflat'
-        elif ff.ndf_class == 'MFFFF':
+        elif fits.ndf_class == 'MFFFF':
             task = 'reduce_fflat'
-        elif ff.ndf_class == 'MFARC':
+        elif fits.ndf_class == 'MFARC':
             task = 'reduce_arc'
-        elif ff.ndf_class == 'MFSKY':
+        elif fits.ndf_class == 'MFSKY':
             task = 'reduce_sky'
-        elif ff.ndf_class == 'MFOBJECT':
+        elif fits.ndf_class == 'MFOBJECT':
             task = 'reduce_object'
         else:
             raise ValueError('Unrecognised NDF_CLASS')
-        command = ['drcontrol', task, ff.filename,
-                   '-idxfile', self.idx_files[ff.ccd]]
+        command = ['drcontrol', task, fits.filename,
+                   '-idxfile', self.idx_files[fits.ccd]]
         if options is not None:
             command.extend(options)
-        with self.visit_dir(ff.reduced_dir):
+        with self.visit_dir(fits.reduced_dir):
             with open(os.devnull, 'w') as f:
                 subprocess.call(command, stdout=f)
         self.cleanup()
@@ -739,9 +743,9 @@ class Manager:
     def run_2dfdr_auto(self, dirname):
         """Run 2dfdr in auto mode in the specified directory."""
         # First find a file in that directory to get the date and ccd
-        for ff in self.file_list:
-            if os.path.realpath(dirname) == os.path.realpath(ff.reduced_dir):
-                date_ccd = ff.filename[:6]
+        for fits in self.file_list:
+            if os.path.realpath(dirname) == os.path.realpath(fits.reduced_dir):
+                date_ccd = fits.filename[:6]
                 break
         else:
             # No known files in that directory, best not do anything
@@ -776,9 +780,9 @@ class Manager:
         timeout = '300'
         # Write the 2dfdr AutoScript
         script = []
-        for ff in file_iterable:
+        for fits in file_iterable:
             script.append('lappend glist ' +
-                          os.path.relpath(ff.reduced_path, output_dir))
+                          os.path.relpath(fits.reduced_path, output_dir))
         if len(script) < 2:
             raise ValueError('Need at least 2 files to combine!')
         script.extend(['proc Quit {status} {',
@@ -817,52 +821,52 @@ class Manager:
               reduced_dir=None, reduced=None, tlm_created=None,
               flux_calibrated=None, telluric_corrected=None):
         """Generator for FITS files that satisfy requirements."""
-        for ff in self.file_list:
-            if ff.ndf_class is None:
+        for fits in self.file_list:
+            if fits.ndf_class is None:
                 continue
-            if ((ndf_class is None or ff.ndf_class in ndf_class) and
-                (date is None or ff.date in date) and
-                (plate_id is None or ff.plate_id in plate_id) and
+            if ((ndf_class is None or fits.ndf_class in ndf_class) and
+                (date is None or fits.date in date) and
+                (plate_id is None or fits.plate_id in plate_id) and
                 (plate_id_short is None or
-                 ff.plate_id_short in plate_id_short) and
-                (field_no is None or ff.field_no == field_no) and
-                (field_id is None or ff.field_id in field_id) and
-                (ccd is None or ff.ccd in ccd) and
-                (exposure_str is None or ff.exposure_str in exposure_str) and
-                (do_not_use is None or ff.do_not_use == do_not_use) and
-                (min_exposure is None or ff.exposure >= min_exposure) and
-                (max_exposure is None or ff.exposure <= max_exposure) and
+                 fits.plate_id_short in plate_id_short) and
+                (field_no is None or fits.field_no == field_no) and
+                (field_id is None or fits.field_id in field_id) and
+                (ccd is None or fits.ccd in ccd) and
+                (exposure_str is None or fits.exposure_str in exposure_str) and
+                (do_not_use is None or fits.do_not_use == do_not_use) and
+                (min_exposure is None or fits.exposure >= min_exposure) and
+                (max_exposure is None or fits.exposure <= max_exposure) and
                 (reduced_dir is None or
                  os.path.realpath(reduced_dir) ==
-                 os.path.realpath(ff.reduced_dir)) and
+                 os.path.realpath(fits.reduced_dir)) and
                 (reduced is None or
-                 (reduced and os.path.exists(ff.reduced_path)) or
-                 (not reduced and not os.path.exists(ff.reduced_path))) and
+                 (reduced and os.path.exists(fits.reduced_path)) or
+                 (not reduced and not os.path.exists(fits.reduced_path))) and
                 (tlm_created is None or
-                 (tlm_created and hasattr(ff, 'tlm_path') and
-                  os.path.exists(ff.tlm_path)) or
-                 (not tlm_created and hasattr(ff, 'tlm_path') and
-                  not os.path.exists(ff.tlm_path))) and
+                 (tlm_created and hasattr(fits, 'tlm_path') and
+                  os.path.exists(fits.tlm_path)) or
+                 (not tlm_created and hasattr(fits, 'tlm_path') and
+                  not os.path.exists(fits.tlm_path))) and
                 (flux_calibrated is None or
-                 (flux_calibrated and hasattr(ff, 'fluxcal_path') and
-                  os.path.exists(ff.fluxcal_path)) or
-                 (not flux_calibrated and hasattr(ff, 'fluxcal_path') and
-                  not os.path.exists(ff.fluxcal_path))) and
+                 (flux_calibrated and hasattr(fits, 'fluxcal_path') and
+                  os.path.exists(fits.fluxcal_path)) or
+                 (not flux_calibrated and hasattr(fits, 'fluxcal_path') and
+                  not os.path.exists(fits.fluxcal_path))) and
                 (telluric_corrected is None or
-                 (telluric_corrected and hasattr(ff, 'telluric_path') and
-                  os.path.exists(ff.telluric_path)) or
-                 (not telluric_corrected and hasattr(ff, 'telluric_path') and
-                  not os.path.exists(ff.telluric_path)))):
-                yield ff
+                 (telluric_corrected and hasattr(fits, 'telluric_path') and
+                  os.path.exists(fits.telluric_path)) or
+                 (not telluric_corrected and hasattr(fits, 'telluric_path') and
+                  not os.path.exists(fits.telluric_path)))):
+                yield fits
         return
 
     def ccds(self, do_not_use=False):
         """Generator for ccd names in the data."""
         ccd_list = []
-        for ff in self.files(do_not_use=do_not_use):
-            if ff.ccd not in ccd_list:
-                ccd_list.append(ff.ccd)
-                yield ff.ccd
+        for fits in self.files(do_not_use=do_not_use):
+            if fits.ccd not in ccd_list:
+                ccd_list.append(fits.ccd)
+                yield fits.ccd
         return
 
     def reduced_dirs(self, dir_type=None, **kwargs):
@@ -881,23 +885,23 @@ class Manager:
                          'mfsky': 'MFSKY',
                          'mfobject': 'MFOBJECT',
                          'spectrophotometric': 'MFOBJECT'}[dir_type.lower()]
-        for ff in self.files(ndf_class=ndf_class, **kwargs):
+        for fits in self.files(ndf_class=ndf_class, **kwargs):
             if (dir_type.lower() == 'spectrophotometric' and
-                (ff.name == 'main' or 'ngc' in ff.name.lower())):
+                (fits.name == 'main' or 'ngc' in fits.name.lower())):
                 # This is a galaxy field, not a spectrophotometric standard
                 continue
-            if ff.reduced_dir not in reduced_dir_list:
-                reduced_dir_list.append(ff.reduced_dir)
-                yield ff.reduced_dir
+            if fits.reduced_dir not in reduced_dir_list:
+                reduced_dir_list.append(fits.reduced_dir)
+                yield fits.reduced_dir
         return
 
     def dark_exposure_strs(self, ccd, do_not_use=False):
         """Generator for dark exposure strings for a given ccd name."""
         exposure_str_list = []
-        for ff in self.files(ndf_class='DARK', ccd=ccd, do_not_use=do_not_use):
-            if ff.exposure_str not in exposure_str_list:
-                exposure_str_list.append(ff.exposure_str)
-                yield ff.exposure_str
+        for fits in self.files(ndf_class='DARK', ccd=ccd, do_not_use=do_not_use):
+            if fits.exposure_str not in exposure_str_list:
+                exposure_str_list.append(fits.exposure_str)
+                yield fits.exposure_str
         return
 
     def combined_filenames_paths(self, calibrator_type, do_not_use=False):
@@ -937,20 +941,20 @@ class Manager:
         os.chdir(self.cwd)
         return
 
-    def add_header_item(self, ff, key, value, comment=None):
+    def add_header_item(self, fits, key, value, comment=None):
         """Add a header item to the FITS file."""
         if comment is None:
             value_comment = value
         else:
             value_comment = (value, comment)
-        hdulist = pf.open(ff.raw_path, 'update',
+        hdulist = pf.open(fits.raw_path, 'update',
                           do_not_scale_image_data=True)
         hdulist[0].header[key] = value_comment
         hdulist.close()
         return
 
-    def matchmaker(self, ff, match_class):
-        """Return the file that should be used to help reduce the FITS file ff.
+    def matchmaker(self, fits, match_class):
+        """Return the file that should be used to help reduce the FITS file.
 
         match_class is one of the following:
         tlmap -- Find a tramline map
@@ -966,7 +970,7 @@ class Manager:
         tlmap, wavel, fflat, thput, thput_object -- A FITS file object
         bias, dark, lflat       -- The path to the combined file
         """
-        ff_match = None
+        fits_match = None
         # The following are the things that could potentially be matched
         date = None
         plate_id = None
@@ -979,73 +983,73 @@ class Manager:
         reduced = None
         tlm_created = None
         # Define some functions for figures of merit
-        time_difference = lambda ff, ff_test: (
-            abs(ff_test.epoch - ff.epoch))
-        recent_reduction = lambda ff, ff_test: (
-            -1.0 * os.stat(ff_test.reduced_path).st_mtime)
+        time_difference = lambda fits, fits_test: (
+            abs(fits_test.epoch - fits.epoch))
+        recent_reduction = lambda fits, fits_test: (
+            -1.0 * os.stat(fits_test.reduced_path).st_mtime)
         def time_difference_min_exposure(min_exposure):
-            def retfunc(ff, ff_test):
-                if ff_test.exposure <= min_exposure:
+            def retfunc(fits, fits_test):
+                if fits_test.exposure <= min_exposure:
                     return np.inf
                 else:
-                    return time_difference(ff, ff_test)
+                    return time_difference(fits, fits_test)
             return retfunc
         # Determine what actually needs to be matched, depending on match_class
         if match_class.lower() == 'tlmap':
             # Find a tramline map, so need a fibre flat field
             return_type = 'fits_file'
             ndf_class = 'MFFFF'
-            date = ff.date
-            plate_id = ff.plate_id
-            field_id = ff.field_id
-            ccd = ff.ccd
+            date = fits.date
+            plate_id = fits.plate_id
+            field_id = fits.field_id
+            ccd = fits.ccd
             tlm_created = True
             fom = time_difference
         elif match_class.lower() == 'wavel':
             # Find a reduced arc field
             return_type = 'fits_file'
             ndf_class = 'MFARC'
-            date = ff.date
-            plate_id = ff.plate_id
-            field_id = ff.field_id
-            ccd = ff.ccd
+            date = fits.date
+            plate_id = fits.plate_id
+            field_id = fits.field_id
+            ccd = fits.ccd
             reduced = True
             fom = time_difference
         elif match_class.lower() == 'fflat':
             # Find a reduced fibre flat field
             return_type = 'fits_file'
             ndf_class = 'MFFFF'
-            date = ff.date
-            plate_id = ff.plate_id
-            field_id = ff.field_id
-            ccd = ff.ccd
+            date = fits.date
+            plate_id = fits.plate_id
+            field_id = fits.field_id
+            ccd = fits.ccd
             reduced = True
             fom = time_difference
         elif match_class.lower() == 'thput':
             # Find a reduced offset sky field
             return_type = 'fits_file'
             ndf_class = 'MFSKY'
-            date = ff.date
-            plate_id = ff.plate_id
-            field_id = ff.field_id
-            ccd = ff.ccd
+            date = fits.date
+            plate_id = fits.plate_id
+            field_id = fits.field_id
+            ccd = fits.ccd
             reduced = True
             fom = recent_reduction
         elif match_class.lower() == 'thput_object':
             # Find a reduced object field to take the throughput from
             return_type = 'fits_file'
             ndf_class = 'MFOBJECT'
-            date = ff.date
-            plate_id = ff.plate_id
-            field_id = ff.field_id
-            ccd = ff.ccd
+            date = fits.date
+            plate_id = fits.plate_id
+            field_id = fits.field_id
+            ccd = fits.ccd
             reduced = True
             fom = time_difference_min_exposure(899.0)
         elif match_class.lower() == 'bias':
             # Just return the standard BIAScombined filename
             return_type = 'file_path'
             filename = self.bias_combined_filename()
-            if os.path.exists(os.path.join(ff.reduced_dir, filename)):
+            if os.path.exists(os.path.join(fits.reduced_dir, filename)):
                 return filename
             else:
                 return None
@@ -1054,13 +1058,13 @@ class Manager:
             # combined dark frame with the closest exposure time.
             return_type = 'file_path'
             best_fom = np.inf
-            for exposure_str in self.dark_exposure_strs(ccd=ff.ccd):
-                test_fom = abs(float(exposure_str) - ff.exposure)
+            for exposure_str in self.dark_exposure_strs(ccd=fits.ccd):
+                test_fom = abs(float(exposure_str) - fits.exposure)
                 if test_fom < best_fom:
                     exposure_str_match = exposure_str
                     best_fom = test_fom
             filename = self.dark_combined_filename(exposure_str_match)
-            if os.path.exists(os.path.join(ff.reduced_dir, filename)):
+            if os.path.exists(os.path.join(fits.reduced_dir, filename)):
                 return filename
             else:
                 return None
@@ -1068,7 +1072,7 @@ class Manager:
             # Just return the standard LFLATcombined filename
             return_type = 'file_path'
             filename = self.lflat_combined_filename()
-            if os.path.exists(os.path.join(ff.reduced_dir, filename)):
+            if os.path.exists(os.path.join(fits.reduced_dir, filename)):
                 return filename
             else:
                 return None
@@ -1076,7 +1080,7 @@ class Manager:
             raise ValueError('Unrecognised match_class')
         # Perform the match
         best_fom = np.inf
-        for ff_test in self.files(
+        for fits_test in self.files(
                 ndf_class=ndf_class,
                 date=date,
                 plate_id=plate_id,
@@ -1090,29 +1094,29 @@ class Manager:
                 tlm_created=tlm_created,
                 do_not_use=False,
                 ):
-            test_fom = fom(ff, ff_test)
+            test_fom = fom(fits, fits_test)
             if test_fom < best_fom:
-                ff_match = ff_test
+                fits_match = fits_test
                 best_fom = test_fom
-        return ff_match
+        return fits_match
 
-    def match_link(self, ff, match_class):
+    def match_link(self, fits, match_class):
         """Match and make a link to a file, and return the filename."""
-        ff_match = self.matchmaker(ff, match_class)
-        if ff_match is None:
+        fits_match = self.matchmaker(fits, match_class)
+        if fits_match is None:
             # No match was found, send the lack of match onwards
             return None
         if match_class.lower() in ['bias', 'dark', 'lflat']:
             # matchmaker returns a filename in these cases; send it straight on
-            return ff_match
+            return fits_match
         if match_class.lower() == 'tlmap':
-            filename = ff_match.tlm_filename
+            filename = fits_match.tlm_filename
         else:
-            filename = ff_match.reduced_filename
-        link_path = os.path.join(ff.reduced_dir, filename)
-        source_path = os.path.join(ff_match.reduced_dir, filename)
-        raw_link_path = os.path.join(ff.reduced_dir, ff_match.filename)
-        raw_source_path = os.path.join(ff_match.raw_dir, ff_match.filename)
+            filename = fits_match.reduced_filename
+        link_path = os.path.join(fits.reduced_dir, filename)
+        source_path = os.path.join(fits_match.reduced_dir, filename)
+        raw_link_path = os.path.join(fits.reduced_dir, fits_match.filename)
+        raw_source_path = os.path.join(fits_match.raw_dir, fits_match.filename)
         # If the link path is occupied by a link, delete it
         # Leave actual files in place
         if os.path.islink(link_path):
@@ -1121,10 +1125,10 @@ class Manager:
             os.remove(raw_link_path)
         # Make a link, unless the file is already there
         if not os.path.exists(link_path):
-            os.symlink(os.path.relpath(source_path, ff.reduced_dir),
+            os.symlink(os.path.relpath(source_path, fits.reduced_dir),
                        link_path)
         if not os.path.exists(raw_link_path):
-            os.symlink(os.path.relpath(raw_source_path, ff.reduced_dir),
+            os.symlink(os.path.relpath(raw_source_path, fits.reduced_dir),
                        raw_link_path)
         return filename
 
