@@ -556,7 +556,7 @@ class Manager:
         if overwrite:
             # Delete all the old reduced files
             for fits in self.files(ndf_class=calibrator_type.upper(),
-                                 reduced=True):
+                                   reduced=True):
                 os.remove(fits.reduced_path)
         for dir_path in self.reduced_dirs(calibrator_type.lower()):
             self.run_2dfdr_auto(dir_path)
@@ -815,8 +815,6 @@ class Manager:
                     # Anything else missing is fatal
                     raise MatchException('No matching ' + match_class +
                                          ' found for ' + fits.filename)
-            options.extend(['-'+match_class.upper()+'_FILENAME',
-                            filename_match])
             if filename_match is not None:
                 # Note we can't use else for the above line, because
                 # filename_match might have changed
