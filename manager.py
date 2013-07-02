@@ -589,27 +589,31 @@ class Manager:
 
     def make_tlm(self, overwrite=False, leave_reduced=False, **kwargs):
         """Make TLMs from all files matching given criteria."""
-        for fits in self.files(ndf_class='MFFFF', do_not_use=False, **kwargs):
-            self.reduce_file(fits, overwrite=overwrite, tlm=True,
-                             leave_reduced=leave_reduced)
+        file_iterable = self.files(ndf_class='MFFFF', do_not_use=False,
+                                   **kwargs)
+        self.reduce_file_iterable(file_iterable, overwrite=overwrite, 
+                                  tlm=True, leave_reduced=leave_reduced)
         return
 
     def reduce_arc(self, overwrite=False, **kwargs):
         """Reduce all arc frames matching given criteria."""
-        for fits in self.files(ndf_class='MFARC', do_not_use=False, **kwargs):
-            self.reduce_file(fits, overwrite)
+        file_iterable = self.files(ndf_class='MFARC', do_not_use=False,
+                                   **kwargs)
+        self.reduce_file_iterable(file_iterable, overwrite=overwrite)
         return
 
     def reduce_fflat(self, overwrite=False, **kwargs):
         """Reduce all fibre flat frames matching given criteria."""
-        for fits in self.files(ndf_class='MFFFF', do_not_use=False, **kwargs):
-            self.reduce_file(fits, overwrite)
+        file_iterable = self.files(ndf_class='MFFFF', do_not_use=False,
+                                   **kwargs)
+        self.reduce_file_iterable(file_iterable, overwrite=overwrite)
         return
 
     def reduce_sky(self, overwrite=False, **kwargs):
         """Reduce all offset sky frames matching given criteria."""
-        for fits in self.files(ndf_class='MFSKY', do_not_use=False, **kwargs):
-            self.reduce_file(fits, overwrite)
+        file_iterable = self.files(ndf_class='MFSKY', do_not_use=False,
+                                   **kwargs)
+        self.reduce_file_iterable(file_iterable, overwrite=overwrite)
         return
 
     def reduce_object(self, overwrite=False, **kwargs):
@@ -617,13 +621,25 @@ class Manager:
         # Reduce them in reverse order of exposure time, to ensure the best
         # possible throughput measurements are always available
         key = lambda fits: fits.exposure
+        file_iterable = sorted(self.files(ndf_class='MFOBJECT',
+                                          do_not_use=False, **kwargs),
+                               key=key, reverse=True)
+        self.reduce_file_iterable(file_iterable, overwrite=overwrite)
+        return
+
+    def reduce_file_iterable(self, file_iterable, overwrite=False, tlm=False,
+                             leave_reduced=True):
+        """Reduce all files in the iterable."""
         extra_check_dict = defaultdict(list)
-        for fits in sorted(self.files(ndf_class='MFOBJECT', do_not_use=False, 
-                                      **kwargs),
-                           key=key, reverse=True):
-            reduced = self.reduce_file(fits, overwrite)
+        for fits in file_iterable:
+            reduced = self.reduce_file(fits, overwrite=overwrite, tlm=tlm,
+                                       leave_reduced=leave_reduced)
             if reduced:
-                extra_check_dict[fits.reduced_dir].append(fits.reduced_filename)
+                if tlm:
+                    check_filename = fits.tlm_filename
+                else:
+                    check_filename = fits.reduced_filename
+                extra_check_dict[fits.reduced_dir].append(check_filename)
         self.check_list.extend(extra_check_dict.items())
         return
 
