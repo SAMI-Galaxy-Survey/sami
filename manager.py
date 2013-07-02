@@ -5,7 +5,7 @@ import os
 import re
 import subprocess
 from contextlib import contextmanager
-from itertools import defaultdict
+from collections import defaultdict, deque
 
 import astropy.coordinates as coord
 from astropy import units
@@ -16,10 +16,14 @@ from sami.general.cubing import dithered_cubes_from_rss_files
 import SAMI_fluxcal   # This one will need updating when Ned sends new code
 
 
-IDX_FILES = {'1': 'sami580V_v1_2.idx',
-             '2': 'sami1000R_v1_2.idx',
-             'ccd_1': 'sami580V_v1_2.idx',
-             'ccd_2': 'sami1000R_v1_2.idx'}
+IDX_FILES_SLOW = {'1': 'sami580V_v1_2.idx',
+                  '2': 'sami1000R_v1_2.idx',
+                  'ccd_1': 'sami580V_v1_2.idx',
+                  'ccd_2': 'sami1000R_v1_2.idx'}
+IDX_FILES_FAST = {'1': 'sami580V.idx',
+                  '2': 'sami1000R.idx',
+                  'ccd_1': 'sami580V.idx',
+                  'ccd_2': 'sami1000R.idx'}
 
 GRATLPMM = {'ccd_1': 582.0,
             'ccd_2': 1001.0}
@@ -53,6 +57,12 @@ class Manager:
     want it. You may be able to avoid it by providing an absolute path when you
     create the manager, but no guarantee is made.
 
+    By default, the manager will perform full science-grade reductions, which
+    can be quite slow. If you want quick-look reductions only (e.g. if you are
+    at the telescope, or for testing purposes), then set the 'fast' keyword:
+
+    >>> mngr = sami.manager.Manager('130305_130317', fast=True)
+
     At this point the manager is not aware of any actual data - skip to
     "Importing data" and carry on from there.
 
@@ -69,6 +79,8 @@ class Manager:
     were stored in the headers. To re-assign all names:
 
     >>> mngr = sami.manager.Manager('data_directory', trust_header=False)
+
+    As before, set the 'fast' keyword if you want quick-look reductions.
 
     Importing data
     ==============
@@ -250,8 +262,11 @@ class Manager:
     The other functions defined probably aren't useful to you.
     """
 
-    def __init__(self, root, copy_files=False, move_files=False):
-        self.idx_files = IDX_FILES
+    def __init__(self, root, copy_files=False, move_files=False, fast=False):
+        if fast:
+            self.idx_files = IDX_FILES_FAST
+        else:
+            self.idx_files = IDX_FILES_SLOW
         self.gratlpmm = GRATLPMM
         self.root = root
         # Match objects within 1'
@@ -261,44 +276,29 @@ class Manager:
         self.extra_list = []
         self.dark_exposure_str_list = []
         self.dark_exposure_list = []
+        self.check_list = deque()
         self.inspect_root(copy_files, move_files)
         self.cwd = os.getcwd()
 
     def inspect_root(self, copy_files, move_files, trust_header=True):
         """Add details of existing files to internal lists."""
-        reduced_path = os.path.join(self.root, 'reduced')
-        for dirname, subdirname_list, filename_list in os.walk(reduced_path):
+        for dirname, subdirname_list, filename_list in os.walk(self.root):
             for filename in filename_list:
                 if self.file_filter(filename):
                     self.import_file(dirname, filename,
                                      trust_header=trust_header,
                                      copy_files=copy_files,
                                      move_files=move_files)
-        raw_path = os.path.join(self.root, 'raw')
-        for dirname, subdirname_list, filename_list in os.walk(raw_path):
-            for filename in filename_list:
-                if self.file_filter_raw(filename):
-                    try:
-                        self.import_file(
-                            dirname, filename,
-                            trust_header=True, copy_files=copy_files,
-                            move_files=move_files)
-                    except Exception:
-                        print 'Error importing file:', \
-                            os.path.join(dirname, filename)
         return
 
     def file_filter(self, filename):
         """Return True if the file should be added."""
         # Match filenames of the form 01jan10001.fits
-        return re.match(r'[0-3][0-9]'
-                        '(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)'
-                        '[1-2][0-9]{4}\.(fit|fits|FIT|FITS)$',
-                        filename)
-
-    def file_filter_raw(self, filename):
-        """Return True if the raw file should be added."""
-        return self.file_filter(filename) and self.fits_file(filename) is None
+        return (re.match(r'[0-3][0-9]'
+                         r'(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)'
+                         r'[1-2][0-9]{4}\.(fit|fits|FIT|FITS)$',
+                         filename)
+                and (self.fits_file(filename) is None))
 
     def import_file(self, dirname, filename,
                     trust_header=True, copy_files=True, move_files=False):
@@ -653,27 +653,31 @@ class Manager:
 
     def make_tlm(self, overwrite=False, leave_reduced=False, **kwargs):
         """Make TLMs from all files matching given criteria."""
-        for fits in self.files(ndf_class='MFFFF', do_not_use=False, **kwargs):
-            self.reduce_file(fits, overwrite=overwrite, tlm=True,
-                             leave_reduced=leave_reduced)
+        file_iterable = self.files(ndf_class='MFFFF', do_not_use=False,
+                                   **kwargs)
+        self.reduce_file_iterable(file_iterable, overwrite=overwrite, 
+                                  tlm=True, leave_reduced=leave_reduced)
         return
 
     def reduce_arc(self, overwrite=False, **kwargs):
         """Reduce all arc frames matching given criteria."""
-        for fits in self.files(ndf_class='MFARC', do_not_use=False, **kwargs):
-            self.reduce_file(fits, overwrite)
+        file_iterable = self.files(ndf_class='MFARC', do_not_use=False,
+                                   **kwargs)
+        self.reduce_file_iterable(file_iterable, overwrite=overwrite)
         return
 
     def reduce_fflat(self, overwrite=False, **kwargs):
         """Reduce all fibre flat frames matching given criteria."""
-        for fits in self.files(ndf_class='MFFFF', do_not_use=False, **kwargs):
-            self.reduce_file(fits, overwrite)
+        file_iterable = self.files(ndf_class='MFFFF', do_not_use=False,
+                                   **kwargs)
+        self.reduce_file_iterable(file_iterable, overwrite=overwrite)
         return
 
     def reduce_sky(self, overwrite=False, **kwargs):
         """Reduce all offset sky frames matching given criteria."""
-        for fits in self.files(ndf_class='MFSKY', do_not_use=False, **kwargs):
-            self.reduce_file(fits, overwrite)
+        file_iterable = self.files(ndf_class='MFSKY', do_not_use=False,
+                                   **kwargs)
+        self.reduce_file_iterable(file_iterable, overwrite=overwrite)
         return
 
     def reduce_object(self, overwrite=False, **kwargs):
@@ -681,10 +685,26 @@ class Manager:
         # Reduce them in reverse order of exposure time, to ensure the best
         # possible throughput measurements are always available
         key = lambda fits: fits.exposure
-        for fits in sorted(self.files(ndf_class='MFOBJECT', do_not_use=False, 
-                                      **kwargs),
-                           key=key, reverse=True):
-            self.reduce_file(fits, overwrite)
+        file_iterable = sorted(self.files(ndf_class='MFOBJECT',
+                                          do_not_use=False, **kwargs),
+                               key=key, reverse=True)
+        self.reduce_file_iterable(file_iterable, overwrite=overwrite)
+        return
+
+    def reduce_file_iterable(self, file_iterable, overwrite=False, tlm=False,
+                             leave_reduced=True):
+        """Reduce all files in the iterable."""
+        extra_check_dict = defaultdict(list)
+        for fits in file_iterable:
+            reduced = self.reduce_file(fits, overwrite=overwrite, tlm=tlm,
+                                       leave_reduced=leave_reduced)
+            if reduced:
+                if tlm:
+                    check_filename = fits.tlm_filename
+                else:
+                    check_filename = fits.reduced_filename
+                extra_check_dict[fits.reduced_dir].append(check_filename)
+        self.check_list.extend(extra_check_dict.items())
         return
 
     def cube(self, overwrite=False, **kwargs):
@@ -754,14 +774,16 @@ class Manager:
         For MFFFF files, if tlm is True then a tramline map is produced; if it
         is false then a full reduction is done. If tlm is True and leave_reduced
         is false, then any reduced MFFFF produced as a side-effect will be
-        removed."""
+        removed.
+
+        Returns True if the file was reduced; False otherwise."""
         if fits.ndf_class == 'MFFFF' and tlm:
             target = fits.tlm_path
         else:
             target = fits.reduced_path
         if os.path.exists(target) and not overwrite:
             # File to be created already exists, abandon this.
-            return
+            return False
         options = []
         if fits.ndf_class == 'MFFFF' and tlm:
             files_to_match = ['bias', 'dark', 'lflat']
@@ -825,7 +847,7 @@ class Manager:
         if (fits.ndf_class == 'MFFFF' and tlm and not leave_reduced and
             os.path.exists(fits.reduced_path)):
             os.remove(fits.reduced_path)
-        return
+        return True
 
     def extra_options(self, fits):
         """Return a list of extra reduction options suitable for the file."""
@@ -1260,6 +1282,75 @@ class Manager:
                 os.symlink(os.path.relpath(raw_source_path, fits.reduced_dir),
                            raw_link_path)
         return filename
+
+    def print_check_list(self):
+        """Print the reduced files that need to be checked."""
+        for reduced_dir, filename_list in self.check_list:
+            print reduced_dir
+            for filename in filename_list:
+                print ' - ' + filename
+        return
+
+    def plot_dir(self, dirname):
+        """Load 2dfdr to plot a set of files from the checklist.
+
+        The first match to dirname - which may be incomplete - will be selected
+        from the checklist, and 2dfdr will be loaded in that directory."""
+        for index, check_tuple in enumerate(self.check_list):
+            if dirname in check_tuple[0]:
+                self.plot_dir_by_index(index)
+                break
+        else:
+            print 'No match found in checklist.'
+        return
+
+    def plot_next_dir(self):
+        """Load 2dfdr to plot the next set of reduced files to check."""
+        if len(self.check_list) == 0:
+            print 'No directories are in the checklist.'
+            return
+        self.plot_dir_by_index(0)
+        return
+
+    def plot_dir_by_index(self, index):
+        """Load 2dfdr to plot a specified set of files from the checklist."""
+        reduced_dir, filename_list = self.check_list[index]
+        print 'Loading 2dfdr in directory:'
+        print reduced_dir
+        print 'Use 2dfdr to plot and check the following files.'
+        print '(Click on the triangles to see reduced files)'
+        for filename in filename_list:
+            print ' - ' + filename
+        print 'Make a note of any that need to be disabled or re-run.'
+        command = ['drcontrol',
+                   self.idx_files[filename_list[0][5]]]
+        with self.visit_dir(reduced_dir):
+            with open(os.devnull, 'w') as f:
+                subprocess.call(command, stdout=f)
+        yn = raw_input('Have you finished checking all the files? '
+                       'The directory will be removed from the checklist. '
+                       '(y/n)\n > ')
+        remove = (yn.lower()[0] == 'y')
+        if remove:
+            print 'Removing this directory from the checklist.'
+            del self.check_list[index]
+        else:
+            print 'Leaving this directory in the checklist.'
+        print ('If any files need to be disabled, you can do so using commands'
+               ' like:')
+        print ">>> mngr.disable_files(['" + filename_list[0] + "'])"
+        return
+
+    def remove_dir_from_checklist(self, dirname):
+        """Remove the first instance of a directory from the checklist."""
+        for index, check_tuple in enumerate(self.check_list):
+            if dirname in check_tuple[0]:
+                del self.check_list[index]
+                break
+        else:
+            print 'No match found in checklist'
+        return
+
 
 class FITSFile:
     """Holds information about a FITS file to be copied."""
