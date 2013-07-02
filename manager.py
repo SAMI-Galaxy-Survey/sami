@@ -1161,12 +1161,30 @@ class Manager:
                 print ' - ' + filename
         return
 
+    def plot_dir(self, dirname):
+        """Load 2dfdr to plot a set of files from the checklist.
+
+        The first match to dirname - which may be incomplete - will be selected
+        from the checklist, and 2dfdr will be loaded in that directory."""
+        for index, check_tuple in enumerate(self.check_list):
+            if dirname in check_tuple[0]:
+                self.plot_dir_by_index(index)
+                break
+        else:
+            print 'No match found in checklist.'
+        return
+
     def plot_next_dir(self):
         """Load 2dfdr to plot the next set of reduced files to check."""
         if len(self.check_list) == 0:
             print 'No directories are in the checklist.'
             return
-        reduced_dir, filename_list = self.check_list[0]
+        self.plot_dir_by_index(0)
+        return
+
+    def plot_dir_by_index(self, index):
+        """Load 2dfdr to plot a specified set of files from the checklist."""
+        reduced_dir, filename_list = self.check_list[index]
         print 'Loading 2dfdr in directory:'
         print reduced_dir
         print 'Use 2dfdr to plot and check the following files.'
@@ -1185,12 +1203,22 @@ class Manager:
         remove = (yn.lower()[0] == 'y')
         if remove:
             print 'Removing this directory from the checklist.'
-            self.check_list.popleft()
+            del self.check_list[index]
         else:
             print 'Leaving this directory in the checklist.'
         print ('If any files need to be disabled, you can do so using commands'
                ' like:')
         print ">>> mngr.disable_files(['" + filename_list[0] + "'])"
+        return
+
+    def remove_dir_from_checklist(self, dirname):
+        """Remove the first instance of a directory from the checklist."""
+        for index, check_tuple in enumerate(self.check_list):
+            if dirname in check_tuple[0]:
+                del self.check_list[index]
+                break
+        else:
+            print 'No match found in checklist'
         return
 
 
