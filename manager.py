@@ -5,6 +5,7 @@ import os
 import re
 import subprocess
 from contextlib import contextmanager
+from collections import defaultdict, deque
 
 import astropy.coordinates as coord
 from astropy import units
@@ -229,6 +230,7 @@ class Manager:
         self.extra_list = []
         self.dark_exposure_str_list = []
         self.dark_exposure_list = []
+        self.check_list = deque()
         self.inspect_root(copy_files, move_files)
         self.cwd = os.getcwd()
 
@@ -602,10 +604,14 @@ class Manager:
         # Reduce them in reverse order of exposure time, to ensure the best
         # possible throughput measurements are always available
         key = lambda fits: fits.exposure
+        extra_check_dict = defaultdict(list)
         for fits in sorted(self.files(ndf_class='MFOBJECT', do_not_use=False, 
                                       **kwargs),
-                         key=key, reverse=True):
-            self.reduce_file(fits, overwrite)
+                           key=key, reverse=True):
+            reduced = self.reduce_file(fits, overwrite)
+            if reduced:
+                extra_check_dict[fits.reduced_dir].append(fits.reduced_filename)
+        self.check_list.extend(extra_check_dict.items())
         return
 
     def reduce_all(self, overwrite=False, **kwargs):
@@ -630,14 +636,16 @@ class Manager:
         For MFFFF files, if tlm is True then a tramline map is produced; if it
         is false then a full reduction is done. If tlm is True and leave_reduced
         is false, then any reduced MFFFF produced as a side-effect will be
-        removed."""
+        removed.
+
+        Returns True if the file was reduced; False otherwise."""
         if fits.ndf_class == 'MFFFF' and tlm:
             target = fits.tlm_path
         else:
             target = fits.reduced_path
         if os.path.exists(target) and not overwrite:
             # File to be created already exists, abandon this.
-            return
+            return False
         options = []
         if fits.ndf_class == 'MFFFF' and tlm:
             files_to_match = ['bias', 'dark', 'lflat']
@@ -701,7 +709,7 @@ class Manager:
         if (fits.ndf_class == 'MFFFF' and tlm and not leave_reduced and
             os.path.exists(fits.reduced_path)):
             os.remove(fits.reduced_path)
-        return
+        return True
 
     def extra_options(self, fits):
         """Return a list of extra reduction options suitable for the file."""
@@ -1131,6 +1139,47 @@ class Manager:
             os.symlink(os.path.relpath(raw_source_path, fits.reduced_dir),
                        raw_link_path)
         return filename
+
+    def print_check_list(self):
+        """Print the reduced files that need to be checked."""
+        for reduced_dir, filename_list in self.check_list:
+            print reduced_dir
+            for filename in filename_list:
+                print ' - ' + filename
+        return
+
+    def plot_next_dir(self):
+        """Load 2dfdr to plot the next set of reduced files to check."""
+        if len(self.check_list) == 0:
+            print 'No directories are in the checklist.'
+            return
+        reduced_dir, filename_list = self.check_list[0]
+        print 'Loading 2dfdr in directory:'
+        print reduced_dir
+        print 'Use 2dfdr to plot and check the following files.'
+        print '(Click on the triangles to see reduced files)'
+        for filename in filename_list:
+            print ' - ' + filename
+        print 'Make a note of any that need to be disabled or re-run.'
+        command = ['drcontrol',
+                   self.idx_files[filename_list[0][5]]]
+        with self.visit_dir(reduced_dir):
+            with open(os.devnull, 'w') as f:
+                subprocess.call(command, stdout=f)
+        yn = raw_input('Have you finished checking all the files? '
+                       'The directory will be removed from the checklist. '
+                       '(y/n)\n > ')
+        remove = (yn.lower()[0] == 'y')
+        if remove:
+            print 'Removing this directory from the checklist.'
+            self.check_list.popleft()
+        else:
+            print 'Leaving this directory in the checklist.'
+        print ('If any files need to be disabled, you can do so using commands'
+               ' like:')
+        print ">>> mngr.disable_files(['" + filename_list[0] + "'])"
+        return
+
 
 class FITSFile:
     """Holds information about a FITS file to be copied."""
