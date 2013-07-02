@@ -13,10 +13,14 @@ import numpy as np
 from sami.utils.other import find_fibre_table
 
 
-IDX_FILES = {'1': 'sami580V_v1_2.idx',
-             '2': 'sami1000R_v1_2.idx',
-             'ccd_1': 'sami580V_v1_2.idx',
-             'ccd_2': 'sami1000R_v1_2.idx'}
+IDX_FILES_SLOW = {'1': 'sami580V_v1_2.idx',
+                  '2': 'sami1000R_v1_2.idx',
+                  'ccd_1': 'sami580V_v1_2.idx',
+                  'ccd_2': 'sami1000R_v1_2.idx'}
+IDX_FILES_FAST = {'1': 'sami580V.idx',
+                  '2': 'sami1000R.idx',
+                  'ccd_1': 'sami580V.idx',
+                  'ccd_2': 'sami1000R.idx'}
 
 GRATLPMM = {'ccd_1': 582.0,
             'ccd_2': 1001.0}
@@ -50,6 +54,12 @@ class Manager:
     want it. You may be able to avoid it by providing an absolute path when you
     create the manager, but no guarantee is made.
 
+    By default, the manager will perform full science-grade reductions, which
+    can be quite slow. If you want quick-look reductions only (e.g. if you are
+    at the telescope, or for testing purposes), then set the 'fast' keyword:
+
+    >>> mngr = sami.manager.Manager('130305_130317', fast=True)
+
     At this point the manager is not aware of any actual data - skip to
     "Importing data" and carry on from there.
 
@@ -62,7 +72,7 @@ class Manager:
     >>> mngr = sami.manager.Manager('130305_130317')
 
     It will search through the subdirectories and restore its previous
-    state.
+    state. As before, set the 'fast' keyword if you want quick-look reductions.
 
     Importing data
     ==============
@@ -218,8 +228,11 @@ class Manager:
     The other functions defined probably aren't useful to you.
     """
 
-    def __init__(self, root, copy_files=False, move_files=False):
-        self.idx_files = IDX_FILES
+    def __init__(self, root, copy_files=False, move_files=False, fast=False):
+        if fast:
+            self.idx_files = IDX_FILES_FAST
+        else:
+            self.idx_files = IDX_FILES_SLOW
         self.gratlpmm = GRATLPMM
         self.root = root
         # Match objects within 1'
