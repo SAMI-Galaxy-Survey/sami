@@ -176,6 +176,44 @@ class Manager:
     This function takes the same keywords as described above for fibre
     flats etc.
 
+    Checking outputs
+    ================
+
+    As the reductions are done, the manager keeps an internal list of reduced
+    files that need to be plotted to check that the outputs are ok. These are
+    saved on a directory-by-directory basis. To print the contents of the
+    list:
+
+    >>> mngr.print_check_list()
+
+    It will print the directories that need to be visited, and the files to
+    check within each directory. The manager can't plot the files directly but
+    can open up the 2dfdr GUI in the required directory, making it easy to use
+    the 2dfdr plotting tools to do the checks. To open 2dfdr in the next
+    directory in the list:
+
+    >>> mngr.plot_next_dir()
+
+    No more commands can be entered until you close 2dfdr. When you do so, you
+    will be asked whether the directory can be removed from the list; enter 'y'
+    if you have checked all the files, 'n' otherwise. You can also load a
+    particular directory by specifying [part of] its path or its index in the
+    list:
+
+    >>> mngr.plot_dir('Y13SAR1_P002_09T004/main/ccd_1')
+    >>> mngr.plot_dir_by_index(3)
+
+    Note index numbers start at 0, and the directories are in the order listed
+    when mngr.print_check_list() is called.
+
+    If you want to remove a directory from the list without loading 2dfdr:
+
+    >>> mngr.remove_dir_from_checklist('Y13SAR1_P002_09T004/main/ccd_1')
+    >>> mngr.remove_dir_from_checklist_by_index(3)
+
+    Only do this with good reason! Checking the outputs is a crucial part of
+    data reduction.
+
     Disabling files
     ===============
 
@@ -495,6 +533,8 @@ class Manager:
                                ndf_class=calibrator_type.upper(),
                                reduced=True, do_not_use=False),
                     path)
+            dirname = os.path.dirname(path)
+            self.check_list.append((dirname, [filename]))
         self.link_calibrator(calibrator_type, overwrite)
         return
 
@@ -1219,6 +1259,11 @@ class Manager:
                 break
         else:
             print 'No match found in checklist'
+        return
+
+    def remove_dir_from_checklist_by_index(self, index):
+        """Remove the specified directory from the plotting checklist."""
+        del self.check_list[index]
         return
 
 
