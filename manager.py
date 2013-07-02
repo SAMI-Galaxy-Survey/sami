@@ -247,38 +247,22 @@ class Manager:
 
     def inspect_root(self, copy_files, move_files):
         """Add details of existing files to internal lists."""
-        reduced_path = os.path.join(self.root, 'reduced')
-        for dirname, subdirname_list, filename_list in os.walk(reduced_path):
+        for dirname, subdirname_list, filename_list in os.walk(self.root):
             for filename in filename_list:
                 if self.file_filter(filename):
                     self.import_file(dirname, filename,
                                      trust_header=True, copy_files=copy_files,
                                      move_files=move_files)
-        raw_path = os.path.join(self.root, 'raw')
-        for dirname, subdirname_list, filename_list in os.walk(raw_path):
-            for filename in filename_list:
-                if self.file_filter_raw(filename):
-                    try:
-                        self.import_file(
-                            dirname, filename,
-                            trust_header=True, copy_files=copy_files,
-                            move_files=move_files)
-                    except Exception as e:
-                        print 'Error importing file:', \
-                            os.path.join(dirname, filename)
         return
 
     def file_filter(self, filename):
         """Return True if the file should be added."""
         # Match filenames of the form 01jan10001.fits
-        return re.match(r'[0-3][0-9]'
-                        '(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)'
-                        '[1-2][0-9]{4}\.(fit|fits|FIT|FITS)$',
-                        filename)
-
-    def file_filter_raw(self, filename):
-        """Return True if the raw file should be added."""
-        return self.file_filter(filename) and self.fits_file(filename) is None
+        return (re.match(r'[0-3][0-9]'
+                         r'(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)'
+                         r'[1-2][0-9]{4}\.(fit|fits|FIT|FITS)$',
+                         filename)
+                and (self.fits_file(filename) is None))
 
     def import_file(self, dirname, filename,
                     trust_header=True, copy_files=True, move_files=False):
