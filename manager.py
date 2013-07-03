@@ -533,8 +533,8 @@ class Manager:
                                ndf_class=calibrator_type.upper(),
                                reduced=True, do_not_use=False),
                     path)
-            dirname = os.path.dirname(path)
-            self.check_list.append((dirname, [filename]))
+                dirname = os.path.dirname(path)
+                self.check_list.append((dirname, [filename]))
         self.link_calibrator(calibrator_type, overwrite)
         return
 
@@ -1232,8 +1232,16 @@ class Manager:
         for filename in filename_list:
             print ' - ' + filename
         print 'Make a note of any that need to be disabled or re-run.'
+        try:
+            idx_file = self.idx_files[os.path.basename(reduced_dir)]
+        except KeyError:
+            try:
+                idx_file = self.idx_files[filename_list[0][5]]
+            except KeyError:
+                # Can't work out which idx file to use; just grab the first one
+                idx_file = self.idx_files.values()[0]
         command = ['drcontrol',
-                   self.idx_files[filename_list[0][5]]]
+                   idx_file]
         with self.visit_dir(reduced_dir):
             with open(os.devnull, 'w') as f:
                 subprocess.call(command, stdout=f)
