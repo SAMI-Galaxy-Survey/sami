@@ -1,3 +1,4 @@
-__all__ = ['coordinates']
+__all__ = ['coordinates', 'fluxcal']
 
 from coordinates import *
+from fluxcal import *
