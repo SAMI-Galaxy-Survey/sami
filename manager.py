@@ -13,7 +13,7 @@ import astropy.io.fits as pf
 import numpy as np
 from sami.utils.other import find_fibre_table
 from sami.general.cubing import dithered_cubes_from_rss_files
-from sami.dr import get_transfer_function
+from sami.dr import get_transfer_function, perform_telluric_correction
 
 
 IDX_FILES_SLOW = {'1': 'sami580V_v1_2.idx',
@@ -752,7 +752,7 @@ class Manager:
         # overwrite not yet implemented, so will always overwrite
         dir_list = []
         for fits in self.files(ndf_class='MFOBJECT', do_not_use=False,
-                               **kwargs):
+                               spectrophotometric=True, **kwargs):
             if fits.reduced_dir not in dir_list:
                 dir_list.append(fits.reduced_dir)
         for directory in dir_list:
@@ -765,7 +765,11 @@ class Manager:
 
     def telluric_correct(self, overwrite=False, **kwargs):
         """Apply telluric correction to object frames."""
-        pass
+        # overwrite not yet implemented, so will always overwrite
+        for fits in self.files(ndf_class='MFOBJECT', do_not_use=False,
+                               spectrophotometric=False, **kwargs):
+            perform_telluric_correction(fits.fluxcal_path)
+        return
 
     def cube(self, overwrite=False, **kwargs):
         """Make datacubes from the given RSS files."""
