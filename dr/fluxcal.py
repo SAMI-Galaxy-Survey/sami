@@ -123,39 +123,50 @@ def apply_flux_calibration( path_to_data, transfer_fn, transfer_var,
         else :
             newfitsfilename = fitsfilename.rstrip( 'red.fits' )+'fcal_'+extraid+'.fits'
 
-        print '\nApplying primary calibration:'
-        print '%s   --->   %s ' % ( fitsfilename, newfitsfilename ),
-        if os.path.exists( '%s/%s' % ( path_to_data, newfitsfilename ) ):
-            print '(overwriting existing file)',
-            os.remove( '%s/%s' % ( path_to_data, newfitsfilename ) )
-        print '...',
-        sys.stdout.flush()
-
-        fitsfile = pf.open( '%s/%s' % ( path_to_data, fitsfilename ) )
-
-        ### XXX NOTE TO SELF: CHECK THAT VAR SHOULDN'T BE x 100 XXX ###
-        data = fitsfile[0].data * 10.
-        var  = fitsfile[1].data * 10.
-
-        data *= transfer_fn
-        var  *= transfer_fn
-        var  *= ( 1. + np.sqrt( transfer_var / transfer_fn ) )
-
-        fitsfile[0].data = data
-        fitsfile[1].data = var
-
-        hdr = fitsfile[0].header
-        hdr.add_history( 'Flux calibrated using SAMI_fluxcal %s (%s)' % (
-                version, time.ctime() ) )
-
-        fitsfile.writeto( '%s/%s' % ( path_to_data, newfitsfilename ) )
-        fitsfile.close()
-
-        print 'done.' 
-
+        path_in = os.path.join(path_to_data, fitsfilename)
+        path_out = os.path.join(path_to_data, newfitsfilename)
+        primary_flux_calibrate(path_in, path_out, transfer_fn, transfer_var)
+        
         if do_secondary_calibration :
             perform_telluric_correction('%s/%s' % (path_to_data, 
                                                    newfitsfilename))
+
+
+def primary_flux_calibrate(path_in, path_out, transfer_fn, transfer_var):
+    """Apply primary flux calibration to a single file."""
+    filename_in = os.path.basename(path_in)
+    filename_out = os.path.basename(path_out)
+    print '\nApplying primary calibration:'
+    print '%s   --->   %s ' % ( filename_in, filename_out ),
+    if os.path.exists( path_out ):
+        print '(overwriting existing file)',
+        os.remove( path_out )
+    print '...',
+    sys.stdout.flush()
+
+    fitsfile = pf.open( path_in )
+
+    ### XXX NOTE TO SELF: CHECK THAT VAR SHOULDN'T BE x 100 XXX ###
+    data = fitsfile[0].data * 10.
+    var  = fitsfile[1].data * 10.
+
+    data *= transfer_fn
+    var  *= transfer_fn
+    var  *= ( 1. + np.sqrt( transfer_var / transfer_fn ) )
+
+    fitsfile[0].data = data
+    fitsfile[1].data = var
+
+    hdr = fitsfile[0].header
+    hdr.add_history( 'Flux calibrated using SAMI_fluxcal %s (%s)' % (
+                version, time.ctime() ) )
+
+    fitsfile.writeto( path_out )
+    fitsfile.close()
+
+    print 'done.' 
+
+    return
                 
 
 # ____________________________________________________________________________
