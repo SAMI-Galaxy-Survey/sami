@@ -12,6 +12,8 @@ from astropy import units
 import astropy.io.fits as pf
 import numpy as np
 from sami.utils.other import find_fibre_table
+from sami.general.cubing import dithered_cubes_from_rss_files
+import SAMI_fluxcal   # This one will need updating when Ned sends new code
 
 
 IDX_FILES_SLOW = {'1': 'sami580V_v1_2.idx',
@@ -73,7 +75,12 @@ class Manager:
     >>> mngr = sami.manager.Manager('130305_130317')
 
     It will search through the subdirectories and restore its previous
-    state. As before, set the 'fast' keyword if you want quick-look reductions.
+    state. By default it will restore previously-assigned object names that
+    were stored in the headers. To re-assign all names:
+
+    >>> mngr = sami.manager.Manager('data_directory', trust_header=False)
+
+    As before, set the 'fast' keyword if you want quick-look reductions.
 
     Importing data
     ==============
@@ -92,7 +99,9 @@ class Manager:
     and will ask you for the object name to go with a particular file.
     Depending on the file, you should give an actual object name - e.g.
     HR7950 or NGC2701 - or a more general description - e.g. SNAFU or
-    blank_sky.
+    blank_sky. It will also ask you which of these objects should be used
+    as spectrophotometric standards for flux calibration; simply enter y or
+    n as appropriate.
 
     Reducing bias, dark and lflat frames
     ====================================
@@ -236,18 +245,42 @@ class Manager:
         ndf_class           'MFFFF'
         reduced             False
         tlm_created         False
-        flux_calibrated     False
-        telluric_corrected  False
+        flux_calibrated     True
+        telluric_corrected  True
+        name                'LTT2179'
 
-    For example, specifying these options as given would disable all
-    fibre flat fields that had not yet been reduced and had not yet had
-    tramline maps created.
+    For example, specifying the first three of these options as given
+    would disable all fibre flat fields that had not yet been reduced and
+    had not yet had tramline maps created. Specifying the last three
+    would disable all observations of LTT2179 that had already been flux
+    calibrated and telluric corrected.
 
     To re-enable files:
 
     >>> mngr.enable_files(['06mar10003', '06mar20003', '06mar10047'])
 
     This function follows exactly the same syntax as disable_files.
+
+    Changing object names and spectrophotometric flags
+    ==================================================
+
+    If you want to change the object names for one or more files, or change
+    whether they should be used as spectrophotometric standards, use the
+    following commands:
+
+    >>> mngr.update_name(['06mar10003', '06mar20003'], 'new_name')
+    >>> mngr.update_spectrophotometric(['06mar10003', '06mar20003'], True)
+
+    In the above example, the given files are set to have the name
+    'new_name' and they are listed as spectrophotometric standards. The
+    options for spectrophotometric flags must be entered as True or
+    False (without quote marks, with capital letter). You can use the
+    same file generator syntax as for disabling/enabling files
+    (above), so for example if you realise that on importing some
+    files you entered LTT2197 instead of LTT2179 you can correct all
+    affected files at once:
+
+    >>> mngr.update_name(mngr.files(name='LTT2197'), 'LTT2179')
 
     Reducing everything in one go
     =============================
@@ -285,13 +318,14 @@ class Manager:
         self.inspect_root(copy_files, move_files)
         self.cwd = os.getcwd()
 
-    def inspect_root(self, copy_files, move_files):
+    def inspect_root(self, copy_files, move_files, trust_header=True):
         """Add details of existing files to internal lists."""
         for dirname, subdirname_list, filename_list in os.walk(self.root):
             for filename in filename_list:
                 if self.file_filter(filename):
                     self.import_file(dirname, filename,
-                                     trust_header=True, copy_files=copy_files,
+                                     trust_header=trust_header,
+                                     copy_files=copy_files,
                                      move_files=move_files)
         return
 
@@ -339,7 +373,8 @@ class Manager:
         if fits.ndf_class == 'BIAS':
             rel_path = os.path.join('bias', fits.ccd, fits.date)
         elif fits.ndf_class == 'DARK':
-            rel_path = os.path.join('dark', fits.ccd, fits.exposure_str, fits.date)
+            rel_path = os.path.join('dark', fits.ccd, fits.exposure_str,
+                                    fits.date)
         elif fits.ndf_class == 'LFLAT':
             rel_path = os.path.join('lflat', fits.ccd, fits.date)
         else:
@@ -371,45 +406,97 @@ class Manager:
     def set_name(self, fits, trust_header=True):
         """Set the object name for a FITS file."""
         fits.name = None
+        fits.spectrophotometric = None
         if fits.ndf_class != 'MFOBJECT':
             # Don't try to set a name for calibration files
             return
-        # First check if there's already a name in the header
-        if trust_header:
-            try:
-                fits.name = pf.getval(fits.raw_path, 'MNGRNAME')
-            except KeyError:
-                pass
-        if fits.name is None:
-            # Failing that, see if the telescope was pointing in the right
-            # direction
-            if (fits.coords.separation(fits.cfg_coords) < self.matching_radius):
-                # Yes it was
-                fits.name = 'main'
-            else:
-                # No it wasn't. Now see if it matches any previous fields
-                for extra in self.extra_list:
-                    if (fits.coords.separation(extra['coords']) <
-                        self.matching_radius):
-                        # Yes it does
-                        fits.name = extra['name']
-                        break
-                else:
-                    # No match. As a last resort, ask the user
-                    fits.name = raw_input('Enter object name for file ' +
-                                        fits.filename + '\n > ')
-            # At this point, a name has definitely been set.
-            # Put it in the header.
-            self.add_header_item(fits, 'MNGRNAME', fits.name,
-                                 'Object name set by SAMI_Manager')
-        # Check if the field was new
-        for extra in self.extra_list:
-            if fits.coords.separation(extra['coords']) < self.matching_radius:
-                break
+        # Check if there's already a name in the header
+        try:
+            name_header = pf.getval(fits.raw_path, 'MNGRNAME')
+        except KeyError:
+            name_header = None
+        try:
+            spectrophotometric_header = pf.getval(fits.raw_path, 'MNGRSPMS')
+        except KeyError:
+            spectrophotometric_header = None
+        # Check if the telescope was pointing in the right direction
+        if (fits.coords.separation(fits.cfg_coords) < self.matching_radius):
+            # Yes it was
+            name_coords = 'main'
+            spectrophotometric_coords = False
         else:
-            # No match found: field was new, so add it to the list.
-            self.extra_list.append({'name':fits.name,
-                                    'coords':fits.coords})
+            # No it wasn't
+            name_coords = None
+            spectrophotometric_coords = None
+        # See if it matches any previous fields
+        for extra in self.extra_list:
+            if (fits.coords.separation(extra['coords']) < self.matching_radius):
+                # Yes it does
+                name_extra = extra['name']
+                spectrophotometric_extra = extra['spectrophotometric']
+                break
+            else:
+                # No match
+                name_extra = None
+                spectrophotometric_extra = None
+        # Now choose the best name
+        if name_header and trust_header:
+            fits.update_name(name_header)
+        elif name_coords:
+            fits.update_name(name_coords)
+        elif name_extra:
+            fits.update_name(name_extra)
+        else:
+            # As a last resort, ask the user
+            name_input = raw_input('Enter object name for file ' +
+                                   fits.filename + '\n > ')
+            fits.update_name(name_input)
+        # Now choose the best spectrophotometric flag
+        if spectrophotometric_header is not None and trust_header:
+            fits.update_spectrophotometric(spectrophotometric_header)
+        elif spectrophotometric_coords is not None:
+            fits.update_spectrophotometric(spectrophotometric_coords)
+        elif spectrophotometric_extra is not None:
+            fits.update_spectrophotometric(spectrophotometric_extra)
+        else:
+            # Ask the user whether this is a spectrophotometric standard
+            yn = raw_input('Is ' + fits.name + ' in file ' + fits.filename +
+                           ' a spectrophotometric standard? (y/n)\n > ')
+            spectrophotometric_input = (yn.lower()[0] == 'y')
+            fits.update_spectrophotometric(spectrophotometric_input)
+        # If the field was new and it's not a "main", add it to the list
+        if name_extra is None and name_coords is None:
+            self.extra_list.append(
+                {'name':fits.name,
+                 'coords':fits.coords,
+                 'spectrophotometric':fits.spectrophotometric,
+                 'fitsfile':fits})
+        return
+
+    def update_name(self, file_iterable, name):
+        """Change the object name for a set of FITSFile objects."""
+        for fits in file_iterable:
+            if isinstance(fits, str):
+                fits = self.fits_file(fits)
+            # Update the name
+            fits.update_name(name)
+            # Update the extra list if necessary
+            for extra in self.extra_list:
+                if extra['fitsfile'] is fits:
+                    extra['name'] = name
+        return
+
+    def update_spectrophotometric(self, file_iterable, spectrophotometric):
+        """Change the spectrophotometric flag for FITSFile objects."""
+        for fits in file_iterable:
+            if isinstance(fits, str):
+                fits = self.fits_file(fits)
+            # Update the flag
+            fits.update_spectrophotometric(spectrophotometric)
+            # Update the extra list if necessary
+            for extra in self.extra_list:
+                if extra['fitsfile'] is fits:
+                    extra['spectrophotometric'] = spectrophotometric
         return
 
     def set_reduced_path(self, fits):
@@ -417,7 +504,7 @@ class Manager:
         if fits.ndf_class == 'BIAS':
             rel_path = os.path.join('bias', fits.ccd, fits.date)
         elif fits.ndf_class == 'DARK':
-            rel_path = os.path.join('dark', fits.ccd, fits.exposure_str, 
+            rel_path = os.path.join('dark', fits.ccd, fits.exposure_str,
                                     fits.date)
         elif fits.ndf_class == 'LFLAT':
             rel_path = os.path.join('lflat', fits.ccd, fits.date)
@@ -429,12 +516,12 @@ class Manager:
                                     fits.name, fits.ccd)
         fits.reduced_dir = os.path.join(self.root, 'reduced', rel_path)
         fits.reduced_link = os.path.join(fits.reduced_dir, fits.filename)
-        fits.reduced_path = os.path.join(fits.reduced_dir, 
+        fits.reduced_path = os.path.join(fits.reduced_dir,
                                          fits.reduced_filename)
         if fits.ndf_class == 'MFFFF':
             fits.tlm_path = os.path.join(fits.reduced_dir, fits.tlm_filename)
         elif fits.ndf_class == 'MFOBJECT':
-            fits.fluxcal_path = os.path.join(fits.reduced_dir, 
+            fits.fluxcal_path = os.path.join(fits.reduced_dir,
                                              fits.fluxcal_filename)
             fits.telluric_path = os.path.join(fits.reduced_dir,
                                               fits.telluric_filename)
@@ -463,11 +550,7 @@ class Manager:
         for fits in file_iterable:
             if isinstance(fits, str):
                 fits = self.fits_file(fits)
-            fits.do_not_use = True
-            if os.path.exists(fits.reduced_link):
-                os.remove(fits.reduced_link)
-            self.add_header_item(fits, 'DONOTUSE', True,
-                                 'Do Not Use flag for SAMI_manager')
+            fits.update_do_not_use(True)
         return
 
     def enable_files(self, file_iterable):
@@ -475,10 +558,7 @@ class Manager:
         for fits in file_iterable:
             if isinstance(fits, str):
                 fits = self.fits_file(fits)
-            fits.do_not_use = False
-            fits.make_reduced_link()
-            self.add_header_item(fits, 'DONOTUSE', False,
-                                 'Do Not Use flag for SAMI_manager')
+            fits.update_do_not_use(False)
         return
 
     def bias_combined_filename(self):
@@ -667,6 +747,50 @@ class Manager:
         self.check_list.extend(extra_check_dict.items())
         return
 
+    def cube(self, overwrite=False, **kwargs):
+        """Make datacubes from the given RSS files."""
+        tmp_dir = os.path.join(self.root, 'cubed', 'tmp')
+        target_dir = os.path.join(self.root, 'cubed')
+        rel_target_dir = os.path.relpath(target_dir, tmp_dir)
+        # By default, only use 'main' exposures of at least 10 minutes
+        if 'min_exposure' in kwargs:
+            min_exposure = kwargs['min_exposure']
+            del kwargs['min_exposure']
+        else:
+            min_exposure = 599.0
+        if 'name' in kwargs:
+            name = kwargs['name']
+            del kwargs['name']
+        else:
+            name = 'main'
+        field_dict = defaultdict(list)
+        for fits in self.files(ndf_class='MFOBJECT', do_not_use=False,
+                               reduced=True, min_exposure=min_exposure, 
+                               name=name, **kwargs):
+            if fits.telluric_corrected:
+                path = fits.telluric_path
+            elif fits.flux_calibrated:
+                path = fits.fluxcal_path
+            else:
+                path = fits.reduced_path
+            path = os.path.relpath(path, tmp_dir)
+            field_dict[fits.field_id].append(path)
+        os.makedirs(tmp_dir)
+        with self.visit_dir(tmp_dir):
+            for field in field_dict:
+                dithered_cubes_from_rss_files(field_dict[field], write=True)
+                for filename in os.listdir('.'):
+                    if filename.lower().endswith(('.fit', '.fits')):
+                        target_path = os.path.join(rel_target_dir, filename)
+                        if os.path.exists(target_path):
+                            if overwrite:
+                                os.remove(target_path)
+                            else:
+                                os.remove(filename)
+                            self.move(filename, target_path)
+        os.rmdir(tmp_dir)
+        return
+
     def reduce_all(self, overwrite=False, **kwargs):
         """Reduce everything, in order. Don't use unless you're sure."""
         self.reduce_bias(overwrite)
@@ -680,9 +804,10 @@ class Manager:
         self.reduce_fflat(overwrite, **kwargs)
         self.reduce_sky(overwrite, **kwargs)
         self.reduce_object(overwrite, **kwargs)
+        self.cube(overwrite, **kwargs)
         return
 
-    def reduce_file(self, fits, overwrite=False, tlm=False, 
+    def reduce_file(self, fits, overwrite=False, tlm=False,
                     leave_reduced=False):
         """Select appropriate options and reduce the given file.
 
@@ -880,7 +1005,8 @@ class Manager:
               ccd=None, exposure_str=None, do_not_use=None,
               min_exposure=None, max_exposure=None,
               reduced_dir=None, reduced=None, tlm_created=None,
-              flux_calibrated=None, telluric_corrected=None):
+              flux_calibrated=None, telluric_corrected=None,
+              spectrophotometric=None, name=None):
         """Generator for FITS files that satisfy requirements."""
         for fits in self.file_list:
             if fits.ndf_class is None:
@@ -917,7 +1043,11 @@ class Manager:
                  (telluric_corrected and hasattr(fits, 'telluric_path') and
                   os.path.exists(fits.telluric_path)) or
                  (not telluric_corrected and hasattr(fits, 'telluric_path') and
-                  not os.path.exists(fits.telluric_path)))):
+                  not os.path.exists(fits.telluric_path))) and
+                (spectrophotometric is None or
+                 (hasattr(fits, 'spectrophotometric') and
+                  (fits.spectrophotometric == spectrophotometric))) and
+                (name is None or fits.name in name)):
                 yield fits
         return
 
@@ -959,7 +1089,8 @@ class Manager:
     def dark_exposure_strs(self, ccd, do_not_use=False):
         """Generator for dark exposure strings for a given ccd name."""
         exposure_str_list = []
-        for fits in self.files(ndf_class='DARK', ccd=ccd, do_not_use=do_not_use):
+        for fits in self.files(ndf_class='DARK', ccd=ccd,
+                               do_not_use=do_not_use):
             if fits.exposure_str not in exposure_str_list:
                 exposure_str_list.append(fits.exposure_str)
                 yield fits.exposure_str
@@ -1002,18 +1133,6 @@ class Manager:
         os.chdir(self.cwd)
         return
 
-    def add_header_item(self, fits, key, value, comment=None):
-        """Add a header item to the FITS file."""
-        if comment is None:
-            value_comment = value
-        else:
-            value_comment = (value, comment)
-        hdulist = pf.open(fits.raw_path, 'update',
-                          do_not_scale_image_data=True)
-        hdulist[0].header[key] = value_comment
-        hdulist.close()
-        return
-
     def matchmaker(self, fits, match_class):
         """Return the file that should be used to help reduce the FITS file.
 
@@ -1026,9 +1145,10 @@ class Manager:
         bias  -- Find a combined bias frame
         dark  -- Find a combined dark frame
         lflat -- Find a combined long-slit flat frame
+        fcal  -- Find a reduced spectrophotometric standard star frame
 
         The return type depends on what is asked for:
-        tlmap, wavel, fflat, thput, thput_object -- A FITS file object
+        tlmap, wavel, fflat, thput, thput_object, fcal -- A FITS file object
         bias, dark, lflat       -- The path to the combined file
         """
         fits_match = None
@@ -1043,6 +1163,9 @@ class Manager:
         reduced_dir = None
         reduced = None
         tlm_created = None
+        flux_calibrated = None
+        telluric_corrected = None
+        spectrophotometric = None
         # Define some functions for figures of merit
         time_difference = lambda fits, fits_test: (
             abs(fits_test.epoch - fits.epoch))
@@ -1058,7 +1181,6 @@ class Manager:
         # Determine what actually needs to be matched, depending on match_class
         if match_class.lower() == 'tlmap':
             # Find a tramline map, so need a fibre flat field
-            return_type = 'fits_file'
             ndf_class = 'MFFFF'
             date = fits.date
             plate_id = fits.plate_id
@@ -1068,7 +1190,6 @@ class Manager:
             fom = time_difference
         elif match_class.lower() == 'wavel':
             # Find a reduced arc field
-            return_type = 'fits_file'
             ndf_class = 'MFARC'
             date = fits.date
             plate_id = fits.plate_id
@@ -1078,7 +1199,6 @@ class Manager:
             fom = time_difference
         elif match_class.lower() == 'fflat':
             # Find a reduced fibre flat field
-            return_type = 'fits_file'
             ndf_class = 'MFFFF'
             date = fits.date
             plate_id = fits.plate_id
@@ -1088,7 +1208,6 @@ class Manager:
             fom = time_difference
         elif match_class.lower() == 'thput':
             # Find a reduced offset sky field
-            return_type = 'fits_file'
             ndf_class = 'MFSKY'
             date = fits.date
             plate_id = fits.plate_id
@@ -1098,7 +1217,6 @@ class Manager:
             fom = recent_reduction
         elif match_class.lower() == 'thput_object':
             # Find a reduced object field to take the throughput from
-            return_type = 'fits_file'
             ndf_class = 'MFOBJECT'
             date = fits.date
             plate_id = fits.plate_id
@@ -1106,9 +1224,16 @@ class Manager:
             ccd = fits.ccd
             reduced = True
             fom = time_difference_min_exposure(899.0)
+        elif match_class.lower() == 'fcal':
+            # Find a spectrophotometric standard star
+            ndf_class = 'MFOBJECT'
+            date = fits.date
+            ccd = fits.ccd
+            reduced = True
+            spectrophotometric = True
+            fom = time_difference
         elif match_class.lower() == 'bias':
             # Just return the standard BIAScombined filename
-            return_type = 'file_path'
             filename = self.bias_combined_filename()
             if os.path.exists(os.path.join(fits.reduced_dir, filename)):
                 return filename
@@ -1117,7 +1242,6 @@ class Manager:
         elif match_class.lower() == 'dark':
             # This works a bit differently. Return the filename of the
             # combined dark frame with the closest exposure time.
-            return_type = 'file_path'
             best_fom = np.inf
             for exposure_str in self.dark_exposure_strs(ccd=fits.ccd):
                 test_fom = abs(float(exposure_str) - fits.exposure)
@@ -1131,7 +1255,6 @@ class Manager:
                 return None
         elif match_class.lower() == 'lflat':
             # Just return the standard LFLATcombined filename
-            return_type = 'file_path'
             filename = self.lflat_combined_filename()
             if os.path.exists(os.path.join(fits.reduced_dir, filename)):
                 return filename
@@ -1153,6 +1276,9 @@ class Manager:
                 reduced_dir=reduced_dir,
                 reduced=reduced,
                 tlm_created=tlm_created,
+                flux_calibrated=flux_calibrated,
+                telluric_corrected=telluric_corrected,
+                spectrophotometric=spectrophotometric,
                 do_not_use=False,
                 ):
             test_fom = fom(fits, fits_test)
@@ -1169,28 +1295,32 @@ class Manager:
             return None
         if match_class.lower() in ['bias', 'dark', 'lflat']:
             # matchmaker returns a filename in these cases; send it straight on
-            return fits_match
-        if match_class.lower() == 'tlmap':
+            filename = fits_match
+        elif match_class.lower() == 'tlmap':
             filename = fits_match.tlm_filename
         else:
             filename = fits_match.reduced_filename
-        link_path = os.path.join(fits.reduced_dir, filename)
-        source_path = os.path.join(fits_match.reduced_dir, filename)
-        raw_link_path = os.path.join(fits.reduced_dir, fits_match.filename)
-        raw_source_path = os.path.join(fits_match.raw_dir, fits_match.filename)
-        # If the link path is occupied by a link, delete it
-        # Leave actual files in place
-        if os.path.islink(link_path):
-            os.remove(link_path)
-        if os.path.islink(raw_link_path):
-            os.remove(raw_link_path)
-        # Make a link, unless the file is already there
-        if not os.path.exists(link_path):
-            os.symlink(os.path.relpath(source_path, fits.reduced_dir),
-                       link_path)
-        if not os.path.exists(raw_link_path):
-            os.symlink(os.path.relpath(raw_source_path, fits.reduced_dir),
-                       raw_link_path)
+        if match_class.lower() in ['tlmap', 'fflat', 'wavel', 'thput',
+                                   'thput_object']:
+            # These are the cases where we do want to make a link
+            link_path = os.path.join(fits.reduced_dir, filename)
+            source_path = os.path.join(fits_match.reduced_dir, filename)
+            raw_link_path = os.path.join(fits.reduced_dir, fits_match.filename)
+            raw_source_path = os.path.join(fits_match.raw_dir,
+                                           fits_match.filename)
+            # If the link path is occupied by a link, delete it
+            # Leave actual files in place
+            if os.path.islink(link_path):
+                os.remove(link_path)
+            if os.path.islink(raw_link_path):
+                os.remove(raw_link_path)
+            # Make a link, unless the file is already there
+            if not os.path.exists(link_path):
+                os.symlink(os.path.relpath(source_path, fits.reduced_dir),
+                           link_path)
+            if not os.path.exists(raw_link_path):
+                os.symlink(os.path.relpath(raw_source_path, fits.reduced_dir),
+                           raw_link_path)
         return filename
 
     def print_check_list(self):
@@ -1470,6 +1600,54 @@ class FITSFile:
         if not os.path.exists(self.reduced_path):
             return None
         return dict(pf.getdata(self.reduced_path, 'REDUCTION_ARGS'))
+
+    def update_name(self, name):
+        """Change the object name assigned to this file."""
+        if self.name != name:
+            # Update the FITS header
+            self.add_header_item('MNGRNAME', name,
+                                 'Object name set by SAMI manager')
+            # Update the object
+            self.name = name
+        return
+
+    def update_spectrophotometric(self, spectrophotometric):
+        """Change the spectrophotometric flag assigned to this file."""
+        if self.photometric != photometric:
+            # Update the FITS header
+            self.add_header_item('MNGRSPMS', spectrophotometric,
+                                 'Flag set if a spectrophotometric star')
+            # Update the object
+            self.spectrophotometric = spectrophotometric
+        return
+
+    def update_do_not_use(self, do_not_use):
+        """Change the do_not_use flag assigned to this file."""
+        if self.do_not_use != do_not_use:
+            # Update the FITS header
+            self.add_header_item('DONOTUSE', do_not_use,
+                                 'Do Not Use flag for SAMI manager')
+            # Update the object
+            self.do_not_use = do_not_use
+            # Update the file system
+            if do_not_use:
+                if os.path.exists(self.reduced_link):
+                    os.remove(self.reduced_link)
+            else:
+                self.make_reduced_link()
+        return
+
+    def add_header_item(self, key, value, comment=None):
+        """Add a header item to the FITS file."""
+        if comment is None:
+            value_comment = value
+        else:
+            value_comment = (value, comment)
+        hdulist = pf.open(self.raw_path, 'update',
+                          do_not_scale_image_data=True)
+        hdulist[0].header[key] = value_comment
+        hdulist.close()
+        return
 
 
 class MatchException(Exception):
