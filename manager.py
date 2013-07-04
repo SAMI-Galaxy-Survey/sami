@@ -13,7 +13,7 @@ import astropy.io.fits as pf
 import numpy as np
 from sami.utils.other import find_fibre_table
 from sami.general.cubing import dithered_cubes_from_rss_files
-import SAMI_fluxcal   # This one will need updating when Ned sends new code
+from sami.dr import get_transfer_function
 
 
 IDX_FILES_SLOW = {'1': 'sami580V_v1_2.idx',
@@ -747,6 +747,26 @@ class Manager:
         self.check_list.extend(extra_check_dict.items())
         return
 
+    def derive_transfer_function(self, overwrite=False, **kwargs):
+        """Derive flux calibration transfer functions and save them."""
+        # overwrite not yet implemented, so will always overwrite
+        dir_list = []
+        for fits in self.files(ndf_class='MFOBJECT', do_not_use=False,
+                               **kwargs):
+            if fits.reduced_dir not in dir_list:
+                dir_list.append(fits.reduced_dir)
+        for directory in dir_list:
+            get_transfer_function(directory, save=True, verbose=True)
+        return
+
+    def flux_calibrate(self, overwrite=False, **kwargs):
+        """Apply flux calibration to object frames."""
+        pass
+
+    def telluric_correct(self, overwrite=False, **kwargs):
+        """Apply telluric correction to object frames."""
+        pass
+
     def cube(self, overwrite=False, **kwargs):
         """Make datacubes from the given RSS files."""
         tmp_dir = os.path.join(self.root, 'cubed', 'tmp')
@@ -804,6 +824,9 @@ class Manager:
         self.reduce_fflat(overwrite, **kwargs)
         self.reduce_sky(overwrite, **kwargs)
         self.reduce_object(overwrite, **kwargs)
+        self.derive_transfer_function(overwrite, **kwargs)
+        self.flux_calibrate(overwrite, **kwargs)
+        self.telluric_correct(overwrite, **kwargs)
         self.cube(overwrite, **kwargs)
         return
 
