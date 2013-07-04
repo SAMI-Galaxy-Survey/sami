@@ -13,7 +13,8 @@ import astropy.io.fits as pf
 import numpy as np
 from sami.utils.other import find_fibre_table
 from sami.general.cubing import dithered_cubes_from_rss_files
-from sami.dr import get_transfer_function, perform_telluric_correction
+from sami.dr import get_transfer_function, read_combined_transfer_fn
+from sami.dr import primary_flux_calibrate, perform_telluric_correction
 
 
 IDX_FILES_SLOW = {'1': 'sami580V_v1_2.idx',
@@ -761,13 +762,28 @@ class Manager:
 
     def flux_calibrate(self, overwrite=False, **kwargs):
         """Apply flux calibration to object frames."""
-        pass
+        # overwrite not yet implemeneted, so will always overwrite
+        for fits in self.files(ndf_class='MFOBJECT', do_not_use=False,
+                               **kwargs):
+            fits_spectrophotometric = self.matchmaker(fits, 
+                                                      'spectrophotometric')
+            path_transfer_fn = os.path.join(
+                fits_spectrophotometric.reduced_dir,
+                'TRANSFERcombined.fits')
+            transfer_fn, transfer_var = read_combined_transfer_fn(
+                path_transfer_fn)
+            primary_flux_calibrate(
+                fits.telluric_path,
+                fits.fluxcal_path,
+                transfer_fn,
+                transfer_var)
+        return
 
     def telluric_correct(self, overwrite=False, **kwargs):
         """Apply telluric correction to object frames."""
         # overwrite not yet implemented, so will always overwrite
         for fits in self.files(ndf_class='MFOBJECT', do_not_use=False,
-                               spectrophotometric=False, **kwargs):
+                               name='main', **kwargs):
             perform_telluric_correction(fits.fluxcal_path)
         return
 
