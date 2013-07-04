@@ -609,7 +609,13 @@ def save_combined_transfer_fn(final_transfer_fn, final_transfer_var,
         hdulist.append(hdu)
     hdulist.writeto(os.path.join(path_to_standards, filename))
     return
-    
+
+def read_combined_transfer_fn(filename):
+    """Read the combined transfer function from a saved file."""
+    data = pf.getdata(filename)
+    transfer_fn = data[0,:]
+    transfer_fn_var = data[1,:]
+    return transfer_fn, transfer_fn_var    
 
 
 # ____________________________________________________________________________
