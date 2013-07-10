@@ -2421,15 +2421,26 @@ def extract_secondary_standard( samifitsfilename, verbose=True ):
         print ' '*8 + samifitsfilename
     
     fitsfile=pf.open(samifitsfilename)
-    fulltable=fitsfile[2].data 
+    fulltable=fitsfile['FIBRES_IFU'].data 
 
     names = fulltable[ 'NAME' ]
 
     careabout = ( ( names == '' ) | ( names.startswith( 'SKY' ) ) ) == False
     names = names[ careabout ]
     objects = np.unique( names )
-    galaxies = objects.startswith( 'J' )
-    
+    galaxies = np.zeros(len(objects), dtype=bool)
+    for index, obj in enumerate(objects):
+        if obj.startswith('J'):
+            galaxies[index] = True
+        else:
+            try:
+                obj_int = int(obj)
+            except ValueError:
+                continue
+            else:
+                if obj_int < 10000000:
+                    galaxies[index] = True
+
     secstandard = objects[ galaxies == False ]
     mask = np.where( fulltable[ 'NAME' ] == secstandard )
     probename = fulltable[ 'PROBENAME' ][ mask ][ 0 ]
