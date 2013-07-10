@@ -365,7 +365,7 @@ class Manager:
         self.set_reduced_path(fits)
         if not fits.do_not_use:
             fits.make_reduced_link()
-        self.add_header_item(fits, 'GRATLPMM', self.gratlpmm[fits.ccd])
+        fits.add_header_item('GRATLPMM', self.gratlpmm[fits.ccd])
         self.file_list.append(fits)
         return
 
@@ -430,16 +430,14 @@ class Manager:
             name_coords = None
             spectrophotometric_coords = None
         # See if it matches any previous fields
+        name_extra = None
+        spectrophotometric_extra = None
         for extra in self.extra_list:
             if (fits.coords.separation(extra['coords']) < self.matching_radius):
                 # Yes it does
                 name_extra = extra['name']
                 spectrophotometric_extra = extra['spectrophotometric']
                 break
-            else:
-                # No match
-                name_extra = None
-                spectrophotometric_extra = None
         # Now choose the best name
         if name_header and trust_header:
             fits.update_name(name_header)
@@ -1090,7 +1088,8 @@ class Manager:
                 (spectrophotometric is None or
                  (hasattr(fits, 'spectrophotometric') and
                   (fits.spectrophotometric == spectrophotometric))) and
-                (name is None or fits.name in name)):
+                (name is None or 
+                 (fits.name is not None and fits.name in name))):
                 yield fits
         return
 
@@ -1656,7 +1655,7 @@ class FITSFile:
 
     def update_spectrophotometric(self, spectrophotometric):
         """Change the spectrophotometric flag assigned to this file."""
-        if self.photometric != photometric:
+        if self.spectrophotometric != spectrophotometric:
             # Update the FITS header
             self.add_header_item('MNGRSPMS', spectrophotometric,
                                  'Flag set if a spectrophotometric star')

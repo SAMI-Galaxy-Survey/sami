@@ -52,9 +52,11 @@ at_the_telescope  = False
 if at_the_telescope :
     do_full_fit = False
 
-path_to_standard_spectra = './ESOstandards/'
-standard_star_catalog = 'ESOstandards.dat'
-atm_extinction_table = 'extinsso.tab'
+path_to_standard_spectra = ['./standards/ESO/',
+                            './standards/Bessell/']
+standard_star_catalog = ['ESOstandards.dat',
+                         'Bessellstandards.dat']
+atm_extinction_table = './standards/extinsso.tab'
 
 chunk_min = 24
 n_chunks = 20
@@ -67,18 +69,18 @@ ifucmap = plt.cm.gist_earth
 # ____________________________________________________________________________
 # ____________________________________________________________________________
 
-def fluxcal( path_to_standards, path_to_data, 
-             do_secondary_calibration=True,
-             path_to_ESO_standards=path_to_standard_spectra,
-             extraid=None, datestamp=None, verbose=True ):
+# def fluxcal( path_to_standards, path_to_data, 
+#              do_secondary_calibration=True,
+#              path_to_ESO_standards=path_to_standard_spectra,
+#              extraid=None, datestamp=None, verbose=True ):
 
-    transfer_fn, transfer_var = get_transfer_function( 
-        path_to_standards, path_to_ESO_standards=path_to_ESO_standards,
-        verbose=verbose )
+#     transfer_fn, transfer_var = get_transfer_function( 
+#         path_to_standards, path_to_ESO_standards=path_to_ESO_standards,
+#         verbose=verbose )
 
-    apply_flux_calibration( path_to_data, transfer_fn, transfer_var, 
-                            do_secondary_calibration=do_secondary_calibration,
-                            extraid=None, datestamp=None, verbose=verbose )
+#     apply_flux_calibration( path_to_data, transfer_fn, transfer_var, 
+#                             do_secondary_calibration=do_secondary_calibration,
+#                             extraid=None, datestamp=None, verbose=verbose )
 
     # transfer_fn, transfer_var = get_transfer_function( 
     #     path_to_standards, path_to_ESO_standards=path_to_ESO_standards,
@@ -197,222 +199,31 @@ def get_transfer_function( path_to_standards,
     for si, ( fitsfilename, probename, 
               standardfile, standardname, standardoffset
               ) in enumerate( standards_list ):
-        if verbose > 0 :
-            print '_' * 78
-            print "\nLooking at %s; probe %s in %s (dataframe %i/%i)." % ( standardname, probename, fitsfilename.split('/')[-1], 
-        si+1, len( standards_list ) )
-
-        chunkfigurefile = fitsfilename.rstrip( '.fits' ) + '.chunk.png' 
-        print chunkfigurefile
-        
-        startTime = time.time()
-        
-        standardspec, standardwl = get_standard_spectrum( 
-            standardfile, directory=path_to_ESO_standards, 
-            verbose=verbose )
-
-        # extract the SAMI IFS data for the standard, given the bundle name.
-        datadict = IFU_pick( fitsfilename, probename, 
-                             extincorr=True, verbose=verbose )
-
-        onlyneed = np.interp( ( datadict['wl'].min(), datadict['wl'].max() ),
-                              standardwl, np.arange(standardwl.shape[0]) )
-        if onlyneed[0] > 0 :
-            onlyneed[ 0 ] -= 1
-        standardwl   =  standardwl[ onlyneed[0]:onlyneed[1]+2 ]
-        standardspec = standardspec[ onlyneed[0]:onlyneed[1]+2 ]
-
-        xfibre, yfibre = relative_fibre_positions( datadict )
-        data, var, wl = datadict[ 'data' ], datadict[ 'var' ], datadict[ 'wl' ]
-
-        startTime = time.time()
-        # fit a 2D Gaussian to the PSF as a fn of wavelength
-        PSFmodel = fit_psf_afo_wavelength( datadict, polydeg=1,
-            chunk_min=24, n_chunks=n_chunks, chunk_size=chunk_size, 
-            verbose=verbose, chunkfigurefile=chunkfigurefile )
-
-        if make_diagnostic_plots :
-            figfilename = '%s_%s.psf.png' % ( 
-                fitsfilename.rstrip( '.fits' ), standardname )            
-            add_date_stamp( figfilename, top=True )
-            plt.draw()
-            plt.figure( 2 )
-            print 'Making diagnostic plot ...', ; sys.stdout.flush()
-            plt.savefig( figfilename )
-            print 'done.'
-            print '  Look at', figfilename
-            print
-
-        # get Gaussian amplitudes from the IFS data as a fn of wavelength
-#        amplitude, uncertainty = extract_total_flux( 
-#                datadict, PSFmodel, verbose=verbose )
-
-        amplitude, uncertainty = extract_total_flux_new( 
-                datadict, PSFmodel, verbose=verbose )
-
-        # median smooth the amplitudes on a small scale
-        amp_smoothed, smoothed_scatter = median_smooth( 
-            amplitude, binsize=16, givenmad=True )
-        unc_smoothed = median_smooth( uncertainty, binsize=16 )
-
-        # censor outlying data
-        censor = ( np.abs( amplitude-amp_smoothed ) 
-                   / np.sqrt( unc_smoothed**2. + smoothed_scatter**2. ) ) > 5.
-        uncensored = np.copy( amplitude )
-        amplitude = np.where( censor, np.nan, uncensored )
-        print 'Censoring %i wavelengths (%.1f%%)' % (
-            censor.sum(), float(censor.sum())/datadict['wl'].shape[0]*100.)
-
-        # rebin the Gaussian-fit amplitudes onto the wl grid of the standard
-        amp_rebinned, unc_rebinned = rebin_spectrum( 
-            standardwl, datadict[ 'wl' ], amplitude, unc_smoothed )
-
-        ratio = standardspec / amp_rebinned
-        unc_ratio = unc_rebinned / amp_rebinned * ratio
-
-        avoid = [ 4861.-20, 4861.+20 ]
-        cut = np.interp( avoid, standardwl, np.arange(standardwl.shape[0]))
-         
-        # std spec have units 10-16 erg/cm2/s/A
-        h_in_erg_sec = 6.62606957e-27
-        c_in_ang_per_sec = 2.997924581e18
-
-        mirror_area_in_cm2 = 0.84 * np.pi * 195.**2.
-
-        std_energy  = h_in_erg_sec * c_in_ang_per_sec / standardwl
-        std_photons = standardspec / 1.e16 / std_energy 
-        std_photons *= mirror_area_in_cm2
-        
-        sensitivity = ( datadict[ 'GAIN' ] * amp_rebinned 
-                        / datadict[ 'CDELT1' ] / std_photons )
-
-        ymax, yref0, yrefstep = 18., 15.6, 0.8145
-        if np.median( datadict[ 'wl' ] )  < 6000 :
-            plotlims = np.array( ( 3350., 6650. ) )
-            xref = 3500.
+        transfer_fn_single, transfer_fn_var_single, sensitivity_single, \
+            datadict, standardwl = \
+            get_transfer_function_single(si, fitsfilename, probename, 
+              standardfile, standardname, standardoffset, color=colors[si], 
+              verbose=verbose, save=save)
+        if transfer_fn is None:
+            transfer_fn = transfer_fn_single
+            transfer_fn_var = transfer_fn_var_single
+            sensitives = sensitivity_single
         else :
-            plotlims = np.array( ( 6150., 7650. ) ) 
-            scaleby = 31./18
-            xref = 6865.
-            ymax *= scaleby ; yrefstep *= scaleby
-            yref0 = 4.3 + len( standards_list ) * yrefstep
+            transfer_fn    = np.vstack((transfer_fn, transfer_fn_single))
+            transfer_fn_var= np.vstack((transfer_fn_var, transfer_fn_var_single))
+            sensitives     = np.vstack((sensitives, sensitivity_single))
 
-
-        if cut[0] > 0 and 0 :
-            standardwl = np.hstack( ( standardwl[ :cut[0] ], 
-                                  standardwl[ cut[1]+1: ] ) )
-            standardspec = np.hstack( ( standardspec[ :cut[0] ], 
-                                  standardspec[ cut[1]+1: ] ) )
-            ratio = np.hstack( ( ratio[ :cut[0] ], ratio[ cut[1]+1: ] ) )
-            unc_ratio = np.hstack(( unc_ratio[ :cut[0]], 
-                                    unc_ratio[cut[1]+1: ] ))
-            sensitivity = np.hstack(( sensitivity[ :cut[0]], 
-                                      sensitivity[cut[1]+1: ] ))  
-
-        if save:
-            save_transfer_fn(fitsfilename, ratio, unc_ratio**2., sensitivity,
-                             probename, standardfile, standardname,
-                             standardoffset)
-
-        if transfer_fn == None :
-            transfer_fn    = ratio
-            transfer_fn_var= unc_ratio**2.
-            sensitives     = sensitivity
-        else :
-            transfer_fn    = np.vstack((  transfer_fn  ,    ratio     ))
-            transfer_fn_var= np.vstack((transfer_fn_var, unc_ratio**2.))
-            sensitives     = np.vstack((   sensitives  ,  sensitivity ))
-
-        if make_diagnostic_plots :
-            if verbose > 0 :
-                sys.stdout.flush()
-
-            maxfiber = np.argmax(np.median(datadict['data']/amplitude, axis=1))
-
-            plt.figure( 3 ) ; plt.clf()
-            plt.plot( datadict[ 'wl' ], amplitude, 'k-' )
-            plt.scatter( datadict[ 'wl' ][ censor ], uncensored[ censor ],
-                         20, 'r', facecolors='r', marker='x', lw=2 )
-            
-            plt.fill_between( datadict[ 'wl' ], 
-                              2.*( datadict[ 'data' ][ maxfiber ]
-                              -3. * np.sqrt( datadict[ 'var' ][ maxfiber ] ) ),
-                              2.*(datadict[ 'data' ][ maxfiber ]
-                              +3. * np.sqrt( datadict[ 'var' ][ maxfiber ] ) ),
-                              color='b', alpha=0.2, zorder=2 )
-
-            plt.plot( datadict[ 'wl' ], 2.*datadict['data'][ maxfiber ], 'b-' )
-
-            plt.scatter( standardwl, amp_rebinned, 160, 'none', zorder=4, 
-                         edgecolors='w', linewidths=3, marker='s' )
-            plt.scatter( standardwl, amp_rebinned, 160, 'none', zorder=4, 
-                         edgecolors='r', linewidths=1, marker='s' )
-
-            yrange = np.nanmax(amp_rebinned) - min(np.nanmin(amp_rebinned), 0)
-
-            plt.ylim( max( np.nanmin( amp_rebinned ), 0 )-0.035 * yrange, 
-                      np.nanmax( amp_rebinned )+0.15 * yrange )
-            plt.xlim( plotlims )
-            plt.xlabel( 'wavelength', fontsize='xx-large' )
-            plt.ylabel( 'flux', fontsize='xx-large' )
-            plt.title( 'file: %s; probe: %s;\nspecphot star: %s' % ( 
-                    fitsfilename.split('/')[-1], probename, standardname ), 
-                       fontsize='x-large' )
-
-            plt.figtext( 0.15565, 0.735, 
-                         'blue: brightest fibre (#%i) x 2\nblack: Gaussian fits\ncrosses: censored as outlying\nboxes: smoothed & rebinned\nshaded: 3 x uncertainties' % (maxfiber+1) )
-
-            add_date_stamp( figfilename )
-            plt.draw()
-            figfilename = '%s_%s.amp.png' % ( 
-                fitsfilename.rstrip( '.fits' ), standardname )
-
-            plt.savefig( figfilename )
-
-#            xref, yref = np.mean( datadict[ 'wl' ] ), 26. * 0.85**si
-            yref = yref0 - yrefstep*si
-
-
-            oktp = ( (np.isfinite( sensitivity )) & (np.isfinite( ratio ))
-                    & np.isfinite( unc_ratio ))
-
-            unc_sens = unc_ratio/ratio
-            unc_sens = np.clip( unc_sens, 0., 1. )
-            
-            plt.figure( 4 ) 
-            plt.plot( standardwl[oktp], (sensitivity)[oktp]*100., '-', 
-                      standardwl[oktp], np.clip( unc_sens[oktp], 0., 1. ) * 100., '--', 
-                      [xref], [yref], 's', 
-                      ms=8, lw = 3, color=colors[si] 
-                      )
-                      
-            plt.text( xref+50, yref, fitsfilename.split('/')[-1], 
-                      ha='left', va='center', fontsize='medium' )
-            plt.xlim( plotlims[0], plotlims[1] )
-            plt.ylim( 0., ymax )   
-            plt.xlabel( 'wavelength', fontsize='xx-large' )
-            plt.ylabel( 'net per-fibre sensitivity (%)', fontsize='xx-large' )
-            plt.title( 'datadir: %s\nspecphot star: %s' % 
-                       ( path_to_standards, standardname ), fontsize='x-large' )
-            if si == 0 :
-                plt.text( np.mean( plotlims ), .99 * ymax, # 0.45, 
-"""dashed lines show *relative* uncertainties in each measurement as a percentange
-dotted line shows RMS variation between multiple measurements in the same way"""
-                          , ha='center', va='top', fontsize='small' )
-
-            plt.draw()
-
-        percenterr = unc_ratio / ratio *100. 
-        percenterr = percenterr[ np.isfinite( percenterr ) ]
-
-        if verbose > 0 :
-            print 'Median uncertainty in the transfer function across the specrum is %.2f%% .' % ( 
-                np.median( percenterr ) )
-            if make_diagnostic_plots :
-                print '  Look at %s' % figfilename
-            print '\n Finished with that data frame. (Took %.1f sec.)' % (
-                time.time()-startTime)
-                           
+    ymax, yref0, yrefstep = 18., 15.6, 0.8145
+    if np.median( datadict[ 'wl' ] )  < 6000 :
+        plotlims = np.array( ( 3350., 6650. ) )
+        xref = 3500.
+    else :
+        plotlims = np.array( ( 6150., 7650. ) ) 
+        scaleby = 31./18
+        xref = 6865.
+        ymax *= scaleby ; yrefstep *= scaleby
+        yref0 = 4.3 + len( standards_list ) * yrefstep
+    yref = yref0 - yrefstep*len( standards_list )
 
     if len( transfer_fn.shape ) > 1 :
 
@@ -487,7 +298,7 @@ dotted line shows RMS variation between multiple measurements in the same way"""
     else :
         final_transfer_fn = transfer_fn 
         final_transfer_var= transfer_fn_var
-        final_sensitivity = sensitivity
+        final_sensitivity = sensitives
 
         print "\nOnly the one spectrophotometric standard observation, so i'm all done here."
 
@@ -498,7 +309,7 @@ dotted line shows RMS variation between multiple measurements in the same way"""
             final_sensitivity,
             transfer_fn,
             transfer_fn_var,
-            sensitivity,
+            sensitives,
             standards_list,
             path_to_standards,
             )
@@ -507,8 +318,6 @@ dotted line shows RMS variation between multiple measurements in the same way"""
         plt.figure( 4 ) 
         
         # xref, yref = np.mean( datadict[ 'wl' ] ), 
-        yref = yref0 - yrefstep*len( standards_list )
-
         if len( transfer_fn.shape ) > 1 :
             plt.plot( standardwl, np.clip( final_sensitivity, final_sensitivity, 0 )* 100., '-',
                       standardwl, (np.clip( np.sqrt( final_transfer_var )
@@ -526,7 +335,7 @@ dotted line shows RMS variation between multiple measurements in the same way"""
                   'median uncert. = %.2f%%' % np.median(percenterr), 
                   va='bottom', ha='right' )
 
-        add_date_stamp( figfilename )
+        #add_date_stamp( figfilename )
         plt.xlim( plotlims ) ;        plt.ylim( 0., ymax )
         plt.grid()
         plt.draw()
@@ -543,6 +352,223 @@ dotted line shows RMS variation between multiple measurements in the same way"""
         print '_' * 78
 
     return final_transfer_fn, final_transfer_var
+
+
+def get_transfer_function_single(si, fitsfilename, probename, 
+        standardfile, standardname, standardoffset, color='k', 
+        verbose=True, save=True):
+    if verbose > 0 :
+        print '_' * 78
+        print "\nLooking at %s; probe %s in %s (dataframe %i)." % ( standardname, probename, fitsfilename.split('/')[-1], 
+    si+1)
+
+    chunkfigurefile = fitsfilename.rstrip( '.fits' ) + '.chunk.png' 
+    print chunkfigurefile
+    
+    startTime = time.time()
+    
+    standardspec, standardwl = get_standard_spectrum( 
+        standardfile, verbose=verbose )
+
+    # extract the SAMI IFS data for the standard, given the bundle name.
+    datadict = IFU_pick( fitsfilename, probename, 
+                         extincorr=True, verbose=verbose )
+
+    onlyneed = np.interp( ( datadict['wl'].min(), datadict['wl'].max() ),
+                          standardwl, np.arange(standardwl.shape[0]) )
+    if onlyneed[0] > 0 :
+        onlyneed[ 0 ] -= 1
+    standardwl   =  standardwl[ onlyneed[0]:onlyneed[1]+2 ]
+    standardspec = standardspec[ onlyneed[0]:onlyneed[1]+2 ]
+
+    xfibre, yfibre = relative_fibre_positions( datadict )
+    data, var, wl = datadict[ 'data' ], datadict[ 'var' ], datadict[ 'wl' ]
+
+    startTime = time.time()
+    # fit a 2D Gaussian to the PSF as a fn of wavelength
+    PSFmodel = fit_psf_afo_wavelength( datadict, polydeg=1,
+        chunk_min=24, n_chunks=n_chunks, chunk_size=chunk_size, 
+        verbose=verbose, chunkfigurefile=chunkfigurefile )
+
+    if make_diagnostic_plots :
+        figfilename = '%s_%s.psf.png' % ( 
+            fitsfilename.rstrip( '.fits' ), standardname )            
+        add_date_stamp( figfilename, top=True )
+        plt.draw()
+        plt.figure( 2 )
+        print 'Making diagnostic plot ...', ; sys.stdout.flush()
+        plt.savefig( figfilename )
+        print 'done.'
+        print '  Look at', figfilename
+        print
+
+    # get Gaussian amplitudes from the IFS data as a fn of wavelength
+#        amplitude, uncertainty = extract_total_flux( 
+#                datadict, PSFmodel, verbose=verbose )
+
+    amplitude, uncertainty = extract_total_flux_new( 
+            datadict, PSFmodel, verbose=verbose )
+
+    # median smooth the amplitudes on a small scale
+    amp_smoothed, smoothed_scatter = median_smooth( 
+        amplitude, binsize=16, givenmad=True )
+    unc_smoothed = median_smooth( uncertainty, binsize=16 )
+
+    # censor outlying data
+    censor = ( np.abs( amplitude-amp_smoothed ) 
+               / np.sqrt( unc_smoothed**2. + smoothed_scatter**2. ) ) > 5.
+    uncensored = np.copy( amplitude )
+    amplitude = np.where( censor, np.nan, uncensored )
+    print 'Censoring %i wavelengths (%.1f%%)' % (
+        censor.sum(), float(censor.sum())/datadict['wl'].shape[0]*100.)
+
+    # rebin the Gaussian-fit amplitudes onto the wl grid of the standard
+    amp_rebinned, unc_rebinned = rebin_spectrum( 
+        standardwl, datadict[ 'wl' ], amplitude, unc_smoothed )
+
+    ratio = standardspec / amp_rebinned
+    unc_ratio = unc_rebinned / amp_rebinned * ratio
+
+    avoid = [ 4861.-20, 4861.+20 ]
+    cut = np.interp( avoid, standardwl, np.arange(standardwl.shape[0]))
+     
+    # std spec have units 10-16 erg/cm2/s/A
+    h_in_erg_sec = 6.62606957e-27
+    c_in_ang_per_sec = 2.997924581e18
+
+    mirror_area_in_cm2 = 0.84 * np.pi * 195.**2.
+
+    std_energy  = h_in_erg_sec * c_in_ang_per_sec / standardwl
+    std_photons = standardspec / 1.e16 / std_energy 
+    std_photons *= mirror_area_in_cm2
+    
+    sensitivity = ( datadict[ 'GAIN' ] * amp_rebinned 
+                    / datadict[ 'CDELT1' ] / std_photons )
+
+    ymax, yref0, yrefstep = 18., 15.6, 0.8145
+    if np.median( datadict[ 'wl' ] )  < 6000 :
+        plotlims = np.array( ( 3350., 6650. ) )
+        xref = 3500.
+    else :
+        plotlims = np.array( ( 6150., 7650. ) ) 
+        scaleby = 31./18
+        xref = 6865.
+        ymax *= scaleby ; yrefstep *= scaleby
+        #yref0 = 4.3 + len( standards_list ) * yrefstep
+        yref = 4.3 + 3 * yrefstep
+
+
+    if cut[0] > 0 and 0 :
+        standardwl = np.hstack( ( standardwl[ :cut[0] ], 
+                              standardwl[ cut[1]+1: ] ) )
+        standardspec = np.hstack( ( standardspec[ :cut[0] ], 
+                              standardspec[ cut[1]+1: ] ) )
+        ratio = np.hstack( ( ratio[ :cut[0] ], ratio[ cut[1]+1: ] ) )
+        unc_ratio = np.hstack(( unc_ratio[ :cut[0]], 
+                                unc_ratio[cut[1]+1: ] ))
+        sensitivity = np.hstack(( sensitivity[ :cut[0]], 
+                                  sensitivity[cut[1]+1: ] ))  
+
+    if save:
+        save_transfer_fn(fitsfilename, ratio, unc_ratio**2., sensitivity,
+                         probename, standardfile, standardname,
+                         standardoffset)
+
+    transfer_fn    = ratio
+    transfer_fn_var= unc_ratio**2.
+
+    if make_diagnostic_plots :
+        if verbose > 0 :
+            sys.stdout.flush()
+
+        maxfiber = np.argmax(np.median(datadict['data']/amplitude, axis=1))
+
+        plt.figure( 3 ) ; plt.clf()
+        plt.plot( datadict[ 'wl' ], amplitude, 'k-' )
+        plt.scatter( datadict[ 'wl' ][ censor ], uncensored[ censor ],
+                     20, 'r', facecolors='r', marker='x', lw=2 )
+        
+        plt.fill_between( datadict[ 'wl' ], 
+                          2.*( datadict[ 'data' ][ maxfiber ]
+                          -3. * np.sqrt( datadict[ 'var' ][ maxfiber ] ) ),
+                          2.*(datadict[ 'data' ][ maxfiber ]
+                          +3. * np.sqrt( datadict[ 'var' ][ maxfiber ] ) ),
+                          color='b', alpha=0.2, zorder=2 )
+
+        plt.plot( datadict[ 'wl' ], 2.*datadict['data'][ maxfiber ], 'b-' )
+
+        plt.scatter( standardwl, amp_rebinned, 160, 'none', zorder=4, 
+                     edgecolors='w', linewidths=3, marker='s' )
+        plt.scatter( standardwl, amp_rebinned, 160, 'none', zorder=4, 
+                     edgecolors='r', linewidths=1, marker='s' )
+
+        yrange = np.nanmax(amp_rebinned) - min(np.nanmin(amp_rebinned), 0)
+
+        plt.ylim( max( np.nanmin( amp_rebinned ), 0 )-0.035 * yrange, 
+                  np.nanmax( amp_rebinned )+0.15 * yrange )
+        plt.xlim( plotlims )
+        plt.xlabel( 'wavelength', fontsize='xx-large' )
+        plt.ylabel( 'flux', fontsize='xx-large' )
+        plt.title( 'file: %s; probe: %s;\nspecphot star: %s' % ( 
+                fitsfilename.split('/')[-1], probename, standardname ), 
+                   fontsize='x-large' )
+
+        plt.figtext( 0.15565, 0.735, 
+                     'blue: brightest fibre (#%i) x 2\nblack: Gaussian fits\ncrosses: censored as outlying\nboxes: smoothed & rebinned\nshaded: 3 x uncertainties' % (maxfiber+1) )
+
+        add_date_stamp( figfilename )
+        plt.draw()
+        figfilename = '%s_%s.amp.png' % ( 
+            fitsfilename.rstrip( '.fits' ), standardname )
+
+        plt.savefig( figfilename )
+
+#            xref, yref = np.mean( datadict[ 'wl' ] ), 26. * 0.85**si
+        yref = yref0 - yrefstep*si
+
+
+        oktp = ( (np.isfinite( sensitivity )) & (np.isfinite( ratio ))
+                & np.isfinite( unc_ratio ))
+
+        unc_sens = unc_ratio/ratio
+        unc_sens = np.clip( unc_sens, 0., 1. )
+        
+        plt.figure( 4 ) 
+        plt.plot( standardwl[oktp], (sensitivity)[oktp]*100., '-', 
+                  standardwl[oktp], np.clip( unc_sens[oktp], 0., 1. ) * 100., '--', 
+                  [xref], [yref], 's', 
+                  ms=8, lw = 3, color=color 
+                  )
+                  
+        plt.text( xref+50, yref, fitsfilename.split('/')[-1], 
+                  ha='left', va='center', fontsize='medium' )
+        plt.xlim( plotlims[0], plotlims[1] )
+        plt.ylim( 0., ymax )   
+        plt.xlabel( 'wavelength', fontsize='xx-large' )
+        plt.ylabel( 'net per-fibre sensitivity (%)', fontsize='xx-large' )
+        plt.title( 'datadir: %s\nspecphot star: %s' % 
+                   ( os.path.dirname(standardfile), standardname ), fontsize='x-large' )
+        if si == 0 :
+            plt.text( np.mean( plotlims ), .99 * ymax, # 0.45, 
+"""dashed lines show *relative* uncertainties in each measurement as a percentange
+dotted line shows RMS variation between multiple measurements in the same way"""
+                      , ha='center', va='top', fontsize='small' )
+
+        plt.draw()
+
+    percenterr = unc_ratio / ratio *100. 
+    percenterr = percenterr[ np.isfinite( percenterr ) ]
+
+    if verbose > 0 :
+        print 'Median uncertainty in the transfer function across the specrum is %.2f%% .' % ( 
+            np.median( percenterr ) )
+        if make_diagnostic_plots :
+            print '  Look at %s' % figfilename
+        print '\n Finished with that data frame. (Took %.1f sec.)' % (
+            time.time()-startTime)
+
+    return transfer_fn, transfer_fn_var, sensitivity, datadict, standardwl
+
 
 
 def save_transfer_fn(fitsfilename, ratio, variance, sensitivity,
@@ -618,7 +644,10 @@ def save_combined_transfer_fn(final_transfer_fn, final_transfer_var,
         for key, value, comment in header_item_list:
             hdu.header[key] = (value, comment)
         hdulist.append(hdu)
-    hdulist.writeto(os.path.join(path_to_standards, filename))
+    path = os.path.join(path_to_standards, filename)
+    if os.path.exists(path):
+        os.remove(path)
+    hdulist.writeto(path)
     return
 
 def read_combined_transfer_fn(filename):
@@ -1929,8 +1958,13 @@ def find_standard_star_dataframes( directory,
       fitsfilename = '%s/%s' % ( directory, standard )
       if fitsfilename.endswith( 'red.fits' ) :
         # find which bundle contains the standard, and which standard it is.
-        result = find_standard_in_dataframe( 
-            fitsfilename, directory=path_to_ESO_standards, verbose=verbose )
+        try:
+            result = find_standard_in_dataframe( 
+                fitsfilename, directory_list=path_to_ESO_standards, verbose=verbose )
+        except IOError:
+            if verbose >= 1:
+                print 'Nothing found in that file'
+            continue
             
         if result != None :
             standards_list.append( result )
@@ -1944,8 +1978,8 @@ def find_standard_star_dataframes( directory,
 # ____________________________________________________________________________
 
 def find_standard_in_dataframe( fitsfilename, max_sep_arcsec=30., 
-                                directory=path_to_standard_spectra,
-                                tablename=standard_star_catalog,
+                                directory_list=path_to_standard_spectra,
+                                tablename_list=standard_star_catalog,
                                 verbose=False ):
     """
 Identifies and extracts the IFS data for a standard star, given a dataframe.
@@ -1981,7 +2015,7 @@ Opening data fits file: %s\n""" % ( fitsfilename )
 
                 starfile, starname, offset=find_standard_spectrum( 
                     RA, DEC, max_sep_arcsec=max_sep_arcsec,
-                    directory=directory, verbose=verbose-2>0 )
+                    directory_list=directory_list, verbose=verbose-2>0 )
 
                 if starname != None :
                     nfound += 1
@@ -2025,7 +2059,7 @@ Opening data fits file: %s\n""" % ( fitsfilename )
 # ____________________________________________________________________________
 
 def find_standard_spectrum(ra,dec, max_sep_arcsec=15., 
-    directory=path_to_standard_spectra, tablename=standard_star_catalog,
+    directory_list=path_to_standard_spectra, tablename_list=standard_star_catalog,
     status=None, infield=False, doplot=False, verbose=False ):
     """
 Get the right calibration spectrum, based on the RA and Dec of the star. 
@@ -2047,11 +2081,18 @@ find_standard_spectrum( RA, Dec, max_sep_arcsec=1
     verbose          Boolean controlling verbose outputs
 
 """
-    standardcat = '%s/%s' % ( directory, tablename )
-
-    # Read the index file
+    # Find the best match in RA and Dec
     if verbose > 0:
-        print """
+        print 'Matching to observed coordinates RA =', ra, 'Dec =', dec
+
+    min_sep = float('inf')
+
+    for directory, tablename in zip(directory_list, tablename_list):
+        standardcat = '%s/%s' % ( directory, tablename )
+
+        # Read the index file
+        if verbose > 0:
+            print """
 Starting SAMI_fluxcal.find_standard_spectrum to get standard star spectrum.
  
 Looking for flux calibration data in %s .
@@ -2059,51 +2100,47 @@ Reading coordinates of standard stars from %s .
 Maximum search radius is %.2f arcsec.
 """ % ( directory, standardcat, max_sep_arcsec )
 
-    if not os.path.exists( standardcat ) :
-        print """\n\n\n\n\n
+        if not os.path.exists( standardcat ) :
+            print """\n\n\n\n\n
 Cannot find file %s containing standard star info.
 You may need to run SAMI_fluxcal.create_ESO_standards_table .
 You may also need to run SAMI_fluxcal.get_ESO_standard_spectra .
 
 Dying gracelessly in 3 seconds ...\n\n\n""" % standardcat 
-        time.sleep( 3 )
+            time.sleep( 3 )
         
-    index = np.loadtxt( standardcat, dtype='S' )
+        index = np.loadtxt( standardcat, dtype='S' )
 
-    # Find the best match in RA and Dec
-    if verbose > 0:
-        print 'Matching to observed coordinates RA =', ra, 'Dec =', dec
+        for star in index:
+            RAstring = '%sh%sm%ss' % ( star[2], star[3], star[4] )
+            Decstring= '%sd%sm%ss' % ( star[5], star[6], star[7] )
 
-    min_sep = float('inf')
-    for star in index:
-        RAstring = '%sh%sm%ss' % ( star[2], star[3], star[4] )
-        Decstring= '%sd%sm%ss' % ( star[5], star[6], star[7] )
+            coords_star = coord.ICRSCoordinates( RAstring, Decstring )
+            ra_star = coords_star.ra.degrees
+            dec_star= coords_star.dec.degrees
 
-        coords_star = coord.ICRSCoordinates( RAstring, Decstring )
-        ra_star = coords_star.ra.degrees
-        dec_star= coords_star.dec.degrees
+            ### BUG IN ASTROPY.COORDINATES ###
+            if '-' in star[5] and dec_star > 0:
+              dec_star *= -1
+              if -1. <= dec and dec <= 0 :
+                print '    fixing negative Dec bug in astropy.coordinates.'
+                print '    astropy.coordinates treats Dec of -00 as +00'
+                print '    future astropy.coordinates may fix this problem.'
+                print '\n' * 2
+                print "    i'll give you 10 seconds to think about that."
+                print '\n' * 5
+                for i in range( 5 ):
+                    print '\a'
+                    time.sleep( 0.3 )
+                time.sleep( 8.5 )
 
-        ### BUG IN ASTROPY.COORDINATES ###
-        if '-' in star[5] and dec_star > 0:
-          dec_star *= -1
-          if -1. <= dec and dec <= 0 :
-            print '    fixing negative Dec bug in astropy.coordinates.'
-            print '    astropy.coordinates treats Dec of -00 as +00'
-            print '    future astropy.coordinates may fix this problem.'
-            print '\n' * 2
-            print "    i'll give you 10 seconds to think about that."
-            print '\n' * 5
-            for i in range( 5 ):
-                print '\a'
-                time.sleep( 0.3 )
-            time.sleep( 8.5 )
-
-        sep = coord.angles.AngularSeparation(
+            sep = coord.angles.AngularSeparation(
                     ra, dec, ra_star, dec_star, units.degree ).arcsecs
 
-        if sep < min_sep:
-            min_sep = sep
-            closest_star = star
+            if sep < min_sep:
+                min_sep = sep
+                closest_star = star
+                closest_dir = directory
 
     # Check that the closest match is close enough
     if min_sep > max_sep_arcsec :
@@ -2117,30 +2154,41 @@ Dying gracelessly in 3 seconds ...\n\n\n""" % standardcat
               'at separation %.3f arcsec.' % min_sep
         print min_sep, max_sep_arcsec, min_sep > max_sep_arcsec
 
-    return closest_star[0], closest_star[1], min_sep
+    return os.path.join(closest_dir, closest_star[0]), closest_star[1], min_sep
     
 # ____________________________________________________________________________
 # ____________________________________________________________________________
 
 def get_standard_spectrum( standard_filename, 
-                            directory=path_to_standard_spectra, 
                             verbose=False ):
 
     # Read the flux and wavelength from the correct file
-    spectrum_file = '%s/%s' % ( directory, standard_filename )
 
-    if not os.path.exists( spectrum_file ) and verbose >= 0 :
+    if not os.path.exists( standard_filename ) and verbose >= 0 :
         print """\n\n\n\n\n
 Cannot find file %s containing spectrum for standard star.
 You may need to run SAMI_fluxcal.get_ESO_standard_spectra .
 
-Dying gracelessly in 3 seconds ...\n\n\n""" % ( spectrum_file )
+Dying gracelessly in 3 seconds ...\n\n\n""" % ( standard_filename )
         time.sleep( 3 )
 
     if verbose > 1:
-        print 'Reading spectrum for', standard_filename, 'from', spectrum_file
-                
-    star_data = np.loadtxt(spectrum_file, dtype='d')
+        print 'Reading spectrum from', standard_filename
+    
+    skiprows = 0
+    with open(standard_filename) as f_spec:
+        finished = False
+        while not finished:
+            line = f_spec.readline()
+            try:
+                number = float(line.split()[0])
+            except ValueError:
+                skiprows += 1
+                continue
+            else:
+                finished = True
+
+    star_data = np.loadtxt(standard_filename, dtype='d', skiprows=skiprows)
     wavelength= star_data[:,0]
     spectrum  = star_data[:,1]
 
@@ -2596,15 +2644,12 @@ def zd2am( zenithdistance ):
 # ____________________________________________________________________________
 
 def get_atm_extinction_curve( 
-    path_to_standard_spectra=path_to_standard_spectra,
-    atm_exctinction_table=atm_extinction_table,
+    atm_extinction_table=atm_extinction_table,
     url='http://www.mso.anu.edu.au/~bessell/FTP/Spectrophotometry/', 
     verbose=False ):
     """Load standard SSO atmospheric extinction curve from Mike Bessell"""
     
-    atm_ext_tab = '%s/%s' % (path_to_standard_spectra, atm_extinction_table)
-
-    if not os.path.exists( atm_ext_tab ):
+    if not os.path.exists( atm_extinction_table ):
         
         print ; print '_' * 78 ; print
         print 'atmospheric extinction table not found.'
@@ -2613,14 +2658,15 @@ def get_atm_extinction_curve(
         print
 
         urllib.urlretrieve( 
-            '%s/%s' % ( url, atm_extinction_table ), atm_ext_tab )
+            '%s/%s' % ( url, os.path.basename(atm_extinction_table) ), 
+            atm_extinction_table )
 
         print 'done.'
         print ; print '_' * 78 ; print
 
     wl, ext = [], []
 
-    for entry in open( atm_ext_tab, 'r' ).xreadlines() :
+    for entry in open( atm_extinction_table, 'r' ).xreadlines() :
         line = entry.rstrip( '\n' )
         if not line.count( '*' ) and not line.count( '=' ):
             values = line.split()
