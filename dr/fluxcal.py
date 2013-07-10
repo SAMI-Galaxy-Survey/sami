@@ -302,18 +302,6 @@ def get_transfer_function( path_to_standards,
 
         print "\nOnly the one spectrophotometric standard observation, so i'm all done here."
 
-    if save:
-        save_combined_transfer_fn(
-            final_transfer_fn, 
-            final_transfer_var,
-            final_sensitivity,
-            transfer_fn,
-            transfer_fn_var,
-            sensitives,
-            standards_list,
-            path_to_standards,
-            )
-
     if make_diagnostic_plots or 1 :
         plt.figure( 4 ) 
         
@@ -347,6 +335,19 @@ def get_transfer_function( path_to_standards,
                                      final_transfer_fn )
     final_transfer_var=np.interp(datadict['wl'],
                                  standardwl,final_transfer_var)
+    final_sensitivity = np.interp(datadict['wl'], standardwl, final_sensitivity)
+
+    if save:
+        save_combined_transfer_fn(
+            final_transfer_fn, 
+            final_transfer_var,
+            final_sensitivity,
+            transfer_fn,
+            transfer_fn_var,
+            sensitives,
+            standards_list,
+            path_to_standards,
+            )
 
     if verbose > 0 :
         print '_' * 78

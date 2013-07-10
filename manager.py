@@ -763,15 +763,14 @@ class Manager:
         # overwrite not yet implemeneted, so will always overwrite
         for fits in self.files(ndf_class='MFOBJECT', do_not_use=False,
                                **kwargs):
-            fits_spectrophotometric = self.matchmaker(fits, 
-                                                      'spectrophotometric')
+            fits_spectrophotometric = self.matchmaker(fits, 'fcal')
             path_transfer_fn = os.path.join(
                 fits_spectrophotometric.reduced_dir,
                 'TRANSFERcombined.fits')
             transfer_fn, transfer_var = read_combined_transfer_fn(
                 path_transfer_fn)
             primary_flux_calibrate(
-                fits.telluric_path,
+                fits.reduced_path,
                 fits.fluxcal_path,
                 transfer_fn,
                 transfer_var)
