@@ -2582,7 +2582,7 @@ def IFU_pick( samifitsfilename, IFU=None,
 
     # wavelength
     datadict[ 'wl' ] = hdr[ 'CRVAL1' ] + ( 
-        hdr[ 'cdelt1' ] * ( np.arange( data.shape[1] ) - hdr[ 'crpix1' ] ) )
+        hdr[ 'cdelt1' ] * ( 1 + np.arange( data.shape[1] ) - hdr[ 'crpix1' ] ) )
 
     # zenith distance and airmass calculation
     datadict[ 'ZDSTART' ], datadict[ 'ZDEND' ] \
