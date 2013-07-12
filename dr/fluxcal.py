@@ -299,6 +299,8 @@ def get_transfer_function( path_to_standards,
         final_transfer_fn = transfer_fn 
         final_transfer_var= transfer_fn_var
         final_sensitivity = sensitives
+        percenterr = np.sqrt(final_transfer_var) /final_transfer_fn*100.
+        percenterr = percenterr[ np.isfinite( percenterr ) ]
 
         print "\nOnly the one spectrophotometric standard observation, so i'm all done here."
 
@@ -626,9 +628,14 @@ def save_combined_transfer_fn(final_transfer_fn, final_transfer_var,
     hdu_name = 'INPUT_FUNCTION'
     for index, standard in enumerate(standards_list):
         # Stick together the data for this input file
-        data = np.vstack((transfer_fn[index, :],
-                          transfer_fn_var[index, :],
-                          sensitivity[index, :]))
+        if len(standards_list) == 1:
+            data = np.vstack((transfer_fn,
+                              transfer_fn_var,
+                              sensitivity))
+        else:
+            data = np.vstack((transfer_fn[index, :],
+                              transfer_fn_var[index, :],
+                              sensitivity[index, :]))
         hdu = pf.ImageHDU(data, name=hdu_name)
         # Add info to the header
         (fitsfilename, probename, standardfile, standardname, 
@@ -985,7 +992,7 @@ def fit_psf_afo_wavelength( datadict,
         if np.isfinite( chunked_data[:,chunki] ).sum() > 10 : 
             hourglass( chunki, n_chunks, verbose=verbose )
 
-            result, fit_flux_frac = fit_covariant_moffat(
+            result, fit_flux_frac = fit_covariant_moffat_noclip(
                 xfibre, yfibre, chunked_data[ :, chunki ], 
                 guess=None, verbose=verbose )
 
@@ -1489,6 +1496,40 @@ def fit_covariant_moffat( xfibre, yfibre, data, var=None, guess=None,
 
 # ____________________________________________________________________________
 # ____________________________________________________________________________
+
+def fit_covariant_moffat_noclip( xfibre, yfibre, data, var=None, guess=None, 
+                          sigclip=12, makeplot=False, verbose=1 ):
+    """Fit a Moffat profile to the data and return the PSF parameters."""
+    if var == None:
+        var = 1.
+    
+    # initial guess for the centre of the PSF
+    weighted = ( data / var ).T
+    weighted = np.clip( weighted, 0., weighted )
+    weighted /= np.nansum( weighted )
+
+    if guess == None :
+        xmean = np.nansum( xfibre * weighted ) 
+        ymean = np.nansum( yfibre * weighted ) 
+        alpha, beta = 2.5, 4.0
+        guess = [ xmean, ymean, alpha, alpha, beta, 0.0 ]
+
+    fitfunc = lambda parlist: np.sum(
+        (parlist[-2] * SAMI_PSF(parlist[:-2], xfibre, yfibre) + 
+         parlist[-1] - data)**2 / var)
+
+    parlist_guess = guess
+    parlist_guess.append(np.nansum(data))
+    parlist_guess.append(0.0)
+
+    parlist = fmin(fitfunc, parlist_guess, disp=False)
+
+    fitpars = parlist[:-2]
+
+    psfmodel = SAMI_PSF(fitpars, xfibre, yfibre)
+
+    return fitpars, psfmodel.sum()
+
 
 def covariant_moffat_chi2( parvec, xfibre, yfibre, data, var=None, 
                            sigclip=6, simple=False, makeplot=False, 
@@ -2863,8 +2904,11 @@ def rebin_spectrum( targetwl, originalwl, originalspec, originalvarin=None,
             intermediate = np.arange( int( origindex )+1, \
                                   int(origbinindex[i+1]) )
         else :
-            intermediate = np.arange( int( origindex )+1, \
-                                        maximumindex )
+            # XXX This is wrong: maximumindex is in the wrong scale
+            #intermediate = np.arange( int( origindex )+1, \
+            #                            maximumindex )
+            # This may also be wrong, but at least it doesn't crash
+            intermediate = np.arange(0)
         indices = np.hstack( ( indices, intermediate ) )
         weights = np.hstack( ( weights, np.ones( intermediate.shape ) ) )
 
