@@ -28,6 +28,8 @@ np.seterr(invalid='ignore')
 from matplotlib import pyplot as plt
 
 from scipy.optimize import leastsq, fmin, fmin_powell
+from scipy.ndimage.filters import median_filter
+from scipy.stats.stats import nanmean
 
 from astropy import coordinates as coord
 from astropy import units
@@ -935,14 +937,21 @@ def amplitude_chi2( amplitude, model, data, var, sigclip=30., fitto=None ):
 
 def chunk_spectrum( data, wl, chunk_min=10, n_chunks=40, chunk_size=50 ):
 
+    # Smooth the data with a fairly broad median filter, then take the mean of
+    # the smoothed data in each chunk
+    smoothed_data = median_filter(data, size=(1, 51))
+
     # break the data into largish chunks
     nfibres = data.shape[0]
-    chunked_data = ( data[:,chunk_min:chunk_min+n_chunks*chunk_size ] 
+    #chunked_data = ( data[:,chunk_min:chunk_min+n_chunks*chunk_size ] 
+    #            ).reshape( nfibres, n_chunks, chunk_size )
+    chunked_data = ( smoothed_data[:,chunk_min:chunk_min+n_chunks*chunk_size ] 
                 ).reshape( nfibres, n_chunks, chunk_size )
     chunked_wl = ( wl[ chunk_min:chunk_min+n_chunks*chunk_size ] 
                 ).reshape( n_chunks, chunk_size )
 
-    chunked_data = np.median( chunked_data, axis=2 )
+    #chunked_data = np.median( chunked_data, axis=2 )
+    chunked_data = nanmean( chunked_data, axis=2 )
     chunked_wl   = np.median( chunked_wl  , axis=1 )
 
     return chunked_data, chunked_wl
