@@ -2,6 +2,7 @@ import numpy as np
 
 import os
 import subprocess
+import gzip as gz
 
 from collections import namedtuple
 
@@ -493,3 +494,11 @@ def find_fibre_table(hdulist):
     return extno
 
 
+def gzip(filename, leave_original=False):
+    """gzip a file, optionally leaving the original version in place."""
+    with open(filename, 'rb') as f_in:
+        with gz.open(filename + '.gz', 'wb') as f_out:
+            f_out.writelines(f_in)
+    if not leave_original:
+        os.remove(filename)
+    return
