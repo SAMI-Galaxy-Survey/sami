@@ -575,6 +575,99 @@ dotted line shows RMS variation between multiple measurements in the same way"""
     return transfer_fn, transfer_fn_var, sensitivity, datadict, standardwl
 
 
+def derive_transfer_fn(fitsfilename, verbose=True):
+    """Derive the transfer function for a single file and save it."""
+    # Check which star we should be comparing to
+    unused, probename, standardfile, standardname, standardoffset = \
+        find_standard_in_dataframe(fitsfilename, verbose=verbose)
+
+    # Extract the SAMI IFS data for the standard, given the bundle name.
+    datadict = IFU_pick(fitsfilename, probename, 
+                        extincorr=True, verbose=verbose)
+
+    # Fit a 2D Moffat function to the PSF as a fn of wavelength
+    chunkfigurefile = fitsfilename.rstrip('.fits') + '.chunk.png' 
+    PSFmodel = fit_psf_afo_wavelength(datadict, polydeg=1,
+        chunk_min=chunk_min, n_chunks=n_chunks, chunk_size=chunk_size, 
+        verbose=verbose, chunkfigurefile=chunkfigurefile)
+
+    # Extract the total flux in each wavelength slice
+    amplitude, uncertainty = extract_total_flux_new( 
+        datadict, PSFmodel, verbose=verbose)
+
+    # Censor outlying data
+    amplitude = censor_outliers(amplitude, uncertainty)
+
+    # Read the data for the standard star
+    standardspec, standardwl = get_standard_spectrum( 
+        standardfile, verbose=verbose)
+
+    # Rebin the observed amplitudes onto the wl grid of the standard
+    # Ned's version used unc_smoothed rather than uncertainty
+    amp_rebinned, unc_rebinned = rebin_spectrum( 
+        standardwl, datadict['wl'], amplitude, uncertainty)
+
+    # Take the ratio of the observed and standard spectra
+    transfer_fn = standardspec / amp_rebinned
+    transfer_fn_var = (transfer_fn * unc_rebinned / amp_rebinned)**2
+
+    # Also calculate it as a sensitivity
+    sensitivity = calculate_sensitivity(
+        standardspec, standardwl, amp_rebinned, datadict['GAIN'],
+        datadict['CDELT1'])
+
+    # Save the result
+    save_transfer_fn(fitsfilename, transfer_fn, transfer_fn_var, sensitivity,
+                     probename, standardfile, standardname, standardoffset)
+
+    return
+
+
+
+
+def calculate_sensitivity(standardspec, standardwl, amp_rebinned,
+                          gain, cdelt1):
+    """Return the sensitivity as a function of wavelength."""
+    # std spec have units 10-16 erg/cm2/s/A
+
+    h_in_erg_sec = 6.62606957e-27
+    c_in_ang_per_sec = 2.997924581e18
+    mirror_area_in_cm2 = 0.84 * np.pi * 195.**2.
+
+    # Calculate number of photons falling on the telescope, as a function
+    # of wavelength
+    energy_per_photon = h_in_erg_sec * c_in_ang_per_sec / standardwl
+    std_photons = (standardspec * 1.0e-16 * mirror_area_in_cm2 / 
+                   energy_per_photon)
+    
+    # Calculate number of photons hitting the detector
+    # XXX CHECK THAT CDELT1 IS THE CORRECT THING TO USE: DEPENDS WHICH SCALE
+    # COMES OUT OF rebin_spectrum() XXX
+    observed_photons = amp_rebinned * gain / cdelt1
+
+    # Sensitivity is the ratio of observed to input photons
+    sensitivity = observed_photons / std_photons
+
+    return sensitivity
+
+
+def censor_outliers(amplitude, uncertainty, n_sigma=5.0, verbose=True):
+    """Replace outliers (relative to smoothed spectrum) with NaNs."""
+    # median smooth the amplitudes on a small scale
+    amp_smoothed, smoothed_scatter = median_smooth( 
+        amplitude, binsize=16, givenmad=True )
+    unc_smoothed = median_smooth( uncertainty, binsize=16 )
+    # censor outlying data
+    censor = ( np.abs( amplitude-amp_smoothed ) 
+               / np.sqrt( unc_smoothed**2. + smoothed_scatter**2. ) ) > n_sigma
+    uncensored = np.copy( amplitude )
+    # Should we censor the uncertainty too?
+    censored_amplitude = np.where( censor, np.nan, uncensored )
+    if verbose:
+        print 'Censoring %i wavelengths (%.1f%%)' % (
+            censor.sum(), float(censor.sum())/amplitude.shape[0]*100.)
+    return censored_amplitude
+
 
 def save_transfer_fn(fitsfilename, ratio, variance, sensitivity,
                      probename, standardfile, standardname, standardoffset):
@@ -1130,6 +1223,61 @@ def fit_psf_afo_wavelength( datadict,
         xfibre, yfibre, wavelength, PSFfitpars, verbose=verbose )
 
     return PSFmodels
+
+
+def fit_psf_in_chunks(datadict, chunk_min=chunk_min, n_chunks=n_chunks, 
+                      chunk_size=chunk_size, verbose=False):
+    """Chunk IFU data and fit a PSF to each chunk."""
+
+    # Extract the useful data
+    data, wavelength = datadict['data'], datadict['wl']
+    xfibre, yfibre = relative_fibre_positions(datadict)
+
+    if verbose > 0 :
+        print '_' * 78
+        print
+        print 'Making Moffat function fits to chunked data to get PSF shape.'
+
+    # Chunk the spectrum
+    chunked_data, chunked_wl = chunk_spectrum(data, wavelength,
+        chunk_min=chunk_min, n_chunks=n_chunks, chunk_size=chunk_size)
+
+    # Make the empty array in which the fitted PSF parameters will go
+    parameter_names = 'xcen ycen alphax alphay beta rho flux bkg'.split()
+    formats = ['float64'] * len(parameter_names)
+    chunked_psf = np.zeros(n_chunks, dtype={'names':parameter_names, 
+                                            'formats':formats})
+
+    for index, data_slice in enumerate(chunked_data.T):
+        if np.isfinite(data_slice).sum() > 10 : 
+            hourglass(index, n_chunks, verbose=verbose)
+            parameters, fit_flux_frac = fit_covariant_moffat_noclip(
+                xfibre, yfibre, data_slice, guess=None, verbose=verbose)
+            if fit_flux_frac < 0.5 or fit_flux_frac > 1. and verbose > (-1):
+                print
+                print 'WARNING from sami.dr.fluxcal.fit_psf_in_chunks:'
+                print 'PSF fit for chunk %i (wl ~ %iA) looks odd.' % (
+                    index, chunked_wl[index])
+                print ('The fit implies the SAMI bundle is seeing {:.1%}'
+                       ' of the star.'.format(fit_flux_frac))
+                print 'Check to see if the star is in the bundle?'
+                print ('If this happens a lot, flux calibration for this frame'
+                       ' may be meaningless.')
+                print
+            chunked_psf[index] = parameters
+
+    return chunked_psf, chunked_wl
+
+
+def interpolate_psf_parameters(chunked_psf, chunked_wl, wavelength_out,
+                               verbose=False):
+    """Interpolate chunked PSF parameters onto the full wavelength scale."""
+    # This would basically be the same as fit_for_DAR_corrections()
+    pass
+
+
+
+
 
 # ____________________________________________________________________________
 # ____________________________________________________________________________
@@ -2080,7 +2228,7 @@ Opening data fits file: %s\n""" % ( fitsfilename )
     if nfound > 1 and verbose >= 0 :
         print '\n\n\nWARNING from SAMI_fluxcal.find_standard_in_dataframe:'
         print 'Found %i possible standard stars in dataframe %s' % (
-                    nfound, path_to_data, fitsfilename )
+                    nfound, fitsfilename )
         print 'Some code revision is needed to accommodate this scenario.'
         print 'Only returning the last match considered.\n\n\n'
 
@@ -2901,37 +3049,37 @@ def rebin_spectrum( targetwl, originalwl, originalspec, originalvarin=None,
     maximumindex = np.max( np.where( np.isfinite( origbinindex ) ) )
 
     for i, origindex in enumerate( origbinindex ):
-      if np.isfinite( origindex ) :
-        # deal with the lowest orig bin, which straddles the new lower limit
-        lowlimit = int( origindex )
-        lowfrac = 1. - ( origindex % 1 )
-        indices = np.array( [ lowlimit] )
-        weights = np.array( [ lowfrac ] )
+        if np.isfinite( origindex ) :
+            # deal with the lowest orig bin, which straddles the new lower limit
+            lowlimit = int( origindex )
+            lowfrac = 1. - ( origindex % 1 )
+            indices = np.array( [ lowlimit] )
+            weights = np.array( [ lowfrac ] )
 
-        # deal with the orig bins that fall entirely within the new bin
-        if np.isfinite( origbinindex[i+1] ):
-            intermediate = np.arange( int( origindex )+1, \
-                                  int(origbinindex[i+1]) )
-        else :
-            # XXX This is wrong: maximumindex is in the wrong scale
-            #intermediate = np.arange( int( origindex )+1, \
-            #                            maximumindex )
-            # This may also be wrong, but at least it doesn't crash
-            intermediate = np.arange(0)
-        indices = np.hstack( ( indices, intermediate ) )
-        weights = np.hstack( ( weights, np.ones( intermediate.shape ) ) )
+            # deal with the orig bins that fall entirely within the new bin
+            if np.isfinite( origbinindex[i+1] ):
+                intermediate = np.arange( int( origindex )+1, \
+                                      int(origbinindex[i+1]) )
+            else :
+                # XXX This is wrong: maximumindex is in the wrong scale
+                #intermediate = np.arange( int( origindex )+1, \
+                #                            maximumindex )
+                # This may also be wrong, but at least it doesn't crash
+                intermediate = np.arange(0)
+            indices = np.hstack( ( indices, intermediate ) )
+            weights = np.hstack( ( weights, np.ones( intermediate.shape ) ) )
 
-        # deal with the highest orig bin, which straddles the new upper limit
-        if np.isfinite( origbinindex[i+1] ):
-          upplimit = int( origbinindex[i+1] )
-          uppfrac = origbinindex[ i+1 ] % 1
-          indices = np.hstack( ( indices, np.array( [ upplimit ] ) ) )
-          weights = np.hstack( ( weights, np.array( [ uppfrac  ] ) ) )
+            # deal with the highest orig bin, which straddles the new upper limit
+            if np.isfinite( origbinindex[i+1] ):
+                upplimit = int( origbinindex[i+1] )
+                uppfrac = origbinindex[ i+1 ] % 1
+                indices = np.hstack( ( indices, np.array( [ upplimit ] ) ) )
+                weights = np.hstack( ( weights, np.array( [ uppfrac  ] ) ) )
 
-        fraccounted[ indices ] += weights
-        rebinneddata[ i ] = np.sum( weights * originalflux[ :, indices ] )
-        rebinnedvar[  i ] = np.sum( weights * originalvar[  :, indices ] )
-        rebinnedweight[i ]= np.sum( weights * originalweight[:,indices ] )
+            fraccounted[ indices ] += weights
+            rebinneddata[ i ] = np.sum( weights * originalflux[ :, indices ] )
+            rebinnedvar[  i ] = np.sum( weights * originalvar[  :, indices ] )
+            rebinnedweight[i ]= np.sum( weights * originalweight[:,indices ] )
 
     # now go back from total flux in each bin to flux per unit wavelength
     rebinneddata = rebinneddata / rebinnedweight 
