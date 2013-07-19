@@ -1028,11 +1028,20 @@ def amplitude_chi2( amplitude, model, data, var, sigclip=30., fitto=None ):
 # ____________________________________________________________________________
 # ____________________________________________________________________________
 
-def chunk_spectrum( data, wl, chunk_min=10, n_chunks=40, chunk_size=50 ):
+def chunk_spectrum( data, wl, chunk_min=10, n_chunks=40, chunk_size=50,
+                    smooth=True, variance=None, return_variance=False ):
 
     # Smooth the data with a fairly broad median filter, then take the mean of
     # the smoothed data in each chunk
-    smoothed_data = median_filter(data, size=(1, 51))
+    if smooth:
+        smoothed_data = median_filter(data, size=(1, 51))
+        if variance is not None:
+            # This is not right; should work out what it actually should be
+            smoothed_variance = variance.copy()
+    else:
+        smoothed_data = data.copy()
+        if variance is not None:
+            smoothed_variance = variance.copy()
 
     # break the data into largish chunks
     nfibres = data.shape[0]
@@ -1042,12 +1051,22 @@ def chunk_spectrum( data, wl, chunk_min=10, n_chunks=40, chunk_size=50 ):
                 ).reshape( nfibres, n_chunks, chunk_size )
     chunked_wl = ( wl[ chunk_min:chunk_min+n_chunks*chunk_size ] 
                 ).reshape( n_chunks, chunk_size )
+    if variance is not None:
+        chunked_variance = ( 
+            smoothed_variance[:,chunk_min:chunk_min+n_chunks*chunk_size ] 
+            ).reshape( nfibres, n_chunks, chunk_size )
 
     #chunked_data = np.median( chunked_data, axis=2 )
     chunked_data = nanmean( chunked_data, axis=2 )
     chunked_wl   = np.median( chunked_wl  , axis=1 )
+    if variance is not None:
+        chunked_variance = (np.nansum( chunked_variance, axis=2 ) / 
+                            np.sum(np.isfinite( chunked_variance ))**2)
 
-    return chunked_data, chunked_wl
+    if return_variance:
+        return chunked_data, chunked_wl, chunked_variance
+    else:
+        return chunked_data, chunked_wl
 
 # ____________________________________________________________________________
 # ____________________________________________________________________________
@@ -1274,6 +1293,126 @@ def interpolate_psf_parameters(chunked_psf, chunked_wl, wavelength_out,
     """Interpolate chunked PSF parameters onto the full wavelength scale."""
     # This would basically be the same as fit_for_DAR_corrections()
     pass
+
+
+def fit_psf_constrained_size(datadict, verbose=False):
+    """Chunk IFU data and fit a PSF with alpha and beta constrained."""
+
+    # Extract the useful data
+    data, wavelength = datadict['data'], datadict['wl']
+    xfibre, yfibre = relative_fibre_positions(datadict)
+
+    # Chunk the spectrum
+    chunked_data, chunked_wl, chunked_variance = (
+        chunk_spectrum(data, wavelength, chunk_min=chunk_min, 
+                       n_chunks=n_chunks, chunk_size=chunk_size,
+                       smooth=False, return_variance=True))
+
+    # xcen, ycen, flux and background are fit for each chunk;
+    # alphax, alphay, beta and rho are fit once only.
+
+    # Make the initial guess
+    n_parameters = 4*n_chunks + 4
+    parameters_guess = np.zeros(n_parameters)
+    # Guess for the coordinates
+    for i_chunk in xrange(n_chunks):
+        weighted_data = chunked_data[:,i_chunk] / chunked_variance[:,i_chunk]
+        weighted_data /= np.sum(weighted_data)
+        parameters_guess[i_chunk] = np.sum(xfibre * weighted_data)
+        parameters_guess[i_chunk + n_chunks] = np.sum(yfibre * weighted_data)
+        parameters_guess[i_chunk + 2*n_chunks] = np.sum(chunked_data[:,i_chunk])
+        parameters_guess[i_chunk + 3*n_chunks] = 0.0
+    # Guess for alphax, alphay, beta, rho
+    parameters_guess[-4] = 2.5
+    parameters_guess[-3] = 2.5
+    parameters_guess[-2] = 4.0
+    parameters_guess[-1] = 0.0
+
+    # Combine the coordinates into a single array
+    coordinates = flatten_coordinates(xfibre, yfibre, chunked_wl)
+    flat_data = flatten_data(chunked_data)
+
+    parameters_vector = curve_fit(
+        model_flux_constrained, coordinates, flat_data, p0=parameters_guess,
+        sigma=np.sqrt(chunked_variance))
+
+    parameters = reshape_parameters(parameters_vector, wavelength)
+
+    return parameters
+
+
+
+def flatten_coordinates(xfibre, yfibre, wavelength):
+    """Combined coordinates into a single array for curve_fit()."""
+    n_fibre = np.size(xfibre)
+    n_wl = np.size(wavelength)
+    coordinates = np.zeros(3, n_wl*n_fibre)
+    for i_wl in xrange(n_wl):
+        coordinates[0,n_fibre*i_wl:n_fibre*(i_wl+1)] = xfibre
+        coordinates[1,n_fibre*i_wl:n_fibre*(i_wl+1)] = yfibre
+        coordinates[2,n_fibre*i_wl:n_fibre*(i_wl+1)] = wavelength[i_wl]
+    return coordinates
+
+def flatten_data(data):
+    """Flatten data into a 1-d array. Assumes input is n_fibre X n_wl."""
+    # This function is nowhere near optimal, but it does the job
+    n_fibre, n_wl = np.shape(data)
+    flat_data = no.zeros(n_wl*n_fibre)
+    for i_wl in xrange(n_wl):
+        flat_data[n_fibre*i_wl:n_fibre*(i_wl+1)] = data[:,i_wl]
+    return flat_data
+
+def reshape_parameters(parameters_vector, wavelength):
+    """Turn a vector of parameters into a fully populated 2-d array."""
+    n_chunks = (len(parameters_vector) - 4) / 4
+    parameter_names = 'xcen ycen alphax alphay beta rho flux bkg'.split()
+    formats = ['float64'] * len(parameter_names)
+    parameters = np.zeros(n_chunks, dtype={'names':parameter_names, 
+                                           'formats':formats})
+    for i_chunk in xrange(n_chunks):
+        parameters[i_chunk] = extract_parameters_for_chunk(parameters_vector, 
+                                                           i_chunk)
+    return parameters
+
+def extract_parameters_for_chunk(parameters_vector, i_chunk):
+    """Return the parameters for a single chunk."""
+    parameter_names = 'xcen ycen alphax alphay beta rho flux bkg'.split()
+    formats = ['float64'] * len(parameter_names)
+    parameters_single = np.zeros(1, dtype={'names':parameter_names, 
+                                           'formats':formats})
+    parameters_single['xcen'] = parameters_vector[i_chunk]
+    parameters_single['ycen'] = parameters_vector[i_chunk + n_chunks]
+    parameters_single['flux'] = parameters_vector[i_chunk + 2*n_chunks]
+    parameters_single['bkg'] = parameters_vector[i_chunk + 3*n_chunks]
+    parameters_single['alphax'] = (parameters_vector[-4] * 
+        (wavelength[i_chunk] / REFERENCE_WAVELENGTH)**(-0.2))
+    parameters_single['alphay'] = (parameters_vector[-3] * 
+        (wavelength[i_chunk] / REFERENCE_WAVELENGTH)**(-0.2))
+    parameters_single['beta'] = parameters_vector[-2]
+    parameters_single['rho'] = parameters_vector[-1]
+    return parameters_single
+
+def extract_coordinates(coordinates):
+    """Return separate xfibre, yfibre, wavelength."""
+    xfibre_long, yfibre_long, wavelength_long = coordinates
+    n_long = len(xfibre_long)
+    n_fibre = np.where(wavelength_long > wavelength_long[0])[0][0]
+    n_wl = n_long / n_wl
+    xfibre = xfibre_long[:n_fibre]
+    yfibre = yfibre_long[:n_fibre]
+    wavelength = np.unique(wavelength_long)
+    return xfibre, yfibre, wavelength
+
+
+def model_flux_constrained(coordinates, *parameters):
+    """Return the expected flux at the given coordinates."""
+    parameters = reshape_parameters(parameters_vector, wavelength)
+    xfibre, yfibre, wavelength = extract_coordinates(coordinates)
+    n_fibre = len(xfibre)
+    n_wl = len(wavelength)
+    flux = np.zeros(n_fibre, n_wl)
+    
+
 
 
 
