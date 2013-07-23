@@ -502,3 +502,9 @@ def gzip(filename, leave_original=False):
     if not leave_original:
         os.remove(filename)
     return
+
+def find_nearest(arr, val):
+    
+    # Finds the index of the array element in arr nearest to val
+    idx=(np.abs(arr-val)).argmin()
+    return idx
