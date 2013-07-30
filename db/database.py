@@ -68,8 +68,27 @@ NOTES:
 
  17/6/13: Added some PyTbles functionality for ingesting the SAMI master tab.  
 
- 18/6/13: Trying to figure out how to best perform a table query. 
+ 18/6/13: Set up a couple of table query functions. 
+ 
+ 29/7/13: Need to introduce a data type header scan before importing a cube, 
+          simply for the code to know whether to import into the 'Targets' or 
+          'Calibrations' directories. 
 
+          Also need to introduce a 'monochrome' switch to import_cube that will
+          import a single cube, rather than a pair. 
+
+ 30/7/13: These phantom volumes are causing much trouble. The code should allow
+          for human error and currently it does not becuase of these traces of
+          deleted volumes. I am thinking of introducing a 'safe mode' that will
+          copy the file to a new one, thus getting rid of any unlinked volumes. 
+          Test how much time this would take. 
+
+          Actually, the 'del' command does get rid of the trace, by the looks of
+          it. No phantoms appear in the listed keys. The following 'health 
+          check' shuold therefore be performed on opening an h5 file: 
+          (1) detect phantoms as version keys that contain no datasets; 
+          (2) delete all phantoms; 
+          (3) proceed as normal. 
 
 TABLE OF CONTENTS (* to-be, **: under construction): 
 
@@ -82,7 +101,7 @@ TABLE OF CONTENTS (* to-be, **: under construction):
 .list_keys      List all the 'keys' (i.e. blocks and datasets) in an h5 file. 
 .make_list      Make a list for import_many from the contents of a directory. 
 .import_table   Imports a SAMI target table. 
-.query_master**  Query a SAMI target table. 
+.query_master** Query a SAMI target table. 
 .search**       The query prototype.
 .fetch_cube     Extract a cube or set of cubes. 
 .export         Export any amount of data products of various types. 
@@ -101,88 +120,102 @@ import sys
 
 import sami
 
-def create(h5file, overwrite=False):
-    """ Create an HDF5 file """
+def create(h5file, overwrite=False, verbose=True):
+    """ Create a generic HDF5 file. Will crash of type(h5file) is not str. """
 
-    prefix = '' # for screen output, see overwrite==True loop
-
-    # Check if the input h5file is a string with a .h5 extension
-    if type(h5file) is not str: h5file = str(h5file)
+    # Check that 'h5file' has a .h5 extension
     if not h5file[-3:] == '.h5': h5file = h5file + '.h5'
 
+    # Initiate a little token used to control screen output
+    screen_output = 0
+    
     # Check if file already exists, overwite if overwrite==True
-    if (os.path.isfile(h5file)) and (overwrite==False):
-        raise SystemExit('Sorry, that file already exists. Exiting.')
-
+    if os.path.isfile(h5file):
+        screen_output += 1
+        if not overwrite:
+            raise SystemExit("The nominated h5 file ('"+h5file
+                             +"') already exists. Please raise the overwrite "
+                             +"flag if you wish to prodceed. Exiting.")
+    
+    # Create an h5 file
     if (not os.path.isfile(h5file)) or (overwrite==True):
         f = h5.File(h5file, 'w')
         f.close()
-
-    if (os.path.isfile(h5file)) and (overwrite):
-        prefix = 'Re-'
-
-    print(prefix+"Initialised file '"+h5file+"'.")
-
+    
+    # Screen output
+    if verbose:
+        if screen_output > 0: prefix = 'Re-'
+        else: prefix = ''
+        print(prefix+"Initialised file '"+h5file+"'.")
+    
 
 def format(h5file):
     """ Set up an h5 file with the SAMI database hierarchy """
-
+    
     import sys
     
-    # Make the input a string
-    if type(h5file) is not str: h5file = str(h5file)
-
+    # Ad an extension to the file if it isn't already '.h5'
+    if not h5file[-3:] == '.h5': h5file = h5file + '.h5'
+    
     # Open the input file for reading and writing
-    # -- add 'y' confirmation in overwrite+ mode *** 
     f = h5.File(h5file, 'r+')
     
     # Check if a SAMI root directory exists; create if not (require, not create)
     root = f.require_group("SAMI")
     
     # ...create the observations directory (science targets only)
-    targ = root.require_group("Target")
+    targ = root.require_group("Targets")
     
-    # ...create the calibrations directory -- NO MORE
-    # calib = root.require_group("Calibration")
+    # ...create the calibrations directory (stars etc.)
+    calib = root.require_group("Calibrators")
     
-    # ...create the standard stars directory
-    star = root.require_group("Star")
     f.close()
 
 
-def import_cube(blue_cube, red_cube, h5file, duplicate=False, 
-                overwrite=False, colour='', digest_rss=True, 
-                rss_only=False, dataroot='./', 
-                n_rss=[], verbose=False):
+def import_cube(blue_cube, red_cube, h5file, 
+                duplicate=False, overwrite=False, digest_rss=True, 
+                rss_only=False, colour='', dataroot='./', 
+                safe_mode=True, verbose=False):
     """ Import a SAMI datacube to the HDF5 data archive. """
     
     """ 
     red_cube:    BLUE datacube to be added to the SAMI DB. 
     blue_cube:   RED datacube to be added to the SAMI DB. 
-    h5file:      HDF5 file that contains the DB to which cubein will be added.
-    digest_rss:  locates RSS parents, imports strips related to cubein.  
-    dataroot:    the base directory for data to be searched by digest_rss. 
-    overwrite:   overwrite existing data with cubes/rss being imported. 
+    h5file:      SAMI-formatted h5 file into which DB is written. 
+
+    duplicate:   Duplicate any existing data, i.e. add a version. 
+    overwrite:   Overwrite any existing data. 
+
+    digest_rss:  Locate RSS parents, import strips related to input cubes.  
+    rss_only:    Only ingest RSS strips, not cubes. 
+    colour:      Enables 'monochromatic' input. Set to 'blue' or 'red'. 
+    dataroot:    Data directory to be recursively searched by digest_rss. 
+    safe_mode:   Gets rid of any unlinked groups/datasets. Slows things down. 
+    verbose:     Toggle diagnostic and declarative verbosity. 
     
-    This code will be the main 'add data' function for the SAMI DB. It adds a 
-    SAMI datacube and then envokes a number of functions to import the red and 
-    blule cubes, along with an IFU-specific strip of each associated RSS file. 
+    This is the main 'add data' function for the SAMI DB. It ingests a set of
+    blue and red SAMI datacubes and then optionally envokes a series of 
+    functions to search for their progenitor row-stacked spectrum (RSS) files. 
+    RSS files are cut into 'strips' of information that pertains only to the 
+    cubes beig imported (they contain information on thirteen IFUs) beofre 
+    being imported. All other metadata will be imported (in bulk) later using
+    tailored codes. There is no need to store SDSS cutouts, as those can be 
+    generated on-the-fly. 
     
-    Any other metadata can be imported (in bulk) later. 
-    
-    While two cubes should always be delivered, perhas the functionality should
+    While two cubes should always be delivered, perhaps the functionality should
     be available for single-colour importing --> Add a 'None' input option for 
     the 'blue_cube' and 'red_cube' arguments and skip the relevant parts of the 
-    code. 
+    code. Question has been posed to DRWG. 
     
-    The main data archive will not include the calibrations. These will live in 
-    in their own filesystem, the data-flow endpoint, as organised by James. As 
-    a result, I need to lose the 'calibrate' folder from all setup.  
-    
-    Testing on SAMI April_13 data. 
+    The main data archive will not include basic calibrations. These will live 
+    in their own filesystem, the data-flow endpoint, as organised by the DRWG. 
+    The "Calibrators" folder has, however, been maintained so as to store PSF
+    and spectrophotometric standard stars. 
+
+    This code has been tested on SAMI data from the April 2013 observing run. 
     """
 
-    # First check if the overwrite or duplicate flags are both up. 
+    # First check if both the overwrite and duplicate flags are up. 
     if overwrite and duplicate:
         raise SystemExit("Both the 'duplicate' and 'overwrite' flags are up. "+
                          "Please choose which mode to follow. ")
@@ -190,13 +223,29 @@ def import_cube(blue_cube, red_cube, h5file, duplicate=False,
     # Check if the nominated h5 file exists; prompt for creation if not, exit. 
     if not os.path.isfile(h5file):
         raise SystemExit("Cannot find the nominated HDF5 file ('"+h5file+"'). "+
-                         "Please create the file first using 'SAMI_DB.create'")
-    
-    # If it does exist, open and allow write privileges
+                         "Please create a file using the 'create' function")
+        
+    # If file does exist, open (copy in safe_mode) and allow write privileges. 
+    if safe_mode:
+        import datetime
+        import shutil
+        if verbose: print("Safe Mode: beginning file copy.")
+        date = datetime.datetime.now()
+        datestamp = str(date.year).zfill(2)+str(date.month).zfill(2)+\
+                    str(date.day).zfill(2)+'_'+\
+                    str(date.hour).zfill(2)+str(date.minute).zfill(2)+\
+                    str(date.second).zfill(2)
+        bkp_file = h5file[:-3]+"_"+datestamp+".h5"
+        shutil.copyfile(h5file,bkp_file)
+        if verbose: print("Safe Mode: file successfully copied to '"+
+                          bkp_file+"'.")
+
     hdf = h5.File(h5file, 'r+')
 
+        
     # Check that the SAMI filesystem has been set up in this file. 
-    if ("SAMI" not in hdf.keys()) or ("Target" not in hdf['SAMI'].keys()):
+    if ("SAMI" not in hdf.keys()) or ("Targets" not in hdf['SAMI'].keys())\
+       or ("Calibrators" not in hdf['SAMI'].keys()):
         hdf.close()
         raise SystemExit("The nominated HDF5 file ('"+h5file+"') "+
                          "is not properly formatted. Please initialise the "+
@@ -205,6 +254,10 @@ def import_cube(blue_cube, red_cube, h5file, duplicate=False,
     # If the "SAMI" group exists, let's make some data blocks
         
     # Read the header, find out the target name. 
+    """ 
+    NOTE: There is a bit of a redundancy here. Shouldn't open and close a unit
+          I will be opening and closing again further down. Keep open? 
+    """
     hduBLUE = pf.open(blue_cube)
     hduRED  = pf.open(red_cube)
     
@@ -216,39 +269,29 @@ def import_cube(blue_cube, red_cube, h5file, duplicate=False,
         raise SystemExit("The two cube files are not matched according to "+
                          "their header-listed names. Please review the files "+
                          "and the validity of their headers. ")
+    hduBLUE.close()
+    hduRED.close()
     
     # Check if the file already contains a cube block for this sami ID
     """
-    This part is tricky. A manually deleted dataset will leave a trace that 
-    is not picked up by h5dump or HDFView, but still listed as a key. Then
-    the appropriate course of action is to create the dataset, rather than 
-    requiring it in the case where the key exists, but it contains no datasets. 
-    How.....?
-
-    Actually, one good way is to make sure things are never manually deleted, 
-    unless there is a specific reason. So, introduce a delete function to do 
-    a clean del(dataset). 
-
+    NOTE: 
+    There is a subtlety here. While the contents of a database files should not 
+    be manipulated post-creation, fine-tuning and other operations might be, on
+    occassion, required. A manually deleted dataset will leave a trace that is 
+    not picked up by h5dump or HDFView, but still listed as a key in the file 
+    attributes list. 
+    
     h5repack will copy over the file and not carry through any intentionally 
-    broken links ('deleted' datasets). Can't find a better way right now, 
-    apart from editing the datasets themselves. 
-
-    Add some versioning in the block (/v1, /v2, etc), which we need anyway for 
-    duplicate observations. And make sure that nothing is written unless the 
-    code has executed a bunch of tests. The version number cannot be renamed, 
-    owing to a known HDF5 bug where the posix path of child groups and datasets
-    is not updated after renaming the parent group. Therefore the running index
-    should be a two-digit number. Versions can be unlinked (deleted) if the QC
-    check flags them as rubbish, but the index cannot be reclaimed. So make sure
-    no rubbish makes its way through, I don't want to deal with v17 of a data
-    block for no reason... 
-
-    Perhaps run a health check on the data archive every few days: attempt a 
-    basic diagnostic (numeric or other) on every group in there, and flag bad
+    broken links ('deleted' datasets). This is the preferred behaviour now. That
+    is, every manual deletion should be followed by a file copy to lose those
+    broken links. 
+    
+    Perhaps run a health check on the data archive after every import: attempt 
+    a basic diagnostic (numeric or other) on every group in there, and flag bad
     groups or datasets for deletion automatically. 
     """
-
-    if ("SAMI/Target/"+sami_name in hdf) and \
+    
+    if ("SAMI/Targets/"+sami_name in hdf) and \
             (not duplicate) and (not overwrite) and \
             (not rss_only):
         hdf.close()
@@ -258,40 +301,76 @@ def import_cube(blue_cube, red_cube, h5file, duplicate=False,
                          "please\n raise the 'overwrite' flag. If you wish " + 
                          "to import a duplicate\n observation, please " + 
                          "raise the 'duplicate' flag.")
-    
-    # Create or define target block (h5 group). 
-    if ("SAMI/Target/"+sami_name not in hdf) or rss_only:
-        targ_group = hdf.require_group("SAMI/Target/"+sami_name+"/v01")
-    else: 
-        # Determine latest version. 
-        versions = hdf["SAMI/Target/"+sami_name].keys()
+
+    """
+    NOTE: Need to check if OW or 2x =True but there are no data. The problem 
+    here is that once the target group in question has been created, the code
+    will always be tricked into thinking that this is the case -- the newly 
+    created target gropu will be empty... This is tough to work around, as the
+    group has to be defined within specific loops. Original code follows. 
+
+    I can ignore the duplicate bit: the code will make a new version, but NOT 
+    if this is the very first version, as the 2x loop is nested within the if 
+    not v=01 loop. The OW loop does get confudsed though. 
+
+    This snippet of code wasn't used, but might be handy someplace else: 
+    # Perform a health check on the target block (delete phantom groups)
+    targ_block = "SAMI/Targets/"+sami_name
+    if "SAMI/Targets/"+sami_name in hdf:
+        # OK, the node exists, now look for the version
+        versions = hdf["SAMI/Targets/"+sami_name].keys()
         v_num = [int(versions[-1][-2:])]  # version numbers as integers
         v_latest = max(v_num)             # latest version as largest v_num
-        
+        v_str = '/v'+str(v_latest).zfill(2) # version number as string
+        # Look in the latest version:
+        if len(hdf["SAMI/Targets/"+sami_name+v_str].keys() == 0):
+            del hdf["SAMI/Targets/"+sami_name]
+    """
+
+    # Create or define target block (h5 group). 
+    # If this target is new to the archive, create v01.  
+    if ("/SAMI/Targets/"+sami_name not in hdf) or rss_only:
+        # OW should not be up. If it is, exit.  
         if overwrite: 
-            v_str = '/v'+str(v_latest).zfill(2) # version number as string
-            targ_group = hdf.require_group("SAMI/Target/"+sami_name+v_str)
-            
-        if duplicate:
-            # Create a new version group with appropriate index (latest + 1)
-            v_new = v_latest + 1
-            v_str = '/v'+str(v_new).zfill(2)
-            targ_group = hdf.require_group("SAMI/Target/"+sami_name+v_str)
-    
-    # Also need to check if OW or 2x =True but there are no data
-    if len(targ_group.keys()) == 0:
-        if overwrite or duplicate:
             hdf.close()
-            raise SystemExit("The 'overwrite' or 'duplicate' flag is up, but "+
+            raise SystemExit("The 'overwrite' flag is up, but "+
                              "the nominated h5 file ('"+h5file+"') contains no"+
                              " data related to the target selected for "+
                              "ingestion ("+sami_name+"). Exiting as a "+
                              "precaution.")
+        # If OW is down, create the v01 folder. 
+        else: 
+            targ_group = hdf.require_group("SAMI/Targets/"+sami_name+"/v01")
+
+    # If sami_name already on archive, determine latest version held. 
+    else: 
+        versions = hdf["SAMI/Targets/"+sami_name].keys()
+        v_num = [int(versions[-1][-2:])]    # version numbers as integers
+        v_latest = max(v_num)               # latest version as largest v_num
+        v_str = '/v'+str(v_latest).zfill(2) # version number as string
+
+        if overwrite:
+            # Check if an empty group exists (a 'phantom')
+            if len(hdf["SAMI/Targets/"+sami_name+v_str].keys()) == 0:
+                hdf.close()
+                raise SystemExit("The 'overwrite' flag is up, but "+
+                             "the nominated h5 file ('"+h5file+"') contains no"+
+                             " data related to the target selected for "+
+                             "ingestion ("+sami_name+"). Exiting as a "+
+                             "precaution.")
+            else: 
+                targ_group = hdf.require_group("SAMI/Targets/"+sami_name+v_str)
+
+        if duplicate:
+            # Create a new version group with appropriate index (latest + 1)
+            v_new = v_latest + 1
+            v_str = '/v'+str(v_new).zfill(2)
+            targ_group = hdf.require_group("SAMI/Targets/"+sami_name+v_str)
     
     # Now that block has been created, write some datasets. 
-
-    # Loop for each colour.
-    colour= ['Blue', 'Red']
+    
+    # Begin big colour loop.
+    colour = ['Blue', 'Red']
     hdulist = [blue_cube, red_cube]
     
     for i in [0,1]:
@@ -768,19 +847,19 @@ def fetch_cube(name, h5file, colour='', outfile=''):
                          'SAMI-formatted')
     
     # Check that h5file contains a target block for name.
-    if name not in hdf['SAMI/Target'].keys():
+    if name not in hdf['SAMI/Targets'].keys():
         raise SystemExit('The nominated h5 file ('+h5file+') does not '+\
                          'contain a target block for SAMI '+name)
     
     # Checks done, extract some cubes. 
     
     # Determine latest version, and therefore target block path.
-    versions = hdf["SAMI/Target/"+name].keys()
+    versions = hdf["SAMI/Targets/"+name].keys()
     v_num = [int(versions[-1][-2:])]  # version numbers as integers
     v_latest = max(v_num)             # latest version as largest v_num
     
     v_str = '/v'+str(v_latest).zfill(2) # version number as string
-    targ_group = hdf.require_group("SAMI/Target/"+name+v_str)
+    targ_group = hdf.require_group("SAMI/Targets/"+name+v_str)
     
     # Look for cubes:
     if ('Blue_cube_data' not in targ_group.keys()) or \
@@ -869,7 +948,7 @@ def export(name, h5file, get_cube=False, get_rss=False,
                          'SAMI-formatted')
     
     # Check that h5file contains a target block for name.
-    if name not in hdf['SAMI/Target'].keys():
+    if name not in hdf['SAMI/Targets'].keys():
         raise SystemExit('The nominated h5 file ('+h5file+') does not '+\
                          'contain a target block for SAMI '+name)
     
@@ -878,12 +957,12 @@ def export(name, h5file, get_cube=False, get_rss=False,
     # ***Begin multi-target loop here*** (not yet implemented)
 
     # Determine latest version, and therefore target block path.
-    versions = hdf["SAMI/Target/"+name].keys()
+    versions = hdf["SAMI/Targets/"+name].keys()
     v_num = [int(versions[-1][-2:])]  # version numbers as integers
     v_latest = max(v_num)             # latest version as largest v_num
     
     v_str = '/v'+str(v_latest).zfill(2) # version number as string
-    targ_group = hdf.require_group("SAMI/Target/"+name+v_str)
+    targ_group = hdf.require_group("SAMI/Targets/"+name+v_str)
     
     # Look for cubes:
     if ('Blue_cube_data' not in targ_group.keys()) or \
@@ -980,10 +1059,10 @@ def test_contents(h5file):
     f = h5.File(h5file)
     if 'SAMI' in f.keys():
 
-        if ('Target' in f['SAMI'].keys()):
+        if ('Targets' in f['SAMI'].keys()):
             print('File is SAMI-formatted')
             
-            targ_gr = f['SAMI/Target']
+            targ_gr = f['SAMI/Targets']
             targets = targ_gr.keys()
 
         else: sys.exit('File is not SAMI-formatted')
@@ -998,7 +1077,7 @@ def test_contents(h5file):
             all_rss = ['Blue_RSS_data', 'Blue_RSS_variance', 
                        'Red_RSS_data', 'Red_RSS_variance'] 
                         
-            if all_cube[:] in f['SAMI/Target/'+targets[i]+'/v01'].keys():
+            if all_cube[:] in f['SAMI/Targets/'+targets[i]+'/v01'].keys():
                 print(targets[i], 'is complete')
 
     else: sys.exit('File is not SAMI-formatted')
@@ -1011,8 +1090,8 @@ def list_keys(h5file):
     print(f.keys())
     if 'SAMI' in f.keys():
         print(f['SAMI'].keys())
-        if 'Target' in f['SAMI'].keys():
-            print(f['SAMI/Target'].keys())
+        if 'Targets' in f['SAMI'].keys():
+            print(f['SAMI/Targets'].keys())
     f.close()
     
 
@@ -1182,11 +1261,11 @@ def search(h5file, query_item, query_value, verbose=True):
     id_dsets = []
     
 
-    for idloop in range(len(hdf['SAMI/Target/'])):
+    for idloop in range(len(hdf['SAMI/Targets/'])):
 
         # Determine SAMI name to access target block
-        sami_name = hdf['SAMI/Target/'].keys()[idloop]
-        targ_group = hdf['SAMI/Target/'+str(sami_name)+'/v01/']
+        sami_name = hdf['SAMI/Targets/'].keys()[idloop]
+        targ_group = hdf['SAMI/Targets/'+str(sami_name)+'/v01/']
         cube_data_blue = targ_group['Blue_cube_data']
         
         # Check that the name of the directory matches the respective attribute
