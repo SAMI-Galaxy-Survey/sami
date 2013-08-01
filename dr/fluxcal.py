@@ -1357,7 +1357,7 @@ def flatten_data(data):
     """Flatten data into a 1-d array. Assumes input is n_fibre X n_wl."""
     # This function is nowhere near optimal, but it does the job
     n_fibre, n_wl = np.shape(data)
-    flat_data = no.zeros(n_wl*n_fibre)
+    flat_data = np.zeros(n_wl*n_fibre)
     for i_wl in xrange(n_wl):
         flat_data[n_fibre*i_wl:n_fibre*(i_wl+1)] = data[:,i_wl]
     return flat_data
@@ -1397,21 +1397,21 @@ def extract_coordinates(coordinates):
     xfibre_long, yfibre_long, wavelength_long = coordinates
     n_long = len(xfibre_long)
     n_fibre = np.where(wavelength_long > wavelength_long[0])[0][0]
-    n_wl = n_long / n_wl
+    n_wl = n_long / n_fibre
     xfibre = xfibre_long[:n_fibre]
     yfibre = yfibre_long[:n_fibre]
     wavelength = np.unique(wavelength_long)
     return xfibre, yfibre, wavelength
 
 
-def model_flux_constrained(coordinates, *parameters):
+def model_flux_constrained(coordinates, *parameters_vector):
     """Return the expected flux at the given coordinates."""
     parameters = reshape_parameters(parameters_vector, wavelength)
     xfibre, yfibre, wavelength = extract_coordinates(coordinates)
     n_fibre = len(xfibre)
     n_wl = len(wavelength)
     flux = np.zeros(n_fibre, n_wl)
-    
+
 
 
 
