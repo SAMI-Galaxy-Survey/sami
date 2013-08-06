@@ -87,7 +87,13 @@
 #
 #       Following two functions from scipy cookbook to use a Gaussian kernal to blur an
 #       image. It was taken from: http://www.scipy.org/Cookbook/SignalSmooth
+# 
+#   "sb" 
 #
+#       Plot a surface brightness map for an SDSS image. Takes arguments controlling the 
+#       scale to which SB is extrapolated. Warning: this code does not resample images, 
+#       but translates the flux of a given pixel to a surface brightness to the requested 
+#       scale. Mental arithmetics required for interpretation. 
 #
 #########################################################################################
 
@@ -923,6 +929,105 @@ def blur_image(im, n, ny=None) :
     g = gauss_kern(n, sizey=ny)
     improc = sp.signal.convolve(im, g, mode='same')
     return(improc)
+
+
+#########################################################################################
+#
+# "sb"
+#
+#   Plot a surface brightness map for an SDSS image. Takes arguments controlling the 
+#   scale to which SB is extrapolated. Warning: this code does not resample images, 
+#   but translates the flux of a given pixel to a surface brightness to the requested 
+#   scale. Mental arithmetics required for interpretation. 
+#
+
+def sb(image, scale=1.0, contour=True, vmin=None, vmax=None, 
+       sky=None, levels=None):  
+
+    import matplotlib.pyplot as plt
+
+    """ 
+    INPUTS: 
+    -------
+    scale      [flt] Surface brightness extrapolation scale in sq.asec.
+    vmin, vmax [flt] Levels for image display. 
+    levels     [flt] List of levels for optional contour overplot. 
+
+    ToDo list: 
+    ----------
+    * Add a contour export function in DS9 format (.con). 
+    * Add error estimation. 
+    """
+
+    """ (1) Image IO """
+    hdu = pf.open(image)
+
+    flux = hdu[0].data
+    hdr0 = hdu[0].header
+
+    hdu.close()
+
+    """ (2) Photometry 
+
+    Methodology: 
+
+    Flux to magnitude conversion
+    1 nanomaggie : 22.5 mag
+    -> m - 22.5 = -2.5 * alog10(F/1)
+    -> m = 22.5 - 2.5 * alog10(F)
+    
+    Error calculation, from the SDSS DR5 manual
+    (http://www.sdss.org/dr5/algorithms/fluxcal.html): 
+
+    Pogson error: 
+          mag  = -2.5 * log10(f/f0)
+    error(mag) = 2.5 / ln(10) * error(counts) / counts
+    
+    where 
+    error(counts) = sqrt([counts+sky]/gain + Npix*(dark_variance+skyErr)),
+    """
+
+    if sky == None: 
+        sky = np.median(flux)
+
+    def brightness(F_in): 
+        brightness = 22.5 - 2.5* np.log10(F_in - sky)
+        return brightness
+
+    # ALSO define error function here. 
+
+    """ (3) Get surface brightness to requested scale: default is 1 sq.asec  """
+    img_scale = 0.396127 # asec/px
+    area_norm = scale / img_scale**2
+
+    sb = brightness(flux*area_norm)
+
+    """ (4) Plot surface photometry map """
+    fig = plt.figure()
+    ax = fig.add_subplot(111)
+
+    plt.title("Surface brightness plot [mag/"+str(scale).zfill(3)+" sq.asec]\n("+image+")")
+
+    if (vmin==None) & (vmax==None):
+        vmin = np.round(np.nanmin(sb) + 2.0, 1)
+        vmax = np.round(np.nanmax(sb) - 2.0, 1)
+        print("Setting range to ["+str(vmin).zfill(4)+", "+
+              str(vmax).zfill(4)+"] mag /"+str(scale)+" sq.asec")
+    im = plt.imshow(sb, cmap='gray', interpolation='nearest', 
+               origin='lower left', vmin=vmin, vmax=vmax)
+    cb1 = plt.colorbar(im, shrink=0.8)
+
+    # Also plot contours for every mag increment. 
+    if levels == None: # i.e., leave as is for default levels. 
+        levels = [23., 22., 21., 20., 19., 18., 17., 16.0]
+    cplot = plt.contour(sb, cmap='Oranges', levels=levels, 
+                        linewidths=1.0, alpha=0.8)
+    strannot = "levels between [" + str(float(min(levels))).zfill(4) + ", " +\
+               str(float(max(levels))).zfill(4) + "] mag"
+    plt.text(0.04, 0.95, strannot, 
+             horizontalalignment='left',verticalalignment='center', 
+             transform=ax.transAxes)
+
 
 #########################################################################################
 ###                                                                                   ###

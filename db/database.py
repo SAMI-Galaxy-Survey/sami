@@ -102,6 +102,7 @@ TABLE OF CONTENTS (* to-be, **: under construction):
 .make_list      Make a list for import_many from the contents of a directory. 
 .import_table   Imports a SAMI target table. 
 .query_master** Query a SAMI target table. 
+.query_multiple** Perform any number of queries on any number of SAMI tables. 
 .search**       The query prototype.
 .fetch_cube     Extract a cube or set of cubes. 
 .export         Export any amount of data products of various types. 
