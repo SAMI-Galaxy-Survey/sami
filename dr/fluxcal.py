@@ -27,7 +27,7 @@ import numpy as np
 np.seterr(invalid='ignore')
 from matplotlib import pyplot as plt
 
-from scipy.optimize import leastsq, fmin, fmin_powell
+from scipy.optimize import leastsq, fmin, fmin_powell, curve_fit
 from scipy.ndimage.filters import median_filter
 from scipy.stats.stats import nanmean
 
@@ -67,6 +67,8 @@ chunk_size = 100
 fibre_radius_arcsec = 0.798
 
 ifucmap = plt.cm.gist_earth
+
+REFERENCE_WAVELENGTH = 5000.0
 
 # ____________________________________________________________________________
 # ____________________________________________________________________________
@@ -1299,14 +1301,16 @@ def fit_psf_constrained_size(datadict, verbose=False):
     """Chunk IFU data and fit a PSF with alpha and beta constrained."""
 
     # Extract the useful data
-    data, wavelength = datadict['data'], datadict['wl']
+    (data, wavelength, variance) = (
+        datadict['data'], datadict['wl'], datadict['var'])
     xfibre, yfibre = relative_fibre_positions(datadict)
 
     # Chunk the spectrum
     chunked_data, chunked_wl, chunked_variance = (
         chunk_spectrum(data, wavelength, chunk_min=chunk_min, 
                        n_chunks=n_chunks, chunk_size=chunk_size,
-                       smooth=False, return_variance=True))
+                       smooth=False, return_variance=True,
+                       variance=variance))
 
     # xcen, ycen, flux and background are fit for each chunk;
     # alphax, alphay, beta and rho are fit once only.
@@ -1331,10 +1335,11 @@ def fit_psf_constrained_size(datadict, verbose=False):
     # Combine the coordinates into a single array
     coordinates = flatten_coordinates(xfibre, yfibre, chunked_wl)
     flat_data = flatten_data(chunked_data)
+    flat_variance = flatten_data(chunked_variance)
 
-    parameters_vector = curve_fit(
+    parameters_vector, covariance = curve_fit(
         model_flux_constrained, coordinates, flat_data, p0=parameters_guess,
-        sigma=np.sqrt(chunked_variance))
+        sigma=np.sqrt(flat_variance))
 
     parameters = reshape_parameters(parameters_vector, wavelength)
 
@@ -1346,7 +1351,7 @@ def flatten_coordinates(xfibre, yfibre, wavelength):
     """Combined coordinates into a single array for curve_fit()."""
     n_fibre = np.size(xfibre)
     n_wl = np.size(wavelength)
-    coordinates = np.zeros(3, n_wl*n_fibre)
+    coordinates = np.zeros((3, n_wl*n_fibre))
     for i_wl in xrange(n_wl):
         coordinates[0,n_fibre*i_wl:n_fibre*(i_wl+1)] = xfibre
         coordinates[1,n_fibre*i_wl:n_fibre*(i_wl+1)] = yfibre
@@ -1370,11 +1375,13 @@ def reshape_parameters(parameters_vector, wavelength):
     parameters = np.zeros(n_chunks, dtype={'names':parameter_names, 
                                            'formats':formats})
     for i_chunk in xrange(n_chunks):
-        parameters[i_chunk] = extract_parameters_for_chunk(parameters_vector, 
-                                                           i_chunk)
+        parameters[i_chunk] = (
+            extract_parameters_for_chunk(parameters_vector, 
+                                         i_chunk,
+                                         wavelength[i_chunk]))
     return parameters
 
-def extract_parameters_for_chunk(parameters_vector, i_chunk):
+def extract_parameters_for_chunk(parameters_vector, i_chunk, wavelength_chunk):
     """Return the parameters for a single chunk."""
     parameter_names = 'xcen ycen alphax alphay beta rho flux bkg'.split()
     formats = ['float64'] * len(parameter_names)
@@ -1385,9 +1392,9 @@ def extract_parameters_for_chunk(parameters_vector, i_chunk):
     parameters_single['flux'] = parameters_vector[i_chunk + 2*n_chunks]
     parameters_single['bkg'] = parameters_vector[i_chunk + 3*n_chunks]
     parameters_single['alphax'] = (parameters_vector[-4] * 
-        (wavelength[i_chunk] / REFERENCE_WAVELENGTH)**(-0.2))
+        (wavelength_chunk / REFERENCE_WAVELENGTH)**(-0.2))
     parameters_single['alphay'] = (parameters_vector[-3] * 
-        (wavelength[i_chunk] / REFERENCE_WAVELENGTH)**(-0.2))
+        (wavelength_chunk / REFERENCE_WAVELENGTH)**(-0.2))
     parameters_single['beta'] = parameters_vector[-2]
     parameters_single['rho'] = parameters_vector[-1]
     return parameters_single
@@ -1406,11 +1413,23 @@ def extract_coordinates(coordinates):
 
 def model_flux_constrained(coordinates, *parameters_vector):
     """Return the expected flux at the given coordinates."""
-    parameters = reshape_parameters(parameters_vector, wavelength)
     xfibre, yfibre, wavelength = extract_coordinates(coordinates)
+    parameters = reshape_parameters(parameters_vector, wavelength)
     n_fibre = len(xfibre)
     n_wl = len(wavelength)
-    flux = np.zeros(n_fibre, n_wl)
+    flux = np.zeros((n_fibre, n_wl))
+    for i_chunk, parameters_single in enumerate(parameters):
+        parvec = [parameters_single['xcen'],
+                  parameters_single['ycen'],
+                  parameters_single['alphax'],
+                  parameters_single['alphay'],
+                  parameters_single['beta'],
+                  parameters_single['rho']]
+        flux[:, i_chunk] = (parameters_single['bkg'] + 
+                            parameters_single['flux'] * 
+                            SAMI_PSF(parvec, xfibre, yfibre))
+    flux = flatten_data(flux)
+    return flux
 
 
 
@@ -1955,8 +1974,10 @@ def SAMI_PSF( parvec, xvals, yvals, ninner=6, nrings=10, simple=False ):
         return result * ( np.pi * fibre_radius_arcsec**2. )
 
     if len( parvec ) == 6 :
+        # The following line is wrong, but not actually used
         [ x0, y0, beta, alphax, alphay, rho ] = parvec
     else :
+        # The following line is wrong, but not actually used
         [ x0, y0, beta, alpha ] = parvec
         alphax, alphay, rho = alpha, alpha, 0.
 #    closein = np.where( ( (xvals-x0)**2. / alphax**2. 
