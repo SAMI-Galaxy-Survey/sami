@@ -1297,7 +1297,7 @@ def interpolate_psf_parameters(chunked_psf, chunked_wl, wavelength_out,
     pass
 
 
-def fit_psf_constrained_size(datadict, verbose=False):
+def fit_psf_constrained_size(datadict, verbose=False, constrain_positions=True):
     """Chunk IFU data and fit a PSF with alpha and beta constrained."""
 
     # Extract the useful data
@@ -1315,17 +1315,30 @@ def fit_psf_constrained_size(datadict, verbose=False):
     # xcen, ycen, flux and background are fit for each chunk;
     # alphax, alphay, beta and rho are fit once only.
 
-    # Make the initial guess
-    n_parameters = 4*n_chunks + 4
-    parameters_guess = np.zeros(n_parameters)
-    # Guess for the coordinates
-    for i_chunk in xrange(n_chunks):
-        weighted_data = chunked_data[:,i_chunk] / chunked_variance[:,i_chunk]
+    if constrain_positions:
+        n_parameters = 2*n_chunks + 8
+        parameters_guess = np.zeros(n_parameters)
+        for i_chunk in xrange(n_chunks):
+            parameters_guess[i_chunk] = np.sum(chunked_data[:,i_chunk])
+            parameters_guess[i_chunk + n_chunks] = 0.0
+        weighted_data = np.sum(chunked_data / chunked_variance, axis=1)
         weighted_data /= np.sum(weighted_data)
-        parameters_guess[i_chunk] = np.sum(xfibre * weighted_data)
-        parameters_guess[i_chunk + n_chunks] = np.sum(yfibre * weighted_data)
-        parameters_guess[i_chunk + 2*n_chunks] = np.sum(chunked_data[:,i_chunk])
-        parameters_guess[i_chunk + 3*n_chunks] = 0.0
+        parameters_guess[-8] = np.sum(xfibre * weighted_data)
+        parameters_guess[-7] = np.sum(yfibre * weighted_data)
+        parameters_guess[-6] = np.pi / 4.0
+        parameters_guess[-5] = 30.0
+    else:
+        # Make the initial guess
+        n_parameters = 4*n_chunks + 4
+        parameters_guess = np.zeros(n_parameters)
+        # Guess for the coordinates
+        for i_chunk in xrange(n_chunks):
+            weighted_data = chunked_data[:,i_chunk] / chunked_variance[:,i_chunk]
+            weighted_data /= np.sum(weighted_data)
+            parameters_guess[i_chunk] = np.sum(xfibre * weighted_data)
+            parameters_guess[i_chunk + n_chunks] = np.sum(yfibre * weighted_data)
+            parameters_guess[i_chunk + 2*n_chunks] = np.sum(chunked_data[:,i_chunk])
+            parameters_guess[i_chunk + 3*n_chunks] = 0.0
     # Guess for alphax, alphay, beta, rho
     parameters_guess[-4] = 2.5
     parameters_guess[-3] = 2.5
@@ -1341,9 +1354,9 @@ def fit_psf_constrained_size(datadict, verbose=False):
         model_flux_constrained, coordinates, flat_data, p0=parameters_guess,
         sigma=np.sqrt(flat_variance))
 
-    parameters = reshape_parameters(parameters_vector, wavelength)
+    #parameters = reshape_parameters(parameters_vector, chunked_wl)
 
-    return parameters
+    return parameters_vector
 
 
 
@@ -1367,9 +1380,12 @@ def flatten_data(data):
         flat_data[n_fibre*i_wl:n_fibre*(i_wl+1)] = data[:,i_wl]
     return flat_data
 
-def reshape_parameters(parameters_vector, wavelength):
+def reshape_parameters(parameters_vector, wavelength, constrain_positions=True):
     """Turn a vector of parameters into a fully populated 2-d array."""
-    n_chunks = (len(parameters_vector) - 4) / 4
+    if constrain_positions:
+        n_chunks = (len(parameters_vector) - 8) / 2
+    else:
+        n_chunks = (len(parameters_vector) - 4) / 4
     parameter_names = 'xcen ycen alphax alphay beta rho flux bkg'.split()
     formats = ['float64'] * len(parameter_names)
     parameters = np.zeros(n_chunks, dtype={'names':parameter_names, 
@@ -1381,16 +1397,27 @@ def reshape_parameters(parameters_vector, wavelength):
                                          wavelength[i_chunk]))
     return parameters
 
-def extract_parameters_for_chunk(parameters_vector, i_chunk, wavelength_chunk):
+def extract_parameters_for_chunk(parameters_vector, i_chunk, wavelength_chunk,
+                                 constrain_positions=True):
     """Return the parameters for a single chunk."""
     parameter_names = 'xcen ycen alphax alphay beta rho flux bkg'.split()
     formats = ['float64'] * len(parameter_names)
     parameters_single = np.zeros(1, dtype={'names':parameter_names, 
                                            'formats':formats})
-    parameters_single['xcen'] = parameters_vector[i_chunk]
-    parameters_single['ycen'] = parameters_vector[i_chunk + n_chunks]
-    parameters_single['flux'] = parameters_vector[i_chunk + 2*n_chunks]
-    parameters_single['bkg'] = parameters_vector[i_chunk + 3*n_chunks]
+    if constrain_positions:
+        parameters_single['xcen'] = (
+            parameters_vector[-8] + np.cos(parameters_vector[-6]) * 
+            analytic_DAR(wavelength_chunk, parameters_vector[-5]))
+        parameters_single['ycen'] = (
+            parameters_vector[-7] + np.sin(parameters_vector[-6]) * 
+            analytic_DAR(wavelength_chunk, parameters_vector[-5]))
+        parameters_single['flux'] = parameters_vector[i_chunk]
+        parameters_single['bkg'] = parameters_vector[i_chunk + n_chunks]
+    else:
+        parameters_single['xcen'] = parameters_vector[i_chunk]
+        parameters_single['ycen'] = parameters_vector[i_chunk + n_chunks]
+        parameters_single['flux'] = parameters_vector[i_chunk + 2*n_chunks]
+        parameters_single['bkg'] = parameters_vector[i_chunk + 3*n_chunks]
     parameters_single['alphax'] = (parameters_vector[-4] * 
         (wavelength_chunk / REFERENCE_WAVELENGTH)**(-0.2))
     parameters_single['alphay'] = (parameters_vector[-3] * 
@@ -3068,7 +3095,16 @@ def analytic_DAR( wlinAngstrom, zenith_angle, wl0=5000.,
 
     refindex = seaLevelDry * altitudeCorrection * vapourCorrection + 1
     
-    ref0 = np.interp( wl0, wlinAngstrom, refindex )
+    #ref0 = np.interp( wl0, wlinAngstrom, refindex )
+
+    seaLevelDry0 = 1e-6 * ( 64.328 + ( 29498.1 / ( 146. - ( 1 / wl0**2. ) ) )
+                           + 255.4 / ( 41. - ( 1. / wl0**2. ) ) )
+
+    vapourCorrection0 = ( ( 0.0624 - 0.000680 / wl0**2. )
+                         / ( 1. + 0.003661 * temperature ) ) * vapourPressure
+
+    ref0 = seaLevelDry0 * altitudeCorrection * vapourCorrection0 + 1
+
     DAR = 206265. * ( refindex - ref0 ) * np.tan( zenith_angle * np.pi / 180. )
 
     return DAR
