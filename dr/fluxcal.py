@@ -1063,7 +1063,7 @@ def chunk_spectrum( data, wl, chunk_min=10, n_chunks=40, chunk_size=50,
     chunked_wl   = np.median( chunked_wl  , axis=1 )
     if variance is not None:
         chunked_variance = (np.nansum( chunked_variance, axis=2 ) / 
-                            np.sum(np.isfinite( chunked_variance ))**2)
+                            np.sum(np.isfinite( chunked_variance ), axis=2)**2)
 
     if return_variance:
         return chunked_data, chunked_wl, chunked_variance
