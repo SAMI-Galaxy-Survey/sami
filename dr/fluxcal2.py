@@ -13,6 +13,11 @@ also as free parameters.
 
 The same as ref_centre_alpha_angle, but with the Moffat function
 constrained to be circular.
+
+-- ref_centre_alpha_angle_circ_atm --
+
+The same as ref_centre_alpha_angle_circ, but with atmospheric values
+as free parameters too.
 """
 
 import numpy as np
@@ -180,6 +185,20 @@ def first_guess_parameters(datatube, vartube, xfibre, yfibre, wavelength,
         par_0['zenith_distance'] = np.pi / 8.0
         par_0['alpha_ref'] = 1.0
         par_0['beta'] = 4.0
+    elif model_name == 'ref_centre_alpha_angle_circ_atm':
+        weighted_data = np.sum(datatube / vartube, axis=1)
+        weighted_data /= np.sum(weighted_data)
+        par_0['flux'] = np.nansum(datatube, axis=0)
+        par_0['background'] = np.zeros(len(par_0['flux']))
+        par_0['temperature'] = 7.0
+        par_0['pressure'] = 600.0
+        par_0['vapour_pressure'] = 8.0
+        par_0['xcen_ref'] = np.sum(xfibre * weighted_data)
+        par_0['ycen_ref'] = np.sum(yfibre * weighted_data)
+        par_0['zenith_direction'] = np.pi / 4.0
+        par_0['zenith_distance'] = np.pi / 8.0
+        par_0['alpha_ref'] = 1.0
+        par_0['beta'] = 4.0
     else:
         raise KeyError('Unrecognised model name: ' + model_name)
     return par_0
@@ -202,6 +221,19 @@ def parameters_dict_to_vector(parameters_dict, model_name):
         parameters_vector = np.hstack(
             (parameters_dict['flux'],
              parameters_dict['background'],
+             parameters_dict['xcen_ref'],
+             parameters_dict['ycen_ref'],
+             parameters_dict['zenith_direction'],
+             parameters_dict['zenith_distance'],
+             parameters_dict['alpha_ref'],
+             parameters_dict['beta']))
+    elif model_name == 'ref_centre_alpha_angle_circ_atm':
+        parameters_vector = np.hstack(
+            (parameters_dict['flux'],
+             parameters_dict['background'],
+             parameters_dict['temperature'],
+             parameters_dict['pressure'],
+             parameters_dict['vapour_pressure'],
              parameters_dict['xcen_ref'],
              parameters_dict['ycen_ref'],
              parameters_dict['zenith_direction'],
@@ -231,6 +263,19 @@ def parameters_vector_to_dict(parameters_vector, model_name):
         n_slice = (len(parameters_vector) - 6) / 2
         parameters_dict['flux'] = parameters_vector[0:n_slice]
         parameters_dict['background'] = parameters_vector[n_slice:2*n_slice]
+        parameters_dict['xcen_ref'] = parameters_vector[-6]
+        parameters_dict['ycen_ref'] = parameters_vector[-5]
+        parameters_dict['zenith_direction'] = parameters_vector[-4]
+        parameters_dict['zenith_distance'] = parameters_vector[-3]
+        parameters_dict['alpha_ref'] = parameters_vector[-2]
+        parameters_dict['beta'] = parameters_vector[-1]
+    elif model_name == 'ref_centre_alpha_angle_circ_atm':
+        n_slice = (len(parameters_vector) - 9) / 2
+        parameters_dict['flux'] = parameters_vector[0:n_slice]
+        parameters_dict['background'] = parameters_vector[n_slice:2*n_slice]
+        parameters_dict['temperature'] = parameters_vector[-9]
+        parameters_dict['pressure'] = parameters_vector[-8]
+        parameters_dict['vapour_pressure'] = parameters_vector[-7]
         parameters_dict['xcen_ref'] = parameters_vector[-6]
         parameters_dict['ycen_ref'] = parameters_vector[-5]
         parameters_dict['zenith_direction'] = parameters_vector[-4]
@@ -274,6 +319,29 @@ def parameters_dict_to_array(parameters_dict, wavelength, model_name):
             parameters_dict['ycen_ref'] + 
             np.sin(parameters_dict['zenith_direction']) * 
             dar(wavelength, parameters_dict['zenith_distance']))
+        parameters_array['alphax'] = (
+            alpha(wavelength, parameters_dict['alpha_ref']))
+        parameters_array['alphay'] = (
+            alpha(wavelength, parameters_dict['alpha_ref']))
+        parameters_array['beta'] = parameters_dict['beta']
+        parameters_array['rho'] = np.zeros(len(wavelength))
+        parameters_array['flux'] = parameters_dict['flux']
+        parameters_array['background'] = parameters_dict['background']
+    elif model_name == 'ref_centre_alpha_angle_circ_atm':
+        parameters_array['xcen'] = (
+            parameters_dict['xcen_ref'] + 
+            np.cos(parameters_dict['zenith_direction']) * 
+            dar(wavelength, parameters_dict['zenith_distance'],
+                temperature=parameters_dict['temperature'],
+                pressure=parameters_dict['pressure'],
+                vapour_pressure=parameters_dict['vapour_pressure']))
+        parameters_array['ycen'] = (
+            parameters_dict['ycen_ref'] + 
+            np.sin(parameters_dict['zenith_direction']) * 
+            dar(wavelength, parameters_dict['zenith_distance'],
+                temperature=parameters_dict['temperature'],
+                pressure=parameters_dict['pressure'],
+                vapour_pressure=parameters_dict['vapour_pressure']))
         parameters_array['alphax'] = (
             alpha(wavelength, parameters_dict['alpha_ref']))
         parameters_array['alphay'] = (
