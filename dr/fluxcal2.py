@@ -1,3 +1,20 @@
+"""Flux calibration code that looks at the red and blue data together.
+
+The allowed models are:
+
+-- ref_centre_alpha_angle --
+
+The centre position and alpha are fit for the reference wavelength,
+and the positions and alpha values are then determined by the known
+alpha dependence and the DAR, with the zenith distance and direction
+also as free parameters.
+
+-- ref_centre_alpha_angle_circ --
+
+The same as ref_centre_alpha_angle, but with the Moffat function
+constrained to be circular.
+"""
+
 import numpy as np
 from scipy.optimize import leastsq
 from scipy.ndimage.filters import median_filter
@@ -37,7 +54,47 @@ def generate_subgrid(fibre_radius, n_inner=6, n_rings=10):
 XSUB, YSUB = generate_subgrid(FIBRE_RADIUS)
 N_SUB = len(XSUB)
 
-def moffat_flux_slice(parameters, xfibre, yfibre, simple=False):
+def read_chunked_data(path_list, probename, n_drop=None, n_chunk=None):
+    """Read flux from a list of files, chunk it and combine."""
+    if isinstance(path_list, str):
+        path_list = [path_list]
+    for i_file, path in enumerate(path_list):
+        ifu = IFU(path, probename, flag_name=False)
+        data_i, variance_i, wavelength_i = chunk_data(ifu, n_drop=n_drop, 
+                                                      n_chunk=n_chunk)
+        if i_file == 0:
+            data = data_i
+            variance = variance_i
+            wavelength = wavelength_i
+        else:
+            data = np.hstack((data, data_i))
+            variance = np.hstack((variance, variance_i))
+            wavelength = np.hstack((wavelength, wavelength_i))
+    xfibre = ifu.xpos_rel
+    yfibre = ifu.ypos_rel
+    return data, variance, wavelength, xfibre, yfibre
+
+def chunk_data(ifu, n_drop=None, n_chunk=None):
+    """Condence a spectrum into a number of chunks."""
+    n_pixel = ifu.naxis1
+    n_fibre = len(ifu.data)
+    if n_drop is None:
+        n_drop = 24
+    if n_chunk is None:
+        n_chunk = round((n_pixel - 2*n_drop) / 100.0)
+    chunk_size = round((n_pixel - 2*n_drop) / n_chunk)
+    start = n_drop
+    end = n_drop + n_chunk * chunk_size
+    data = ifu.data[:, start:end].reshape(n_fibre, n_chunk, chunk_size)
+    variance = ifu.var[:, start:end].reshape(n_fibre, n_chunk, chunk_size)
+    wavelength = ifu.lambda_range[start:end].reshape(n_chunk, chunk_size)
+    data = nanmean(data, axis=2)
+    variance = (np.nansum(variance, axis=2) / 
+                np.sum(np.isfinite(variance), axis=2)**2)
+    wavelength = np.median(wavelength, axis=1)
+    return data, variance, wavelength
+
+def moffat_normalised(parameters, xfibre, yfibre, simple=False):
     """Return model Moffat flux for a single slice in wavelength."""
     if simple:
         xterm = (xfibre - parameters['xcen']) / parameters['alphax']
@@ -52,6 +109,7 @@ def moffat_flux_slice(parameters, xfibre, yfibre, simple=False):
                           (1.0 - rho**2))) ** (-1.0 * beta))
         return moffat * np.pi * FIBRE_RADIUS**2
     else:
+        n_fibre = len(xfibre)
         xfibre_sub = (np.outer(XSUB, np.ones(n_fibre)) + 
                       np.outer(np.ones(N_SUB), xfibre))
         yfibre_sub = (np.outer(YSUB, np.ones(n_fibre)) + 
@@ -64,9 +122,11 @@ def moffat_flux(parameters_array, xfibre, yfibre):
     """Return n_fibre X n_wavelength array of Moffat function flux values."""
     n_slice = len(parameters_array)
     n_fibre = len(xfibre)
-    flux = np.zeros((n_fibre, n_wavelength))
+    flux = np.zeros((n_fibre, n_slice))
     for i_slice, parameters_slice in enumerate(parameters_array):
-        flux[:, i_slice] = moffat_flux_slice(parameters_slice, xfibre, yfibre)
+        fibre_psf = moffat_normalised(parameters_slice, xfibre, yfibre)
+        flux[:, i_slice] = (parameters_slice['flux'] * fibre_psf + 
+                            parameters_slice['background'])
     return flux
 
 def model_flux(parameters_dict, xfibre, yfibre, wavelength, model_name):
@@ -84,21 +144,49 @@ def residual(parameters_vector, datatube, vartube, xfibre, yfibre,
 
 def fit_model_flux(datatube, vartube, xfibre, yfibre, wavelength, model_name):
     """Fit a model to the given datatube."""
-    par_0_dict = first_guess_parameters(datatube, xfibre, yfibre, wavelength,
-                                        model_name)
-    par_0_vector = parameters_dict_to_vector(parameters_dict, model_name)
+    par_0_dict = first_guess_parameters(datatube, vartube, xfibre, yfibre, 
+                                        wavelength, model_name)
+    par_0_vector = parameters_dict_to_vector(par_0_dict, model_name)
     args = (datatube, vartube, xfibre, yfibre, wavelength, model_name)
-    parameters_vector = leastsq(residual, par_0_vector, args=args)
+    parameters_vector = leastsq(residual, par_0_vector, args=args)[0]
     parameters_dict = parameters_vector_to_dict(parameters_vector, model_name)
     return parameters_dict
+
+def first_guess_parameters(datatube, vartube, xfibre, yfibre, wavelength, 
+                           model_name):
+    """Return a first guess to the parameters that will be fitted."""
+    par_0 = {}
+    if model_name == 'ref_centre_alpha_angle':
+        weighted_data = np.sum(datatube / vartube, axis=1)
+        weighted_data /= np.sum(weighted_data)
+        par_0['flux'] = np.nansum(datatube, axis=0)
+        par_0['background'] = np.zeros(len(par_0['flux']))
+        par_0['xcen_ref'] = np.sum(xfibre * weighted_data)
+        par_0['ycen_ref'] = np.sum(yfibre * weighted_data)
+        par_0['zenith_direction'] = np.pi / 4.0
+        par_0['zenith_distance'] = np.pi / 8.0
+        par_0['alphax_ref'] = 1.0
+        par_0['alphay_ref'] = 1.0
+        par_0['beta'] = 4.0
+        par_0['rho'] = 0.0
+    elif model_name == 'ref_centre_alpha_angle_circ':
+        weighted_data = np.sum(datatube / vartube, axis=1)
+        weighted_data /= np.sum(weighted_data)
+        par_0['flux'] = np.nansum(datatube, axis=0)
+        par_0['background'] = np.zeros(len(par_0['flux']))
+        par_0['xcen_ref'] = np.sum(xfibre * weighted_data)
+        par_0['ycen_ref'] = np.sum(yfibre * weighted_data)
+        par_0['zenith_direction'] = np.pi / 4.0
+        par_0['zenith_distance'] = np.pi / 8.0
+        par_0['alpha_ref'] = 1.0
+        par_0['beta'] = 4.0
+    else:
+        raise KeyError('Unrecognised model name: ' + model_name)
+    return par_0
 
 def parameters_dict_to_vector(parameters_dict, model_name):
     """Convert a parameters dictionary to a vector."""
     if model_name == 'ref_centre_alpha_angle':
-        # The centre position and alpha are fit for the reference wavelength,
-        # and the positions and alpha values are then determined by the known
-        # alpha dependence and the DAR, with the zenith distance and direction
-        # also as free parameters
         parameters_vector = np.hstack(
             (parameters_dict['flux'],
              parameters_dict['background'],
@@ -110,17 +198,25 @@ def parameters_dict_to_vector(parameters_dict, model_name):
              parameters_dict['alphay_ref'],
              parameters_dict['beta'],
              parameters_dict['rho']))
+    elif model_name == 'ref_centre_alpha_angle_circ':
+        parameters_vector = np.hstack(
+            (parameters_dict['flux'],
+             parameters_dict['background'],
+             parameters_dict['xcen_ref'],
+             parameters_dict['ycen_ref'],
+             parameters_dict['zenith_direction'],
+             parameters_dict['zenith_distance'],
+             parameters_dict['alpha_ref'],
+             parameters_dict['beta']))
+    else:
+        raise KeyError('Unrecognised model name: ' + model_name)
     return parameters_vector
 
 def parameters_vector_to_dict(parameters_vector, model_name):
     """Convert a parameters vector to a dictionary."""
+    parameters_dict = {}
     if model_name == 'ref_centre_alpha_angle':
-        # The centre position and alpha are fit for the reference wavelength,
-        # and the positions and alpha values are then determined by the known
-        # alpha dependence and the DAR, with the zenith distance and direction
-        # also as free parameters
         n_slice = (len(parameters_vector) - 8) / 2
-        parameters_dict = {}
         parameters_dict['flux'] = parameters_vector[0:n_slice]
         parameters_dict['background'] = parameters_vector[n_slice:2*n_slice]
         parameters_dict['xcen_ref'] = parameters_vector[-8]
@@ -131,6 +227,18 @@ def parameters_vector_to_dict(parameters_vector, model_name):
         parameters_dict['alphay_ref'] = parameters_vector[-3]
         parameters_dict['beta'] = parameters_vector[-2]
         parameters_dict['rho'] = parameters_vector[-1]
+    elif model_name == 'ref_centre_alpha_angle_circ':
+        n_slice = (len(parameters_vector) - 6) / 2
+        parameters_dict['flux'] = parameters_vector[0:n_slice]
+        parameters_dict['background'] = parameters_vector[n_slice:2*n_slice]
+        parameters_dict['xcen_ref'] = parameters_vector[-6]
+        parameters_dict['ycen_ref'] = parameters_vector[-5]
+        parameters_dict['zenith_direction'] = parameters_vector[-4]
+        parameters_dict['zenith_distance'] = parameters_vector[-3]
+        parameters_dict['alpha_ref'] = parameters_vector[-2]
+        parameters_dict['beta'] = parameters_vector[-1]
+    else:
+        raise KeyError('Unrecognised model name: ' + model_name)
     return parameters_dict
 
 def parameters_dict_to_array(parameters_dict, wavelength, model_name):
@@ -141,10 +249,6 @@ def parameters_dict_to_array(parameters_dict, wavelength, model_name):
                                 dtype={'names':parameter_names, 
                                        'formats':formats})
     if model_name == 'ref_centre_alpha_angle':
-        # The centre position and alpha are fit for the reference wavelength,
-        # and the positions and alpha values are then determined by the known
-        # alpha dependence and the DAR, with the zenith distance and direction
-        # also as free parameters
         parameters_array['xcen'] = (
             parameters_dict['xcen_ref'] + 
             np.cos(parameters_dict['zenith_direction']) * 
@@ -154,13 +258,32 @@ def parameters_dict_to_array(parameters_dict, wavelength, model_name):
             np.sin(parameters_dict['zenith_direction']) * 
             dar(wavelength, parameters_dict['zenith_distance']))
         parameters_array['alphax'] = (
-            alpha(wavelength, parameters_array['alphax_ref']))
+            alpha(wavelength, parameters_dict['alphax_ref']))
         parameters_array['alphay'] = (
-            alpha(wavelength, parameters_array['alphay_ref']))
+            alpha(wavelength, parameters_dict['alphay_ref']))
         parameters_array['beta'] = parameters_dict['beta']
         parameters_array['rho'] = parameters_dict['rho']
         parameters_array['flux'] = parameters_dict['flux']
         parameters_array['background'] = parameters_dict['background']
+    elif model_name == 'ref_centre_alpha_angle_circ':
+        parameters_array['xcen'] = (
+            parameters_dict['xcen_ref'] + 
+            np.cos(parameters_dict['zenith_direction']) * 
+            dar(wavelength, parameters_dict['zenith_distance']))
+        parameters_array['ycen'] = (
+            parameters_dict['ycen_ref'] + 
+            np.sin(parameters_dict['zenith_direction']) * 
+            dar(wavelength, parameters_dict['zenith_distance']))
+        parameters_array['alphax'] = (
+            alpha(wavelength, parameters_dict['alpha_ref']))
+        parameters_array['alphay'] = (
+            alpha(wavelength, parameters_dict['alpha_ref']))
+        parameters_array['beta'] = parameters_dict['beta']
+        parameters_array['rho'] = np.zeros(len(wavelength))
+        parameters_array['flux'] = parameters_dict['flux']
+        parameters_array['background'] = parameters_dict['background']
+    else:
+        raise KeyError('Unrecognised model name: ' + model_name)
     return parameters_array
 
 def alpha(wavelength, alpha_ref):
@@ -195,5 +318,5 @@ def refractive_index(wavelength, temperature=None, pressure=None,
         ( pressure * ( 1. + (1.049 - 0.0157*temperature ) * 1e-6 * pressure ) )
         / ( 720.883 * ( 1. + 0.003661 * temperature ) ) )
     vapourCorrection = ( ( 0.0624 - 0.000680 / wl**2. )
-                         / ( 1. + 0.003661 * temperature ) ) * vapourPressure
+                         / ( 1. + 0.003661 * temperature ) ) * vapour_pressure
     return seaLevelDry * altitudeCorrection * vapourCorrection + 1
