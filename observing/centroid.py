@@ -426,7 +426,7 @@ def centroid_fit(x,y,data,microns=True, circular=True):
     # Peak height guess could be closest fibre to com position.
     dist=(x-com[0])**2+(y-com[1])**2 # distance between com and all fibres.
         
-    # First guess at width of Gaussian - diameter of a core in degrees/microns (distance between core 1 and core 2?) in whichever direction that is larger....
+    # First guess at width of Gaussian - diameter of a core in degrees/microns.
     if microns==True:
         sigx=105.0
         core_diam=105.0

@@ -30,6 +30,9 @@ class IFU:
 
         self.meanra=primary_header['MEANRA']
         self.meandec=primary_header['MEANDEC']
+
+        self.gratid=primary_header['GRATID']
+        self.gain=primary_header['RO_GAIN']
         
         # Wavelength range
         x=np.arange(self.naxis1)+1
