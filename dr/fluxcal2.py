@@ -17,7 +17,8 @@ constrained to be circular.
 -- ref_centre_alpha_angle_circ_atm --
 
 The same as ref_centre_alpha_angle_circ, but with atmospheric values
-as free parameters too.
+as free parameters too. Note, however, that the atmospheric parameters
+are completely degenerate with each other and with ZD.
 """
 
 import numpy as np
