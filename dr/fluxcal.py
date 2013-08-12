@@ -34,7 +34,6 @@ from scipy.stats.stats import nanmean
 from astropy import coordinates as coord
 from astropy import units
 from astropy.io import fits as pf
-import atpy      # At some point, replace this with astropy equivalent
 import os, sys, time, urllib, urllib2
 
 from .. import utils
@@ -2854,11 +2853,10 @@ def load_CK04_models( path_to_ck04_models='./ck04models/', verbose=True ):
         print '\nLoading Castelli & Kurucz (2004) model stellar spectra.'
         print 'Looking for file %s/catalog.fits.' % path_to_ck04_models
 
-    catalog = atpy.Table( '%s/%s' % ( 
-            path_to_ck04_models, 'catalog.fits' ), type='fits' )
+    catalog = pf.getdata(os.path.join(path_to_ck04_models, 'catalog.fits'), 1)
     loaded = []
     wavelength, allmodnames, allmodels = None, None, None
-    for idi, identifier in enumerate( catalog.FILENAME ):
+    for idi, identifier in enumerate( catalog['FILENAME'] ):
         filename = identifier.split( '[' )[0]
         temp = int( filename.split( '_' )[ 1 ].split( '.' )[0] )
 
@@ -2868,18 +2866,17 @@ def load_CK04_models( path_to_ck04_models='./ck04models/', verbose=True ):
             # //www.stsci.edu/hst/observatory/cdbs/castelli_kurucz_atlas.html
 
             modellist, namelist = [], []
-            model = atpy.Table( '%s/%s' % ( 
-                    path_to_ck04_models, filename ), type='fits' )
+            model = pf.getdata(os.path.join(path_to_ck04_models, filename), 1)
             loaded.append( filename )
             
             if wavelength == None :
-                wavelength = model.WAVELENGTH
+                wavelength = model['WAVELENGTH']
 
             fstarkeys = 'g40 g45'.split()
             for key in fstarkeys : # model.keys() :
 #                print key,
-                if key != 'WAVELENGTH' and model.data[ key ].max() :
-                    modellist.append( model.data[ key ] )
+                if key != 'WAVELENGTH' and model[ key ].max() :
+                    modellist.append( model[ key ] )
                     namelist.append( filename.split( '.fits' )[0]+'_'+key )
             if allmodels == None :
                 allmodels = np.array( modellist )
