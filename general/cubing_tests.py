@@ -68,6 +68,12 @@ def hot_pixel_clipping(n_obs=7, n_hot=10,verbose=False):
     drop_size = 1.6
     output_size = 0.5
     
+    pixel_ratio = 3.14 * ((drop_size + 1.2*output_size)/2)**2 / (output_size**2)
+    # This is the approximate number of output pixels each input pixel maps onto.
+    # NOTE: The factor or 1.2*output_size is empirically determined, but seems
+    # reasonable. The actual right answer will depend on the ratio
+    # drop_size/output_size
+    
     lambda_size = 20
     # Number of wavelength slices
 
@@ -87,7 +93,7 @@ def hot_pixel_clipping(n_obs=7, n_hot=10,verbose=False):
     before = diagnostic_info['unmasked_pixels_before_sigma_clip']
     after = diagnostic_info['unmasked_pixels_after_sigma_clip']
 
-    expected_rej = n_obs * np.asarray(ifu_list[0].data.shape).prod() * erfc(5.0/np.sqrt(2))
+    expected_rej = n_obs * np.asarray(ifu_list[0].data.shape).prod() * erfc(5.0/np.sqrt(2)) * pixel_ratio
 
     if (before - after > expected_rej) or (before - after < 0):
         print("Failed test: hot_pixel_clipping 1")
@@ -99,7 +105,6 @@ def hot_pixel_clipping(n_obs=7, n_hot=10,verbose=False):
             before - after, expected_rej))
         
 
-
     # Test 2:
     #
     #     Now we add in some hot pixels, and check that the expected number of
@@ -110,17 +115,17 @@ def hot_pixel_clipping(n_obs=7, n_hot=10,verbose=False):
             ifu_list[i].data[
                 randint(0,np.shape(ifu.data)[0] - 1), 
                 randint(0,np.shape(ifu.data)[1] - 1)] = 10000.0        
-    
+        
     data_cube, var_cube, weight_cube, diagnostic_info = dithered_cube_from_rss(ifu_list,offsets=None)
     
     before = diagnostic_info['unmasked_pixels_before_sigma_clip']
     after = diagnostic_info['unmasked_pixels_after_sigma_clip']
 
     n_masked_actual = before - after
-    n_masked_expected = n_obs * n_hot * 3.14 * ((drop_size + 1.2*output_size)/2)**2 / (output_size**2)
-    # NOTE: The factor or 1.2*output_size is empirically determined, but seems
-    # reasonable. The actual right answer will depend on the ratio
-    # drop_size/output_size
+    n_masked_expected = n_obs * n_hot * pixel_ratio + expected_rej
+    
+    
+
 
     if (np.abs(n_masked_actual - n_masked_expected) > 0.1*n_masked_expected):
         print("Failed test: hot_pixel_clipping 2")

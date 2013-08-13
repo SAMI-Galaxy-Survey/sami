@@ -235,8 +235,13 @@ def dithered_cube_from_rss(ifu_list, sample_size=0.5, plot=True, write=False, of
     diagnostic_info = {}
 
     n_obs = len(ifu_list)
+    # Number of observations/files
+    
     n_slices = np.shape(ifu_list[0].data)[1]
+    # The number of wavelength slices
+    
     n_fibres = ifu_list[0].data.shape[0]
+    # Number of fibres
 
     # Create an instance of SAMIDrizzler for use later to create individual overlap maps for each fibre.
     # The attributes of this instance don't change from ifu to ifu.
@@ -382,7 +387,7 @@ def dithered_cube_from_rss(ifu_list, sample_size=0.5, plot=True, write=False, of
     diagnostic_info['n_pixels_sigma_clipped'] = []
            
     # This loops over wavelength slices (e.g., 2048). 
-    for l in xrange(np.shape(data_all)[1]):
+    for l in xrange(n_slices):
 
         # In this loop, we will map the RSS fluxes from individual fibres
         # onto the output grid.
@@ -427,8 +432,8 @@ def dithered_cube_from_rss(ifu_list, sample_size=0.5, plot=True, write=False, of
         
         # Sigma clip it - pixel by pixel and make a master mask
         # array. Current clipping, sigma=5 and 1 iteration.        
-        mask_grid_slice_fibres = sigma_clip_mask_slice_fibres(norm_grid_slice_fibres/weight_grid_slice)
-        #mask_grid_slice_fibres = sigma_clip_mask_slice_fibres(data_grid_slice_fibres/weight_grid_slice)
+        #mask_grid_slice_fibres = sigma_clip_mask_slice_fibres(norm_grid_slice_fibres/weight_grid_slice)
+        mask_grid_slice_fibres = sigma_clip_mask_slice_fibres(data_grid_slice_fibres/weight_grid_slice)
         
         # Apply the mask to the data slice array and variance slice array
         data_grid_slice_fibres[np.logical_not(mask_grid_slice_fibres)] = np.NaN 
@@ -436,8 +441,8 @@ def dithered_cube_from_rss(ifu_list, sample_size=0.5, plot=True, write=False, of
 
         # Record diagnostic information about the number of pixels masked
         n_unmasked_pixels_after_clipping = np.isfinite(data_grid_slice_fibres).sum()
-        diagnostic_info['n_pixels_sigma_clipped'] = \
-            n_unmasked_pixels_before_clipping - n_unmasked_pixels_after_clipping
+        diagnostic_info['n_pixels_sigma_clipped'].append(
+            n_unmasked_pixels_before_clipping - n_unmasked_pixels_after_clipping)
         diagnostic_info['unmasked_pixels_before_sigma_clip'] += n_unmasked_pixels_before_clipping
         diagnostic_info['unmasked_pixels_after_sigma_clip'] += n_unmasked_pixels_after_clipping
 #         print("Pixels Clipped: {0} ({1}%)".format(\
@@ -481,19 +486,16 @@ def sigma_clip_mask_slice_fibres(grid_slice_fibres):
     """Return a mask with outliers removed."""
 
     med = nanmedian(grid_slice_fibres, axis=2)
-    # @TODO: The following is not the variance, but the standard deviation.
-    # However, squaring this leads to a stupid number of pixels being rejected
-    # in the clipping.
-    var = np.power( utils.mad(grid_slice_fibres, axis=2), 1.0)
- 
+    stddev = utils.mad(grid_slice_fibres, axis=2)
+     
     # We rearrange the axes so that numpy.broadcasting works in the subsequent
     # operations. See: http://docs.scipy.org/doc/numpy/user/basics.broadcasting.html
     t_grid_slice_fibres = np.transpose(grid_slice_fibres, axes=(2,0,1))
     
     mask = np.transpose( 
-            np.less_equal(t_grid_slice_fibres - med, var * (5**2) ),
+            np.less_equal(np.abs(t_grid_slice_fibres - med), stddev * 5 ),
             axes=(1,2,0))
-    
+        
     return mask
           
 class SAMIDrizzler:
