@@ -1527,28 +1527,50 @@ class FITSFile:
 
     def set_plate_id_short(self):
         """Save the shortened plate ID."""
+        finish = self.plate_id.find('_', self.plate_id.find('_')+1)
+        first_sections = self.plate_id[:finish]
         if self.plate_id == 'none':
             self.plate_id_short = 'none'
+        elif (re.match(r'Y[0-9]{2}S(A|B)R[0-9]+_P[0-9]+', first_sections) or
+              re.match(r'A[0-9]+_P[0-9]+', first_sections)):
+            self.plate_id_short = first_sections
         else:
-            finish = self.plate_id.find('_', self.plate_id.find('_')+1)
-            self.plate_id_short = self.plate_id[:finish]
+            self.plate_id_short = self.plate_id
+        return
 
     def set_field_no(self):
         """Save the field number."""
-        filename = self.hdulist[self.fibres_extno].header['FILENAME']
-        if filename == '':
-            self.field_no = 0
+        if int(self.date) < 130101:
+            # SAMIv1. Can only get the field number by cross-checking the
+            # config file RA and Dec.
+            self.field_no = 2
         else:
-            start = filename.rfind('_f') + 2
-            self.field_no = int(filename[start:filename.find('.', start)])
+            # SAMIv2. The field number should be included in the filename of
+            # the config file.
+            filename = self.hdulist[self.fibres_extno].header['FILENAME']
+            if filename == '':
+                self.field_no = 0
+            else:
+                start = filename.rfind('_f') + 2
+                self.field_no = int(filename[start:filename.find('.', start)])
+        return
 
     def set_field_id(self):
         """Save the field ID."""
         if self.plate_id == 'none':
             self.field_id = 'none'
-        else:
+        elif self.plate_id.startswith('run_'):
+            # Pilot and commissioning data. No field ID in the plate ID, so
+            # append one.
+            self.field_id = self.plate_id + '_F' + str(self.field_no)
+        elif (re.match(r'Y[0-9]{2}S(A|B)R[0-9]+_P[0-9]+', 
+                       self.plate_id_short) or
+              re.match(r'A[0-9]+_P[0-9]+', 
+                       self.plate_id_short)):
+            # Main survey or early cluster data. Field ID is stored within the 
+            # plate ID.
             start = len(self.plate_id_short)
-            for i in range(self.field_no):
+            for i in xrange(self.field_no):
                 start = self.plate_id.find('_', start) + 1
             finish = self.plate_id.find('_', start)
             if finish == -1:
@@ -1556,6 +1578,21 @@ class FITSFile:
             else:
                 field_id = self.plate_id[start:finish]
             self.field_id = self.plate_id_short + '_' + field_id
+        elif re.match(r'A[0-9]+T[0-9]+_A[0-9]+T[0-9]+', self.plate_id):
+            # Cluster data. Field ID is one segment of the plate ID.
+            start = 0
+            for i in xrange(self.field_no - 1):
+                start = self.plate_id.find('_', start) + 1
+            finish = self.plate_id.find('_', start)
+            if finish == -1:
+                field_id = self.plate_id[start:]
+            else:
+                field_id = self.plate_id[start:finish]
+            self.field_id = field_id
+        else:
+            # Unrecognised form for the plate ID
+            self.field_id = self.plate_id + '_F' + str(self.field_no)
+        return
         
     def set_coords(self):
         """Save the RA/Dec and config RA/Dec."""
