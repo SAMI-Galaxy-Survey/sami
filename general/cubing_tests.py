@@ -55,6 +55,10 @@ def speed_test():
                     {},
                     filename='dithered_cube_from_rss.pstats')
     print("Wall time: ", (datetime.datetime.now() - start_time).seconds, " seconds")
+    
+    # The following lines produce some nice graphics if the user has gprof2dot.py 
+    ### print("Creating profile graphics: dithered_cube_from_rss.png")
+    ### os.system("gprof2dot.py -f pstats dithered_cube_from_rss.pstats |dot -Tpng -o dithered_cube_from_rss.png")
 
 def hot_pixel_clipping(n_obs=7, n_hot=10,verbose=False):
     """Test that hot pixels are clipped.

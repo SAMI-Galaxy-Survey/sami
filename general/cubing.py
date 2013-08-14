@@ -28,6 +28,7 @@ except:
 # Utils code.
 from .. import utils
 from .. import samifitting as fitting
+from ..utils.mc_adr import DARCorrector
 
 # importing everything defined in the config file
 from ..config import *
@@ -353,6 +354,7 @@ def dithered_cube_from_rss(ifu_list, sample_size=0.5, plot=True, write=False, of
     #
     #     old.shape -> (n_files,            n_fibres, n_slices)
     #     new.shape -> (n_files * n_fibres, n_slices)
+    #     NOTE: the fibre position arrays are simply (n_files * n_fibres), no n_slices dimension.
     xfibre_all=np.reshape(xfibre_all,(np.shape(xfibre_all)[0]*np.shape(xfibre_all)[1]))
     yfibre_all=np.reshape(yfibre_all,(np.shape(yfibre_all)[0]*np.shape(yfibre_all)[1]))
     data_all=np.reshape(data_all,(np.shape(data_all)[0]*np.shape(data_all)[1], np.shape(data_all)[2]))
@@ -386,6 +388,23 @@ def dithered_cube_from_rss(ifu_list, sample_size=0.5, plot=True, write=False, of
 
     diagnostic_info['n_pixels_sigma_clipped'] = []
            
+    # Set up the differential atmospheric refraction correction:
+    dar_corrector = DARCorrector(method='none')
+    
+    #dar_corrector.temperature = temperature
+    #dar_corrector.air_pres = air_pressure
+    #dar_corrector.water_pres = water_pressure
+    #dar_corrector.zenith_distance = zenith_distance
+    #dar_corrector.hour_angle = hour_angle
+    parallactic_angle = 0
+    
+    # Load the wavelength solution for the datacubes. 
+    #
+    # TODO: This should change when the header keyword propagation is improved
+    # and we have confirmed that all RSS files are on the same wavelength
+    # solution.
+    wavelength_array = ifu_list[0].lambda_range
+    
     # This loops over wavelength slices (e.g., 2048). 
     for l in xrange(n_slices):
 
@@ -420,8 +439,13 @@ def dithered_cube_from_rss(ifu_list, sample_size=0.5, plot=True, write=False, of
         data_rss_slice = data_all[:,l]
         var_rss_slice = var_all[:,l]
 
-        overlap_array, weight_grid_slice = overlap_maps.drizzle(xfibre_all, yfibre_all)
+        # Determine differential atmospheric refraction correction for this slice
+        dar_r = dar_corrector.correction(wavelength_array[l])
+        dar_x = dar_r * np.cos(np.radians(parallactic_angle))
+        dar_y = dar_r * np.sin(np.radians(parallactic_angle))
+
         # Compute drizzle map for this wavelength slice.
+        overlap_array, weight_grid_slice = overlap_maps.drizzle(xfibre_all + dar_x, yfibre_all + dar_y)
         
         # Map RSS slices onto gridded slices
         norm_grid_slice_fibres=overlap_array*norm_rss_slice        
