@@ -1531,8 +1531,8 @@ class FITSFile:
         first_sections = self.plate_id[:finish]
         if self.plate_id == 'none':
             self.plate_id_short = 'none'
-        elif (re.match(r'Y[0-9]{2}S(A|B)R[0-9]+_P[0-9]+', first_sections) or
-              re.match(r'A[0-9]+_P[0-9]+', first_sections)):
+        elif (re.match(r'Y[0-9]{2}S(A|B)R[0-9]+_P[0-9]+$', first_sections) or
+              re.match(r'A[0-9]+_P[0-9]+$', first_sections)):
             self.plate_id_short = first_sections
         else:
             self.plate_id_short = self.plate_id
@@ -1563,9 +1563,9 @@ class FITSFile:
             # Pilot and commissioning data. No field ID in the plate ID, so
             # append one.
             self.field_id = self.plate_id + '_F' + str(self.field_no)
-        elif (re.match(r'Y[0-9]{2}S(A|B)R[0-9]+_P[0-9]+', 
+        elif (re.match(r'Y[0-9]{2}S(A|B)R[0-9]+_P[0-9]+$', 
                        self.plate_id_short) or
-              re.match(r'A[0-9]+_P[0-9]+', 
+              re.match(r'A[0-9]+_P[0-9]+$', 
                        self.plate_id_short)):
             # Main survey or early cluster data. Field ID is stored within the 
             # plate ID.
@@ -1578,7 +1578,7 @@ class FITSFile:
             else:
                 field_id = self.plate_id[start:finish]
             self.field_id = self.plate_id_short + '_' + field_id
-        elif re.match(r'A[0-9]+T[0-9]+_A[0-9]+T[0-9]+', self.plate_id):
+        elif re.match(r'A[0-9]+T[0-9]+_A[0-9]+T[0-9]+$', self.plate_id):
             # Cluster data. Field ID is one segment of the plate ID.
             start = 0
             for i in xrange(self.field_no - 1):
@@ -1590,7 +1590,7 @@ class FITSFile:
                 field_id = self.plate_id[start:finish]
             self.field_id = field_id
         else:
-            # Unrecognised form for the plate ID
+            # Unrecognised form for the plate ID.
             self.field_id = self.plate_id + '_F' + str(self.field_no)
         return
         
