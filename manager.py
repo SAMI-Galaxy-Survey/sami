@@ -455,12 +455,7 @@ class Manager:
                 self.move(os.path.join(old_reduced_dir, filename),
                           os.path.join(reduced_dir, filename))
         # If there is nothing useful left in the old directory, delete it.
-        for fits in self.file_list:
-            if (fits.do_not_use is False and 
-                os.path.samefile(fits.reduced_dir, old_reduced_dir)):
-                # There is still something in this directory, don't delete it!
-                break
-        else:
+        if not self.check_reduced_dir_contents(old_reduced_dir):
             # There's nothing useful in the old directory, so move any
             # remaining files to the new directory and then delete it
             for filename in os.listdir(old_reduced_dir):
@@ -617,12 +612,28 @@ class Manager:
             if fits.filename in filename_options:
                 return fits
 
+    def check_reduced_dir_contents(self, reduced_dir):
+        """Return True if any FITSFile objects point to reduced_dir."""
+        for fits in self.file_list:
+            if (fits.do_not_use is False and 
+                os.path.samefile(fits.reduced_dir, reduced_dir)):
+                # There is still something in this directory
+                return True
+        # Failed to find anything
+        return False
+
     def disable_files(self, file_iterable):
         """Disable (delete links to) files in provided list (or iterable)."""
         for fits in file_iterable:
             if isinstance(fits, str):
                 fits = self.fits_file(fits)
             fits.update_do_not_use(True)
+            # Delete the reduced directory if it's now empty
+            try:
+                os.removedirs(fits.reduced_dir)
+            except OSError:
+                # It wasn't empty - no harm done
+                pass
         return
 
     def enable_files(self, file_iterable):
