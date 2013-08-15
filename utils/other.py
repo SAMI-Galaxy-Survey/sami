@@ -1,10 +1,8 @@
-#import pylab as py
 import numpy as np
-#import scipy as sp
-
 
 import os
 import subprocess
+import gzip as gz
 
 from collections import namedtuple
 
@@ -32,8 +30,6 @@ circle resampling (by Jon Nielsen)
 other stuff?
 
 """
-
-
 
 def offset_hexa(csvfile, guide=None, obj=None, linear=False,
                 ignore_allocations=False):
@@ -430,7 +426,6 @@ def get_probes_objects(infile, ifus='all'):
         ifu_data=IFU(infile, ifu, flag_name=False)
         print ifu,"\t", ifu_data.name
 
-
 def hg_changeset(path=__file__):
     """Return the changeset ID for the current version of the code."""
     try:
@@ -477,3 +472,37 @@ def mad(a, c=0.6745, axis=None):
             axis, a)
 
     return m
+
+
+def find_fibre_table(hdulist):
+    """Returns the extension number for FIBRES_IFU or MORE.FIBRES_IFU,
+    whichever is found. Raises KeyError if neither is found."""
+
+    extno = None
+    try:
+        extno = hdulist.index_of('FIBRES_IFU')
+    except KeyError:
+        pass
+    if extno is None:
+        try:
+            extno = hdulist.index_of('MORE.FIBRES_IFU')
+        except KeyError:
+            raise KeyError("Extensions 'FIBRES_IFU' and "
+                           "'MORE.FIBRES_IFU' both not found")
+    return extno
+
+
+def gzip(filename, leave_original=False):
+    """gzip a file, optionally leaving the original version in place."""
+    with open(filename, 'rb') as f_in:
+        with gz.open(filename + '.gz', 'wb') as f_out:
+            f_out.writelines(f_in)
+    if not leave_original:
+        os.remove(filename)
+    return
+
+def find_nearest(arr, val):
+    
+    # Finds the index of the array element in arr nearest to val
+    idx=(np.abs(arr-val)).argmin()
+    return idx

@@ -178,8 +178,9 @@ def centroid(infile, ifus='all', outfile=None, plot=True):
         hexa_centre_microns_converted=utils.plate2sky(ifu_data.x_microns[np.where(ifu_data.n==1)][0],
                                                       ifu_data.y_microns[np.where(ifu_data.n==1)][0])
 
-        x_off_conv=hexa_centre_microns_converted[0]-centroid_microns_converted[0]
-        y_off_conv=hexa_centre_microns_converted[1]-centroid_microns_converted[1]
+        # Subtract the star postion from the hexabundle centre position
+        x_off_conv=-1*(centroid_microns_converted[0]-hexa_centre_microns_converted[0]) # plate2sky keeps micron sign convention
+        y_off_conv=centroid_microns_converted[1]-hexa_centre_microns_converted[1]
         
         # Find the widths
         x_w=sig_sky*3600
@@ -192,7 +193,7 @@ def centroid(infile, ifus='all', outfile=None, plot=True):
         # Compare the offsets and widths. Do something with these?!
         #print "Differences (x,y,width)", np.abs(x_off-xm_off), np.abs(y_off-ym_off), np.abs(x_w-xm_w)
 
-        print "Probe", ifu_data.ifu, x_off_conv, y_off_conv
+        print "Probe", ifu_data.ifu, x_off_conv, y_off_conv  #, xm_off, ym_off, x_off, y_off
 
         # Make an image of the bundle with the fit overlaid in contours. NOTE - plotting is done with the fit using
         # the micron values. This is more aesthetic and simple.
@@ -425,7 +426,7 @@ def centroid_fit(x,y,data,microns=True, circular=True):
     # Peak height guess could be closest fibre to com position.
     dist=(x-com[0])**2+(y-com[1])**2 # distance between com and all fibres.
         
-    # First guess at width of Gaussian - diameter of a core in degrees/microns (distance between core 1 and core 2?) in whichever direction that is larger....
+    # First guess at width of Gaussian - diameter of a core in degrees/microns.
     if microns==True:
         sigx=105.0
         core_diam=105.0

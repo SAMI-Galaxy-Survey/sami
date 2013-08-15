@@ -30,6 +30,9 @@ class IFU:
 
         self.meanra=primary_header['MEANRA']
         self.meandec=primary_header['MEANDEC']
+
+        self.gratid=primary_header['GRATID']
+        self.gain=primary_header['RO_GAIN']
         
         # Wavelength range
         x=np.arange(self.naxis1)+1
@@ -72,6 +75,10 @@ class IFU:
         #X and Y positions of fibres in absolute degrees.
         self.xpos=table_new.field('FIB_MRA') #RA add -1*
         self.ypos=table_new.field('FIB_MDEC') #Dec
+
+        # Positions in arcseconds relative to the field centre
+        self.xpos_rel=table_new.field('XPOS')
+        self.ypos_rel=table_new.field('YPOS')
  
         # Fibre number - used for tests.
         self.n=table_new.field('FIBNUM')

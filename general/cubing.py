@@ -104,7 +104,7 @@ def get_probe(infile, object_name, verbose=True):
     # Return the probe number
     return ifu
 
-def dithered_cubes_from_rss_files(inlist, sample_size=0.5, objects='all', plot=True, write=False):
+def dithered_cubes_from_rss_files(inlist, sample_size=0.5, drop_factor=0.5, objects='all', clip=True, plot=True, write=False):
     """A wrapper to make a cube from reduced RSS files. Only input files that go together - ie have the same objects."""
 
     start_time = datetime.datetime.now()
@@ -123,7 +123,7 @@ def dithered_cubes_from_rss_files(inlist, sample_size=0.5, objects='all', plot=T
         
     n_files = len(files)
 
-    # For first files get the names of galaxies observed - assuming these are the same in all RSS files.
+    # For first file get the names of galaxies observed - assuming these are the same in all RSS files.
     if objects=='all':
         object_names=get_object_names(files[0])
     else:
@@ -143,16 +143,28 @@ def dithered_cubes_from_rss_files(inlist, sample_size=0.5, objects='all', plot=T
         print
         print "--------------------------------------------------------------"
         print "Starting with object:", name
+        print
         
         ifu_list = []
         
         for j in xrange(len(files)):
             ifu_list.append(utils.IFU(files[j], name, flag_name=True))
-    
-        flux_cube, var_cube, weight_cube, diagnostics = dithered_cube_from_rss(ifu_list,sample_size=sample_size, plot=plot, write=write)
+
+        # Call dithered_cube_from_rss to create the flux, variance and weight cubes for the object.
+        flux_cube, var_cube, weight_cube, diagnostics = dithered_cube_from_rss(ifu_list, sample_size=sample_size,
+                                          drop_factor=drop_factor, clip=clip, plot=plot)
         
-        
+        # Write out FITS files.
         if write==True:
+
+            # First check if the object directory already exisit or not.
+            if os.path.isdir(name):
+                print "Directory Exists", name
+                print "Writing files to the existing directory"
+            else:
+                print "Making directory", name
+                os.mkdir(name)
+            
             # NOTE - At this point we will want to generate accurate WCS information and create a proper header.
             # The addition of ancillary data to the header will be valuable. I think the creation of the header should
             # be separated off into a separate function (make_cube_header?)
@@ -183,9 +195,11 @@ def dithered_cubes_from_rss_files(inlist, sample_size=0.5, objects='all', plot=T
             # Create the wcs.
             wcs_new=pw.WCS(naxis=3)
             wcs_new.wcs.crpix = [1, 1, hdr['CRPIX1']]
-            wcs_new.wcs.cdelt = np.array([1, 1, hdr['CDELT1']])
+            print sample_size
+            #print str(sample_size)
+            wcs_new.wcs.cdelt = np.array([sample_size, sample_size, hdr['CDELT1']])
             wcs_new.wcs.crval = [1, 1, hdr['CRVAL1']]
-            wcs_new.wcs.ctype = ["PIXEL", "PIXEL", hdr['CTYPE1']]
+            wcs_new.wcs.ctype = ["ARCSEC", "ARCSEC", hdr['CTYPE1']]
             wcs_new.wcs.equinox = 2000
             
             # Create a header
@@ -215,10 +229,13 @@ def dithered_cubes_from_rss_files(inlist, sample_size=0.5, objects='all', plot=T
             hdulist=pf.HDUList([hdu1,hdu2,hdu3])
         
             # Write to FITS file.
+            # NOTE - In here need to add the directory structure for the cubes.
             outfile_name=str(name)+'_'+str(arm)+'_'+str(len(files))+'.fits'
-            print "Writing", outfile_name
+            outfile_name_full=os.path.join(name, outfile_name)
+
+            print "Writing", outfile_name_full
             "--------------------------------------------------------------"
-            hdulist.writeto(outfile_name)
+            hdulist.writeto(outfile_name_full)
     
             # Close the open file
             list1.close()
@@ -226,11 +243,11 @@ def dithered_cubes_from_rss_files(inlist, sample_size=0.5, objects='all', plot=T
     print("Time dithered_cubes_from_files wall time: {0}".format(datetime.datetime.now() - start_time))
 
 
-def dithered_cube_from_rss(ifu_list, sample_size=0.5, plot=True, write=False, offsets='fit'):
+def dithered_cube_from_rss(ifu_list, sample_size=0.5, drop_factor=0.5, clip=True, plot=True, offsets='fit'):
         
     # When resampling need to know the size of the grid in square output pixels
     # @TODO: Compute the size of the grid instead of hard code it!
-    size_of_grid=40 
+    size_of_grid=50 
     
 
     diagnostic_info = {}
@@ -297,7 +314,8 @@ def dithered_cube_from_rss(ifu_list, sample_size=0.5, plot=True, write=False, of
         y_good=y_good[msk_notcold]
         data_good=data_good[msk_notcold]
 
-        print("data_good.shape: ",np.shape(data_good))
+        # Below is a diagnostic print out.
+        #print("data_good.shape: ",np.shape(data_good))
 
         if (offsets == 'fit'):
             # Fit parameter estimates from a crude centre of mass
@@ -318,7 +336,10 @@ def dithered_cube_from_rss(ifu_list, sample_size=0.5, plot=True, write=False, of
             # Adjust the micron positions of the fibres - for use in making final cubes.
             xm=galaxy_data.x_microns-gf1.p[1]
             ym=galaxy_data.y_microns-gf1.p[2]
+
         else:
+            # Perhaps use this place to allow definition of the offsets manually??
+            # Hopefully only useful for test purposes. LF 05/06/2013
             xm=galaxy_data.x_microns - np.mean(galaxy_data.x_microns)
             ym=galaxy_data.y_microns - np.mean(galaxy_data.y_microns)
     
@@ -383,10 +404,15 @@ def dithered_cube_from_rss(ifu_list, sample_size=0.5, plot=True, write=False, of
     
     print("data_all.shape: ", np.shape(data_all))
 
-    diagnostic_info['unmasked_pixels_after_sigma_clip'] = 0
-    diagnostic_info['unmasked_pixels_before_sigma_clip'] = 0
+    # Below is a diagnostic print out.
+    #print("data_all.shape: ", np.shape(data_all))
 
-    diagnostic_info['n_pixels_sigma_clipped'] = []
+    if clip:
+        # Set up some diagostics if you have the clip flag set.
+        diagnostic_info['unmasked_pixels_after_sigma_clip'] = 0
+        diagnostic_info['unmasked_pixels_before_sigma_clip'] = 0
+
+        diagnostic_info['n_pixels_sigma_clipped'] = []
            
     # Set up the differential atmospheric refraction correction:
     dar_corrector = DARCorrector(method='none')
@@ -451,28 +477,34 @@ def dithered_cube_from_rss(ifu_list, sample_size=0.5, plot=True, write=False, of
         norm_grid_slice_fibres=overlap_array*norm_rss_slice        
         data_grid_slice_fibres=overlap_array*data_rss_slice
         var_grid_slice_fibres=(overlap_array*overlap_array)*var_rss_slice
-        
-        n_unmasked_pixels_before_clipping = np.isfinite(data_grid_slice_fibres).sum()
-        
-        # Sigma clip it - pixel by pixel and make a master mask
-        # array. Current clipping, sigma=5 and 1 iteration.        
-        #mask_grid_slice_fibres = sigma_clip_mask_slice_fibres(norm_grid_slice_fibres/weight_grid_slice)
-        mask_grid_slice_fibres = sigma_clip_mask_slice_fibres(data_grid_slice_fibres/weight_grid_slice)
-        
-        # Apply the mask to the data slice array and variance slice array
-        data_grid_slice_fibres[np.logical_not(mask_grid_slice_fibres)] = np.NaN 
-        var_grid_slice_fibres[np.logical_not(mask_grid_slice_fibres)] = np.NaN # Does this matter?
 
-        # Record diagnostic information about the number of pixels masked
-        n_unmasked_pixels_after_clipping = np.isfinite(data_grid_slice_fibres).sum()
-        diagnostic_info['n_pixels_sigma_clipped'].append(
-            n_unmasked_pixels_before_clipping - n_unmasked_pixels_after_clipping)
-        diagnostic_info['unmasked_pixels_before_sigma_clip'] += n_unmasked_pixels_before_clipping
-        diagnostic_info['unmasked_pixels_after_sigma_clip'] += n_unmasked_pixels_after_clipping
-#         print("Pixels Clipped: {0} ({1}%)".format(\
-#             n_unmasked_pixels_before_clipping - n_unmasked_pixels_after_clipping,
-#             (n_unmasked_pixels_before_clipping - n_unmasked_pixels_after_clipping) / float(n_unmasked_pixels_before_clipping)
-#             ))
+        if clip:
+            # Perform sigma clipping of the data if the clip flag is set.
+            
+            n_unmasked_pixels_before_clipping = np.isfinite(data_grid_slice_fibres).sum()
+        
+            # Sigma clip it - pixel by pixel and make a master mask
+            # array. Current clipping, sigma=5 and 1 iteration.        
+            mask_grid_slice_fibres = sigma_clip_mask_slice_fibres(norm_grid_slice_fibres/weight_grid_slice)
+
+            # Below is without the normalised spectra for the clip.
+            #mask_grid_slice_fibres = sigma_clip_mask_slice_fibres(data_grid_slice_fibres/weight_grid_slice)
+        
+            # Apply the mask to the data slice array and variance slice array
+            data_grid_slice_fibres[np.logical_not(mask_grid_slice_fibres)] = np.NaN 
+            var_grid_slice_fibres[np.logical_not(mask_grid_slice_fibres)] = np.NaN # Does this matter?
+
+            # Record diagnostic information about the number of pixels masked.
+            n_unmasked_pixels_after_clipping = np.isfinite(data_grid_slice_fibres).sum()
+            diagnostic_info['n_pixels_sigma_clipped'].append(
+                n_unmasked_pixels_before_clipping - n_unmasked_pixels_after_clipping
+                )
+            diagnostic_info['unmasked_pixels_before_sigma_clip'] += n_unmasked_pixels_before_clipping
+            diagnostic_info['unmasked_pixels_after_sigma_clip'] += n_unmasked_pixels_after_clipping
+            #         print("Pixels Clipped: {0} ({1}%)".format(\
+            #             n_unmasked_pixels_before_clipping - n_unmasked_pixels_after_clipping,
+            #             (n_unmasked_pixels_before_clipping - n_unmasked_pixels_after_clipping) / float(n_unmasked_pixels_before_clipping)
+            #             ))
 
         # Now, at this stage want to identify ALL positions in the data array
         # (before we collapse it) where there are NaNs (from clipping, cosmics
@@ -498,7 +530,13 @@ def dithered_cube_from_rss(ifu_list, sample_size=0.5, plot=True, write=False, of
         var_cube[:,:,l]=var_grid_slice_final
         weight_cube[:,:,l]=weight_grid_slice_final
 
-    # Now need to scale the cubes by the weight cube
+    # I have now got: flux cube, variance cube, weight cube. These have been made assuming no drop-size reduction factor.
+    # Apply the drop size reduction factor to all three cubes.
+    flux_cube=flux_cube/(drop_factor**2)
+    var_cube=var_cube/(drop_factor**4)
+    weight_cube=weight_cube/(drop_factor**2)
+
+    # Now need to scale the flux and variance cubes appropriately by the weight cube
     flux_cube=flux_cube/weight_cube # flux cube scaling by weight map
     image=nanmedian(flux_cube, axis=2)
 
@@ -519,7 +557,7 @@ def sigma_clip_mask_slice_fibres(grid_slice_fibres):
     mask = np.transpose( 
             np.less_equal(np.abs(t_grid_slice_fibres - med), stddev * 5 ),
             axes=(1,2,0))
-        
+    
     return mask
           
 class SAMIDrizzler:
