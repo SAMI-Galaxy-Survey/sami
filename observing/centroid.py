@@ -229,7 +229,7 @@ def centroid(infile, ifus='all', savefile=True, plot=True):
 
         #print "FWHM from four techniques:", fwhm, fwhm_corr, fwhm_conv, fwhm_conv_corr
 
-        print "Probe", ifu_data.ifu, x_off, x_off_conv, y_off, y_off_conv  #, xm_off, ym_off, x_off, y_off
+        print "Probe", ifu_data.ifu, x_off, y_off #,  x_off_conv, y_off_conv  #, xm_off, ym_off, x_off, y_off
 
         # Make an image of the bundle with the fit overlaid in contours. NOTE - plotting is done with the fit using
         # the micron values. This is more aesthetic and simple.
@@ -298,9 +298,11 @@ def centroid(infile, ifus='all', savefile=True, plot=True):
         # Write the results to file
         if outfile!=None:
             # Probe number, offset in RA ("), offset in Dec (")
-            s=str(ifu_data.ifu)+' '+str(x_off_conv)+' '+str(y_off_conv)+'\n' # the data to write to file
+            s=str(ifu_data.ifu)+' '+str(x_off)+' '+str(y_off)+'\n' # the data to write to file
             f.write(s)
 
+    print
+    print "-------------------------------------------------"
 
     if plot:
         py.suptitle(infile)
@@ -321,8 +323,8 @@ def centroid(infile, ifus='all', savefile=True, plot=True):
     fwhm_arr=np.asanyarray(fwhm_arr)
     fwhm_conv_arr=np.asanyarray(fwhm_conv_arr)
     
-    print
     print "-------------------------------------------------"
+    print
     print "FWHM of fits (in \")."
     print fwhm_arr
     #print fwhm_conv_arr
