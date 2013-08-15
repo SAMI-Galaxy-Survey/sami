@@ -448,6 +448,27 @@ class Manager:
         shutil.move(source_path, dest_path)
         return
 
+    def move_reduced_files(self, filename_root, old_reduced_dir, reduced_dir):
+        """Move all reduced files connected to the given root."""
+        for filename in os.listdir(old_reduced_dir):
+            if filename.startswith(filename_root):
+                self.move(os.path.join(old_reduced_dir, filename),
+                          os.path.join(reduced_dir, filename))
+        # If there is nothing useful left in the old directory, delete it.
+        for fits in self.file_list:
+            if (fits.do_not_use is False and 
+                os.path.samefile(fits.reduced_dir, old_reduced_dir)):
+                # There is still something in this directory, don't delete it!
+                break
+        else:
+            # There's nothing useful in the old directory, so move any
+            # remaining files to the new directory and then delete it
+            for filename in os.listdir(old_reduced_dir):
+                self.move(os.path.join(old_reduced_dir, filename),
+                          os.path.join(reduced_dir, filename))
+            os.removedirs(old_reduced_dir)
+        return
+
     def set_name(self, fits, trust_header=True):
         """Set the object name for a FITS file."""
         fits.name = None
@@ -527,6 +548,14 @@ class Manager:
             for extra in self.extra_list:
                 if extra['fitsfile'] is fits:
                     extra['name'] = name
+            # Update the path for the reduced files
+            if fits.do_not_use is False:
+                old_reduced_dir = fits.reduced_dir
+                self.set_reduced_path(fits)
+                if fits.reduced_dir != old_reduced_dir:
+                    # The path has changed, so move all the reduced files
+                    self.move_reduced_files(fits.filename_root, old_reduced_dir, 
+                                            fits.reduced_dir)
         return
 
     def update_spectrophotometric(self, file_iterable, spectrophotometric):
