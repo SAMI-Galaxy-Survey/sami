@@ -500,16 +500,24 @@ class Manager:
                 break
         # Now choose the best name
         if name_header and trust_header:
-            fits.update_name(name_header)
+            best_name = name_header
         elif name_coords:
-            fits.update_name(name_coords)
+            best_name = name_coords
         elif name_extra:
-            fits.update_name(name_extra)
+            best_name = name_extra
         else:
             # As a last resort, ask the user
-            name_input = raw_input('Enter object name for file ' +
-                                   fits.filename + '\n > ')
-            fits.update_name(name_input)
+            best_name = None
+            while best_name is None:
+                try:
+                    best_name = raw_input('Enter object name for file ' +
+                                          fits.filename + '\n > ')
+                except ValueError as error:
+                    print error
+        # If there are any remaining bad characters (from an earlier version of
+        # the manager), just quietly replace them with underscores
+        best_name = re.sub(r'[\\\[\]*/?<>|;:&,.$ ]', '_', best_name)
+        fits.update_name(best_name)
         # Now choose the best spectrophotometric flag
         if spectrophotometric_header is not None and trust_header:
             fits.update_spectrophotometric(spectrophotometric_header)
@@ -538,7 +546,11 @@ class Manager:
             if isinstance(fits, str):
                 fits = self.fits_file(fits)
             # Update the name
-            fits.update_name(name)
+            try:
+                fits.update_name(name)
+            except ValueError as error:
+                print error
+                return
             # Update the extra list if necessary
             for extra in self.extra_list:
                 if extra['fitsfile'] is fits:
@@ -1795,6 +1807,9 @@ class FITSFile:
     def update_name(self, name):
         """Change the object name assigned to this file."""
         if self.name != name:
+            if re.match(r'.*[\\\[\]*/?<>|;:&,.$ ].*', name):
+                raise ValueError(r'Invalid character in name; '
+                                 r'do not use any of []\/*?<>|;:&,.$ or space')
             # Update the FITS header
             self.add_header_item('MNGRNAME', name,
                                  'Object name set by SAMI manager')
