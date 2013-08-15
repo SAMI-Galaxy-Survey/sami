@@ -419,8 +419,7 @@ def get_probes_objects(infile, ifus='all'):
 
     else:
         ifus=ifus
-
-    
+ 
     print "Probe   Object"
     print "-----------------------------------"
     for ifu in ifus:
