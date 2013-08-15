@@ -124,11 +124,14 @@ def dithered_cubes_from_rss_files(inlist, sample_size=0.5, drop_factor=0.5, obje
     n_files = len(files)
 
     # For first file get the names of galaxies observed - assuming these are the same in all RSS files.
+    # @TODO: This is not necessarily true, and we should either through an exception or account for it
     if objects=='all':
         object_names=get_object_names(files[0])
     else:
         object_names=objects
         
+    
+    
     print "--------------------------------------------------------------"
     print "The following objects will be cubed:"
     print
@@ -147,17 +150,22 @@ def dithered_cubes_from_rss_files(inlist, sample_size=0.5, drop_factor=0.5, obje
         
         ifu_list = []
         
-        for j in xrange(len(files)):
+        for j in xrange(n_files):
             ifu_list.append(utils.IFU(files[j], name, flag_name=True))
 
+
         # Call dithered_cube_from_rss to create the flux, variance and weight cubes for the object.
-        flux_cube, var_cube, weight_cube, diagnostics = dithered_cube_from_rss(ifu_list, sample_size=sample_size,
-                                          drop_factor=drop_factor, clip=clip, plot=plot)
+        #flux_cube, var_cube, weight_cube, diagnostics = dithered_cube_from_rss(ifu_list, sample_size=sample_size,
+        #                                  drop_factor=drop_factor, clip=clip, plot=plot)
+        
+        flux_cube = np.zeros((10,11,12))
+        var_cube = np.zeros((10,11,12))
+        weight_cube = np.zeros((10,11,12))
         
         # Write out FITS files.
         if write==True:
 
-            # First check if the object directory already exisit or not.
+            # First check if the object directory already exists or not.
             if os.path.isdir(name):
                 print "Directory Exists", name
                 print "Writing files to the existing directory"
@@ -178,20 +186,8 @@ def dithered_cubes_from_rss_files(inlist, sample_size=0.5, drop_factor=0.5, obje
             list1=pf.open(files[0])
             hdr=list1[0].header
     
-            grating=hdr['GRATID']
-    
-            if grating=='580V':
-                print "Files are blue."
-                arm='blue'
+            arm = ifu_list[0].spectrograph_arm
                 
-            elif grating=='1000R':
-                print "Files are red."
-                arm='red'
-                
-            else:
-                print "I've no idea what grating you used, you crazy person!"
-                arm='unknown'
-    
             # Create the wcs.
             wcs_new=pw.WCS(naxis=3)
             wcs_new.wcs.crpix = [1, 1, hdr['CRPIX1']]
@@ -224,9 +220,13 @@ def dithered_cubes_from_rss_files(inlist, sample_size=0.5, drop_factor=0.5, obje
             hdu1=pf.PrimaryHDU(np.transpose(flux_cube, (2,0,1)), hdr_new)
             hdu2=pf.ImageHDU(np.transpose(var_cube, (2,0,1)), name='VARIANCE')
             hdu3=pf.ImageHDU(np.transpose(weight_cube, (2,0,1)), name='WEIGHT')
-                
+
+            # Create HDUs for meta-data
+            metadata_table = create_metadata_table(ifu_list)
+            
+
             # Put individual HDUs into a HDU list
-            hdulist=pf.HDUList([hdu1,hdu2,hdu3])
+            hdulist=pf.HDUList([hdu1,hdu2,hdu3,metadata_table])
         
             # Write to FITS file.
             # NOTE - In here need to add the directory structure for the cubes.
@@ -242,6 +242,83 @@ def dithered_cubes_from_rss_files(inlist, sample_size=0.5, drop_factor=0.5, obje
             
     print("Time dithered_cubes_from_files wall time: {0}".format(datetime.datetime.now() - start_time))
 
+def create_metadata_table(ifu_list):
+    """Build a FITS binary table HDU containing all the meta data from individual IFU objects."""
+    
+    # List of columns for the meta-data table
+    columns = []
+    
+    # Number of rows to appear in the table (equal to the number of files used to create the cube)
+    n_rows = len(ifu_list)
+    
+    # For now we assume that all files have the same set of keywords, and complain if they don't.
+    
+    first_header = ifu_list[0].primary_header
+    
+    primary_header_keywords = first_header.keys()
+    
+    # We must remove COMMENT and HISTORY keywords, as they must be treated separately.
+    for i in xrange(primary_header_keywords.count('HISTORY')):
+        primary_header_keywords.remove('HISTORY')
+    for i in xrange(primary_header_keywords.count('COMMENT')):
+        primary_header_keywords.remove('COMMENT')
+    for i in xrange(primary_header_keywords.count('SIMPLE')):
+        primary_header_keywords.remove('SIMPLE')
+    for i in xrange(primary_header_keywords.count('EXTEND')):
+        primary_header_keywords.remove('EXTEND')
+    for i in xrange(primary_header_keywords.count('SCRUNCH')):
+        primary_header_keywords.remove('SCRUNCH')
+    
+    
+    # TODO: Test/check that all ifu's have the same keywords and error if not
+
+    # Determine the FITS binary table column types types for each header keyword
+    # and create the corresponding columns. See the documentation here:
+    # 
+    #     https://astropy.readthedocs.org/en/v0.1/io/fits/usage/table.html#creating-a-fits-table
+
+    def get_primary_header_values(keyword, dtype):
+        return np.asarray(map(lambda x: x.primary_header[keyword],ifu_list), dtype)
+
+    for keyword in primary_header_keywords:
+        if (isinstance(first_header[keyword],bool)):
+            # Output type is Logical (boolean)
+            columns.append(pf.Column(
+                name=keyword,
+                format='L',
+                array=get_primary_header_values(keyword,np.bool)
+                )) 
+        if (isinstance(first_header[keyword],int)):
+            columns.append(pf.Column(
+                name=keyword,
+                format='K',
+                array=get_primary_header_values(keyword,np.int)
+                )) # 64-bit integer
+        if (isinstance(first_header[keyword],str)):
+            columns.append(pf.Column(
+                name=keyword,
+                format='128A',
+                array=get_primary_header_values(keyword,'|S128')                
+                )) # 128 character string
+        if (isinstance(first_header[keyword],float)):
+            columns.append(pf.Column(
+                name=keyword,
+                format='E',
+                array=get_primary_header_values(keyword,np.float)
+                )) # single-precision float
+            
+    del get_primary_header_values
+    
+    # TODO: Add columns for comments and history information.
+    #
+    # The code below tries to put these in a variable size character array
+    # column in the binary table, but it is very messy. Better might be a
+    # separate ascii table.
+    #
+    #columns.append(pf.Column(name='COMMENTS', format='80PA(100)')) # Up to 100 80-character lines
+    #columns.append(pf.Column(name='HISTORY', format='80PA(100)')) # Up to 100 80-character lines
+    
+    return pf.new_table(columns)
 
 def dithered_cube_from_rss(ifu_list, sample_size=0.5, drop_factor=0.5, clip=True, plot=True, offsets='fit'):
         
