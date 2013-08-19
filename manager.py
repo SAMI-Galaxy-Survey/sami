@@ -1682,7 +1682,8 @@ class FITSFile:
         """Save the field ID."""
         if self.plate_id == 'none':
             self.field_id = 'none'
-        elif self.plate_id.startswith('run_'):
+        elif (self.plate_id.startswith('run_') or 
+              re.match(r'[0-9]+S[0-9]+', self.plate_id)):
             # Pilot and commissioning data. No field ID in the plate ID, so
             # append one.
             self.field_id = self.plate_id + '_F' + str(self.field_no)
