@@ -29,6 +29,50 @@ IDX_FILES_FAST = {'1': 'sami580V.idx',
 GRATLPMM = {'ccd_1': 582.0,
             'ccd_2': 1001.0}
 
+# This list is used for identifying field numbers in the pilot data.
+PILOT_FIELD_LIST = [
+    {'plate_id': 'run_6_star_P1', 'field_no': 1, 
+     'coords': '18h01m54.38s -22d46m49.1s'},
+    {'plate_id': 'run_6_star_P1', 'field_no': 2, 
+     'coords': '21h12m25.06s +04d14m59.6s'},
+    {'plate_id': 'run_6_P1', 'field_no': 1, 
+     'coords': '00h41m35.46s -09d40m29.9s'},
+    {'plate_id': 'run_6_P1', 'field_no': 2, 
+     'coords': '01h13m02.16s +00d26m42.2s'},
+    {'plate_id': 'run_6_P1', 'field_no': 3, 
+     'coords': '21h58m30.77s -08d09m23.9s'},
+    {'plate_id': 'run_6_P2', 'field_no': 2, 
+     'coords': '01h16m01.24s +00d03m23.4s'},
+    {'plate_id': 'run_6_P2', 'field_no': 3, 
+     'coords': '21h55m37.75s -07d40m58.3s'},
+    {'plate_id': 'run_6_P3', 'field_no': 2, 
+     'coords': '01h16m19.66s +00d17m46.9s'},
+    {'plate_id': 'run_6_P3', 'field_no': 3, 
+     'coords': '21h56m37.34s -07d32m16.2s'},
+    {'plate_id': 'run_7_star_P1', 'field_no': 1, 
+     'coords': '20h04m08.32s +07d16m40.6s'},
+    {'plate_id': 'run_7_star_P1', 'field_no': 2, 
+     'coords': '23h14m36.57s +12d45m20.6s'},
+    {'plate_id': 'run_7_star_P1', 'field_no': 3, 
+     'coords': '02h11m46.77s -08d56m09.0s'},
+    {'plate_id': 'run_7_star_P1', 'field_no': 4, 
+     'coords': '05h32m00.40s -00d17m56.9s'},
+    {'plate_id': 'run_7_P1', 'field_no': 1, 
+     'coords': '21h58m27.59s -07d43m50.7s'},
+    {'plate_id': 'run_7_P1', 'field_no': 2, 
+     'coords': '00h40m12.73s -09d31m47.5s'},
+    {'plate_id': 'run_7_P2', 'field_no': 1, 
+     'coords': '21h56m27.49s -07d12m02.4s'},
+    {'plate_id': 'run_7_P2', 'field_no': 2, 
+     'coords': '00h40m33.40s -09d04m21.6s'},
+    {'plate_id': 'run_7_P3', 'field_no': 1, 
+     'coords': '21h56m27.86s -07d46m17.1s'},
+    {'plate_id': 'run_7_P3', 'field_no': 2, 
+     'coords': '00h41m25.78s -09d17m14.4s'},
+    {'plate_id': 'run_7_P4', 'field_no': 1, 
+     'coords': '21h57m48.55s -07d23m40.6s'},
+    {'plate_id': 'run_7_P4', 'field_no': 2, 
+     'coords': '00h42m34.09s -09d12m08.1s'}]
 
 class Manager:
     """Object for organising and reducing SAMI data.
@@ -404,6 +448,22 @@ class Manager:
         shutil.move(source_path, dest_path)
         return
 
+    def move_reduced_files(self, filename_root, old_reduced_dir, reduced_dir):
+        """Move all reduced files connected to the given root."""
+        for filename in os.listdir(old_reduced_dir):
+            if filename.startswith(filename_root):
+                self.move(os.path.join(old_reduced_dir, filename),
+                          os.path.join(reduced_dir, filename))
+        # If there is nothing useful left in the old directory, delete it.
+        if not self.check_reduced_dir_contents(old_reduced_dir):
+            # There's nothing useful in the old directory, so move any
+            # remaining files to the new directory and then delete it
+            for filename in os.listdir(old_reduced_dir):
+                self.move(os.path.join(old_reduced_dir, filename),
+                          os.path.join(reduced_dir, filename))
+            os.removedirs(old_reduced_dir)
+        return
+
     def set_name(self, fits, trust_header=True):
         """Set the object name for a FITS file."""
         fits.name = None
@@ -440,16 +500,24 @@ class Manager:
                 break
         # Now choose the best name
         if name_header and trust_header:
-            fits.update_name(name_header)
+            best_name = name_header
         elif name_coords:
-            fits.update_name(name_coords)
+            best_name = name_coords
         elif name_extra:
-            fits.update_name(name_extra)
+            best_name = name_extra
         else:
             # As a last resort, ask the user
-            name_input = raw_input('Enter object name for file ' +
-                                   fits.filename + '\n > ')
-            fits.update_name(name_input)
+            best_name = None
+            while best_name is None:
+                try:
+                    best_name = raw_input('Enter object name for file ' +
+                                          fits.filename + '\n > ')
+                except ValueError as error:
+                    print error
+        # If there are any remaining bad characters (from an earlier version of
+        # the manager), just quietly replace them with underscores
+        best_name = re.sub(r'[\\\[\]*/?<>|;:&,.$ ]', '_', best_name)
+        fits.update_name(best_name)
         # Now choose the best spectrophotometric flag
         if spectrophotometric_header is not None and trust_header:
             fits.update_spectrophotometric(spectrophotometric_header)
@@ -478,11 +546,23 @@ class Manager:
             if isinstance(fits, str):
                 fits = self.fits_file(fits)
             # Update the name
-            fits.update_name(name)
+            try:
+                fits.update_name(name)
+            except ValueError as error:
+                print error
+                return
             # Update the extra list if necessary
             for extra in self.extra_list:
                 if extra['fitsfile'] is fits:
                     extra['name'] = name
+            # Update the path for the reduced files
+            if fits.do_not_use is False:
+                old_reduced_dir = fits.reduced_dir
+                self.set_reduced_path(fits)
+                if fits.reduced_dir != old_reduced_dir:
+                    # The path has changed, so move all the reduced files
+                    self.move_reduced_files(fits.filename_root, old_reduced_dir, 
+                                            fits.reduced_dir)
         return
 
     def update_spectrophotometric(self, file_iterable, spectrophotometric):
@@ -544,12 +624,28 @@ class Manager:
             if fits.filename in filename_options:
                 return fits
 
+    def check_reduced_dir_contents(self, reduced_dir):
+        """Return True if any FITSFile objects point to reduced_dir."""
+        for fits in self.file_list:
+            if (fits.do_not_use is False and 
+                os.path.samefile(fits.reduced_dir, reduced_dir)):
+                # There is still something in this directory
+                return True
+        # Failed to find anything
+        return False
+
     def disable_files(self, file_iterable):
         """Disable (delete links to) files in provided list (or iterable)."""
         for fits in file_iterable:
             if isinstance(fits, str):
                 fits = self.fits_file(fits)
             fits.update_do_not_use(True)
+            # Delete the reduced directory if it's now empty
+            try:
+                os.removedirs(fits.reduced_dir)
+            except OSError:
+                # It wasn't empty - no harm done
+                pass
         return
 
     def enable_files(self, file_iterable):
@@ -1464,18 +1560,20 @@ class FITSFile:
         self.set_date()
         if self.ndf_class and self.ndf_class not in ['BIAS', 'DARK', 'LFLAT']:
             self.set_fibres_extno()
+        else:
+            self.fibres_extno = None
+        self.set_coords()
+        if self.ndf_class and self.ndf_class not in ['BIAS', 'DARK', 'LFLAT']:
             self.set_plate_id()
             self.set_plate_id_short()
             self.set_field_no()
             self.set_field_id()
         else:
-            self.fibres_extno = None
             self.plate_id = None
             self.plate_id_short = None
             self.field_no = None
             self.field_id = None
         self.set_ccd()
-        self.set_coords()
         self.set_exposure()
         self.set_epoch()
         self.set_do_not_use()
@@ -1521,9 +1619,25 @@ class FITSFile:
 	
     def set_plate_id(self):
         """Save the plate ID."""
-        self.plate_id = self.hdulist[self.fibres_extno].header['PLATEID']
+        try:
+            # First look in the primary header
+            self.plate_id = self.hdulist[0].header['PLATEID']
+        except KeyError:
+            # Check in the fibre table instead
+            header = self.hdulist[self.fibres_extno].header
+            self.plate_id = header['PLATEID']
+            match = re.match(r'(^run_[0-9]+_)(P[0-9]+$)', self.plate_id)
+            comment = 'Plate ID (from config file)'
+            if match and 'star plate' in header['LABEL']:
+                # This is a star field; adjust the plate ID accordingly
+                self.plate_id = match.group(1) + 'star_' + match.group(2)
+                comment = 'Plate ID (edited by manager)'
+            # Also save it in the primary header, for future reference
+            self.add_header_item('PLATEID', self.plate_id, comment,
+                                 source=True)
         if self.plate_id == '':
             self.plate_id = 'none'
+        return
 
     def set_plate_id_short(self):
         """Save the shortened plate ID."""
@@ -1531,8 +1645,8 @@ class FITSFile:
         first_sections = self.plate_id[:finish]
         if self.plate_id == 'none':
             self.plate_id_short = 'none'
-        elif (re.match(r'Y[0-9]{2}S(A|B)R[0-9]+_P[0-9]+$', first_sections) or
-              re.match(r'A[0-9]+_P[0-9]+$', first_sections)):
+        elif (re.match(r'^Y[0-9]{2}S(A|B)R[0-9]+_P[0-9]+$', first_sections) or
+              re.match(r'^A[0-9]+_P[0-9]+$', first_sections)):
             self.plate_id_short = first_sections
         else:
             self.plate_id_short = self.plate_id
@@ -1543,7 +1657,16 @@ class FITSFile:
         if int(self.date) < 130101:
             # SAMIv1. Can only get the field number by cross-checking the
             # config file RA and Dec.
-            self.field_no = 2
+            for pilot_field in PILOT_FIELD_LIST:
+                if (self.cfg_coords.separation(
+                    coord.ICRSCoordinates(pilot_field['coords'])).arcsecs < 1.0
+                    and self.plate_id == pilot_field['plate_id']):
+                    self.field_no = pilot_field['field_no']
+                    break
+            else:
+                raise RuntimeError('Field is from pilot data but cannot find'
+                                   ' it in list of known pilot fields: ' + 
+                                   self.filename)
         else:
             # SAMIv2. The field number should be included in the filename of
             # the config file.
@@ -1563,9 +1686,9 @@ class FITSFile:
             # Pilot and commissioning data. No field ID in the plate ID, so
             # append one.
             self.field_id = self.plate_id + '_F' + str(self.field_no)
-        elif (re.match(r'Y[0-9]{2}S(A|B)R[0-9]+_P[0-9]+$', 
+        elif (re.match(r'^Y[0-9]{2}S(A|B)R[0-9]+_P[0-9]+$', 
                        self.plate_id_short) or
-              re.match(r'A[0-9]+_P[0-9]+$', 
+              re.match(r'^A[0-9]+_P[0-9]+$', 
                        self.plate_id_short)):
             # Main survey or early cluster data. Field ID is stored within the 
             # plate ID.
@@ -1578,7 +1701,7 @@ class FITSFile:
             else:
                 field_id = self.plate_id[start:finish]
             self.field_id = self.plate_id_short + '_' + field_id
-        elif re.match(r'A[0-9]+T[0-9]+_A[0-9]+T[0-9]+$', self.plate_id):
+        elif re.match(r'^A[0-9]+T[0-9]+_A[0-9]+T[0-9]+$', self.plate_id):
             # Cluster data. Field ID is one segment of the plate ID.
             start = 0
             for i in xrange(self.field_no - 1):
@@ -1596,18 +1719,20 @@ class FITSFile:
         
     def set_coords(self):
         """Save the RA/Dec and config RA/Dec."""
-        if self.ndf_class == 'MFOBJECT':
+        if self.ndf_class and self.ndf_class not in ['BIAS', 'DARK', 'LFLAT']:
             header = self.hdulist[self.fibres_extno].header
-            self.coords = \
-                coord.ICRSCoordinates(ra=header['CENRA'],
-                                      dec=header['CENDEC'],
-                                      unit=(units.radian, units.radian))
             self.cfg_coords = \
                 coord.ICRSCoordinates(ra=header['CFGCENRA'],
                                       dec=header['CFGCENDE'],
                                       unit=(units.radian, units.radian))
+            if self.ndf_class == 'MFOBJECT':
+                self.coords = \
+                    coord.ICRSCoordinates(ra=header['CENRA'],
+                                          dec=header['CENDEC'],
+                                          unit=(units.radian, units.radian))
+            else:
+                self.coords = None
         else:
-            self.coords = None
             self.cfg_coords = None
         return
     
@@ -1682,6 +1807,9 @@ class FITSFile:
     def update_name(self, name):
         """Change the object name assigned to this file."""
         if self.name != name:
+            if re.match(r'.*[\\\[\]*/?<>|;:&,.$ ].*', name):
+                raise ValueError(r'Invalid character in name; '
+                                 r'do not use any of []\/*?<>|;:&,.$ or space')
             # Update the FITS header
             self.add_header_item('MNGRNAME', name,
                                  'Object name set by SAMI manager')
@@ -1715,16 +1843,26 @@ class FITSFile:
                 self.make_reduced_link()
         return
 
-    def add_header_item(self, key, value, comment=None):
+    def add_header_item(self, key, value, comment=None, source=False):
         """Add a header item to the FITS file."""
         if comment is None:
             value_comment = value
         else:
             value_comment = (value, comment)
-        hdulist = pf.open(self.raw_path, 'update',
-                          do_not_scale_image_data=True)
-        hdulist[0].header[key] = value_comment
-        hdulist.close()
+        if source:
+            path = self.source_path
+        else:
+            path = self.raw_path
+        old_header = pf.getheader(path)
+        # Only update if necessary
+        if (key not in old_header or
+            old_header[key] != value or
+            type(old_header[key]) != type(value) or
+            (comment is not None and old_header.comments[key] != comment)):
+            hdulist = pf.open(path, 'update',
+                              do_not_scale_image_data=True)
+            hdulist[0].header[key] = value_comment
+            hdulist.close()
         return
 
 
