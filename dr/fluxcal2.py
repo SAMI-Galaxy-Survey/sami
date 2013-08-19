@@ -381,11 +381,11 @@ def refractive_index(wavelength, temperature=None, pressure=None,
         vapour_pressure = 8.
     # Convert wavelength from Angstroms to microns
     wl = wavelength * 1e-4
-    seaLevelDry = 1e-6 * ( 64.328 + ( 29498.1 / ( 146. - ( 1 / wl**2. ) ) )
-                           + 255.4 / ( 41. - ( 1. / wl**2. ) ) )
+    seaLevelDry = ( 64.328 + ( 29498.1 / ( 146. - ( 1 / wl**2. ) ) )
+                    + 255.4 / ( 41. - ( 1. / wl**2. ) ) )
     altitudeCorrection = ( 
         ( pressure * ( 1. + (1.049 - 0.0157*temperature ) * 1e-6 * pressure ) )
         / ( 720.883 * ( 1. + 0.003661 * temperature ) ) )
     vapourCorrection = ( ( 0.0624 - 0.000680 / wl**2. )
                          / ( 1. + 0.003661 * temperature ) ) * vapour_pressure
-    return seaLevelDry * altitudeCorrection * vapourCorrection + 1
+    return 1e-6 * (seaLevelDry * altitudeCorrection - vapourCorrection) + 1
