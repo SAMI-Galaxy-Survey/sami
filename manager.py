@@ -1,4 +1,67 @@
-"""Code for organising and reducing SAMI data."""
+"""Code for organising and reducing SAMI data.
+
+Instructions on how to use this module are given in the docstring for
+the  Manager class. The following describes some of the under-the-hood
+details.
+
+This module contains two classes: Manager and FITSFile. The Manager
+stores information about an observing run, including a list of all raw
+files. Each FITSFile object stores information about a particular raw
+file. Note that neither object stores whether or not a file has been
+reduced; this is checked on the fly when necessary.
+
+When a Manager object is initiated, it makes an empty list to store
+the raw files. It will then inspect given directories to find raw
+files, with names of like 01jan10001.fits. It will reject duplicate
+filenames. Each valid filename is used to initialise a FITSFile
+object, which is added to the Manager's file list. The file itself is
+also moved into a suitable location in the output directory structure.
+
+Each FITSFile object stores basic information about the file, such as
+the path to the raw file and to the reduced file. The plate and field
+IDs are determined automatically from the FITS headers. A check is
+made to see if the telescope was pointing at the field listed in the
+MORE.FIBRES_IFU extension. If not, the user is asked to give a name
+for the pointing, which will generally be the name of whatever object
+was being observed. This name is then added to an "extra" list in the
+Manager, so that subsequent observations at the same position will be
+automatically recognised.
+
+The Manager also keeps lists of the different dark frame exposure
+lengths (as  both string and float), as well as a list of directories
+that have been recently reduced, and hence should be visually checked.
+
+There are three different methods for calling 2dfdr in different
+modes:
+
+Manager.run_2dfdr_single calls 2dfdr via the aaorun functionality to
+reduce a single file. This is generally called from
+Manager.reduce_file, which first uses Manager.matchmaker to work out
+which calibration files should be used, and makes symbolic links to
+them in the target file's directory.
+
+Manager.run_2dfdr_auto calls 2dfdr in AutoScript mode and tells it to
+auto-reduce everything in a specified directory. This is used for
+reducing bias, dark and long-slit flat frames, which do not need
+individual calibrators specified.
+
+Manager.run_2dfdr_combine also uses AutoScript mode, this time to
+combine a given list of files. This is used for making combined bias,
+dark or long-slit flat frames.
+
+Functionality for flux calibration and cubing are provided via
+functions from other sami modules.
+
+As individual files are reduced, entries are added to the checklist of
+directories to visually inspect. There are some functions for loading
+up 2dfdr in the relevant directories, but the user must select and
+plot the individual files themself. This whole system is a bit clunky
+and needs overhauling.
+
+There are a few generators for useful items, most notably
+Manager.files. This iterates through all entries in the internal file
+list and yields those that satisfy a wide range of optional
+parameters. """
 
 import shutil
 import os
@@ -140,13 +203,15 @@ class Manager:
     you have all the bias, dark and lflat frames.
 
     When importing data, the manager will do its best to work out what the
-    telescope was pointing at in each frame. Sometimes it wont be able to
-    and will ask you for the object name to go with a particular file.
-    Depending on the file, you should give an actual object name - e.g.
-    HR7950 or NGC2701 - or a more general description - e.g. SNAFU or
-    blank_sky. It will also ask you which of these objects should be used
-    as spectrophotometric standards for flux calibration; simply enter y or
-    n as appropriate.
+    telescope was pointing at in each frame. Sometimes it wont be able to and
+    will ask you for the object name to go with a particular file. Depending on
+    the file, you should give an actual object name - e.g. HR7950 or NGC2701 -
+    or a more general description - e.g. SNAFU or blank_sky. If the telescope
+    was in fact pointing at the field specified by the configuration .csv file -
+    i.e. the survey field rather than some extra object - then enter main. It
+    will also ask you which of these objects should be used as
+    spectrophotometric standards for flux calibration; simply enter y or n as
+    appropriate.
 
     Reducing bias, dark and lflat frames
     ====================================
