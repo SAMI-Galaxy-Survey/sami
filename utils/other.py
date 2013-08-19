@@ -508,3 +508,30 @@ def find_nearest(arr, val):
     # Finds the index of the array element in arr nearest to val
     idx=(np.abs(arr-val)).argmin()
     return idx
+
+
+def replace_xsym_link(path):
+    """Replace an XSym type link with a proper POSIX symlink."""
+    # This could be sped up if only the first few lines were read in, but I
+    # (JTA) can't be bothered.
+    with open(path) as f:
+        contents = f.readlines()
+    if len(contents) != 5 or contents[0] != 'XSym\n':
+        # This wasn't an XSym link
+        raise ValueError('Not an XSym file: ' + path)
+    source = contents[-2][:-1]
+    os.remove(path)
+    os.symlink(source, path)
+    return
+
+def replace_all_xsym_link(directory='.'):
+    """Replace all XSym links in directory and its subdirectories."""
+    for dirname, subdirname_list, filename_list in os.walk(directory):
+        for filename in filename_list:
+            try:
+                replace_xsym_link(os.path.join(dirname, filename))
+            except (ValueError, IOError):
+                # This generally just means it wasn't an XSym link in the 
+                # first place
+                pass
+    return
