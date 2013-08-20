@@ -514,6 +514,8 @@ def dithered_cube_from_rss(ifu_list, sample_size=0.5, drop_factor=0.5, clip=True
                                           dar_corrector.zenith_distance, 
                                           latitude.degrees)
     
+    dar_corrector.print_setup()
+    
     # Load the wavelength solution for the datacubes. 
     #
     # TODO: This should change when the header keyword propagation is improved
@@ -556,9 +558,15 @@ def dithered_cube_from_rss(ifu_list, sample_size=0.5, drop_factor=0.5, clip=True
         var_rss_slice = var_all[:,l]
 
         # Determine differential atmospheric refraction correction for this slice
-        dar_r = dar_corrector.correction(wavelength_array[l])
+        dar_r = dar_corrector.correction(wavelength_array[l]) * 1000.0 / plate_scale 
+        # TODO: Need to change to arcsecs!
         dar_x = dar_r * np.cos(np.radians(parallactic_angle))
         dar_y = dar_r * np.sin(np.radians(parallactic_angle))
+
+        print( "DAR lambda: {:5.0f} r: {:5.2f}, x: {:5.2f}, y: {:5.2f}".format(wavelength_array[l],
+                                                                       dar_r * plate_scale/1000.0, 
+                                                                       dar_x * plate_scale/1000.0,
+                                                                       dar_y * plate_scale/1000.0))
 
         # Compute drizzle map for this wavelength slice.
         overlap_array, weight_grid_slice = overlap_maps.drizzle(xfibre_all + dar_x, yfibre_all + dar_y)

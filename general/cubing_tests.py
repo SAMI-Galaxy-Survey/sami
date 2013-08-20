@@ -15,10 +15,14 @@ import cProfile
 import timeit
 import datetime
 
+# Package imports
+import sami.samifitting as samifitting
+
 # Relative Imports
 from .. import utils
 from .cubing import *
 
+test_data_dir = '/Users/agreen/Research/sami_survey/data/april/sampling_test/10G1F2/'
 
 def dummy_ifu():
     """Returns a dummy IFU object which can have arbitrary data inserted."""
@@ -142,7 +146,56 @@ def hot_pixel_clipping(n_obs=7, n_hot=10,verbose=False):
             n_masked_expected,
             before - after))
         
+def dar_correction_test(verbose=False):
+    """DAR is working correctly
+    
+    This uses a few planes from real star images to ensure everything is working
+    in DAR without needing to do a whole 2048 slice cube.
+    
+    """
+    
+    # These must match the actual numbers used in the cubing code.
+    # @TODO: These should be passed to the cubing code to ensure consistency.
+    drop_size = 1.6
+    output_size = 0.5
+        
+    # Take every lambda_step slice from the observations to generate test data
+    lambda_step = 100
 
+    # First, we create a set of n_obs mock observations. 
+    ifu_list = [utils.IFU(test_data_dir + "12apr10036red.fits", 3, flag_name=False)]
+ 
+    ifu_list[0].data = ifu_list[0].data[:,100:2000:lambda_step]
+    ifu_list[0].var = ifu_list[0].var[:,100:2000:lambda_step]
+    ifu_list[0].lambda_range = ifu_list[0].lambda_range[100:2000:lambda_step]
+ 
+    # Run the test on the data
+    data_cube, var_cube, weight_cube, diagnostic_info = dithered_cube_from_rss(ifu_list,offsets=None)
+    
+    output_size = data_cube.shape
+    
+    # Create a set of x and y cooridnates for the array, with zero at the centre
+    [xvals, yvals] = np.mgrid[0:output_size[0],0:output_size[1]]
+    xvals -= (output_size[0] - 1)/2.0
+    yvals -= (output_size[1] - 1)/2.0
+    
+    # Compute the output centroid plane by plane:
+    for i_slice in xrange(output_size[2]):
+        
+        mask = np.isfinite(np.ravel(data_cube[:,:,i_slice]))
+        gf = samifitting.TwoDGaussFitter(
+                                         [np.nansum(data_cube[:,:,i_slice]),
+                                          0.0, 
+                                          0.0, 
+                                          5.0, 0.0],
+                                         (np.ravel(xvals))[mask],
+                                         (np.ravel(yvals))[mask],
+                                         (np.ravel(data_cube[:,:,i_slice]))[mask]
+                                         )
+        gf.fit()
+        
+        print("Residual Offset: ({0:.2}, {1:.2}), norm: {2:.2}".format(gf.p[1],gf.p[2],np.linalg.norm(gf.p[1:3]) ) )
+            
             
             
             

@@ -49,7 +49,7 @@ def adr_r(wavelength, zenith_distance, air_pres=700.0, temperature=0.0, water_pr
     
     Parameters
     ----------
-        wavelength: list of wavelengths to compute, units: microns (array-like)
+        wavelength: list of wavelengths to compute, units: angstroms (array-like)
         zenith_distance: secant of the zenith distance, or airmass (float)
         air_pres: air pressure (at ground level) at time of 
              observation (in units of mm of Hg)
@@ -62,7 +62,7 @@ def adr_r(wavelength, zenith_distance, air_pres=700.0, temperature=0.0, water_pr
         
     """
     
-    seczd = 1/numpy.cos(numpy.radians(zenith_distance))
+    seczd = 1.0/numpy.cos(numpy.radians(zenith_distance))
     
     nlam = adr_ntot(wavelength, air_pres, temperature, water_pres)
     tanz = (seczd**2 - 1.0)**0.5
@@ -105,15 +105,24 @@ class DARCorrector:
             self.water_pres = 10
             self.correction = self.correction_simple
             self.zenith_distance = 0
+            self.ref_wavelength = 5000.0
 
     def correction_none(self, wavelength):
         """Dummy function to return 0 (no correction) if DAR method is 'none'."""
         return 0
           
     def correction_simple(self,wavelength):
-        """DAR correction using simple theoretical model."""
-        return adr_r(wavelength, self.zenith_distance, self.air_pres, self.temperature, self.water_pres)
+        """DAR correction using simple theoretical model from wavelength in angstroms."""
+        
+        dar = adr_r(wavelength, self.zenith_distance, self.air_pres, self.temperature, self.water_pres)
+        dar_reference = adr_r(self.ref_wavelength, self.zenith_distance, self.air_pres, self.temperature, self.water_pres)
     
+        return dar - dar_reference
+        
+    def print_setup(self):
+        #print("Method: {}".format(self.method))
+        print("Air Pressure: {}, Water Pressure: {}, Temperature: {}".format(self.air_pres, self.water_pres, self.temperature))
+        print("Zenith Distance: {}, Reference Wavelength: {}".format(self.zenith_distance, self.ref_wavelength))
         
         
         
