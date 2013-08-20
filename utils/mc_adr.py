@@ -68,7 +68,7 @@ def adr_r(wavelength, zenith_distance, air_pres=700.0, temperature=0.0, water_pr
     tanz = (seczd**2 - 1.0)**0.5
     return 206265.0 * nlam * tanz
 
-def parallactic_angle(hour_angle, zenith_distance, latitude):
+def compute_parallactic_angle(hour_angle, zenith_distance, latitude):
     """
     Return parallactic angle in degrees for a given observing condition.
     

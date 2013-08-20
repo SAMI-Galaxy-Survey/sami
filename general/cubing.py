@@ -28,7 +28,7 @@ except:
 # Utils code.
 from .. import utils
 from .. import samifitting as fitting
-from ..utils.mc_adr import DARCorrector
+from ..utils.mc_adr import DARCorrector, compute_parallactic_angle
 
 # importing everything defined in the config file
 from ..config import *
@@ -492,14 +492,27 @@ def dithered_cube_from_rss(ifu_list, sample_size=0.5, drop_factor=0.5, clip=True
         diagnostic_info['n_pixels_sigma_clipped'] = []
            
     # Set up the differential atmospheric refraction correction:
-    dar_corrector = DARCorrector(method='none')
+    dar_corrector = DARCorrector(method='simple')
     
-    #dar_corrector.temperature = temperature
-    #dar_corrector.air_pres = air_pressure
-    #dar_corrector.water_pres = water_pressure
-    #dar_corrector.zenith_distance = zenith_distance
-    #dar_corrector.hour_angle = hour_angle
-    parallactic_angle = 0
+    dar_corrector.temperature = ifu_list[0].fibre_table_header['ATMTEMP'] 
+    dar_corrector.air_pres = ifu_list[0].fibre_table_header['ATMPRES'] * millibar_to_mmHg
+    #                     (factor converts from millibars to mm of Hg)
+    dar_corrector.water_pres = \
+        utils.saturated_partial_pressure_water(dar_corrector.air_pres, dar_corrector.temperature) * \
+        ifu_list[0].fibre_table_header['ATMRHUM']
+    
+    # TODO: This is the field ZD, not the target HA. Also, the mean is probably
+    # not the right computation to determine the best ZD for the correction.
+    dar_corrector.zenith_distance = \
+        (ifu_list[0].primary_header['ZDSTART'] + ifu_list[0].primary_header['ZDEND']) / 2
+ 
+    # TODO: This is the field HA, not the target HA.
+    dar_corrector.hour_angle = \
+        (ifu_list[0].primary_header['HASTART'] + ifu_list[0].primary_header['HAEND']) / 2
+    
+    parallactic_angle = compute_parallactic_angle(dar_corrector.hour_angle, 
+                                          dar_corrector.zenith_distance, 
+                                          latitude.degrees)
     
     # Load the wavelength solution for the datacubes. 
     #

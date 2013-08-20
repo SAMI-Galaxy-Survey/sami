@@ -20,3 +20,6 @@ declination_dome_dist=0.0982  # dome radii
 latitude=coords.Angle(-31.3275, unit=u.degree)
 latitude_radians=latitude.radians
 # ----------------------------------------------------------------------------------------
+
+# Pressure conversion factor from millibars to mm of Hg 
+millibar_to_mmHg = 0.750061683
