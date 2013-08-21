@@ -9,6 +9,7 @@ import itertools
 import os
 import sys
 import datetime
+import code
 
 # Cross-correlation function from scipy.signal (slow)
 from scipy.signal import correlate
@@ -187,33 +188,9 @@ def dithered_cubes_from_rss_files(inlist, sample_size=0.5, drop_factor=0.5, obje
             hdr=list1[0].header
     
             arm = ifu_list[0].spectrograph_arm
-                
-            # Create the wcs.
-            wcs_new=pw.WCS(naxis=3)
-            wcs_new.wcs.crpix = [1, 1, hdr['CRPIX1']]
-            print sample_size
-            #print str(sample_size)
-            wcs_new.wcs.cdelt = np.array([sample_size, sample_size, hdr['CDELT1']])
-            wcs_new.wcs.crval = [1, 1, hdr['CRVAL1']]
-            wcs_new.wcs.ctype = ["ARCSEC", "ARCSEC", hdr['CTYPE1']]
-            wcs_new.wcs.equinox = 2000
             
-            # Create a header
-            hdr_new=wcs_new.to_header()
-            
-            # Add the name to the header
-            hdr_new.update('NAME', name, 'Object ID')
-    
-            # Add the mercurial changeset ID to the header
-            hdr_new.update('HGCUBING', HG_CHANGESET, 'Hg changeset ID for cubing code')
-    
-            # Put the RSS files into the header
-            for num in xrange(len(files)):
-                #print files[num]
-                rss_key='HIERARCH RSS_FILE '+str(num+1)
-                rss_string='Input RSS file '+str(num+1)
-                hdr_new.update(rss_key, os.path.basename(files[num]), rss_string)
-            
+            hdr_new = create_primary_header(ifu_list,name,files,sample_size)
+
             # Create HDUs for each cube - note headers generated automatically for now.
             # Note - there is a 90-degree rotation in the cube, which I can't track down. I'm rolling the axes before
             # writing the FITS files to compensate.
@@ -242,6 +219,87 @@ def dithered_cubes_from_rss_files(inlist, sample_size=0.5, drop_factor=0.5, obje
             
     print("Time dithered_cubes_from_files wall time: {0}".format(datetime.datetime.now() - start_time))
 
+def create_primary_header(ifu_list,name,files,sample_size):
+    """Create a primary header to attach to each cube from the RSS file headers"""
+
+    hdr = ifu_list[0].primary_header
+    fbr_hdr = ifu_list[0].fibre_table_header
+
+    # Create the wcs.
+    wcs_new=pw.WCS(naxis=3)
+    wcs_new.wcs.crpix = [1, 1, hdr['CRPIX1']]
+    wcs_new.wcs.cdelt = np.array([sample_size, sample_size, hdr['CDELT1']])
+    wcs_new.wcs.crval = [1, 1, hdr['CRVAL1']]
+    wcs_new.wcs.ctype = ["ARCSEC", "ARCSEC", hdr['CTYPE1']]
+    wcs_new.wcs.equinox = 2000
+            
+    # Create a header
+    hdr_new=wcs_new.to_header()
+            
+    # Add the name to the header
+    hdr_new.update('NAME', name, 'Object ID')
+    # Need to implement a database specific-specific OBSTYPE keyword to indicate galaxies
+    # *NB* This is different to the OBSTYPE keyword already in the header below
+    
+    # Determine total exposure time and add to header
+    total_exptime = 0.
+    for ifu in ifu_list:
+        total_exptime+=ifu.primary_header['EXPOSED']
+    hdr_new.update('TOTALEXP',total_exptime,'Total exposure (seconds)')
+
+    # Add the mercurial changeset ID to the header
+    hdr_new.update('HGCUBING', HG_CHANGESET, 'Hg changeset ID for cubing code')
+    # Need to implement a global version number for the database
+    
+    # Put the RSS files into the header
+    for num in xrange(len(files)):
+        rss_key='HIERARCH RSS_FILE '+str(num+1)
+        rss_string='Input RSS file '+str(num+1)
+        hdr_new.update(rss_key, os.path.basename(files[num]), rss_string)
+
+    # Extract header keywords of interest from the metadata table, check for consistency
+    # then append to the main header
+
+    primary_header_keyword_list = ['DCT_DATE','DCT_VER','DETECXE','DETECXS','DETECYE','DETECYS',
+                                   'DETECTOR','XPIXSIZE','YPIXSIZE','METHOD','SPEED','READAMP','RO_GAIN',
+                                   'RO_NOISE','ORIGIN','TELESCOP','ALT_OBS','LAT_OBS','LONG_OBS',
+                                   'RCT_VER','RCT_DATE','RADECSYS','EQUINOX','INSTRUME','SPECTID',
+                                   'GRATID','GRATTILT','GRATLPMM','ORDER','TDFCTVER','TDFCTDAT','DICHROIC',
+                                   'OBSTYPE','TOPEND','AXIS','AXIS_X','AXIS_Y','TRACKING','TDFDRVER',
+                                   'HGCOORDS','COORDROT','COORDREV']
+
+    for keyword in primary_header_keyword_list:
+        val = []
+        for ifu in ifu_list: val.append(ifu.primary_header[keyword])
+        if len(set(val)) == 1: 
+            hdr_new.append(hdr.cards[keyword])
+        else:
+            print 'Non-unique value for keyword:',keyword
+
+    # Extract the couple of relevant keywords from the fibre table header and again
+    # check for consistency of keyword values
+
+    fibre_header_keyword_list = ['PLATEID','LABEL']
+
+    for keyword in fibre_header_keyword_list:
+        val = []
+        for ifu in ifu_list: val.append(ifu.fibre_table_header[keyword])
+        if len(set(val)) == 1:
+            hdr_new.append(ifu_list[0].fibre_table_header.cards[keyword])
+        else:
+            print 'Non-unique valie for keyword:',keyword
+
+    # Append HISTORY from the initial RSS file header, assuming HISTORY is
+    # common for all RSS frames.
+
+    hdr_new.append(hdr.cards['SCRUNCH'])
+    hist_ind = np.where(np.array(hdr.keys()) == 'HISTORY')[0]
+    for i in hist_ind: 
+        hdr_new.append(hdr.cards[i])
+
+    return hdr_new
+
+
 def create_metadata_table(ifu_list):
     """Build a FITS binary table HDU containing all the meta data from individual IFU objects."""
     
@@ -268,7 +326,8 @@ def create_metadata_table(ifu_list):
         primary_header_keywords.remove('EXTEND')
     for i in xrange(primary_header_keywords.count('SCRUNCH')):
         primary_header_keywords.remove('SCRUNCH')
-    
+   
+    print 'Something is working at least'
     
     # TODO: Test/check that all ifu's have the same keywords and error if not
 
@@ -288,25 +347,25 @@ def create_metadata_table(ifu_list):
                 format='L',
                 array=get_primary_header_values(keyword,np.bool)
                 )) 
-        if (isinstance(first_header[keyword],int)):
+        elif (isinstance(first_header[keyword],int)):
             columns.append(pf.Column(
                 name=keyword,
                 format='K',
                 array=get_primary_header_values(keyword,np.int)
                 )) # 64-bit integer
-        if (isinstance(first_header[keyword],str)):
+        elif (isinstance(first_header[keyword],str)):
             columns.append(pf.Column(
                 name=keyword,
                 format='128A',
                 array=get_primary_header_values(keyword,'|S128')                
                 )) # 128 character string
-        if (isinstance(first_header[keyword],float)):
+        elif (isinstance(first_header[keyword],float)):
             columns.append(pf.Column(
                 name=keyword,
                 format='E',
                 array=get_primary_header_values(keyword,np.float)
                 )) # single-precision float
-            
+
     del get_primary_header_values
     
     # TODO: Add columns for comments and history information.
@@ -317,7 +376,7 @@ def create_metadata_table(ifu_list):
     #
     #columns.append(pf.Column(name='COMMENTS', format='80PA(100)')) # Up to 100 80-character lines
     #columns.append(pf.Column(name='HISTORY', format='80PA(100)')) # Up to 100 80-character lines
-    
+   
     return pf.new_table(columns)
 
 def dithered_cube_from_rss(ifu_list, sample_size=0.5, drop_factor=0.5, clip=True, plot=True, offsets='fit'):
