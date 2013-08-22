@@ -1267,6 +1267,7 @@ class Manager:
         reduced_dir_list = []
         if dir_type is None:
             ndf_class = None
+            spectrophotometric = None
         else:
             ndf_class = {'bias': 'BIAS',
                          'dark': 'DARK',
@@ -1278,11 +1279,13 @@ class Manager:
                          'mfsky': 'MFSKY',
                          'mfobject': 'MFOBJECT',
                          'spectrophotometric': 'MFOBJECT'}[dir_type.lower()]
-        for fits in self.files(ndf_class=ndf_class, **kwargs):
-            if (dir_type.lower() == 'spectrophotometric' and
-                (fits.name == 'main' or 'ngc' in fits.name.lower())):
-                # This is a galaxy field, not a spectrophotometric standard
-                continue
+            if dir_type == 'spectrophotometric':
+                spectrophotometric = True
+            else:
+                spectrophotometric = False
+        for fits in self.files(ndf_class=ndf_class, 
+                               spectrophotometric=spectrophotometric, 
+                               **kwargs):
             if fits.reduced_dir not in reduced_dir_list:
                 reduced_dir_list.append(fits.reduced_dir)
                 yield fits.reduced_dir
