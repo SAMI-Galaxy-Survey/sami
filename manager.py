@@ -88,6 +88,8 @@ IDX_FILES_FAST = {'1': 'sami580V.idx',
                   '2': 'sami1000R.idx',
                   'ccd_1': 'sami580V.idx',
                   'ccd_2': 'sami1000R.idx'}
+IDX_FILES = {'fast': IDX_FILES_FAST,
+             'slow': IDX_FILES_SLOW}
 
 GRATLPMM = {'ccd_1': 582.0,
             'ccd_2': 1001.0}
@@ -392,6 +394,17 @@ class Manager:
 
     >>> mngr.update_name(mngr.files(name='LTT2197'), 'LTT2179')
 
+    Changing speed/accuracy of the reductions
+    =========================================
+
+    If you want to switch between fast and slow (rough vs accurate) reductions:
+
+    >>> mngr.change_speed()
+
+    Or to ensure you end up with a particular speed, specify 'fast' or 'slow':
+
+    >>> mngr.change_speed('slow')
+
     Reducing everything in one go
     =============================
 
@@ -412,9 +425,10 @@ class Manager:
 
     def __init__(self, root, copy_files=False, move_files=False, fast=False):
         if fast:
-            self.idx_files = IDX_FILES_FAST
+            self.speed = 'fast'
         else:
-            self.idx_files = IDX_FILES_SLOW
+            self.speed = 'slow'
+        self.idx_files = IDX_FILES[self.speed]
         self.gratlpmm = GRATLPMM
         self.root = root
         # Match objects within 1'
@@ -1607,6 +1621,19 @@ class Manager:
     def remove_dir_from_checklist_by_index(self, index):
         """Remove the specified directory from the plotting checklist."""
         del self.check_list[index]
+        return
+
+    def change_speed(self, speed=None):
+        """Switch between fast and slow reductions."""
+        if speed is None:
+            if self.speed == 'fast':
+                speed = 'slow'
+            else:
+                speed = 'fast'
+        if speed not in ('fast', 'slow'):
+            raise ValueError("Speed must be 'fast' or 'slow'.")
+        self.speed = speed
+        self.idx_files = IDX_FILES[self.speed]
         return
 
 
