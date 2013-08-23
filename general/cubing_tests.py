@@ -9,6 +9,7 @@ Individual tests described with each function.
 # Absolute Imports
 import numpy as np
 from numpy.random import standard_normal
+from scipy.special import erfc
 from random import randint
 import cProfile
 import timeit
@@ -54,8 +55,12 @@ def speed_test():
                     {},
                     filename='dithered_cube_from_rss.pstats')
     print("Wall time: ", (datetime.datetime.now() - start_time).seconds, " seconds")
+    
+    # The following lines produce some nice graphics if the user has gprof2dot.py 
+    ### print("Creating profile graphics: dithered_cube_from_rss.png")
+    ### os.system("gprof2dot.py -f pstats dithered_cube_from_rss.pstats |dot -Tpng -o dithered_cube_from_rss.png")
 
-def hot_pixel_clipping(n_obs=7, n_hot=10):
+def hot_pixel_clipping(n_obs=7, n_hot=10,verbose=False):
     """Test that hot pixels are clipped.
     
     This creates a small number of very hot pixels in otherwise almost uniform
@@ -66,6 +71,12 @@ def hot_pixel_clipping(n_obs=7, n_hot=10):
     # @TODO: These should be passed to the cubing code to ensure consistency.
     drop_size = 1.6
     output_size = 0.5
+    
+    pixel_ratio = 3.14 * ((drop_size + 1.2*output_size)/2)**2 / (output_size**2)
+    # This is the approximate number of output pixels each input pixel maps onto.
+    # NOTE: The factor or 1.2*output_size is empirically determined, but seems
+    # reasonable. The actual right answer will depend on the ratio
+    # drop_size/output_size
     
     lambda_size = 20
     # Number of wavelength slices
@@ -86,11 +97,17 @@ def hot_pixel_clipping(n_obs=7, n_hot=10):
     before = diagnostic_info['unmasked_pixels_before_sigma_clip']
     after = diagnostic_info['unmasked_pixels_after_sigma_clip']
 
-    if (before - after > 100) or (before - after < 0):
-        print("Failed test: hot_pixel_clipping 1")
-        print("The sigma clipping removed {0} pixels, should be near, but not less than, zero.".format(
-            before - after))
+    expected_rej = n_obs * np.asarray(ifu_list[0].data.shape).prod() * erfc(5.0/np.sqrt(2)) * pixel_ratio
 
+    if (before - after > expected_rej) or (before - after < 0):
+        print("Failed test: hot_pixel_clipping 1")
+        print("    The sigma clipping removed {0} pixels, expected {1}.".format(
+            before - after, expected_rej))
+    elif verbose:
+        print("Passed test: hot_pixel_clipping 1")
+        print("    The sigma clipping removed {0} pixels, expected {1}.".format(
+            before - after, expected_rej))
+        
 
     # Test 2:
     #
@@ -102,23 +119,29 @@ def hot_pixel_clipping(n_obs=7, n_hot=10):
             ifu_list[i].data[
                 randint(0,np.shape(ifu.data)[0] - 1), 
                 randint(0,np.shape(ifu.data)[1] - 1)] = 10000.0        
-    
+        
     data_cube, var_cube, weight_cube, diagnostic_info = dithered_cube_from_rss(ifu_list,offsets=None)
     
     before = diagnostic_info['unmasked_pixels_before_sigma_clip']
     after = diagnostic_info['unmasked_pixels_after_sigma_clip']
 
     n_masked_actual = before - after
-    n_masked_expected = n_obs * n_hot * 3.14 * ((drop_size + 1.2*output_size)/2)**2 / (output_size**2)
-    # NOTE: The factor or 1.2*output_size is empirically determined, but seems
-    # reasonable. The actual right answer will depend on the ratio
-    # drop_size/output_size
+    n_masked_expected = n_obs * n_hot * pixel_ratio + expected_rej
+    
+    
+
 
     if (np.abs(n_masked_actual - n_masked_expected) > 0.1*n_masked_expected):
         print("Failed test: hot_pixel_clipping 2")
         print("    Expected number of pixels clipped: {0}, actual number clipped: {1}".format(
             n_masked_expected,
             before - after))
+    elif verbose:
+        print("Passed test: hot_pixel_clipping 2")
+        print("    Expected number of pixels clipped: {0}, actual number clipped: {1}".format(
+            n_masked_expected,
+            before - after))
+        
 
             
             
