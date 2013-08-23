@@ -21,6 +21,8 @@ as free parameters too. Note, however, that the atmospheric parameters
 are completely degenerate with each other and with ZD.
 """
 
+import os
+
 import numpy as np
 from scipy.optimize import leastsq
 from scipy.ndimage.filters import median_filter
@@ -29,11 +31,15 @@ from scipy.stats.stats import nanmean
 from astropy import coordinates as coord
 from astropy import units
 from astropy.io import fits as pf
+from astropy import __version__ as astropy_version
 
 from .. import utils
 from ..utils.ifu import IFU
 
 HG_CHANGESET = utils.hg_changeset(__file__)
+
+STANDARD_CATALOGUES = ('./standards/ESO/ESOstandards.dat',
+                       './standards/Bessell/Bessellstandards.dat')
 
 REFERENCE_WAVELENGTH = 5000.0
 
@@ -60,12 +66,12 @@ def generate_subgrid(fibre_radius, n_inner=6, n_rings=10):
 XSUB, YSUB = generate_subgrid(FIBRE_RADIUS)
 N_SUB = len(XSUB)
 
-def read_chunked_data(path_list, probename, n_drop=None, n_chunk=None):
+def read_chunked_data(path_list, probenum, n_drop=None, n_chunk=None):
     """Read flux from a list of files, chunk it and combine."""
     if isinstance(path_list, str):
         path_list = [path_list]
     for i_file, path in enumerate(path_list):
-        ifu = IFU(path, probename, flag_name=False)
+        ifu = IFU(path, probenum, flag_name=False)
         data_i, variance_i, wavelength_i = chunk_data(ifu, n_drop=n_drop, 
                                                       n_chunk=n_chunk)
         if i_file == 0:
@@ -78,7 +84,12 @@ def read_chunked_data(path_list, probename, n_drop=None, n_chunk=None):
             wavelength = np.hstack((wavelength, wavelength_i))
     xfibre = ifu.xpos_rel
     yfibre = ifu.ypos_rel
-    return data, variance, wavelength, xfibre, yfibre
+    chunked_data = {'data': data,
+                    'variance': variance,
+                    'wavelength': wavelength,
+                    'xfibre': xfibre,
+                    'yfibre': yfibre}
+    return chunked_data
 
 def chunk_data(ifu, n_drop=None, n_chunk=None):
     """Condence a spectrum into a number of chunks."""
@@ -120,7 +131,7 @@ def moffat_normalised(parameters, xfibre, yfibre, simple=False):
                       np.outer(np.ones(N_SUB), xfibre))
         yfibre_sub = (np.outer(YSUB, np.ones(n_fibre)) + 
                       np.outer(np.ones(N_SUB), yfibre))
-        flux_sub = moffat_flux_slice(parameters, xfibre_sub, yfibre_sub, 
+        flux_sub = moffat_normalised(parameters, xfibre_sub, yfibre_sub, 
                                      simple=True)
         return np.mean(flux_sub, axis=0)
 
@@ -389,3 +400,79 @@ def refractive_index(wavelength, temperature=None, pressure=None,
     vapourCorrection = ( ( 0.0624 - 0.000680 / wl**2. )
                          / ( 1. + 0.003661 * temperature ) ) * vapour_pressure
     return 1e-6 * (seaLevelDry * altitudeCorrection - vapourCorrection) + 1
+
+def derive_transfer_function(path_list, max_sep_arcsec=30.0,
+                             catalogues=STANDARD_CATALOGUES,
+                             model_name='ref_centre_alpha_angle_circ'):
+    """Derive transfer function and save it in each FITS file."""
+    # First work out which star we're looking at, and which hexabundle it's in
+    star_match = match_standard_star(
+        path_list[0], max_sep_arcsec=max_sep_arcsec, catalogues=catalogues)
+    if star_match is None:
+        raise ValueError('No standard star found in the data.')
+    # Read the observed data, in chunks
+    chunked_data = read_chunked_data(path_list, star_match['probenum'])
+    # Fit the PSF
+    psf_parameters = fit_model_flux(
+        chunked_data['data'], 
+        chunked_data['variance'],
+        chunked_data['xfibre'],
+        chunked_data['yfibre'],
+        chunked_data['wavelength'],
+        model_name)
+    # Not what we actually want, but just leaving it in for a quick check.
+    return psf_parameters
+
+def match_standard_star(filename, max_sep_arcsec=30.0, 
+                        catalogues=STANDARD_CATALOGUES):
+    """Return details of the standard star that was observed in this file."""
+    fibre_table = pf.getdata(filename, 'FIBRES_IFU')
+    probenum_list = np.unique([fibre['PROBENUM'] for fibre in fibre_table
+                               if 'SKY' not in fibre['PROBENAME']])
+    for probenum in probenum_list:
+        this_probe = (fibre_table['PROBENUM'] == probenum)
+        ra = np.mean(fibre_table['FIB_MRA'][this_probe])
+        dec = np.mean(fibre_table['FIB_MDEC'][this_probe])
+        star_match = match_star_coordinates(
+            ra, dec, max_sep_arcsec=max_sep_arcsec, catalogues=catalogues)
+        if star_match is not None:
+            # Let's assume there will only ever be one match
+            star_match['probenum'] = probenum
+            return star_match
+    # Uh-oh, should have found a star by now. Return None and let the outer
+    # code deal with it.
+    return
+
+def match_star_coordinates(ra, dec, max_sep_arcsec=30.0, 
+                           catalogues=STANDARD_CATALOGUES):
+    """Return details of the star nearest to the supplied coordinates."""
+    for index_path in catalogues:
+        index = np.loadtxt(index_path, dtype='S')
+        for star in index:
+            RAstring = '%sh%sm%ss' % ( star[2], star[3], star[4] )
+            Decstring= '%sd%sm%ss' % ( star[5], star[6], star[7] )
+            coords_star = coord.ICRSCoordinates( RAstring, Decstring )
+            ra_star = coords_star.ra.degrees
+            dec_star= coords_star.dec.degrees
+            ### BUG IN ASTROPY.COORDINATES ###
+            if astropy_version == '0.2.0' and star[5] == '-' and dec_star > 0:
+                dec_star *= -1.0
+                print 'Upgrade your version of astropy!!!!'
+                print 'Version 0.2.0 has a major bug in coordinates!!!!'
+            sep = coord.angles.AngularSeparation(
+                ra, dec, ra_star, dec_star, units.degree).arcsecs
+            if sep < max_sep_arcsec:
+                star_match = {
+                    'path': os.path.join(os.path.dirname(index_path), star[0]),
+                    'name': star[1],
+                    'separation': sep
+                    }
+                return star_match
+    # No matching star found. Let outer code deal with it.
+    return
+
+
+
+
+
+
