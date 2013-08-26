@@ -320,8 +320,10 @@ def parameters_dict_to_array(parameters_dict, wavelength, model_name):
             alpha(wavelength, parameters_dict['alphay_ref']))
         parameters_array['beta'] = parameters_dict['beta']
         parameters_array['rho'] = parameters_dict['rho']
-        parameters_array['flux'] = parameters_dict['flux']
-        parameters_array['background'] = parameters_dict['background']
+        if len(parameters_dict['flux']) == len(parameters_array):
+            parameters_array['flux'] = parameters_dict['flux']
+        if len(parameters_dict['background']) == len(parameters_array):
+            parameters_array['background'] = parameters_dict['background']
     elif model_name == 'ref_centre_alpha_angle_circ':
         parameters_array['xcen'] = (
             parameters_dict['xcen_ref'] + 
@@ -337,8 +339,10 @@ def parameters_dict_to_array(parameters_dict, wavelength, model_name):
             alpha(wavelength, parameters_dict['alpha_ref']))
         parameters_array['beta'] = parameters_dict['beta']
         parameters_array['rho'] = np.zeros(len(wavelength))
-        parameters_array['flux'] = parameters_dict['flux']
-        parameters_array['background'] = parameters_dict['background']
+        if len(parameters_dict['flux']) == len(parameters_array):
+            parameters_array['flux'] = parameters_dict['flux']
+        if len(parameters_dict['background']) == len(parameters_array):
+            parameters_array['background'] = parameters_dict['background']
     elif model_name == 'ref_centre_alpha_angle_circ_atm':
         parameters_array['xcen'] = (
             parameters_dict['xcen_ref'] + 
@@ -360,8 +364,10 @@ def parameters_dict_to_array(parameters_dict, wavelength, model_name):
             alpha(wavelength, parameters_dict['alpha_ref']))
         parameters_array['beta'] = parameters_dict['beta']
         parameters_array['rho'] = np.zeros(len(wavelength))
-        parameters_array['flux'] = parameters_dict['flux']
-        parameters_array['background'] = parameters_dict['background']
+        if len(parameters_dict['flux']) == len(parameters_array):
+            parameters_array['flux'] = parameters_dict['flux']
+        if len(parameters_dict['background']) == len(parameters_array):
+            parameters_array['background'] = parameters_dict['background']
     else:
         raise KeyError('Unrecognised model name: ' + model_name)
     return parameters_array
@@ -410,6 +416,7 @@ def derive_transfer_function(path_list, max_sep_arcsec=30.0,
         path_list[0], max_sep_arcsec=max_sep_arcsec, catalogues=catalogues)
     if star_match is None:
         raise ValueError('No standard star found in the data.')
+    #################standard_data = read_standard_data(star_match)
     # Read the observed data, in chunks
     chunked_data = read_chunked_data(path_list, star_match['probenum'])
     # Fit the PSF
@@ -420,8 +427,13 @@ def derive_transfer_function(path_list, max_sep_arcsec=30.0,
         chunked_data['yfibre'],
         chunked_data['wavelength'],
         model_name)
-    # Not what we actually want, but just leaving it in for a quick check.
-    return psf_parameters
+    for path in path_list:
+        ifu = IFU(path, star_match['probenum'], flag_name=False)
+        observed_flux, observed_background = extract_total_flux(
+            ifu, psf_parameters, model_name)
+        save_extracted_flux(path, observed_flux, observed_background,
+                            star_match)
+    return
 
 def match_standard_star(filename, max_sep_arcsec=30.0, 
                         catalogues=STANDARD_CATALOGUES):
@@ -471,6 +483,77 @@ def match_star_coordinates(ra, dec, max_sep_arcsec=30.0,
     # No matching star found. Let outer code deal with it.
     return
 
+def extract_total_flux(ifu, psf_parameters, model_name):
+    """Extract the total flux, including light between fibres."""
+    psf_parameters_array = parameters_dict_to_array(
+        psf_parameters, ifu.lambda_range, model_name)
+    n_pixel = len(psf_parameters_array)
+    flux = np.zeros(n_pixel)
+    background = np.zeros(n_pixel)
+    for index, psf_parameters_slice in enumerate(psf_parameters_array):
+        data = ifu.data[:, index]
+        variance = ifu.var[:, index]
+        xpos = ifu.xpos_rel
+        ypos = ifu.ypos_rel
+        good_data = np.where(np.isfinite(data))[0]
+        # Require at least half the fibres to perform a fit
+        if len(good_data) > 30:
+            data = data[good_data]
+            variance = variance[good_data]
+            xpos = xpos[good_data]
+            ypos = ypos[good_data]
+            model = moffat_normalised(psf_parameters_slice, xpos, ypos)
+            args = (model, data, variance)
+            # Initial guess for flux and background
+            guess = [np.sum(data), 0.0]
+            flux_slice, background_slice = leastsq(
+                residual_slice, guess, args=args)[0]
+        else:
+            flux_slice = np.nan
+            background_slice = np.nan
+        flux[index] = flux_slice
+        background[index] = background_slice
+    return flux, background
+
+def residual_slice(flux_background, model, data, variance):
+    """Residual of the model flux in a single wavelength slice."""
+    flux, background = flux_background
+    # For now, ignoring the variance - it has too many 2dfdr-induced mistakes
+    return ((background + flux * model) - data)
+    #return ((background + flux * model) - data) / np.sqrt(variance)
+
+def save_extracted_flux(path, observed_flux, observed_background,
+                        star_match):
+    """Add the extracted flux to the specified FITS file."""
+    # Turn the data into a single array
+    data = np.vstack((observed_flux, observed_background))
+    # Make the new HDU
+    hdu_name = 'EXTRACTED_FLUX'
+    new_hdu = pf.ImageHDU(data, name=hdu_name)
+    # Add info to the header
+    header_item_list = [
+        ('PROBENUM', star_match['probenum'], 'Number of the probe containing '
+                                             'the star'),
+        ('STDNAME', star_match['name'], 'Name of standard star'),
+        ('STDFILE', star_match['path'], 'Filename of standard spectrum'),
+        ('STDOFF', star_match['separation'], 'Offset (arcsec) to standard '
+                                             'star coordinates'),
+        ('HGFLXCAL', HG_CHANGESET, 'Hg changeset ID for fluxcal code')]
+    for key, value, comment in header_item_list:
+        new_hdu.header[key] = (value, comment)
+    # Update the file
+    hdulist = pf.open(path, 'update', do_not_scale_image_data=True)
+    # Check if there's already an extracted flux, and delete if so
+    try:
+        existing_index = hdulist.index_of(hdu_name)
+    except KeyError:
+        pass
+    else:
+        del hdulist[existing_index]
+    hdulist.append(new_hdu)
+    hdulist.close()
+    del hdulist
+    return
 
 
 
