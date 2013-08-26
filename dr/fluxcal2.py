@@ -416,7 +416,7 @@ def derive_transfer_function(path_list, max_sep_arcsec=30.0,
         path_list[0], max_sep_arcsec=max_sep_arcsec, catalogues=catalogues)
     if star_match is None:
         raise ValueError('No standard star found in the data.')
-    #################standard_data = read_standard_data(star_match)
+    standard_data = read_standard_data(star_match)
     # Read the observed data, in chunks
     chunked_data = read_chunked_data(path_list, star_match['probenum'])
     # Fit the PSF
@@ -433,6 +433,13 @@ def derive_transfer_function(path_list, max_sep_arcsec=30.0,
             ifu, psf_parameters, model_name)
         save_extracted_flux(path, observed_flux, observed_background,
                             star_match)
+        transfer_function = take_ratio(
+            standard_data['flux'], 
+            standard_data['wavelength'], 
+            observed_flux, 
+            ifu.lambda_range)
+        save_transfer_function(path, transfer_function, 
+                               standard_data['wavelength'])
     return
 
 def match_standard_star(filename, max_sep_arcsec=30.0, 
@@ -554,6 +561,113 @@ def save_extracted_flux(path, observed_flux, observed_background,
     hdulist.close()
     del hdulist
     return
+
+def read_standard_data(star):
+    """Return the true wavelength and flux for a primary standard."""
+    # First check how many header rows there are
+    skiprows = 0
+    with open(star['path']) as f_spec:
+        finished = False
+        while not finished:
+            line = f_spec.readline()
+            try:
+                number = float(line.split()[0])
+            except ValueError:
+                skiprows += 1
+                continue
+            else:
+                finished = True
+    # Now actually read the data
+    star_data = np.loadtxt(star['path'], dtype='d', skiprows=skiprows)
+    wavelength = star_data[:, 0]
+    flux = star_data[:, 1]
+    standard_data = {'wavelength': wavelength,
+                     'flux': flux}
+    return standard_data
+
+def take_ratio(standard_flux, standard_wavelength, observed_flux, 
+               observed_wavelength):
+    """Return the ratio of two spectra, after rebinning."""
+    observed_flux_rebinned = rebin_flux(
+        standard_wavelength, observed_wavelength, observed_flux)
+    ratio = standard_flux / observed_flux
+    useful_indices = np.where(np.isfinite(ratio))[0]
+    useful_range = (useful_indices.min(), useful_indices.max())
+    ratio = ratio[useful_indices[0]:useful_indices[1]+1]
+    return ratio
+
+def rebin_flux(target_wavelength, source_wavelength, source_flux):
+    """Rebin a flux onto a new wavelength grid."""
+    targetwl = target_wavelength
+    originalwl = source_wavelength
+    originaldata = source_flux[1:-1]
+    # The following is copy-pasted from the original fluxcal.py
+    originalbinlimits = ( originalwl[ :-1 ] + originalwl[ 1: ] ) / 2.
+    okaytouse = np.isfinite( originaldata )
+
+    originalweight = np.where(okaytouse, 1., 0.)
+    originaldata = np.where(okaytouse, originaldata, 0.)
+
+    originalflux = originaldata * np.diff( originalbinlimits )
+    originalweight *= np.diff( originalbinlimits )
+
+    nowlsteps = len( targetwl )
+    rebinneddata   = np.zeros( nowlsteps )
+    rebinnedweight = np.zeros( nowlsteps )
+
+    binlimits = np.array( [ np.nan ] * (nowlsteps+1) )
+    binlimits[ 0 ] = targetwl[ 0 ]
+    binlimits[ 1:-1 ] = ( targetwl[ 1: ] + targetwl[ :-1 ] ) / 2.
+    binlimits[ -1 ] = targetwl[ -1 ]
+    binwidths = np.diff( binlimits )
+
+    origbinindex = np.interp( binlimits, originalbinlimits, 
+                              np.arange( originalbinlimits.shape[0] ),
+                              left=np.nan, right=np.nan )
+
+    fraccounted = np.zeros( originaldata.shape[0] )
+    # use fraccounted to check what fraction of each orig pixel is counted,
+    # and in this way check that flux is conserved.
+
+    maximumindex = np.max( np.where( np.isfinite( origbinindex ) ) )
+
+    for i, origindex in enumerate( origbinindex ):
+        if np.isfinite( origindex ) :
+            # deal with the lowest orig bin, which straddles the new lower limit
+            lowlimit = int( origindex )
+            lowfrac = 1. - ( origindex % 1 )
+            indices = np.array( [ lowlimit] )
+            weights = np.array( [ lowfrac ] )
+
+            # deal with the orig bins that fall entirely within the new bin
+            if np.isfinite( origbinindex[i+1] ):
+                intermediate = np.arange( int( origindex )+1, \
+                                      int(origbinindex[i+1]) )
+            else :
+                # XXX This is wrong: maximumindex is in the wrong scale
+                #intermediate = np.arange( int( origindex )+1, \
+                #                            maximumindex )
+                # This may also be wrong, but at least it doesn't crash
+                intermediate = np.arange(0)
+            indices = np.hstack( ( indices, intermediate ) )
+            weights = np.hstack( ( weights, np.ones( intermediate.shape ) ) )
+
+            # deal with the highest orig bin, which straddles the new upper limit
+            if np.isfinite( origbinindex[i+1] ):
+                upplimit = int( origbinindex[i+1] )
+                uppfrac = origbinindex[ i+1 ] % 1
+                indices = np.hstack( ( indices, np.array( [ upplimit ] ) ) )
+                weights = np.hstack( ( weights, np.array( [ uppfrac  ] ) ) )
+
+            fraccounted[ indices ] += weights
+            rebinneddata[ i ] = np.sum( weights * originalflux[ :, indices ] )
+            rebinnedweight[i ]= np.sum( weights * originalweight[:,indices ] )
+
+    # now go back from total flux in each bin to flux per unit wavelength
+    rebinneddata = rebinneddata / rebinnedweight 
+
+    return rebinneddata
+
 
 
 
