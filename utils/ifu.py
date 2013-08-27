@@ -124,5 +124,9 @@ class IFU:
         # Added for Iraklis, might need to check this.
         self.fibtab=fibre_table
 
+        # Object RA & DEC
+        self.obj_ra=table_new.field('GRP_MRA')
+        self.obj_dec=table_new.field('GRP_MDEC')
+
         # Cleanup to reduce memory footprint
         del hdulist
