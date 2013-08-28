@@ -920,6 +920,9 @@ class Manager:
                         # Still nothing. Raise an exception
                         raise MatchException('No matching tlmap found for ' +
                                              fits.filename)
+                    else:
+                        print ('Warning: No dome flat found for TLM. '
+                               'Using flap flat instead for '+fits.filename)
                 elif match_class == 'fflat':
                     # Try to find a suitable dome flat instead
                     filename_match = self.match_link(fits, 'fflat_dome')
@@ -927,6 +930,9 @@ class Manager:
                         # Still nothing. Raise an exception
                         raise MatchException('No matching fflat found for ' +
                                              fits.filename)
+                    else:
+                        print ('Warning: No flap flat found for flat fielding. '
+                               'Using dome flat instead for '+fits.filename)
                 else:
                     # Anything else missing is fatal
                     raise MatchException('No matching ' + match_class +
