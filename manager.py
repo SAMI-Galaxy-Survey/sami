@@ -1728,8 +1728,14 @@ class FITSFile:
                 self.plate_id = match.group(1) + 'star_' + match.group(2)
                 comment = 'Plate ID (edited by manager)'
             # Also save it in the primary header, for future reference
-            self.add_header_item('PLATEID', self.plate_id, comment,
-                                 source=True)
+            try:
+                self.add_header_item('PLATEID', self.plate_id, comment,
+                                     source=True)
+            except IOError:
+                # This probably means we don't have write access to the
+                # source file. Ideally we would still edit the copied file,
+                # but that doesn't actually exist yet.
+                pass
         if self.plate_id == '':
             self.plate_id = 'none'
         return
