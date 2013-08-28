@@ -1088,6 +1088,26 @@ class Manager:
                                'for '+fits.filename)
                         options.extend(['-THRUPUT', '0'])
                         continue
+                elif match_class == 'tlmap':
+                    # Try to find a suitable flap flat instead
+                    filename_match = self.match_link(fits, 'tlmap_flap')
+                    if filename_match is None:
+                        # Still nothing. Raise an exception
+                        raise MatchException('No matching tlmap found for ' +
+                                             fits.filename)
+                    else:
+                        print ('Warning: No dome flat found for TLM. '
+                               'Using flap flat instead for '+fits.filename)
+                elif match_class == 'fflat':
+                    # Try to find a suitable dome flat instead
+                    filename_match = self.match_link(fits, 'fflat_dome')
+                    if filename_match is None:
+                        # Still nothing. Raise an exception
+                        raise MatchException('No matching fflat found for ' +
+                                             fits.filename)
+                    else:
+                        print ('Warning: No flap flat found for flat fielding. '
+                               'Using dome flat instead for '+fits.filename)
                 else:
                     # Anything else missing is fatal
                     raise MatchException('No matching ' + match_class +
@@ -1221,7 +1241,7 @@ class Manager:
               min_exposure=None, max_exposure=None,
               reduced_dir=None, reduced=None, tlm_created=None,
               flux_calibrated=None, telluric_corrected=None,
-              spectrophotometric=None, name=None):
+              spectrophotometric=None, name=None, lamp=None):
         """Generator for FITS files that satisfy requirements."""
         for fits in self.file_list:
             if fits.ndf_class is None:
@@ -1263,7 +1283,8 @@ class Manager:
                  (hasattr(fits, 'spectrophotometric') and
                   (fits.spectrophotometric == spectrophotometric))) and
                 (name is None or 
-                 (fits.name is not None and fits.name in name))):
+                 (fits.name is not None and fits.name in name)) and
+                (lamp is None or fits.lamp == lamp)):
                 yield fits
         return
 
@@ -1385,6 +1406,7 @@ class Manager:
         flux_calibrated = None
         telluric_corrected = None
         spectrophotometric = None
+        lamp = None
         # Define some functions for figures of merit
         time_difference = lambda fits, fits_test: (
             abs(fits_test.epoch - fits.epoch))
@@ -1406,6 +1428,17 @@ class Manager:
             field_id = fits.field_id
             ccd = fits.ccd
             tlm_created = True
+            lamp = 'Dome'
+            fom = time_difference
+        elif match_class.lower() == 'tlmap_flap':
+            # Find a tramline map from a flap flat
+            ndf_class = 'MFFFF'
+            date = fits.date
+            plate_id = fits.plate_id
+            field_id = fits.field_id
+            ccd = fits.ccd
+            tlm_created = True
+            lamp = 'Flap'
             fom = time_difference
         elif match_class.lower() == 'wavel':
             # Find a reduced arc field
@@ -1424,6 +1457,17 @@ class Manager:
             field_id = fits.field_id
             ccd = fits.ccd
             reduced = True
+            lamp = 'Flap'
+            fom = time_difference
+        elif match_class.lower() == 'fflat_dome':
+            # Find a reduced dome fibre flat field
+            ndf_class = 'MFFFF'
+            date = fits.date
+            plate_id = fits.plate_id
+            field_id = fits.field_id
+            ccd = fits.ccd
+            reduced = True
+            lamp = 'Dome'
             fom = time_difference
         elif match_class.lower() == 'thput':
             # Find a reduced offset sky field
@@ -1498,6 +1542,7 @@ class Manager:
                 flux_calibrated=flux_calibrated,
                 telluric_corrected=telluric_corrected,
                 spectrophotometric=spectrophotometric,
+                lamp=lamp,
                 do_not_use=False,
                 ):
             test_fom = fom(fits, fits_test)
@@ -1671,6 +1716,7 @@ class FITSFile:
         self.set_ccd()
         self.set_exposure()
         self.set_epoch()
+        self.set_lamp()
         self.set_do_not_use()
         self.set_coords_flags()
         self.hdulist.close()
@@ -1862,6 +1908,22 @@ class FITSFile:
             self.epoch = self.hdulist[0].header['EPOCH']
         else:
             self.epoch = None
+        return
+
+    def set_lamp(self):
+        """Set which lamp was on, if any."""
+        if self.ndf_class == 'MFARC':
+            # This isn't guaranteed to work, but it's ok for our normal lamp
+            _object = self.hdulist[0].header['OBJECT']
+            self.lamp = _object[_object.rfind(' ')+1:]
+        elif self.ndf_class == 'MFFFF':
+            if self.exposure >= 17.5:
+                # Assume longer exposures are dome flats
+                self.lamp = 'Dome'
+            else:
+                self.lamp = 'Flap'
+        else:
+            self.lamp = None
         return
 
     def set_do_not_use(self):
