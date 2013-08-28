@@ -182,7 +182,7 @@ def dithered_cubes_from_rss_files(inlist,objects='all', clip=True, plot=True, wr
 
             
             # Equate Positional WCS
-            WCS_pos = WCS_position(ifu_list[0],flux_cube,name,plot,write)   
+            WCS_pos = WCS_position(ifu_list[0],flux_cube,name,"g",plot)   
             
             # First get some info from one of the headers.
             list1=pf.open(files[0])
@@ -813,7 +813,7 @@ class SAMIDrizzler:
 #   cube.
 #
 
-def WCS_position(myIFU,object_flux_cube,object_name,plot,write):
+def WCS_position(myIFU,object_flux_cube,object_name,band,plot,write=False):
     
     # Equate the WCS position information from a cross-correlation between a g-band SAMI cube and a g-band SDSS image.
     
@@ -836,11 +836,11 @@ def WCS_position(myIFU,object_flux_cube,object_name,plot,write):
     wave = CRVAL3a + CDELT3*np.arange(Nwave)
     
     # Get SDSS g-band throughput curve
-    if not os.path.isfile("sdss_g.dat"):
-        urllib.urlretrieve("http://www.sdss.org/dr3/instruments/imager/filters/g.dat", "sdss_g.dat")
+    if not os.path.isfile("sdss_"+str(band)+".dat"):
+        urllib.urlretrieve("http://www.sdss.org/dr3/instruments/imager/filters/"+str(band)+".dat", "sdss_"+str(band)+".dat")
     
     # and convolve with the SDSS throughput
-    sdss_g = ascii.read("SDSS_g.dat", quotechar="#", names=["wave", "pt_secz=1.3", "ext_secz=1.3", "ext_secz=0.0", "extinction"])
+    sdss_g = ascii.read("SDSS_"+str(band)+".dat", quotechar="#", names=["wave", "pt_secz=1.3", "ext_secz=1.3", "ext_secz=0.0", "extinction"])
     
     # re-grid g["wave"] -> wave
     thru_regrid = griddata(sdss_g["wave"], sdss_g["ext_secz=1.3"], wave, method="cubic", fill_value=0.0)
@@ -863,22 +863,24 @@ def WCS_position(myIFU,object_flux_cube,object_name,plot,write):
     xcube = len(cube_image[0])
     ycube = len(cube_image[1])
     cube_image_crop = cube_image[(len(cube_image[0])/2)-10:(len(cube_image[0])/2)+10,(len(cube_image[1])/2)-10:(len(cube_image[1])/2)+10]
+    cube_image_crop = sp.ndimage.zoom(cube_image_crop, 5, order=3)
     cube_image_crop_norm = (cube_image_crop - np.min(cube_image_crop))/np.max(cube_image_crop - np.min(cube_image_crop))
     
     # Check if the user supplied a red RSS file, throw exception.
     if np.array_equal(cube_image, tester):
-        raise SystemExit("All values are zero: please check if you might have input a RED spectrum!")
+        raise SystemExit("All values are zero: please provide the cube corresponding to the requested spectral band of the image!")
 
 ##########
     
     cube_size = np.around((size_of_grid*sample_size)/3600, decimals=6)
     
     # Get SDSS Image
-    if not os.path.isfile(str(object_name)+"_SDSS_g.fits"):
-        getSDSSimage(object_name=object_name, RA=object_RA, DEC=object_DEC, band="g", size=cube_size, number_of_pixels=size_of_grid)
+    if not os.path.isfile(str(object_name)+"_SDSS_"+str(band)+".fits"):
+        getSDSSimage(object_name=object_name, RA=object_RA, DEC=object_DEC, 
+                     band=str(band), size=cube_size, number_of_pixels=size_of_grid)
     
     # Open SDSS image and extract data & header information
-    image_file = pf.open(str(object_name)+"_SDSS_g.fits")
+    image_file = pf.open(str(object_name)+"_SDSS_"+str(band)+".fits")
     image_data = image_file['Primary'].data
     image_header = image_file['Primary'].header
     img_crval1 = float(image_header['CRVAL1']) #RA
@@ -895,7 +897,7 @@ def WCS_position(myIFU,object_flux_cube,object_name,plot,write):
 ##########
 
     # Cross-correlate normalised SAMI-cube g-band image and SDSS g-band image
-    crosscorr_image = sp.signal.correlate2d(cube_image_crop_norm, SDSS_image_crop_norm)
+    crosscorr_image = sp.signal.correlate2d(SDSS_image_crop_norm, cube_image_crop_norm)
 
     # 2D Gauss Fit the cross-correlated cropped image
     crosscorr_image_1d = np.ravel(crosscorr_image)
@@ -933,8 +935,8 @@ def WCS_position(myIFU,object_flux_cube,object_name,plot,write):
     y_shape = len(crosscorr_image[1])
     x_offset_pix = GF2d_xpos - x_shape/2
     y_offset_pix = GF2d_ypos - y_shape/2
-    x_offset_arcsec = -x_offset_pix * sample_size
-    y_offset_arcsec = y_offset_pix * sample_size
+    x_offset_arcsec = -x_offset_pix * sample_size/5
+    y_offset_arcsec = y_offset_pix * sample_size/5
     x_offset_degree = ((x_offset_arcsec/3600)/24)*360
     y_offset_degree = (y_offset_arcsec/3600)
 
@@ -961,7 +963,7 @@ def WCS_position(myIFU,object_flux_cube,object_name,plot,write):
         py.imshow(cube_image,cmap="pink")
         py.setp(ax.get_xticklabels(), visible=False)
         py.setp(ax.get_yticklabels(), visible=False)
-        py.title("SAMI Cube g-Band Image", fontsize=11)
+        py.title("SAMI Cube "+str(band)+"-Band Image", fontsize=11)
         py.xlabel("<--- 25 arcsec --->", fontsize=11)
         py.ylabel("<--- 25 arcsec --->", fontsize=11)
     
@@ -971,7 +973,7 @@ def WCS_position(myIFU,object_flux_cube,object_name,plot,write):
         py.imshow(SDSS_image,cmap="pink")
         py.setp(ax.get_xticklabels(), visible=False)
         py.setp(ax.get_yticklabels(), visible=False)
-        py.title("SDSS g-Band Image", fontsize=11)
+        py.title("SDSS "+str(band)+"-Band Image", fontsize=11)
         py.xlabel("<--- 25 arcsec --->", fontsize=11)
         py.ylabel("<--- 25 arcsec --->", fontsize=11)
     
@@ -981,7 +983,7 @@ def WCS_position(myIFU,object_flux_cube,object_name,plot,write):
         py.imshow(cube_image_crop,cmap="pink")
         py.setp(ax.get_xticklabels(), visible=False)
         py.setp(ax.get_yticklabels(), visible=False)
-        py.title("SAMI cube cropped g-Band Image", fontsize=11)
+        py.title("SAMI cube cropped "+str(band)+"-Band Image", fontsize=11)
         py.xlabel("<--- 10 arcsec --->", fontsize=11)
         py.ylabel("<--- 10 arcsec --->", fontsize=11)
     
@@ -991,7 +993,7 @@ def WCS_position(myIFU,object_flux_cube,object_name,plot,write):
         py.imshow(SDSS_image_crop,cmap="pink")
         py.setp(ax.get_xticklabels(), visible=False)
         py.setp(ax.get_yticklabels(), visible=False)
-        py.title("SDSS cropped g-Band Image", fontsize=11)
+        py.title("SDSS cropped "+str(band)+"-Band Image", fontsize=11)
         py.xlabel("<--- 10 arcsec --->", fontsize=11)
         py.ylabel("<--- 10 arcsec --->", fontsize=11)
     
@@ -1015,6 +1017,9 @@ def WCS_position(myIFU,object_flux_cube,object_name,plot,write):
 
         py.ion()
 
+    # Remove temporary files
+    os.remove("sdss_"+str(band)+".dat")
+    os.remove(str(object_name)+"_SDSS_"+str(band)+".fits")
     
     return WCS_pos
 
@@ -1038,20 +1043,23 @@ def WCS_position(myIFU,object_flux_cube,object_name,plot,write):
 #   url_show - this is a function variable if the user wants the url printed to terminal
 #
 
-def getSDSSimage(object_name="unknown", RA=0, DEC=0, band="g", size=0.006944, number_of_pixels=50, projection="Tan", url_show="False"):
+def getSDSSimage(object_name="unknown", RA=0, DEC=0, band="g", size=0.006944, 
+                 number_of_pixels=50, projection="Tan", url_show="False"):
         
     # Construct URL
     RA = str(RA).split(".")
     DEC = str(DEC).split(".")
     size = str(size).split(".")
     
-    URL = "http://skyview.gsfc.nasa.gov//cgi-bin/pskcall?position="+str(RA[0])+"%2e"+str(RA[1])+"%2c"+str(DEC[0])+"%2e"+str(DEC[1])+"&Survey=SDSSdr7"+str(band)+"&size="+str(size[0])+"%2e"+str(size[1])+"&pixels="+str(number_of_pixels)+"&proj="+str(projection)
+    URL = "http://skyview.gsfc.nasa.gov//cgi-bin/pskcall?position="+(str(RA[0])+"%2e"+str(RA[1])+"%2c"+str(DEC[0])+"%2e"+str(DEC[1])+
+        "&Survey=SDSSdr7"+str(band)+"&size="+str(size[0])+"%2e"+str(size[1])+"&pixels="+str(number_of_pixels)+"&proj="+str(projection))
     
     # Get SDSS image
     urllib.urlretrieve(str(URL), str(object_name)+"_SDSS_"+str(band)+".fits")
     
     if url_show=="True":
-        print "SDSS "+str(band)+"-band image of object "+str(object_name)+" has finished downloading to the working directory with the file name: "+str(object_name)+"_SDSS_"+str(band)+".fits"
+        print ("SDSS "+str(band)+"-band image of object "+str(object_name)+" has finished downloading to the working directory with the file name: "
+               +str(object_name)+"_SDSS_"+str(band)+".fits")
         
         print "The URL for this object is: ", URL
 
