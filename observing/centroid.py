@@ -128,7 +128,7 @@ def centroid(infile, ifus='all', savefile=True, plot=True):
     if plot==True:
         # Create the figure
         f0=py.figure()
-        f1=py.figure() # Add a figure for the sky coords plots.
+        #f1=py.figure() # Add a figure for the sky coords plots.
 
     # Open the output file for writing
     if savefile:
@@ -172,35 +172,14 @@ def centroid(infile, ifus='all', savefile=True, plot=True):
         # Expand out the returned fitted values.
         amplitude_sky, xout_sky, yout_sky, sig_sky, bias_sky=p_sky
         amplitude_mic, xout_mic, yout_mic, sig_mic, bias_mic=p_mic
-
-        # Expand out the returned fitted values.
-        #amplitude_sky_corr, xout_sky_corr, yout_sky_corr, sig_sky_corr, bias_sky_corr=p_sky_corr
-        #amplitude_mic_corr, xout_mic_corr, yout_mic_corr, sig_mic_corr, bias_mic_corr=p_mic_corr
-        
-        #print p_sky
-
-        #print
-        #print np.where(ifu_data.n==1)
-        #print
-
-        #print ifu_data.xpos[np.sum(np.where(ifu_data.n==1))]
-        #print ifu_data.ypos[np.sum(np.where(ifu_data.n==1))]
         
         # Find offsets in arcseconds using both methods
         x_off=3600*xout_sky # Note - no need to subract the central fibre as that was done before the fit.
         y_off=3600*yout_sky 
 
-
-        #print "Offsets", xout_sky*3600, x_off
-
-        #xm_off=-1*(xout_mic)*plate_scale/1000 # -x_microns[np.where(ifu_data.n==1)]
-        #ym_off=(yout_mic)*plate_scale/1000 # -y_microns[np.where(ifu_data.n==1)]
-
         # Use the micron values to calculate the offsets...
         centroid_microns_converted=utils.plate2sky(xout_mic, yout_mic)
-        #hexa_centre_microns_converted=utils.plate2sky(ifu_data.x_microns[np.where(ifu_data.n==1)][0],
-        #                                              ifu_data.y_microns[np.where(ifu_data.n==1)][0])
-
+        
         # Subtract the star postion from the hexabundle centre position
         x_off_conv=-1*(centroid_microns_converted[0]) # plate2sky keeps micron sign convention
         y_off_conv=centroid_microns_converted[1]
@@ -209,23 +188,12 @@ def centroid(infile, ifus='all', savefile=True, plot=True):
         x_w=sig_sky*3600.0
         xm_w=sig_mic*15.22/1000.0
 
-        # For the corrected values
-        #x_w_corr=sig_sky_corr*3600.0
-        #xm_w_corr=sig_mic_corr*15.22/1000.0
-
         # FWHM (a measure of seeing)
         fwhm=x_w*2.35
         fwhm_arr.append(fwhm)
 
         fwhm_conv=xm_w*2.35
         fwhm_conv_arr.append(fwhm_conv)
-
-        # Corrected
-        #fwhm_corr=x_w_corr*2.35
-        #fwhm_conv_corr=xm_w_corr*2.35
-        
-        # Compare the offsets and widths. Do something with these?!
-        #print "Differences (x,y,width)", np.abs(x_off-xm_off), np.abs(y_off-ym_off), np.abs(x_w-xm_w)
 
         #print "FWHM from four techniques:", fwhm, fwhm_corr, fwhm_conv, fwhm_conv_corr
 
@@ -236,18 +204,19 @@ def centroid(infile, ifus='all', savefile=True, plot=True):
         if plot==True:
             
             # The limits for the axes (plotting in microns).
-            xm_lower=np.min(ifu_data.x_microns)-100
-            xm_upper=np.max(ifu_data.x_microns)+100
+            xm_lower=np.min(x_microns)-100
+            xm_upper=np.max(x_microns)+100
             
-            ym_lower=np.min(ifu_data.y_microns)-100
-            ym_upper=np.max(ifu_data.y_microns)+100
+            ym_lower=np.min(y_microns)-100
+            ym_upper=np.max(y_microns)+100
 
+            # Debugging.
             # The limits for the axes (plotting in sky coords).
-            xs_lower=np.min(x_degrees)-0.001
-            xs_upper=np.max(x_degrees)+0.001
+            #xs_lower=np.min(x_degrees)-0.001
+            #xs_upper=np.max(x_degrees)+0.001
             
-            ys_lower=np.min(y_degrees)-0.001
-            ys_upper=np.max(y_degrees)+0.001
+            #ys_lower=np.min(y_degrees)-0.001
+            #ys_upper=np.max(y_degrees)+0.001
 
             #print np.min(ifu_data.xpos), np.max(ifu_data.xpos)
             #print np.min(ifu_data.ypos), np.max(ifu_data.ypos)
@@ -256,7 +225,7 @@ def centroid(infile, ifus='all', savefile=True, plot=True):
             ax0=f0.add_subplot(r,c,i+1, xlim=(xm_lower, xm_upper), ylim=(ym_lower, ym_upper), aspect='equal')
 
             # For sky co-ords.
-            ax1=f1.add_subplot(r,c,i+1, xlim=(xs_lower, xs_upper), ylim=(ys_lower, ys_upper), aspect='equal')
+            #ax1=f1.add_subplot(r,c,i+1, xlim=(xs_lower, xs_upper), ylim=(ys_lower, ys_upper), aspect='equal')
             
             data_norm=data_mic/np.nanmax(data_mic)
             mycolormap=py.get_cmap('YlGnBu_r')
@@ -273,7 +242,7 @@ def centroid(infile, ifus='all', savefile=True, plot=True):
 
             # Add the model fit as contors.
             con0=ax0.contour(xlin_mic, ylin_mic, np.transpose(model_mic), origin='lower')
-            con1=ax1.contour(xlin_sky, ylin_sky, np.transpose(model_sky), origin='lower')
+            #con1=ax1.contour(xlin_sky, ylin_sky, np.transpose(model_sky), origin='lower')
 
             # Title and get rid of ticks.
             title_string=string.join(['Probe ', str(ifu_data.ifu)])
@@ -282,17 +251,17 @@ def centroid(infile, ifus='all', savefile=True, plot=True):
             py.setp(ax0.get_xticklabels(), visible=False)
             py.setp(ax0.get_yticklabels(), visible=False)
 
-
-            for xval, yval, dataval in itertools.izip(x_degrees, y_degrees, data_norm):
+            # Needed in future for debugging...
+            #for xval, yval, dataval in itertools.izip(x_degrees, y_degrees, data_norm):
 
                 # Make and add the fibre patch to the axes.
-                fibre_sky=Circle(xy=(xval,yval), radius=2.22e-4) # 52.5
-                ax1.add_artist(fibre_sky)
+                #fibre_sky=Circle(xy=(xval,yval), radius=2.22e-4) # 52.5
+                #ax1.add_artist(fibre_sky)
 
-                fibre_sky.set_facecolor(mycolormap(dataval))
+                #fibre_sky.set_facecolor(mycolormap(dataval))
 
-            py.setp(ax1.get_xticklabels(), visible=False)
-            py.setp(ax1.get_yticklabels(), visible=False)
+            #py.setp(ax1.get_xticklabels(), visible=False)
+            #py.setp(ax1.get_yticklabels(), visible=False)
         
         # -------------------------------------------------------
         # Write the results to file
@@ -347,11 +316,11 @@ def focus(inlist, ifu):
     
     if ifu in all:
 
-         print
-         print "--------------------------------------------------------------------------"
-         print "I am running the focus script on probe", ifu, "for", n, "files."
-         print "--------------------------------------------------------------------------"
-         print
+        print
+        print "--------------------------------------------------------------------------"
+        print "I am running the focus script on probe", ifu, "for", n, "files."
+        print "--------------------------------------------------------------------------"
+        print
 
     else:
         print
@@ -434,9 +403,6 @@ def focus(inlist, ifu):
         # FWHM (a measure of seeing)
         fwhm=x_w*2.35
         fwhm_values[i]=fwhm
-
-        # Make a figure with the fits displayed
-        #ax0=f0.add_subplot(r,c,i+1)
 
         # The limits for the axes (plotting in microns).
         xm_lower=np.min(x_microns)-100
