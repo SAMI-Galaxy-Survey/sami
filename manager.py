@@ -1046,7 +1046,7 @@ class Manager:
               min_exposure=None, max_exposure=None,
               reduced_dir=None, reduced=None, tlm_created=None,
               flux_calibrated=None, telluric_corrected=None,
-              spectrophotometric=None, name=None):
+              spectrophotometric=None, name=None, lamp=None):
         """Generator for FITS files that satisfy requirements."""
         for fits in self.file_list:
             if fits.ndf_class is None:
@@ -1088,7 +1088,8 @@ class Manager:
                  (hasattr(fits, 'spectrophotometric') and
                   (fits.spectrophotometric == spectrophotometric))) and
                 (name is None or 
-                 (fits.name is not None and fits.name in name))):
+                 (fits.name is not None and fits.name in name)) and
+                (lamp is None or fits.lamp == lamp)):
                 yield fits
         return
 
@@ -1478,6 +1479,7 @@ class FITSFile:
         self.set_coords()
         self.set_exposure()
         self.set_epoch()
+        self.set_lamp()
         self.set_do_not_use()
         self.set_coords_flags()
         self.hdulist.close()
@@ -1604,6 +1606,22 @@ class FITSFile:
             self.epoch = self.hdulist[0].header['EPOCH']
         else:
             self.epoch = None
+        return
+
+    def set_lamp(self):
+        """Set which lamp was on, if any."""
+        if self.ndf_class == 'MFARC':
+            # This isn't guaranteed to work, but it's ok for our normal lamp
+            _object = self.hdulist[0].header['OBJECT']
+            self.lamp = _object[_object.rfind(' ')+1:]
+        elif self.ndf_class == 'MFFFF':
+            if self.exposure >= 17.5:
+                # Assume longer exposures are dome flats
+                self.lamp = 'Dome'
+            else:
+                self.lamp = 'Flap'
+        else:
+            self.lamp = None
         return
 
     def set_do_not_use(self):
