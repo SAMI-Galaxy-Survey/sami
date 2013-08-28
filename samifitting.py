@@ -273,12 +273,12 @@ class TwoDGaussFitter:
 
     def errfunc(self, p, x, y, z, weights):
         # if width < 0 return input
-        if p[3] < 0. or p[4] < 0. or p[0] < 0.:
+        #if p[3] < 0. or p[4] < 0. or p[0] < 0.: # This isn't valid for the circular case!
             # if we get negative sigma values then penalise massively because
             # that is silly.
-            return 1e99
-        else:
-            return weights*(self.fitfunc(p, x, y) - z)
+            #return 1e99
+        #else:
+        return weights*(self.fitfunc(p, x, y) - z)
 
     def fit(self):
 

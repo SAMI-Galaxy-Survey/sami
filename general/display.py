@@ -217,7 +217,7 @@ def display_list(inlist, ifu, log=True):
         py.title(subtitle_string, fontsize=11)
 
     # Title for the plot - the probe number.
-    title_string=string.join(['Probe ', str(ifu[0])])
+    title_string=string.join(['Probe ', str(ifu)])
     fig.suptitle(title_string)
 
 def summed_spectrum(infile, ifu, overplot=False):
