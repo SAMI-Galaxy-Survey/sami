@@ -25,7 +25,7 @@ import os
 
 import numpy as np
 from scipy.optimize import leastsq
-from scipy.ndimage.filters import median_filter
+from scipy.ndimage.filters import median_filter, gaussian_filter1d
 from scipy.stats.stats import nanmean
 
 from astropy import coordinates as coord
@@ -586,15 +586,44 @@ def read_standard_data(star):
     return standard_data
 
 def take_ratio(standard_flux, standard_wavelength, observed_flux, 
-               observed_wavelength):
+               observed_wavelength, smooth=True):
     """Return the ratio of two spectra, after rebinning."""
     observed_flux_rebinned = rebin_flux(
         standard_wavelength, observed_wavelength, observed_flux)
-    ratio = standard_flux / observed_flux
-    useful_indices = np.where(np.isfinite(ratio))[0]
-    useful_range = (useful_indices.min(), useful_indices.max())
-    ratio = ratio[useful_indices[0]:useful_indices[1]+1]
+    ratio = standard_flux / observed_flux_rebinned
+    if smooth:
+        ratio = smooth_ratio(ratio)
     return ratio
+
+def smooth_ratio(ratio, width=10.0):
+    """Smooth a ratio (or anything else, really). Uses Gaussian kernel."""
+    # Get best behaviour at edges if done in terms of transmission, rather
+    # than transfer function
+    inverse = 1.0 / ratio
+    # Trim NaNs and infs from the ends (not any in the middle)
+    useful = np.where(np.isfinite(inverse))[0]
+    inverse_cut = inverse[useful[0]:useful[-1]+1]
+    good = np.isfinite(inverse_cut)
+    inverse_cut[~good] = np.interp(np.where(~good)[0], np.where(good)[0], 
+                                   inverse_cut[good])
+    # Extend the inverse ratio with a mirrored version. Not sure why this
+    # can't be done in gaussian_filter1d.
+    extra = int(np.round(3.0 * width))
+    inverse_extended = np.hstack(
+        (np.zeros(extra), inverse_cut, np.zeros(extra)))
+    inverse_extended[:extra] = 2*inverse_cut[0] - inverse_cut[extra+1:1:-1]
+    inverse_extended[-1*extra:] = (
+        2*inverse_cut[-1] - inverse_cut[-1:-1*(extra+1):-1])
+    # Do the actual smoothing
+    inverse_smoothed = gaussian_filter1d(inverse_extended, width, 
+                                         mode='nearest')
+    # Cut off the extras
+    inverse_smoothed = inverse_smoothed[extra:-1*extra]
+    # Insert back into the previous array
+    inverse[useful[0]:useful[-1]+1] = inverse_smoothed
+    # Undo the inversion
+    smoothed = 1.0 / inverse
+    return smoothed
 
 def rebin_flux(target_wavelength, source_wavelength, source_flux):
     """Rebin a flux onto a new wavelength grid."""
