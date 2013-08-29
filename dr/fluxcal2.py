@@ -438,8 +438,7 @@ def derive_transfer_function(path_list, max_sep_arcsec=30.0,
             standard_data['wavelength'], 
             observed_flux, 
             ifu.lambda_range)
-        save_transfer_function(path, transfer_function, 
-                               standard_data['wavelength'])
+        save_transfer_function(path, transfer_function)
     return
 
 def match_standard_star(filename, max_sep_arcsec=30.0, 
@@ -535,7 +534,7 @@ def save_extracted_flux(path, observed_flux, observed_background,
     # Turn the data into a single array
     data = np.vstack((observed_flux, observed_background))
     # Make the new HDU
-    hdu_name = 'EXTRACTED_FLUX'
+    hdu_name = 'FLUX_CALIBRATION'
     new_hdu = pf.ImageHDU(data, name=hdu_name)
     # Add info to the header
     header_item_list = [
@@ -560,6 +559,23 @@ def save_extracted_flux(path, observed_flux, observed_background,
     hdulist.append(new_hdu)
     hdulist.close()
     del hdulist
+    return
+
+def save_transfer_function(path, transfer_function):
+    """Add the transfer function to a pre-existing FLUX_CALIBRATION HDU."""
+    # Open the file to update
+    hdulist = pf.open(path, 'update', do_not_scale_image_data=True)
+    hdu = hdulist['FLUX_CALIBRATION']
+    data = hdu.data
+    if len(data) == 2:
+        # No previous transfer function saved; append it to the data
+        data = np.vstack((data, transfer_function))
+    elif len(data) == 3:
+        # Previous transfer function to overwrite
+        data[2, :] = transfer_function
+    # Save the data back into the FITS file
+    hdu.data = data
+    hdulist.close()
     return
 
 def read_standard_data(star):
@@ -588,11 +604,14 @@ def read_standard_data(star):
 def take_ratio(standard_flux, standard_wavelength, observed_flux, 
                observed_wavelength, smooth=True):
     """Return the ratio of two spectra, after rebinning."""
+    # Rebin the observed spectrum onto the (coarser) scale of the standard
     observed_flux_rebinned = rebin_flux(
         standard_wavelength, observed_wavelength, observed_flux)
     ratio = standard_flux / observed_flux_rebinned
     if smooth:
         ratio = smooth_ratio(ratio)
+    # Put the ratio back onto the observed wavelength scale
+    ratio = np.interp(observed_wavelength, standard_wavelength, ratio)
     return ratio
 
 def smooth_ratio(ratio, width=10.0):
