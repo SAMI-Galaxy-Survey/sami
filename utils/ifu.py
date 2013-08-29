@@ -33,6 +33,9 @@ class IFU:
 
         self.gratid=primary_header['GRATID']
         self.gain=primary_header['RO_GAIN']
+
+        self.zdstart=primary_header['ZDSTART']
+        self.zdend=primary_header['ZDEND']
         
         # Wavelength range
         x=np.arange(self.naxis1)+1

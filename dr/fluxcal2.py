@@ -40,6 +40,7 @@ HG_CHANGESET = utils.hg_changeset(__file__)
 
 STANDARD_CATALOGUES = ('./standards/ESO/ESOstandards.dat',
                        './standards/Bessell/Bessellstandards.dat')
+SSO_EXTINCTION_TABLE = './standards/extinsso.tab'
 
 REFERENCE_WAVELENGTH = 5000.0
 
@@ -72,6 +73,7 @@ def read_chunked_data(path_list, probenum, n_drop=None, n_chunk=None):
         path_list = [path_list]
     for i_file, path in enumerate(path_list):
         ifu = IFU(path, probenum, flag_name=False)
+        remove_atmosphere(ifu)
         data_i, variance_i, wavelength_i = chunk_data(ifu, n_drop=n_drop, 
                                                       n_chunk=n_chunk)
         if i_file == 0:
@@ -716,6 +718,48 @@ def rebin_flux(target_wavelength, source_wavelength, source_flux):
 
     return rebinneddata
 
+def remove_atmosphere(ifu):
+    """Remove atmospheric extinction (not tellurics) from ifu data."""
+    # Read extinction curve (in magnitudes)
+    wavelength_extinction, extinction_mags = read_atmospheric_extinction()
+    # Interpolate onto the data wavelength grid
+    extinction_mags = np.interp(ifu.lambda_range, wavelength_extinction, 
+                                extinction_mags)
+    # Scale for observed airmass
+    airmass = calculate_airmass(ifu.zdstart, ifu.zdend)
+    extinction_mags *= airmass
+    # Turn into multiplicative flux scaling
+    extinction = 10.0 ** (-0.4 * extinction_mags)
+    ifu.data /= extinction
+    ifu.var /= (extinction**2)
+    return
+
+def calculate_airmass( zdstart, zdend ):
+    # Is this right? Doesn't it move non-linearly? [JTA]
+    zdmid = ( zdstart + zdend ) / 2.
+    amstart, ammid, amend = zd2am( np.array( [zdstart, zdmid, zdend] ) )
+    airmass = ( amstart + 4. * ammid + amend ) / 6.
+    # Simpson integration across 3 steps
+    return airmass
+
+def zd2am( zenithdistance ):
+    # fitting formula from Pickering (2002)
+    altitude = ( 90. - zenithdistance ) 
+    airmass = 1./ ( np.sin( ( altitude + 244. / ( 165. + 47 * altitude**1.1 )
+                            ) / 180. * np.pi ) )
+    return airmass
+
+def read_atmospheric_extinction(sso_extinction_table=SSO_EXTINCTION_TABLE):
+    wl, ext = [], []
+    for entry in open( sso_extinction_table, 'r' ).xreadlines() :
+        line = entry.rstrip( '\n' )
+        if not line.count( '*' ) and not line.count( '=' ):
+            values = line.split()
+            wl.append(  values[0] )
+            ext.append( values[1] )    
+    wl = np.array( wl ).astype( 'f' )
+    ext= np.array( ext ).astype( 'f' )   
+    return wl, ext
 
 
 
