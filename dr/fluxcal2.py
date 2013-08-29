@@ -761,6 +761,40 @@ def read_atmospheric_extinction(sso_extinction_table=SSO_EXTINCTION_TABLE):
     ext= np.array( ext ).astype( 'f' )   
     return wl, ext
 
+def combine_transfer_functions(path_list, path_out):
+    """Read a set of transfer functions, combine them, and save to file."""
+    # Make an empty array to hold all the individual transfer functions
+    n_file = len(path_list)
+    n_pixel = pf.getval(path_list[0], 'NAXIS1')
+    tf_array = np.zeros((n_file, n_pixel))
+    # Read the individual transfer functions
+    for index, path in enumerate(path_list):
+        tf_array[index, :] = pf.getdata(path, 'FLUX_CALIBRATION')[-1, :]
+    # Combine them.
+    # For now, just take the mean. Maybe implement Ned's weighted combination
+    # later, preferably when proper variance propagation is in place.
+    tf_combined = np.mean(tf_array, axis=0)
+    save_combined_transfer_function(path_out, tf_combined, path_list)
+    return
+
+def save_combined_transfer_function(path_out, tf_combined, path_list):
+    """Write the combined transfer function (and the individuals to file."""
+    # Put the combined transfer function in the primary HDU
+    primary_hdu = pf.PrimaryHDU(tf_combined)
+    primary_hdu.header['HGFLUXCAL'] = (HG_CHANGESET, 
+                                       'Hg changeset ID for fluxcal code')
+    # Make an HDU list, which will also contain all the individual functions
+    hdulist = pf.HDUList([primary_hdu])
+    for index, path in enumerate(path_list):
+        hdulist_tmp = pf.open(path)
+        hdu = hdulist_tmp['FLUX_CALIBRATION']
+        hdu.header['EXTVER'] = index + 1
+        hdulist.append(hdu)
+    if os.path.exists(path_out):
+        os.remove(path_out)
+    hdulist.writeto(path_out)
+    return
+
 
 
 
