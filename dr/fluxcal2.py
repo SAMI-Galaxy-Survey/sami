@@ -73,7 +73,7 @@ def read_chunked_data(path_list, probenum, n_drop=None, n_chunk=None):
         path_list = [path_list]
     for i_file, path in enumerate(path_list):
         ifu = IFU(path, probenum, flag_name=False)
-        remove_atmosphere(ifu)
+        #remove_atmosphere(ifu)
         data_i, variance_i, wavelength_i = chunk_data(ifu, n_drop=n_drop, 
                                                       n_chunk=n_chunk)
         if i_file == 0:
@@ -159,6 +159,11 @@ def residual(parameters_vector, datatube, vartube, xfibre, yfibre,
     """Return the residual in each fibre for the given model."""
     parameters_dict = parameters_vector_to_dict(parameters_vector, model_name)
     model = model_flux(parameters_dict, xfibre, yfibre, wavelength, model_name)
+    # 2dfdr variance is just plain wrong for fibres with little or no flux!
+    # Try replacing with something like sqrt(flux), but with a floor
+    vartube = np.sqrt(datatube)
+    cutoff = 0.05 * datatube.max()
+    vartube[datatube < cutoff] = np.sqrt(cutoff)
     return np.ravel((model - datatube) / np.sqrt(vartube))
 
 def fit_model_flux(datatube, vartube, xfibre, yfibre, wavelength, model_name):
@@ -189,7 +194,8 @@ def first_guess_parameters(datatube, vartube, xfibre, yfibre, wavelength,
         par_0['beta'] = 4.0
         par_0['rho'] = 0.0
     elif model_name == 'ref_centre_alpha_angle_circ':
-        weighted_data = np.sum(datatube / vartube, axis=1)
+        #weighted_data = np.sum(datatube / vartube, axis=1)
+        weighted_data = np.sum(datatube, axis=1)
         weighted_data /= np.sum(weighted_data)
         par_0['flux'] = np.nansum(datatube, axis=0)
         par_0['background'] = np.zeros(len(par_0['flux']))
