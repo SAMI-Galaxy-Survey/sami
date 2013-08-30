@@ -74,8 +74,7 @@ class IFU:
             table_find=fibre_table[msk0]
 
             # Pick out the place in the table with object names, rejecting SKY and empty strings.
-            object_names_nonsky = [s for s in table_find.field('NAME') if s.startswith('SKY')==False and len(s)>0]
-
+            object_names_nonsky = [s for s in table_find.field('NAME') if s.startswith('SKY')==False and s.startswith('Sky')==False and len(s)>0]
             #print np.shape(object_names_nonsky)
 
             self.name=list(set(object_names_nonsky))[0]
