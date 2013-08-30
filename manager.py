@@ -1815,54 +1815,71 @@ class FITSFile:
                                    ' it in list of known pilot fields: ' + 
                                    self.filename)
         else:
-            # SAMIv2. The field number should be included in the filename of
-            # the config file.
-            filename = self.hdulist[self.fibres_extno].header['FILENAME']
-            if filename == '':
-                self.field_no = 0
+            # SAMIv2. Should be in the fibre table header somewhere
+            header = self.hdulist[self.fibres_extno].header
+            # First, see if it's included in the LABEL keyword
+            match = re.search(r'(field )([0-9]+)', header['LABEL'])
+            if match:
+                # Yes, it is
+                self.field_no = int(match.group(2))
             else:
-                start = filename.rfind('_f') + 2
-                self.field_no = int(filename[start:filename.find('.', start)])
+                # The field number should be included in the filename of
+                # the config file.
+                match = re.search(r'(.*_f)([0-9]+)', header['FILENAME'])
+                if match:
+                    self.field_no = int(match.group(2))
+                else:
+                    # Nothing found. Default to 0.
+                    self.field_no = 0
         return
 
     def set_field_id(self):
         """Save the field ID."""
         if self.plate_id == 'none':
             self.field_id = 'none'
-        elif (self.plate_id.startswith('run_') or 
-              re.match(r'[0-9]+S[0-9]+', self.plate_id)):
-            # Pilot and commissioning data. No field ID in the plate ID, so
-            # append one.
-            self.field_id = self.plate_id + '_F' + str(self.field_no)
-        elif (re.match(r'^Y[0-9]{2}S(A|B)R[0-9]+_P[0-9]+$', 
-                       self.plate_id_short) or
-              re.match(r'^A[0-9]+_P[0-9]+$', 
-                       self.plate_id_short)):
-            # Main survey or early cluster data. Field ID is stored within the 
-            # plate ID.
-            start = len(self.plate_id_short)
-            for i in xrange(self.field_no):
-                start = self.plate_id.find('_', start) + 1
-            finish = self.plate_id.find('_', start)
-            if finish == -1:
-                field_id = self.plate_id[start:]
-            else:
-                field_id = self.plate_id[start:finish]
-            self.field_id = self.plate_id_short + '_' + field_id
-        elif re.match(r'^A[0-9]+T[0-9]+_A[0-9]+T[0-9]+$', self.plate_id):
-            # Cluster data. Field ID is one segment of the plate ID.
-            start = 0
-            for i in xrange(self.field_no - 1):
-                start = self.plate_id.find('_', start) + 1
-            finish = self.plate_id.find('_', start)
-            if finish == -1:
-                field_id = self.plate_id[start:]
-            else:
-                field_id = self.plate_id[start:finish]
-            self.field_id = field_id
         else:
-            # Unrecognised form for the plate ID.
-            self.field_id = self.plate_id + '_F' + str(self.field_no)
+            # First check if the LABEL keyword is of the correct form
+            expr = (r'(.*?)( - )(Run [0-9]+ .*? plate [0-9]+)'
+                    r'( - )(field [0-9]+)')
+            header = self.hdulist[self.fibres_extno].header
+            match = re.match(expr, header['LABEL'])
+            if match:
+                # It is, so just copy the field ID directly
+                self.field_id = match.group(1)
+            elif (self.plate_id.startswith('run_') or 
+                  re.match(r'[0-9]+S[0-9]+', self.plate_id)):
+                # Pilot and commissioning data. No field ID in the plate ID, so
+                # append one.
+                self.field_id = self.plate_id + '_F' + str(self.field_no)
+            elif (re.match(r'^Y[0-9]{2}S(A|B)R[0-9]+_P[0-9]+$', 
+                           self.plate_id_short) or
+                  re.match(r'^A[0-9]+_P[0-9]+$', 
+                           self.plate_id_short)):
+                # Main survey or early cluster data. Field ID is stored within the 
+                # plate ID.
+                start = len(self.plate_id_short)
+                for i in xrange(self.field_no):
+                    start = self.plate_id.find('_', start) + 1
+                finish = self.plate_id.find('_', start)
+                if finish == -1:
+                    field_id = self.plate_id[start:]
+                else:
+                    field_id = self.plate_id[start:finish]
+                self.field_id = self.plate_id_short + '_' + field_id
+            elif re.match(r'^A[0-9]+T[0-9]+_A[0-9]+T[0-9]+$', self.plate_id):
+                # Cluster data. Field ID is one segment of the plate ID.
+                start = 0
+                for i in xrange(self.field_no - 1):
+                    start = self.plate_id.find('_', start) + 1
+                finish = self.plate_id.find('_', start)
+                if finish == -1:
+                    field_id = self.plate_id[start:]
+                else:
+                    field_id = self.plate_id[start:finish]
+                self.field_id = field_id
+            else:
+                # Unrecognised form for the plate ID.
+                self.field_id = self.plate_id + '_F' + str(self.field_no)
         return
         
     def set_coords(self):
