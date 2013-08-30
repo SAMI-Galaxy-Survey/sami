@@ -1316,8 +1316,10 @@ class Manager:
                          'spectrophotometric': 'MFOBJECT'}[dir_type.lower()]
             if dir_type == 'spectrophotometric':
                 spectrophotometric = True
-            else:
+            elif ndf_class == 'MFOBJECT':
                 spectrophotometric = False
+            else:
+                spectrophotometric = None
         for fits in self.files(ndf_class=ndf_class, 
                                spectrophotometric=spectrophotometric, 
                                **kwargs):
