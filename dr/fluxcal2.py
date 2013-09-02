@@ -593,6 +593,18 @@ def header_translate(key):
         header_name = key[:8]
     return header_name
 
+def header_translate_inverse(header_name):
+    """Translate parameter names back from headers."""
+    name_dict = {'XCENREF': 'xcen_ref',
+                 'YCENREF': 'ycen_ref',
+                 'ZENDIR': 'zenith_direction',
+                 'ZENDIST': 'zenith_distance',
+                 'FLUX': 'flux',
+                 'BETA': 'beta',
+                 'BCKGRND': 'background',
+                 'ALPHAREF': 'alpha_ref'}
+    return name_dict[header_name]
+
 def save_transfer_function(path, transfer_function):
     """Add the transfer function to a pre-existing FLUX_CALIBRATION HDU."""
     # Open the file to update
@@ -824,6 +836,34 @@ def save_combined_transfer_function(path_out, tf_combined, path_list):
         os.remove(path_out)
     hdulist.writeto(path_out)
     return
+
+def read_model(path):
+    """Return the model encoded in a FITS file."""
+    hdulist = pf.open(path)
+    hdu = hdulist['FLUX_CALIBRATION']
+    psf_parameters, model_name = read_model_parameters(hdu)
+    ifu = IFU(path, hdu.header['PROBENUM'], flag_name=False)
+    xfibre = ifu.xpos_rel
+    yfibre = ifu.ypos_rel
+    wavelength = ifu.lambda_range
+    model = model_flux(psf_parameters, xfibre, yfibre, wavelength, model_name)
+    return model
+
+def read_model_parameters(hdu):
+    """Return the PSF model parameters in a header, with the model name."""
+    psf_parameters = {}
+    model_name = None
+    for key, value in hdu.header.items():
+        if key == 'MODEL':
+            model_name = value
+        else:
+            try:
+                psf_parameters[header_translate_inverse(key)] = value
+            except KeyError:
+                continue
+    psf_parameters['flux'] = hdu.data[0, :]
+    psf_parameters['background'] = hdu.data[1, :]
+    return psf_parameters, model_name
 
 
 
