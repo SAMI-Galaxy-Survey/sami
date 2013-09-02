@@ -14,6 +14,11 @@ also as free parameters.
 The same as ref_centre_alpha_angle, but with the Moffat function
 constrained to be circular.
 
+-- ref_centre_alpha_dist_circ --
+
+The same as ref_centre_alpha_angle_circ, but with the zenith direction
+fixed.
+
 -- ref_centre_alpha_angle_circ_atm --
 
 The same as ref_centre_alpha_angle_circ, but with atmospheric values
@@ -35,6 +40,7 @@ from astropy import __version__ as astropy_version
 
 from .. import utils
 from ..utils.ifu import IFU
+from ..utils.mc_adr import parallactic_angle
 
 HG_CHANGESET = utils.hg_changeset(__file__)
 
@@ -155,9 +161,11 @@ def model_flux(parameters_dict, xfibre, yfibre, wavelength, model_name):
     return moffat_flux(parameters_array, xfibre, yfibre)
 
 def residual(parameters_vector, datatube, vartube, xfibre, yfibre,
-             wavelength, model_name):
+             wavelength, model_name, fixed_parameters=None):
     """Return the residual in each fibre for the given model."""
     parameters_dict = parameters_vector_to_dict(parameters_vector, model_name)
+    parameters_dict = insert_fixed_parameters(parameters_dict, 
+                                              fixed_parameters)
     model = model_flux(parameters_dict, xfibre, yfibre, wavelength, model_name)
     # 2dfdr variance is just plain wrong for fibres with little or no flux!
     # Try replacing with something like sqrt(flux), but with a floor
@@ -166,12 +174,14 @@ def residual(parameters_vector, datatube, vartube, xfibre, yfibre,
     vartube[datatube < cutoff] = cutoff
     return np.ravel((model - datatube) / np.sqrt(vartube))
 
-def fit_model_flux(datatube, vartube, xfibre, yfibre, wavelength, model_name):
+def fit_model_flux(datatube, vartube, xfibre, yfibre, wavelength, model_name,
+                   fixed_parameters=None):
     """Fit a model to the given datatube."""
     par_0_dict = first_guess_parameters(datatube, vartube, xfibre, yfibre, 
                                         wavelength, model_name)
     par_0_vector = parameters_dict_to_vector(par_0_dict, model_name)
-    args = (datatube, vartube, xfibre, yfibre, wavelength, model_name)
+    args = (datatube, vartube, xfibre, yfibre, wavelength, model_name,
+            fixed_parameters)
     parameters_vector = leastsq(residual, par_0_vector, args=args)[0]
     parameters_dict = parameters_vector_to_dict(parameters_vector, model_name)
     return parameters_dict
@@ -180,9 +190,10 @@ def first_guess_parameters(datatube, vartube, xfibre, yfibre, wavelength,
                            model_name):
     """Return a first guess to the parameters that will be fitted."""
     par_0 = {}
+    #weighted_data = np.sum(datatube / vartube, axis=1)
+    weighted_data = np.sum(datatube, axis=1)
+    weighted_data /= np.sum(weighted_data)
     if model_name == 'ref_centre_alpha_angle':
-        weighted_data = np.sum(datatube / vartube, axis=1)
-        weighted_data /= np.sum(weighted_data)
         par_0['flux'] = np.nansum(datatube, axis=0)
         par_0['background'] = np.zeros(len(par_0['flux']))
         par_0['xcen_ref'] = np.sum(xfibre * weighted_data)
@@ -194,9 +205,6 @@ def first_guess_parameters(datatube, vartube, xfibre, yfibre, wavelength,
         par_0['beta'] = 4.0
         par_0['rho'] = 0.0
     elif model_name == 'ref_centre_alpha_angle_circ':
-        #weighted_data = np.sum(datatube / vartube, axis=1)
-        weighted_data = np.sum(datatube, axis=1)
-        weighted_data /= np.sum(weighted_data)
         par_0['flux'] = np.nansum(datatube, axis=0)
         par_0['background'] = np.zeros(len(par_0['flux']))
         par_0['xcen_ref'] = np.sum(xfibre * weighted_data)
@@ -205,9 +213,15 @@ def first_guess_parameters(datatube, vartube, xfibre, yfibre, wavelength,
         par_0['zenith_distance'] = np.pi / 8.0
         par_0['alpha_ref'] = 1.0
         par_0['beta'] = 4.0
+    elif model_name == 'ref_centre_alpha_dist_circ':
+        par_0['flux'] = np.nansum(datatube, axis=0)
+        par_0['background'] = np.zeros(len(par_0['flux']))
+        par_0['xcen_ref'] = np.sum(xfibre * weighted_data)
+        par_0['ycen_ref'] = np.sum(yfibre * weighted_data)
+        par_0['zenith_distance'] = np.pi / 8.0
+        par_0['alpha_ref'] = 1.0
+        par_0['beta'] = 4.0
     elif model_name == 'ref_centre_alpha_angle_circ_atm':
-        weighted_data = np.sum(datatube / vartube, axis=1)
-        weighted_data /= np.sum(weighted_data)
         par_0['flux'] = np.nansum(datatube, axis=0)
         par_0['background'] = np.zeros(len(par_0['flux']))
         par_0['temperature'] = 7.0
@@ -244,6 +258,15 @@ def parameters_dict_to_vector(parameters_dict, model_name):
              parameters_dict['xcen_ref'],
              parameters_dict['ycen_ref'],
              parameters_dict['zenith_direction'],
+             parameters_dict['zenith_distance'],
+             parameters_dict['alpha_ref'],
+             parameters_dict['beta']))
+    elif model_name == 'ref_centre_alpha_dist_circ':
+        parameters_vector = np.hstack(
+            (parameters_dict['flux'],
+             parameters_dict['background'],
+             parameters_dict['xcen_ref'],
+             parameters_dict['ycen_ref'],
              parameters_dict['zenith_distance'],
              parameters_dict['alpha_ref'],
              parameters_dict['beta']))
@@ -289,6 +312,15 @@ def parameters_vector_to_dict(parameters_vector, model_name):
         parameters_dict['zenith_distance'] = parameters_vector[-3]
         parameters_dict['alpha_ref'] = parameters_vector[-2]
         parameters_dict['beta'] = parameters_vector[-1]
+    elif model_name == 'ref_centre_alpha_dist_circ':
+        n_slice = (len(parameters_vector) - 5) / 2
+        parameters_dict['flux'] = parameters_vector[0:n_slice]
+        parameters_dict['background'] = parameters_vector[n_slice:2*n_slice]
+        parameters_dict['xcen_ref'] = parameters_vector[-5]
+        parameters_dict['ycen_ref'] = parameters_vector[-4]
+        parameters_dict['zenith_distance'] = parameters_vector[-3]
+        parameters_dict['alpha_ref'] = parameters_vector[-2]
+        parameters_dict['beta'] = parameters_vector[-1]
     elif model_name == 'ref_centre_alpha_angle_circ_atm':
         n_slice = (len(parameters_vector) - 9) / 2
         parameters_dict['flux'] = parameters_vector[0:n_slice]
@@ -316,11 +348,11 @@ def parameters_dict_to_array(parameters_dict, wavelength, model_name):
     if model_name == 'ref_centre_alpha_angle':
         parameters_array['xcen'] = (
             parameters_dict['xcen_ref'] + 
-            np.cos(parameters_dict['zenith_direction']) * 
+            np.sin(parameters_dict['zenith_direction']) * 
             dar(wavelength, parameters_dict['zenith_distance']))
         parameters_array['ycen'] = (
             parameters_dict['ycen_ref'] + 
-            np.sin(parameters_dict['zenith_direction']) * 
+            np.cos(parameters_dict['zenith_direction']) * 
             dar(wavelength, parameters_dict['zenith_distance']))
         parameters_array['alphax'] = (
             alpha(wavelength, parameters_dict['alphax_ref']))
@@ -332,14 +364,15 @@ def parameters_dict_to_array(parameters_dict, wavelength, model_name):
             parameters_array['flux'] = parameters_dict['flux']
         if len(parameters_dict['background']) == len(parameters_array):
             parameters_array['background'] = parameters_dict['background']
-    elif model_name == 'ref_centre_alpha_angle_circ':
+    elif (model_name == 'ref_centre_alpha_angle_circ' or
+          model_name == 'ref_centre_alpha_dist_circ'):
         parameters_array['xcen'] = (
             parameters_dict['xcen_ref'] + 
-            np.cos(parameters_dict['zenith_direction']) * 
+            np.sin(parameters_dict['zenith_direction']) * 
             dar(wavelength, parameters_dict['zenith_distance']))
         parameters_array['ycen'] = (
-            parameters_dict['ycen_ref'] + 
-            np.sin(parameters_dict['zenith_direction']) * 
+            parameters_dict['ycen_ref'] - 
+            np.cos(parameters_dict['zenith_direction']) * 
             dar(wavelength, parameters_dict['zenith_distance']))
         parameters_array['alphax'] = (
             alpha(wavelength, parameters_dict['alpha_ref']))
@@ -354,14 +387,14 @@ def parameters_dict_to_array(parameters_dict, wavelength, model_name):
     elif model_name == 'ref_centre_alpha_angle_circ_atm':
         parameters_array['xcen'] = (
             parameters_dict['xcen_ref'] + 
-            np.cos(parameters_dict['zenith_direction']) * 
+            np.sin(parameters_dict['zenith_direction']) * 
             dar(wavelength, parameters_dict['zenith_distance'],
                 temperature=parameters_dict['temperature'],
                 pressure=parameters_dict['pressure'],
                 vapour_pressure=parameters_dict['vapour_pressure']))
         parameters_array['ycen'] = (
             parameters_dict['ycen_ref'] + 
-            np.sin(parameters_dict['zenith_direction']) * 
+            np.cos(parameters_dict['zenith_direction']) * 
             dar(wavelength, parameters_dict['zenith_distance'],
                 temperature=parameters_dict['temperature'],
                 pressure=parameters_dict['pressure'],
@@ -417,7 +450,7 @@ def refractive_index(wavelength, temperature=None, pressure=None,
 
 def derive_transfer_function(path_list, max_sep_arcsec=30.0,
                              catalogues=STANDARD_CATALOGUES,
-                             model_name='ref_centre_alpha_angle_circ'):
+                             model_name='ref_centre_alpha_dist_circ'):
     """Derive transfer function and save it in each FITS file."""
     # First work out which star we're looking at, and which hexabundle it's in
     star_match = match_standard_star(
@@ -428,13 +461,16 @@ def derive_transfer_function(path_list, max_sep_arcsec=30.0,
     # Read the observed data, in chunks
     chunked_data = read_chunked_data(path_list, star_match['probenum'])
     # Fit the PSF
+    fixed_parameters = set_fixed_parameters(path_list, model_name)
     psf_parameters = fit_model_flux(
         chunked_data['data'], 
         chunked_data['variance'],
         chunked_data['xfibre'],
         chunked_data['yfibre'],
         chunked_data['wavelength'],
-        model_name)
+        model_name,
+        fixed_parameters=fixed_parameters)
+    psf_parameters = insert_fixed_parameters(psf_parameters, fixed_parameters)
     for path in path_list:
         ifu = IFU(path, star_match['probenum'], flag_name=False)
         observed_flux, observed_background = extract_total_flux(
@@ -867,6 +903,24 @@ def read_model_parameters(hdu):
     psf_parameters['flux'] = hdu.data[0, :]
     psf_parameters['background'] = hdu.data[1, :]
     return psf_parameters, model_name
+
+def insert_fixed_parameters(parameters_dict, fixed_parameters):
+    """Insert the fixed parameters into the parameters_dict."""
+    if fixed_parameters is not None:
+        for key, value in fixed_parameters.items():
+            parameters_dict[key] = value
+    return parameters_dict
+
+def set_fixed_parameters(path_list, model_name):
+    """Return fixed values for certain parameters."""
+    if model_name == 'ref_centre_alpha_dist_circ':
+        header = pf.getheader(path_list[0])
+        zenith_direction = np.deg2rad(parallactic_angle(
+            header['HASTART'], header['ZDSTART'], header['LAT_OBS']))
+        fixed_parameters = {'zenith_direction': zenith_direction}
+    else:
+        fixed_parameters = {}
+    return fixed_parameters
 
 
 
