@@ -161,9 +161,9 @@ def residual(parameters_vector, datatube, vartube, xfibre, yfibre,
     model = model_flux(parameters_dict, xfibre, yfibre, wavelength, model_name)
     # 2dfdr variance is just plain wrong for fibres with little or no flux!
     # Try replacing with something like sqrt(flux), but with a floor
-    vartube = np.sqrt(datatube)
+    vartube = datatube.copy()
     cutoff = 0.05 * datatube.max()
-    vartube[datatube < cutoff] = np.sqrt(cutoff)
+    vartube[datatube < cutoff] = cutoff
     return np.ravel((model - datatube) / np.sqrt(vartube))
 
 def fit_model_flux(datatube, vartube, xfibre, yfibre, wavelength, model_name):
@@ -533,7 +533,10 @@ def residual_slice(flux_background, model, data, variance):
     """Residual of the model flux in a single wavelength slice."""
     flux, background = flux_background
     # For now, ignoring the variance - it has too many 2dfdr-induced mistakes
-    return ((background + flux * model) - data)
+    variance = data.copy()
+    cutoff = 0.05 * data.max()
+    variance[data < cutoff] = cutoff
+    return ((background + flux * model) - data) / np.sqrt(variance)
     #return ((background + flux * model) - data) / np.sqrt(variance)
 
 def save_extracted_flux(path, observed_flux, observed_background,
