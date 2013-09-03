@@ -6,10 +6,14 @@
 # Tkinter installed :(
 
 import os
-import Tkinter
-import tkMessageBox
-import tkFont
 import argparse
+try:
+    import Tkinter
+    import tkMessageBox
+    import tkFont
+except ImportError:
+    print ("Warning: Tkinter not available; "
+           "probe allocation cannot be done here.")
 
 astropy_available = True
 try:
