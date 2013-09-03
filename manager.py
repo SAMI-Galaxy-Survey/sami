@@ -1379,9 +1379,11 @@ class Manager:
         """Return the file that should be used to help reduce the FITS file.
 
         match_class is one of the following:
-        tlmap -- Find a tramline map
+        tlmap -- Find a tramline map from the dome lamp
+        tlmap_flap -- As tlmap, but from the flap lamp
         wavel -- Find a reduced arc file
-        fflat -- Find a reduced fibre flat field
+        fflat -- Find a reduced fibre flat field from the flap lamp
+        fflat_dome -- As fflat, but from the dome lamp
         thput -- Find a reduced offset sky (twilight) file
         thput_object -- As thput, but find a suitable object frame
         bias  -- Find a combined bias frame
@@ -1390,7 +1392,8 @@ class Manager:
         fcal  -- Find a reduced spectrophotometric standard star frame
 
         The return type depends on what is asked for:
-        tlmap, wavel, fflat, thput, thput_object, fcal -- A FITS file object
+        tlmap, tlmap_flap, wavel, fflat, fflat_dome, thput, thput_object, fcal 
+                                -- A FITS file object
         bias, dark, lflat       -- The path to the combined file
         """
         fits_match = None
@@ -1562,13 +1565,15 @@ class Manager:
         if match_class.lower() in ['bias', 'dark', 'lflat']:
             # matchmaker returns a filename in these cases; send it straight on
             filename = fits_match
-        elif match_class.lower() == 'tlmap':
+        elif match_class.lower().startswith('tlmap'):
             filename = fits_match.tlm_filename
         else:
             filename = fits_match.reduced_filename
-        if match_class.lower() in ['tlmap', 'fflat', 'wavel', 'thput',
-                                   'thput_object']:
-            # These are the cases where we do want to make a link
+        # These are the cases where we do want to make a link
+        require_link = [
+            'tlmap', 'tlmap_flap', 'fflat', 'fflat_dome', 'wavel', 'thput', 
+            'thput_object']
+        if match_class.lower() in require_link:
             link_path = os.path.join(fits.reduced_dir, filename)
             source_path = os.path.join(fits_match.reduced_dir, filename)
             raw_link_path = os.path.join(fits.reduced_dir, fits_match.filename)
