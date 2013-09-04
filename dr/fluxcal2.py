@@ -191,7 +191,7 @@ def first_guess_parameters(datatube, vartube, xfibre, yfibre, wavelength,
     """Return a first guess to the parameters that will be fitted."""
     par_0 = {}
     #weighted_data = np.sum(datatube / vartube, axis=1)
-    weighted_data = np.sum(datatube, axis=1)
+    weighted_data = np.nansum(datatube, axis=1)
     weighted_data /= np.sum(weighted_data)
     if model_name == 'ref_centre_alpha_angle':
         par_0['flux'] = np.nansum(datatube, axis=0)
@@ -347,11 +347,11 @@ def parameters_dict_to_array(parameters_dict, wavelength, model_name):
                                        'formats':formats})
     if model_name == 'ref_centre_alpha_angle':
         parameters_array['xcen'] = (
-            parameters_dict['xcen_ref'] + 
+            parameters_dict['xcen_ref'] -
             np.sin(parameters_dict['zenith_direction']) * 
             dar(wavelength, parameters_dict['zenith_distance']))
         parameters_array['ycen'] = (
-            parameters_dict['ycen_ref'] + 
+            parameters_dict['ycen_ref'] -
             np.cos(parameters_dict['zenith_direction']) * 
             dar(wavelength, parameters_dict['zenith_distance']))
         parameters_array['alphax'] = (
@@ -367,7 +367,7 @@ def parameters_dict_to_array(parameters_dict, wavelength, model_name):
     elif (model_name == 'ref_centre_alpha_angle_circ' or
           model_name == 'ref_centre_alpha_dist_circ'):
         parameters_array['xcen'] = (
-            parameters_dict['xcen_ref'] + 
+            parameters_dict['xcen_ref'] - 
             np.sin(parameters_dict['zenith_direction']) * 
             dar(wavelength, parameters_dict['zenith_distance']))
         parameters_array['ycen'] = (
@@ -386,14 +386,14 @@ def parameters_dict_to_array(parameters_dict, wavelength, model_name):
             parameters_array['background'] = parameters_dict['background']
     elif model_name == 'ref_centre_alpha_angle_circ_atm':
         parameters_array['xcen'] = (
-            parameters_dict['xcen_ref'] + 
+            parameters_dict['xcen_ref'] -
             np.sin(parameters_dict['zenith_direction']) * 
             dar(wavelength, parameters_dict['zenith_distance'],
                 temperature=parameters_dict['temperature'],
                 pressure=parameters_dict['pressure'],
                 vapour_pressure=parameters_dict['vapour_pressure']))
         parameters_array['ycen'] = (
-            parameters_dict['ycen_ref'] + 
+            parameters_dict['ycen_ref'] -
             np.cos(parameters_dict['zenith_direction']) * 
             dar(wavelength, parameters_dict['zenith_distance'],
                 temperature=parameters_dict['temperature'],
