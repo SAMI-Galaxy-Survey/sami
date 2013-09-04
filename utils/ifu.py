@@ -112,8 +112,8 @@ class IFU:
         
         self.data=data_in[ind,:]/self.exptime
         self.var=variance_in[ind,:]/(self.exptime*self.exptime)
-
-        # Added for Iraklis, might need to check this.
+        
+        # Object RA & DEC
         self.fibtab=table_new
 
         # TEMP -  object RA & DEC (Nic)
