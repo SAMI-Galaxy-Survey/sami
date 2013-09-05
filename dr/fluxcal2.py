@@ -129,6 +129,10 @@ def chunk_data(ifu, n_drop=None, n_chunk=None):
     data = nanmean(data, axis=2)
     variance = (np.nansum(variance, axis=2) / 
                 np.sum(np.isfinite(variance), axis=2)**2)
+    # Replace any remaining NaNs with 0.0; not ideal but should be very rare
+    bad_data = ~np.isfinite(data)
+    data[bad_data] = 0.0
+    variance[bad_data] = np.inf
     wavelength = np.median(wavelength, axis=1)
     return data, variance, wavelength
 
@@ -185,7 +189,14 @@ def residual(parameters_vector, datatube, vartube, xfibre, yfibre,
     vartube = datatube.copy()
     cutoff = 0.05 * datatube.max()
     vartube[datatube < cutoff] = cutoff
-    return np.ravel((model - datatube) / np.sqrt(vartube))
+    res = np.ravel((model - datatube) / np.sqrt(vartube))
+    # Really crude way of putting bounds on the value of alpha
+    if 'alpha_ref' in parameters_dict:
+        if parameters_dict['alpha_ref'] < 0.5:
+            res *= 1e10 * (0.5 - parameters_dict['alpha_ref'])
+        elif parameters_dict['alpha_ref'] > 5.0:
+            res *= 1e10 * (parameters_dict['alpha_ref'] - 5.0)
+    return res
 
 def fit_model_flux(datatube, vartube, xfibre, yfibre, wavelength, model_name,
                    fixed_parameters=None):
