@@ -495,12 +495,14 @@ def derive_transfer_function(path_list, max_sep_arcsec=60.0,
         model_name,
         fixed_parameters=fixed_parameters)
     psf_parameters = insert_fixed_parameters(psf_parameters, fixed_parameters)
+    good_psf = check_psf_parameters(psf_parameters, chunked_data)
     for path in path_list:
         ifu = IFU(path, star_match['probenum'], flag_name=False)
         observed_flux, observed_background = extract_total_flux(
             ifu, psf_parameters, model_name)
         save_extracted_flux(path, observed_flux, observed_background,
-                            star_match, psf_parameters, model_name)
+                            star_match, psf_parameters, model_name,
+                            good_psf)
         transfer_function = take_ratio(
             standard_data['flux'], 
             standard_data['wavelength'], 
@@ -600,7 +602,8 @@ def residual_slice(flux_background, model, data, variance):
     #return ((background + flux * model) - data) / np.sqrt(variance)
 
 def save_extracted_flux(path, observed_flux, observed_background,
-                        star_match, psf_parameters, model_name):
+                        star_match, psf_parameters, model_name,
+                        good_psf):
     """Add the extracted flux to the specified FITS file."""
     # Turn the data into a single array
     data = np.vstack((observed_flux, observed_background))
@@ -616,7 +619,8 @@ def save_extracted_flux(path, observed_flux, observed_background,
         ('STDOFF', star_match['separation'], 'Offset (arcsec) to standard '
                                              'star coordinates'),
         ('HGFLXCAL', HG_CHANGESET, 'Hg changeset ID for fluxcal code'),
-        ('MODEL', model_name, 'Name of model used in PSF fit')]
+        ('MODEL', model_name, 'Name of model used in PSF fit'),
+        ('GOODPSF', good_psf, 'Whether the PSF fit has good parameters')]
     for key, value in psf_parameters.items():
         header_item_list.append((header_translate(key), value, 
                                  'PSF model parameter'))
@@ -955,7 +959,17 @@ def set_fixed_parameters(path_list, model_name):
         fixed_parameters = {}
     return fixed_parameters
 
-
+def check_psf_parameters(psf_parameters, chunked_data):
+    """Return True if the parameters look ok, False otherwise."""
+    # Check if the star is comfortably inside the hexabundle
+    if 'xcen_ref' in psf_parameters and 'ycen_ref' in psf_parameters:
+        xcen_hexa = np.mean(chunked_data['xfibre'])
+        ycen_hexa = np.mean(chunked_data['yfibre'])
+        if np.sqrt((psf_parameters['xcen_ref'] - xcen_hexa)**2 + 
+                   (psf_parameters['ycen_ref'] - ycen_hexa)**2) > 6.0:
+            return False
+    # Survived the checks
+    return True
 
 
 
