@@ -955,11 +955,20 @@ class Manager:
             date_field_ccd_dict[key].append(path)
         # Now combine the files within each group
         for path_list in date_field_ccd_dict:
-            path_out = os.path.join(os.path.dirname(path_list),
+            path_out = os.path.join(os.path.dirname(path_list[0]),
                                     'TRANSFERcombined.fits')
             if overwrite or not os.path.exists(path_out):
                 print 'Combining files to create', path_out
                 fluxcal2.combine_transfer_functions(path_list, path_out)
+            # Copy the file into all required directories
+            done = [os.path.dirname(path_list[0])]
+            for path in path_list:
+                if os.path.dirname(path) not in done:
+                    path_copy = os.path.join(os.path.dirname(path),
+                                             'TRANSFERcombined.fits')
+                    if overwrite or not os.path.exists(path_copy):
+                        print 'Copying combined file to', path_copy
+                        shutil.copy2(path_out, path_copy)
         return
 
     def flux_calibrate(self, overwrite=False, **kwargs):
@@ -968,16 +977,14 @@ class Manager:
         for fits in self.files(ndf_class='MFOBJECT', do_not_use=False,
                                **kwargs):
             fits_spectrophotometric = self.matchmaker(fits, 'fcal')
-            path_transfer_fn = os.path.join(
-                fits_spectrophotometric.reduced_dir,
-                'TRANSFERcombined.fits')
-            transfer_fn, transfer_var = read_combined_transfer_fn(
-                path_transfer_fn)
-            primary_flux_calibrate(
-                fits.reduced_path,
-                fits.fluxcal_path,
-                transfer_fn,
-                transfer_var)
+            if overwrite or not os.path.exists(fits.fluxcal_path):
+                path_transfer_fn = os.path.join(
+                    fits_spectrophotometric.reduced_dir,
+                    'TRANSFERcombined.fits')
+                fluxcal2.primary_flux_calibrate(
+                    fits.reduced_path,
+                    fits.fluxcal_path,
+                    path_transfer_fn)
         return
 
     def telluric_correct(self, overwrite=False, **kwargs):

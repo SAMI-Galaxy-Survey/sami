@@ -971,5 +971,14 @@ def check_psf_parameters(psf_parameters, chunked_data):
     # Survived the checks
     return True
 
+def primary_flux_calibrate(path_in, path_out, path_transfer_function):
+    """Apply transfer function to reduced data."""
+    hdulist = pf.open(path_in)
+    transfer_function = pf.getdata(path_transfer_function)
+    hdulist[0].data *= transfer_function
+    hdulist.writeto(path_out)
+    return
+    
+
 
 
