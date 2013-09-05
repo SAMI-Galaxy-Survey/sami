@@ -52,6 +52,11 @@ REFERENCE_WAVELENGTH = 5000.0
 
 FIBRE_RADIUS = 0.798
 
+TELLURIC_BANDS = np.array([[6850, 6960], 
+                           [7130, 7360], 
+                           [7560, 7770], 
+                           [8100, 8360]])
+
 def generate_subgrid(fibre_radius, n_inner=6, n_rings=10):
     """Generate a subgrid of points within a fibre."""
     radii = np.arange(0., n_rings) + 0.5
@@ -72,6 +77,14 @@ def generate_subgrid(fibre_radius, n_inner=6, n_rings=10):
 
 XSUB, YSUB = generate_subgrid(FIBRE_RADIUS)
 N_SUB = len(XSUB)
+
+def in_telluric_band(wavelength):
+    """Return boolean array, True if in a telluric band."""
+    retarray = np.zeros(np.shape(wavelength), dtype='bool')
+    for band in TELLURIC_BANDS:
+        retarray = retarray | ((wavelength >= band[0]) & 
+                               (wavelength <= band[1]))
+    return retarray
 
 def read_chunked_data(path_list, probenum, n_drop=None, n_chunk=None):
     """Read flux from a list of files, chunk it and combine."""
@@ -448,7 +461,7 @@ def refractive_index(wavelength, temperature=None, pressure=None,
                          / ( 1. + 0.003661 * temperature ) ) * vapour_pressure
     return 1e-6 * (seaLevelDry * altitudeCorrection - vapourCorrection) + 1
 
-def derive_transfer_function(path_list, max_sep_arcsec=30.0,
+def derive_transfer_function(path_list, max_sep_arcsec=60.0,
                              catalogues=STANDARD_CATALOGUES,
                              model_name='ref_centre_alpha_dist_circ'):
     """Derive transfer function and save it in each FITS file."""
@@ -485,7 +498,7 @@ def derive_transfer_function(path_list, max_sep_arcsec=30.0,
         save_transfer_function(path, transfer_function)
     return
 
-def match_standard_star(filename, max_sep_arcsec=30.0, 
+def match_standard_star(filename, max_sep_arcsec=60.0, 
                         catalogues=STANDARD_CATALOGUES):
     """Return details of the standard star that was observed in this file."""
     fibre_table = pf.getdata(filename, 'FIBRES_IFU')
@@ -505,7 +518,7 @@ def match_standard_star(filename, max_sep_arcsec=30.0,
     # code deal with it.
     return
 
-def match_star_coordinates(ra, dec, max_sep_arcsec=30.0, 
+def match_star_coordinates(ra, dec, max_sep_arcsec=60.0, 
                            catalogues=STANDARD_CATALOGUES):
     """Return details of the star nearest to the supplied coordinates."""
     for index_path in catalogues:
@@ -692,7 +705,8 @@ def take_ratio(standard_flux, standard_wavelength, observed_flux,
         standard_wavelength, observed_wavelength, observed_flux)
     ratio = standard_flux / observed_flux_rebinned
     if smooth:
-        ratio = smooth_ratio(ratio)
+        ratio = fit_chebyshev(standard_wavelength, ratio)
+        # ratio = smooth_ratio(ratio)
     # Put the ratio back onto the observed wavelength scale
     ratio = np.interp(observed_wavelength, standard_wavelength, ratio)
     return ratio
@@ -726,6 +740,14 @@ def smooth_ratio(ratio, width=10.0):
     # Undo the inversion
     smoothed = 1.0 / inverse
     return smoothed
+
+def fit_chebyshev(wavelength, ratio, deg=7):
+    """Fit a Chebyshev polynomial, and return the fit."""
+    good = np.isfinite(ratio) & ~(in_telluric_band(wavelength))
+    coefficients = np.polynomial.chebyshev.chebfit(
+        wavelength[good], ratio[good], deg)
+    fit = np.polynomial.chebyshev.chebval(wavelength, coefficients)
+    return fit
 
 def rebin_flux(target_wavelength, source_wavelength, source_flux):
     """Rebin a flux onto a new wavelength grid."""
@@ -862,8 +884,8 @@ def save_combined_transfer_function(path_out, tf_combined, path_list):
     """Write the combined transfer function (and the individuals to file."""
     # Put the combined transfer function in the primary HDU
     primary_hdu = pf.PrimaryHDU(tf_combined)
-    primary_hdu.header['HGFLUXCAL'] = (HG_CHANGESET, 
-                                       'Hg changeset ID for fluxcal code')
+    primary_hdu.header['HGFLXCAL'] = (HG_CHANGESET, 
+                                      'Hg changeset ID for fluxcal code')
     # Make an HDU list, which will also contain all the individual functions
     hdulist = pf.HDUList([primary_hdu])
     for index, path in enumerate(path_list):
