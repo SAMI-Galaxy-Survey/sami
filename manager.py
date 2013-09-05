@@ -78,6 +78,7 @@ from sami.utils.other import find_fibre_table
 from sami.general.cubing import dithered_cubes_from_rss_files
 from sami.dr import get_transfer_function, read_combined_transfer_fn
 from sami.dr import primary_flux_calibrate, perform_telluric_correction
+from sami.dr import fluxcal2
 
 
 IDX_FILES_SLOW = {'1': 'sami580V_v1_2.idx',
@@ -923,14 +924,42 @@ class Manager:
 
     def derive_transfer_function(self, overwrite=False, **kwargs):
         """Derive flux calibration transfer functions and save them."""
-        # overwrite not yet implemented, so will always overwrite
-        dir_list = []
+        for fits in self.files(ndf_class='MFOBJECT', do_not_use=False,
+                               spectrophotometric=True, ccd='ccd_1', **kwargs):
+            if not overwrite:
+                hdulist = pf.open(fits.reduced_path)
+                try:
+                    hdu = hdulist['FLUX_CALIBRATION']
+                except KeyError:
+                    # Hasn't been done yet. Close the file and carry on.
+                    hdulist.close()
+                else:
+                    # Has been done. Close the file and skip to the next one.
+                    hdulist.close()
+                    continue
+            fits_2 = self.other_arm(fits)
+            path_pair = (fits.reduced_path, fits_2.reduced_path)
+            print ('Deriving transfer function for ' + fits.filename + 
+                   ' and ' + fits_2.filename)
+            fluxcal2.derive_transfer_function(path_pair)
+        return
+
+    def combine_transfer_function(self, overwrite=False, **kwargs):
+        """Combine and save transfer functions from multiple files."""
+        # First sort the spectrophotometric files into date/field/CCD groups
+        date_field_ccd_dict = defaultdict(list)
         for fits in self.files(ndf_class='MFOBJECT', do_not_use=False,
                                spectrophotometric=True, **kwargs):
-            if fits.reduced_dir not in dir_list:
-                dir_list.append(fits.reduced_dir)
-        for directory in dir_list:
-            get_transfer_function(directory, save=True, verbose=True)
+            path = fits.reduced_path
+            key = fits.date + fits.field_id + fits.ccd
+            date_field_ccd_dict[key].append(path)
+        # Now combine the files within each group
+        for path_list in date_field_ccd_dict:
+            path_out = os.path.join(os.path.dirname(path_list),
+                                    'TRANSFERcombined.fits')
+            if overwrite or not os.path.exists(path_out):
+                print 'Combining files to create', path_out
+                fluxcal2.combine_transfer_functions(path_list, path_out)
         return
 
     def flux_calibrate(self, overwrite=False, **kwargs):
@@ -1360,6 +1389,18 @@ class Manager:
                        self.lflat_combined_filename(),
                        self.lflat_combined_path(ccd))
         return
+
+    def other_arm(self, fits):
+        """Return the FITSFile from the other arm of the spectrograph."""
+        if fits.ccd == 'ccd_1':
+            other_number = '2'
+        elif fits.ccd == 'ccd_2':
+            other_number = '1'
+        else:
+            raise ValueError('Unrecognised CCD: ' + fits.ccd)
+        other_filename = fits.filename[:5] + other_number + fits.filename[6:]
+        other_fits = self.fits_file(other_filename)
+        return other_fits
 
     @contextmanager
     def visit_dir(self, dir_path):
