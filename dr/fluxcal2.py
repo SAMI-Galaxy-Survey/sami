@@ -92,7 +92,7 @@ def read_chunked_data(path_list, probenum, n_drop=None, n_chunk=None):
         path_list = [path_list]
     for i_file, path in enumerate(path_list):
         ifu = IFU(path, probenum, flag_name=False)
-        #remove_atmosphere(ifu)
+        remove_atmosphere(ifu)
         data_i, variance_i, wavelength_i = chunk_data(ifu, n_drop=n_drop, 
                                                       n_chunk=n_chunk)
         if i_file == 0:
@@ -852,7 +852,31 @@ def remove_atmosphere(ifu):
     ifu.var /= (extinction**2)
     return
 
+def remove_atmosphere_rss(hdulist):
+    """Remove atmospheric extinction (not tellurics) from an RSS HDUList."""
+    # Read extinction curve (in magnitudes)
+    wavelength_extinction, extinction_mags = read_atmospheric_extinction()
+    # Interpolate onto the data wavelength grid
+    header = hdulist[0].header
+    wavelength = (header['CRVAL1'] + 
+        (np.arange(header['NAXIS1']) + 1 - header['CRPIX1']) * 
+         header['CDELT1'])
+    extinction_mags = np.interp(wavelength, wavelength_extinction, 
+                                extinction_mags)
+    # Scale for observed airmass
+    airmass = calculate_airmass(header['ZDSTART'], header['ZDEND'])
+    extinction_mags *= airmass
+    # Turn into multiplicative flux scaling
+    extinction = 10.0 ** (-0.4 * extinction_mags)
+    hdulist[0].data /= extinction
+    hdulist['VARIANCE'].data /= extinction**2
+    return
+    
+
 def calculate_airmass( zdstart, zdend ):
+    # For now, ignoring zdend because it's wrong if the telescope slewed during
+    # readout
+    zdend = zdstart
     # Is this right? Doesn't it move non-linearly? [JTA]
     zdmid = ( zdstart + zdend ) / 2.
     amstart, ammid, amend = zd2am( np.array( [zdstart, zdmid, zdend] ) )
@@ -888,10 +912,10 @@ def combine_transfer_functions(path_list, path_out):
     # Read the individual transfer functions
     for index, path in enumerate(path_list):
         tf_array[index, :] = pf.getdata(path, 'FLUX_CALIBRATION')[-1, :]
-        # Getting rid of the absolute scaling, because it's different in
-        # different frames and that screws things up at the ends if they
-        # have different wavelength coverage.
-        tf_array[index, :] /= nanmean(tf_array[index, :])
+    # Make sure the overall scaling for each TF matches the others
+    scale = tf_array[:, n_pixel//2].copy()
+    scale /= np.median(scale)
+    tf_array = (tf_array.T / scale).T
     # Combine them.
     # For now, just take the mean. Maybe implement Ned's weighted combination
     # later, preferably when proper variance propagation is in place.
@@ -979,8 +1003,10 @@ def check_psf_parameters(psf_parameters, chunked_data):
 def primary_flux_calibrate(path_in, path_out, path_transfer_function):
     """Apply transfer function to reduced data."""
     hdulist = pf.open(path_in)
+    remove_atmosphere_rss(hdulist)
     transfer_function = pf.getdata(path_transfer_function)
     hdulist[0].data *= transfer_function
+    hdulist['VARIANCE'].data *= transfer_function**2
     hdulist[0].header['FCALFILE'] = (path_transfer_function,
                                      'Flux calibration file')
     hdulist[0].header['HGFLXCAL'] = (HG_CHANGESET, 
