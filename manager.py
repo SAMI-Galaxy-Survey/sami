@@ -75,7 +75,7 @@ from astropy import units
 import astropy.io.fits as pf
 import numpy as np
 from sami.utils.other import find_fibre_table
-from sami.general.cubing import dithered_cubes_from_rss_files
+from sami.general.cubing import dithered_cubes_from_rss_list
 from sami.dr import get_transfer_function, read_combined_transfer_fn
 from sami.dr import primary_flux_calibrate, perform_telluric_correction
 from sami.dr import fluxcal2
@@ -954,7 +954,7 @@ class Manager:
             key = fits.date + fits.field_id + fits.ccd
             date_field_ccd_dict[key].append(path)
         # Now combine the files within each group
-        for path_list in date_field_ccd_dict:
+        for path_list in date_field_ccd_dict.values():
             path_out = os.path.join(os.path.dirname(path_list[0]),
                                     'TRANSFERcombined.fits')
             if overwrite or not os.path.exists(path_out):
@@ -973,11 +973,19 @@ class Manager:
 
     def flux_calibrate(self, overwrite=False, **kwargs):
         """Apply flux calibration to object frames."""
-        # overwrite not yet implemeneted, so will always overwrite
         for fits in self.files(ndf_class='MFOBJECT', do_not_use=False,
                                **kwargs):
             fits_spectrophotometric = self.matchmaker(fits, 'fcal')
+            if fits_spectrophotometric is None:
+                # Try again with less strict criteria
+                fits_spectrophotometric = self.matchmaker(fits, 'fcal_loose')
+                if fits_spectrophotometric is None:
+                    raise MatchException('No matching flux calibrator found ' +
+                                         'for ' + fits.filename)
             if overwrite or not os.path.exists(fits.fluxcal_path):
+                print 'Flux calibrating file:', fits.reduced_path
+                if os.path.exists(fits.fluxcal_path):
+                    os.remove(fits.fluxcal_path)
                 path_transfer_fn = os.path.join(
                     fits_spectrophotometric.reduced_dir,
                     'TRANSFERcombined.fits')
@@ -1015,9 +1023,9 @@ class Manager:
         for fits in self.files(ndf_class='MFOBJECT', do_not_use=False,
                                reduced=True, min_exposure=min_exposure, 
                                name=name, **kwargs):
-            if fits.telluric_corrected:
+            if os.path.exists(fits.telluric_path):
                 path = fits.telluric_path
-            elif fits.flux_calibrated:
+            elif os.path.exists(fits.fluxcal_path):
                 path = fits.fluxcal_path
             else:
                 path = fits.reduced_path
@@ -1026,7 +1034,7 @@ class Manager:
         os.makedirs(tmp_dir)
         with self.visit_dir(tmp_dir):
             for field in field_dict:
-                dithered_cubes_from_rss_files(field_dict[field], write=True)
+                dithered_cubes_from_rss_list(field_dict[field], write=True)
                 for filename in os.listdir('.'):
                     if filename.lower().endswith(('.fit', '.fits')):
                         target_path = os.path.join(rel_target_dir, filename)
@@ -1438,6 +1446,7 @@ class Manager:
         dark  -- Find a combined dark frame
         lflat -- Find a combined long-slit flat frame
         fcal  -- Find a reduced spectrophotometric standard star frame
+        fcal_loose -- As fcal, but with less strict criteria
 
         The return type depends on what is asked for:
         tlmap, tlmap_flap, wavel, fflat, fflat_dome, thput, thput_object, fcal 
@@ -1544,6 +1553,15 @@ class Manager:
             # Find a spectrophotometric standard star
             ndf_class = 'MFOBJECT'
             date = fits.date
+            plate_id = fits.plate_id
+            field_id = fits.field_id
+            ccd = fits.ccd
+            reduced = True
+            spectrophotometric = True
+            fom = time_difference
+        elif match_class.lower() == 'fcal_loose':
+            # Spectrophotometric with less strict criteria
+            ndf_class = 'MFOBJECT'
             ccd = fits.ccd
             reduced = True
             spectrophotometric = True
