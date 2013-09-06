@@ -888,10 +888,14 @@ def combine_transfer_functions(path_list, path_out):
     # Read the individual transfer functions
     for index, path in enumerate(path_list):
         tf_array[index, :] = pf.getdata(path, 'FLUX_CALIBRATION')[-1, :]
+        # Getting rid of the absolute scaling, because it's different in
+        # different frames and that screws things up at the ends if they
+        # have different wavelength coverage.
+        tf_array[index, :] /= nanmean(tf_array[index, :])
     # Combine them.
     # For now, just take the mean. Maybe implement Ned's weighted combination
     # later, preferably when proper variance propagation is in place.
-    tf_combined = np.mean(tf_array, axis=0)
+    tf_combined = nanmean(tf_array, axis=0)
     save_combined_transfer_function(path_out, tf_combined, path_list)
     return
 
@@ -907,6 +911,7 @@ def save_combined_transfer_function(path_out, tf_combined, path_list):
         hdulist_tmp = pf.open(path)
         hdu = hdulist_tmp['FLUX_CALIBRATION']
         hdu.header['EXTVER'] = index + 1
+        hdu.header['ORIGFILE'] = (path, 'Originating file for this HDU')
         hdulist.append(hdu)
     if os.path.exists(path_out):
         os.remove(path_out)
@@ -976,9 +981,13 @@ def primary_flux_calibrate(path_in, path_out, path_transfer_function):
     hdulist = pf.open(path_in)
     transfer_function = pf.getdata(path_transfer_function)
     hdulist[0].data *= transfer_function
+    hdulist[0].header['FCALFILE'] = (path_transfer_function,
+                                     'Flux calibration file')
+    hdulist[0].header['HGFLXCAL'] = (HG_CHANGESET, 
+                                     'Hg changeset ID for fluxcal code')
     hdulist.writeto(path_out)
     return
-    
+
 
 
 

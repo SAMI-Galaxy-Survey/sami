@@ -105,13 +105,7 @@ def get_probe(infile, object_name, verbose=True):
     return ifu
 
 def dithered_cubes_from_rss_files(inlist, sample_size=0.5, drop_factor=0.5, objects='all', clip=True, plot=True, write=False):
-    """A wrapper to make a cube from reduced RSS files. Only input files that go together - ie have the same objects."""
-
-    start_time = datetime.datetime.now()
-
-    # Set a few numpy printing to terminal things
-    np.seterr(divide='ignore', invalid='ignore') # don't print division or invalid warnings.
-    np.set_printoptions(linewidth=120) # can also use to set precision of numbers printed to screen
+    """A wrapper to make a cube from reduced RSS files, passed as a filename containing a list of filenames. Only input files that go together - ie have the same objects."""
 
     # Read in the list of all the RSS files input by the user.
     files=[]
@@ -120,7 +114,21 @@ def dithered_cubes_from_rss_files(inlist, sample_size=0.5, drop_factor=0.5, obje
         cols[0]=str.strip(cols[0])
 
         files.append(np.str(cols[0]))
+
+    dithered_cubes_from_rss_list(files, sample_size=sample_size, 
+                                 drop_factor=drop_factor, objects=objects, 
+                                 clip=clip, plot=plot, write=write)
+    return
+
+def dithered_cubes_from_rss_list(files, sample_size=0.5, drop_factor=0.5, objects='all', clip=True, plot=True, write=False):
+    """A wrapper to make a cube from reduced RSS files, passed as a list. Only input files that go together - ie have the same objects."""
         
+    start_time = datetime.datetime.now()
+
+    # Set a few numpy printing to terminal things
+    np.seterr(divide='ignore', invalid='ignore') # don't print division or invalid warnings.
+    np.set_printoptions(linewidth=120) # can also use to set precision of numbers printed to screen
+
     n_files = len(files)
 
     # For first file get the names of galaxies observed - assuming these are the same in all RSS files.
