@@ -86,15 +86,16 @@ def in_telluric_band(wavelength):
                                (wavelength <= band[1]))
     return retarray
 
-def read_chunked_data(path_list, probenum, n_drop=None, n_chunk=None):
+def read_chunked_data(path_list, probenum, n_drop=None, n_chunk=None,
+                      sigma_clip=None):
     """Read flux from a list of files, chunk it and combine."""
     if isinstance(path_list, str):
         path_list = [path_list]
     for i_file, path in enumerate(path_list):
         ifu = IFU(path, probenum, flag_name=False)
         remove_atmosphere(ifu)
-        data_i, variance_i, wavelength_i = chunk_data(ifu, n_drop=n_drop, 
-                                                      n_chunk=n_chunk)
+        data_i, variance_i, wavelength_i = chunk_data(
+            ifu, n_drop=n_drop, n_chunk=n_chunk, sigma_clip=sigma_clip)
         if i_file == 0:
             data = data_i
             variance = variance_i
@@ -112,7 +113,7 @@ def read_chunked_data(path_list, probenum, n_drop=None, n_chunk=None):
                     'yfibre': yfibre}
     return chunked_data
 
-def chunk_data(ifu, n_drop=None, n_chunk=None):
+def chunk_data(ifu, n_drop=None, n_chunk=None, sigma_clip=None):
     """Condence a spectrum into a number of chunks."""
     n_pixel = ifu.naxis1
     n_fibre = len(ifu.data)
@@ -121,9 +122,23 @@ def chunk_data(ifu, n_drop=None, n_chunk=None):
     if n_chunk is None:
         n_chunk = round((n_pixel - 2*n_drop) / 100.0)
     chunk_size = round((n_pixel - 2*n_drop) / n_chunk)
+    if sigma_clip:
+        good = np.isfinite(ifu.data)
+        data_smooth = ifu.data.copy()
+        data_smooth[~good] = np.median(ifu.data[good])
+        data_smooth = median_filter(data_smooth, size=(1, 51))
+        data_smooth[~good] = np.nan
+        # Estimate of variance; don't trust 2dfdr values
+        std_smooth = 1.4826 * np.median(np.abs(ifu.data[good] - 
+                                               data_smooth[good]))
+        data = ifu.data
+        clip = abs(data - data_smooth) > (sigma_clip * std_smooth)
+        data[clip] = data_smooth[clip]
+    else:
+        data = ifu.data
     start = n_drop
     end = n_drop + n_chunk * chunk_size
-    data = ifu.data[:, start:end].reshape(n_fibre, n_chunk, chunk_size)
+    data = data[:, start:end].reshape(n_fibre, n_chunk, chunk_size)
     variance = ifu.var[:, start:end].reshape(n_fibre, n_chunk, chunk_size)
     wavelength = ifu.lambda_range[start:end].reshape(n_chunk, chunk_size)
     data = nanmean(data, axis=2)
@@ -615,12 +630,16 @@ def save_extracted_flux(path, observed_flux, observed_background,
         ('PROBENUM', star_match['probenum'], 'Number of the probe containing '
                                              'the star'),
         ('STDNAME', star_match['name'], 'Name of standard star'),
-        ('STDFILE', star_match['path'], 'Filename of standard spectrum'),
-        ('STDOFF', star_match['separation'], 'Offset (arcsec) to standard '
-                                             'star coordinates'),
         ('HGFLXCAL', HG_CHANGESET, 'Hg changeset ID for fluxcal code'),
         ('MODEL', model_name, 'Name of model used in PSF fit'),
         ('GOODPSF', good_psf, 'Whether the PSF fit has good parameters')]
+    if 'path' in star_match:
+        header_item_list.append(
+            ('STDFILE', star_match['path'], 'Filename of standard spectrum'))
+    if 'separation' in star_match:
+        header_item_list.append(
+            ('STDOFF', star_match['separation'], 'Offset (arcsec) to standard '
+                                                 'star coordinates'))
     for key, value in psf_parameters.items():
         header_item_list.append((header_translate(key), value, 
                                  'PSF model parameter'))
