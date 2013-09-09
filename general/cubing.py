@@ -159,9 +159,14 @@ def dithered_cubes_from_rss_list(files, sample_size=0.5, drop_factor=0.5, object
             ifu_list.append(utils.IFU(files[j], name, flag_name=True))
 
         # Call dithered_cube_from_rss to create the flux, variance and weight cubes for the object.
-        flux_cube, var_cube, weight_cube, diagnostics = dithered_cube_from_rss(ifu_list, sample_size=sample_size,
+        # For now, putting in a try/except block to skip over any errors
+        try:
+            flux_cube, var_cube, weight_cube, diagnostics = dithered_cube_from_rss(ifu_list, sample_size=sample_size,
                                           drop_factor=drop_factor, clip=clip, plot=plot)
-        
+        except Exception:
+            print 'Cubing failed! Skipping to next galaxy.'
+            continue
+
         # Write out FITS files.
         if write==True:
 
