@@ -432,6 +432,7 @@ class Manager:
         self.idx_files = IDX_FILES[self.speed]
         self.gratlpmm = GRATLPMM
         self.root = root
+        self.abs_root = os.path.abspath(root)
         # Match objects within 1'
         self.matching_radius = \
             coord.AngularSeparation(0.0, 0.0, 0.0, 1.0, units.arcmin)
@@ -445,7 +446,7 @@ class Manager:
 
     def inspect_root(self, copy_files, move_files, trust_header=True):
         """Add details of existing files to internal lists."""
-        for dirname, subdirname_list, filename_list in os.walk(self.root):
+        for dirname, subdirname_list, filename_list in os.walk(self.abs_root):
             for filename in filename_list:
                 if self.file_filter(filename):
                     self.import_file(dirname, filename,
@@ -504,7 +505,7 @@ class Manager:
             rel_path = os.path.join('lflat', fits.ccd, fits.date)
         else:
             rel_path = os.path.join(fits.date, fits.ccd)
-        fits.raw_dir = os.path.join(self.root, 'raw', rel_path)
+        fits.raw_dir = os.path.join(self.abs_root, 'raw', rel_path)
         fits.raw_path = os.path.join(fits.raw_dir, fits.filename)
         return
 
@@ -673,7 +674,7 @@ class Manager:
         else:
             rel_path = os.path.join(fits.date, fits.plate_id, fits.field_id,
                                     fits.name, fits.ccd)
-        fits.reduced_dir = os.path.join(self.root, 'reduced', rel_path)
+        fits.reduced_dir = os.path.join(self.abs_root, 'reduced', rel_path)
         fits.reduced_link = os.path.join(fits.reduced_dir, fits.filename)
         fits.reduced_path = os.path.join(fits.reduced_dir,
                                          fits.reduced_filename)
@@ -750,17 +751,17 @@ class Manager:
 
     def bias_combined_path(self, ccd):
         """Return the path for BIAScombined.fits"""
-        return os.path.join(self.root, 'reduced', 'bias', ccd,
+        return os.path.join(self.abs_root, 'reduced', 'bias', ccd,
                             self.bias_combined_filename())
 
     def dark_combined_path(self, ccd, exposure_str):
         """Return the path for DARKcombined.fits"""
-        return os.path.join(self.root, 'reduced', 'dark', ccd, exposure_str,
+        return os.path.join(self.abs_root, 'reduced', 'dark', ccd, exposure_str,
                             self.dark_combined_filename(exposure_str))
     
     def lflat_combined_path(self, ccd):
         """Return the path for LFLATcombined.fits"""
-        return os.path.join(self.root, 'reduced', 'lflat', ccd,
+        return os.path.join(self.abs_root, 'reduced', 'lflat', ccd,
                             self.lflat_combined_filename())
 
     def reduce_calibrator(self, calibrator_type, overwrite=False):
@@ -1009,8 +1010,8 @@ class Manager:
 
     def cube(self, overwrite=False, **kwargs):
         """Make datacubes from the given RSS files."""
-        # tmp_dir = os.path.join(self.root, 'cubed', 'tmp')
-        target_dir = os.path.join(self.root, 'cubed')
+        # tmp_dir = os.path.join(self.abs_root, 'cubed', 'tmp')
+        target_dir = os.path.join(self.abs_root, 'cubed')
         # rel_target_dir = os.path.relpath(target_dir, tmp_dir)
         # By default, only use 'main' exposures of at least 10 minutes
         if 'min_exposure' in kwargs:
@@ -1031,8 +1032,17 @@ class Manager:
         with self.visit_dir(target_dir):
             for field, fits_list in groups.items():
                 print field
-                print fits_list
-                dithered_cubes_from_rss_list(fits_list, write=True)
+                path_list = []
+                for fits in fits_list:
+                    if os.path.exists(fits.telluric_path):
+                        path = fits.telluric_path
+                    elif os.path.exists(fits.fluxcal_path):
+                        path = fits.fluxcal_path
+                    else:
+                        path = fits.reduced_path
+                    path_list.append(path)
+                print path_list
+                dithered_cubes_from_rss_list(path_list, write=True)
         #         for galaxy_dir in os.listdir('.'):
         #             for filename in os.listdir(galaxy_dir):
         #                 if filename.lower().endswith(('.fit', '.fits')):
