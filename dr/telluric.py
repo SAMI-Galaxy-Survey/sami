@@ -15,7 +15,8 @@ def extract_secondary_standard(path_list,
     # First check which hexabundle we need to look at
     star_match = identify_secondary_standard(path_list[0])
     # Read the observed data, in chunks
-    chunked_data = read_chunked_data(path_list, star_match['probenum'])
+    chunked_data = read_chunked_data(path_list, star_match['probenum'], 
+                                     sigma_clip=5)
     # Fit the PSF
     fixed_parameters = set_fixed_parameters(path_list, model_name)
     psf_parameters = fit_model_flux(
