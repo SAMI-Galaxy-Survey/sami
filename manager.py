@@ -961,9 +961,9 @@ class Manager:
 
     def cube(self, overwrite=False, **kwargs):
         """Make datacubes from the given RSS files."""
-        tmp_dir = os.path.join(self.root, 'cubed', 'tmp')
+        # tmp_dir = os.path.join(self.root, 'cubed', 'tmp')
         target_dir = os.path.join(self.root, 'cubed')
-        rel_target_dir = os.path.relpath(target_dir, tmp_dir)
+        # rel_target_dir = os.path.relpath(target_dir, tmp_dir)
         # By default, only use 'main' exposures of at least 10 minutes
         if 'min_exposure' in kwargs:
             min_exposure = kwargs['min_exposure']
@@ -975,32 +975,30 @@ class Manager:
             del kwargs['name']
         else:
             name = 'main'
-        field_dict = defaultdict(list)
-        for fits in self.files(ndf_class='MFOBJECT', do_not_use=False,
-                               reduced=True, min_exposure=min_exposure, 
-                               name=name, **kwargs):
-            if fits.telluric_corrected:
-                path = fits.telluric_path
-            elif fits.flux_calibrated:
-                path = fits.fluxcal_path
-            else:
-                path = fits.reduced_path
-            path = os.path.relpath(path, tmp_dir)
-            field_dict[fits.field_id].append(path)
-        os.makedirs(tmp_dir)
-        with self.visit_dir(tmp_dir):
-            for field in field_dict:
-                dithered_cubes_from_rss_files(field_dict[field], write=True)
-                for filename in os.listdir('.'):
-                    if filename.lower().endswith(('.fit', '.fits')):
-                        target_path = os.path.join(rel_target_dir, filename)
-                        if os.path.exists(target_path):
-                            if overwrite:
-                                os.remove(target_path)
-                            else:
-                                os.remove(filename)
-                            self.move(filename, target_path)
-        os.rmdir(tmp_dir)
+        groups = self.group_files_by(
+            ['field_id', 'ccd'], ndf_class='MFOBJECT', do_not_use=False,
+            reduced=True, min_exposure=min_exposure, name=name, **kwargs)
+        # if not os.path.exists(tmp_dir):
+        #     os.makedirs(tmp_dir)
+        with self.visit_dir(target_dir):
+            for field, fits_list in groups.items():
+                print field
+                print fits_list
+                dithered_cubes_from_rss_files(fits_list, write=True)
+        #         for galaxy_dir in os.listdir('.'):
+        #             for filename in os.listdir(galaxy_dir):
+        #                 if filename.lower().endswith(('.fit', '.fits')):
+
+
+
+        #                 target_path = os.path.join(rel_target_dir, filename)
+        #                 if os.path.exists(target_path):
+        #                     if overwrite:
+        #                         os.remove(target_path)
+        #                     else:
+        #                         os.remove(filename)
+        #                     self.move(filename, target_path)
+        # os.rmdir(tmp_dir)
         return
 
     def reduce_all(self, overwrite=False, **kwargs):
@@ -1288,6 +1286,19 @@ class Manager:
                 yield fits
         return
 
+    def group_files_by(self, keys, **kwargs):
+        """Return a dictionary of FITSFile objects grouped by the keys."""
+        if isinstance(keys, str):
+            keys = [keys]
+        groups = defaultdict(list)
+        for fits in self.files(**kwargs):
+            combined_key = []
+            for key in keys:
+                combined_key.append(getattr(fits, key))
+            combined_key = tuple(combined_key)
+            groups[combined_key].append(fits)
+        return groups
+
     def ccds(self, do_not_use=False):
         """Generator for ccd names in the data."""
         ccd_list = []
@@ -1364,6 +1375,8 @@ class Manager:
     @contextmanager
     def visit_dir(self, dir_path):
         """Context manager to temporarily visit a directory."""
+        if not os.path.exists(dir_path):
+            os.makedirs(dir_path)
         os.chdir(dir_path)
         yield
         os.chdir(self.cwd)
