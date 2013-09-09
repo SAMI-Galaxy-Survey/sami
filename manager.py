@@ -75,9 +75,10 @@ from astropy import units
 import astropy.io.fits as pf
 import numpy as np
 from sami.utils.other import find_fibre_table
-from sami.general.cubing import dithered_cubes_from_rss_files
+from sami.general.cubing import dithered_cubes_from_rss_list
 from sami.dr import get_transfer_function, read_combined_transfer_fn
 from sami.dr import primary_flux_calibrate, perform_telluric_correction
+from sami.dr import fluxcal2
 
 
 IDX_FILES_SLOW = {'1': 'sami580V_v1_2.idx',
@@ -923,32 +924,79 @@ class Manager:
 
     def derive_transfer_function(self, overwrite=False, **kwargs):
         """Derive flux calibration transfer functions and save them."""
-        # overwrite not yet implemented, so will always overwrite
-        dir_list = []
+        for fits in self.files(ndf_class='MFOBJECT', do_not_use=False,
+                               spectrophotometric=True, ccd='ccd_1', **kwargs):
+            if not overwrite:
+                hdulist = pf.open(fits.reduced_path)
+                try:
+                    hdu = hdulist['FLUX_CALIBRATION']
+                except KeyError:
+                    # Hasn't been done yet. Close the file and carry on.
+                    hdulist.close()
+                else:
+                    # Has been done. Close the file and skip to the next one.
+                    hdulist.close()
+                    continue
+            fits_2 = self.other_arm(fits)
+            path_pair = (fits.reduced_path, fits_2.reduced_path)
+            print ('Deriving transfer function for ' + fits.filename + 
+                   ' and ' + fits_2.filename)
+            fluxcal2.derive_transfer_function(path_pair)
+        return
+
+    def combine_transfer_function(self, overwrite=False, **kwargs):
+        """Combine and save transfer functions from multiple files."""
+        # First sort the spectrophotometric files into date/field/CCD/name 
+        # groups. Wouldn't need name except that currently different stars
+        # are on different units; remove the name matching when that's
+        # sorted.
+        date_field_ccd_name_dict = defaultdict(list)
         for fits in self.files(ndf_class='MFOBJECT', do_not_use=False,
                                spectrophotometric=True, **kwargs):
-            if fits.reduced_dir not in dir_list:
-                dir_list.append(fits.reduced_dir)
-        for directory in dir_list:
-            get_transfer_function(directory, save=True, verbose=True)
+            path = fits.reduced_path
+            key = fits.date + fits.field_id + fits.ccd + fits.name
+            date_field_ccd_name_dict[key].append(path)
+        # Now combine the files within each group
+        for path_list in date_field_ccd_name_dict.values():
+            path_out = os.path.join(os.path.dirname(path_list[0]),
+                                    'TRANSFERcombined.fits')
+            if overwrite or not os.path.exists(path_out):
+                print 'Combining files to create', path_out
+                fluxcal2.combine_transfer_functions(path_list, path_out)
+            # Copy the file into all required directories
+            done = [os.path.dirname(path_list[0])]
+            for path in path_list:
+                if os.path.dirname(path) not in done:
+                    path_copy = os.path.join(os.path.dirname(path),
+                                             'TRANSFERcombined.fits')
+                    done.append(os.path.dirname(path_copy))
+                    if overwrite or not os.path.exists(path_copy):
+                        print 'Copying combined file to', path_copy
+                        shutil.copy2(path_out, path_copy)
         return
 
     def flux_calibrate(self, overwrite=False, **kwargs):
         """Apply flux calibration to object frames."""
-        # overwrite not yet implemeneted, so will always overwrite
         for fits in self.files(ndf_class='MFOBJECT', do_not_use=False,
-                               **kwargs):
+                               spectrophotometric=False, **kwargs):
             fits_spectrophotometric = self.matchmaker(fits, 'fcal')
-            path_transfer_fn = os.path.join(
-                fits_spectrophotometric.reduced_dir,
-                'TRANSFERcombined.fits')
-            transfer_fn, transfer_var = read_combined_transfer_fn(
-                path_transfer_fn)
-            primary_flux_calibrate(
-                fits.reduced_path,
-                fits.fluxcal_path,
-                transfer_fn,
-                transfer_var)
+            if fits_spectrophotometric is None:
+                # Try again with less strict criteria
+                fits_spectrophotometric = self.matchmaker(fits, 'fcal_loose')
+                if fits_spectrophotometric is None:
+                    raise MatchException('No matching flux calibrator found ' +
+                                         'for ' + fits.filename)
+            if overwrite or not os.path.exists(fits.fluxcal_path):
+                print 'Flux calibrating file:', fits.reduced_path
+                if os.path.exists(fits.fluxcal_path):
+                    os.remove(fits.fluxcal_path)
+                path_transfer_fn = os.path.join(
+                    fits_spectrophotometric.reduced_dir,
+                    'TRANSFERcombined.fits')
+                fluxcal2.primary_flux_calibrate(
+                    fits.reduced_path,
+                    fits.fluxcal_path,
+                    path_transfer_fn)
         return
 
     def telluric_correct(self, overwrite=False, **kwargs):
@@ -984,7 +1032,7 @@ class Manager:
             for field, fits_list in groups.items():
                 print field
                 print fits_list
-                dithered_cubes_from_rss_files(fits_list, write=True)
+                dithered_cubes_from_rss_list(fits_list, write=True)
         #         for galaxy_dir in os.listdir('.'):
         #             for filename in os.listdir(galaxy_dir):
         #                 if filename.lower().endswith(('.fit', '.fits')):
@@ -1372,6 +1420,18 @@ class Manager:
                        self.lflat_combined_path(ccd))
         return
 
+    def other_arm(self, fits):
+        """Return the FITSFile from the other arm of the spectrograph."""
+        if fits.ccd == 'ccd_1':
+            other_number = '2'
+        elif fits.ccd == 'ccd_2':
+            other_number = '1'
+        else:
+            raise ValueError('Unrecognised CCD: ' + fits.ccd)
+        other_filename = fits.filename[:5] + other_number + fits.filename[6:]
+        other_fits = self.fits_file(other_filename)
+        return other_fits
+
     @contextmanager
     def visit_dir(self, dir_path):
         """Context manager to temporarily visit a directory."""
@@ -1403,6 +1463,7 @@ class Manager:
         dark  -- Find a combined dark frame
         lflat -- Find a combined long-slit flat frame
         fcal  -- Find a reduced spectrophotometric standard star frame
+        fcal_loose -- As fcal, but with less strict criteria
 
         The return type depends on what is asked for:
         tlmap, tlmap_flap, wavel, fflat, fflat_dome, thput, thput_object, fcal 
@@ -1509,6 +1570,15 @@ class Manager:
             # Find a spectrophotometric standard star
             ndf_class = 'MFOBJECT'
             date = fits.date
+            plate_id = fits.plate_id
+            field_id = fits.field_id
+            ccd = fits.ccd
+            reduced = True
+            spectrophotometric = True
+            fom = time_difference
+        elif match_class.lower() == 'fcal_loose':
+            # Spectrophotometric with less strict criteria
+            ndf_class = 'MFOBJECT'
             ccd = fits.ccd
             reduced = True
             spectrophotometric = True
