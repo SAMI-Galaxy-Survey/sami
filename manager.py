@@ -1373,13 +1373,17 @@ class Manager:
         return
 
     @contextmanager
-    def visit_dir(self, dir_path):
+    def visit_dir(self, dir_path, cleanup_2dfdr=False):
         """Context manager to temporarily visit a directory."""
         if not os.path.exists(dir_path):
             os.makedirs(dir_path)
         os.chdir(dir_path)
-        yield
-        os.chdir(self.cwd)
+        try:
+            yield
+        finally:
+            os.chdir(self.cwd)
+            if cleanup_2dfdr:
+                self.cleanup()
 
     def cleanup(self):
         """Clean up 2dfdr rubbish."""
