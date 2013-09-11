@@ -9,7 +9,6 @@ import itertools
 import os
 import sys
 import datetime
-import code
 
 # Cross-correlation function from scipy.signal (slow)
 from scipy.signal import correlate
@@ -87,7 +86,8 @@ def get_object_names(infile):
     names_unique=list(set(names))
 
     # Pick out the object names, rejecting SKY and empty strings
-    object_names_unique = [s for s in names_unique if s.startswith('SKY')==False and len(s)>0]
+    object_names_unique = [s for s in names_unique if ((s.startswith('SKY')==False)
+                            and (s.startswith('Sky')==False)) and len(s)>0]
 
     return object_names_unique
 
@@ -116,7 +116,7 @@ def get_probe(infile, object_name, verbose=True):
     # Return the probe number
     return ifu
 
-def dithered_cubes_from_rss_files(inlist,objects='all', clip=True, plot=True, write=False):
+def dithered_cubes_from_rss_files(inlist,objects='all', clip=True, plot=False, write=False):
     """A wrapper to make a cube from reduced RSS files. Only input files that go together - ie have the same objects."""
 
     start_time = datetime.datetime.now()
@@ -180,9 +180,15 @@ def dithered_cubes_from_rss_files(inlist,objects='all', clip=True, plot=True, wr
                 print "Making directory", name
                 os.mkdir(name)
 
-            
+            if ifu_list[0].gratid == '580V':
+                band = 'g'
+            elif ifu_list[0].gratid == '1000R':
+                band = 'r'
+            else:
+                raise SystemExit('Could not identify band. Exiting')
+
             # Equate Positional WCS
-            WCS_pos = WCS_position(ifu_list[0],flux_cube,name,"g",plot)   
+            WCS_pos = WCS_position(ifu_list[0],flux_cube,name,band,plot)   
             
             # First get some info from one of the headers.
             list1=pf.open(files[0])
@@ -267,18 +273,20 @@ def create_primary_header(ifu_list,name,files,WCS_pos):
     primary_header_keyword_list = ['DCT_DATE','DCT_VER','DETECXE','DETECXS','DETECYE','DETECYS',
                                    'DETECTOR','XPIXSIZE','YPIXSIZE','METHOD','SPEED','READAMP','RO_GAIN',
                                    'RO_NOISE','ORIGIN','TELESCOP','ALT_OBS','LAT_OBS','LONG_OBS',
-                                   'RCT_VER','RCT_DATE','RADECSYS','EQUINOX','INSTRUME','SPECTID',
+                                   'RCT_VER','RCT_DATE','RADECSYS','INSTRUME','SPECTID',
                                    'GRATID','GRATTILT','GRATLPMM','ORDER','TDFCTVER','TDFCTDAT','DICHROIC',
-                                   'OBSTYPE','TOPEND','AXIS','AXIS_X','AXIS_Y','TRACKING','TDFDRVER',
-                                   'HGCOORDS','COORDROT','COORDREV']
+                                   'OBSTYPE','TOPEND','AXIS','AXIS_X','AXIS_Y','TRACKING','TDFDRVER']
+
+    primary_header_conditional_keyword_list = ['HGCOORDS','COORDROT','COORDREV']
 
     for keyword in primary_header_keyword_list:
-        val = []
-        for ifu in ifu_list: val.append(ifu.primary_header[keyword])
-        if len(set(val)) == 1: 
-            hdr_new.append(hdr.cards[keyword])
-        else:
-            print 'Non-unique value for keyword:',keyword
+        if keyword in ifu.primary_header.keys():
+            val = []
+            for ifu in ifu_list: val.append(ifu.primary_header[keyword])
+            if len(set(val)) == 1: 
+                hdr_new.append(hdr.cards[keyword])
+            else:
+                print 'Non-unique value for keyword:',keyword
 
     # Extract the couple of relevant keywords from the fibre table header and again
     # check for consistency of keyword values
@@ -329,8 +337,6 @@ def create_metadata_table(ifu_list):
         primary_header_keywords.remove('EXTEND')
     for i in xrange(primary_header_keywords.count('SCRUNCH')):
         primary_header_keywords.remove('SCRUNCH')
-   
-    print 'Something is working at least'
     
     # TODO: Test/check that all ifu's have the same keywords and error if not
 
@@ -382,7 +388,7 @@ def create_metadata_table(ifu_list):
    
     return pf.new_table(columns)
 
-def dithered_cube_from_rss(ifu_list,clip=True, plot=True, offsets='fit'):
+def dithered_cube_from_rss(ifu_list,clip=True, plot=False, offsets='fit'):
         
     diagnostic_info = {}
 
@@ -813,7 +819,7 @@ class SAMIDrizzler:
 #   cube.
 #
 
-def WCS_position(myIFU,object_flux_cube,object_name,band,plot,write=False):
+def WCS_position(myIFU,object_flux_cube,object_name,band,plot=False,write=False):
     
     # Equate the WCS position information from a cross-correlation between a g-band SAMI cube and a g-band SDSS image.
     
@@ -840,10 +846,10 @@ def WCS_position(myIFU,object_flux_cube,object_name,band,plot,write=False):
         urllib.urlretrieve("http://www.sdss.org/dr3/instruments/imager/filters/"+str(band)+".dat", "sdss_"+str(band)+".dat")
     
     # and convolve with the SDSS throughput
-    sdss_g = ascii.read("SDSS_"+str(band)+".dat", quotechar="#", names=["wave", "pt_secz=1.3", "ext_secz=1.3", "ext_secz=0.0", "extinction"])
+    sdss = ascii.read("SDSS_"+str(band)+".dat", quotechar="#", names=["wave", "pt_secz=1.3", "ext_secz=1.3", "ext_secz=0.0", "extinction"])
     
     # re-grid g["wave"] -> wave
-    thru_regrid = griddata(sdss_g["wave"], sdss_g["ext_secz=1.3"], wave, method="cubic", fill_value=0.0)
+    thru_regrid = griddata(sdss["wave"], sdss["ext_secz=1.3"], wave, method="cubic", fill_value=0.0)
     
     # initialise a 2D simulated g' band flux array.
     len_axis = np.shape(object_flux_cube)[1]
@@ -948,7 +954,7 @@ def WCS_position(myIFU,object_flux_cube,object_name,band,plot,write=False):
 
 ##########
 
-    if plot==True or write==True:
+    if plot==True:
         
         py.ioff()
     
