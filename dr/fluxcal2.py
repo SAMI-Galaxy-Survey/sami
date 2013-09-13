@@ -574,7 +574,7 @@ def match_star_coordinates(ra, dec, max_sep_arcsec=60.0,
     # No matching star found. Let outer code deal with it.
     return
 
-def extract_total_flux(ifu, psf_parameters, model_name):
+def extract_total_flux(ifu, psf_parameters, model_name, clip=None):
     """Extract the total flux, including light between fibres."""
     psf_parameters_array = parameters_dict_to_array(
         psf_parameters, ifu.lambda_range, model_name)
@@ -582,29 +582,70 @@ def extract_total_flux(ifu, psf_parameters, model_name):
     flux = np.zeros(n_pixel)
     background = np.zeros(n_pixel)
     for index, psf_parameters_slice in enumerate(psf_parameters_array):
-        data = ifu.data[:, index]
-        variance = ifu.var[:, index]
-        xpos = ifu.xpos_rel
-        ypos = ifu.ypos_rel
-        good_data = np.where(np.isfinite(data))[0]
-        # Require at least half the fibres to perform a fit
-        if len(good_data) > 30:
-            data = data[good_data]
-            variance = variance[good_data]
-            xpos = xpos[good_data]
-            ypos = ypos[good_data]
-            model = moffat_normalised(psf_parameters_slice, xpos, ypos)
-            args = (model, data, variance)
-            # Initial guess for flux and background
-            guess = [np.sum(data), 0.0]
-            flux_slice, background_slice = leastsq(
-                residual_slice, guess, args=args)[0]
-        else:
-            flux_slice = np.nan
-            background_slice = np.nan
-        flux[index] = flux_slice
-        background[index] = background_slice
+        flux[index], background[index] = extract_flux_slice(
+            ifu.data[:, index], ifu.var[:, index], ifu.xpos_rel, ifu.ypos_rel,
+            psf_parameters_slice)
+    if clip is not None:
+        # Clip out discrepant data. Wavelength slices are targeted based on
+        # their overall deviation from the model, but within a slice only
+        # positive features (like cosmic rays) are clipped.
+        model_parameters = psf_parameters.copy()
+        model_parameters['flux'] = flux
+        model_parameters['background'] = background
+        fit = model_flux(
+            model_parameters, ifu.xpos_rel, ifu.ypos_rel, ifu.lambda_range, 
+            model_name)
+        rms = np.sqrt(np.nansum((ifu.data - fit)**2, axis=0))
+        rms_smoothed = median_filter(rms, 41)
+        bad = np.where(rms >= (clip * rms_smoothed))[0]
+        for bad_pixel in bad:
+            print 'Re-examining pixel number', bad_pixel
+            keep_bool = np.isfinite(ifu.data[:, bad_pixel])
+            keep = np.where(keep_bool)[0]
+            while rms[bad_pixel] >= (clip * rms_smoothed[bad_pixel]):
+                print len(keep), 'pixels remain'
+                # Clip out the fibre with the largest positive deviation
+                worst_pixel = np.argmax(ifu.data[keep, bad_pixel] - 
+                                        fit[keep, bad_pixel])
+                keep_bool[keep[worst_pixel]] = False
+                keep = np.where(keep_bool)[0]
+                # Re-fit the model to the data
+                flux[bad_pixel], background[bad_pixel] = extract_flux_slice(
+                    ifu.data[keep, bad_pixel], ifu.var[keep, bad_pixel],
+                    ifu.xpos_rel[keep], ifu.ypos_rel[keep], 
+                    psf_parameters_array[bad_pixel])
+                # Re-calculate the deviation from the model
+                model_parameters['flux'] = np.array(
+                    [flux[bad_pixel]])
+                model_parameters['background'] = np.array(
+                    [background[bad_pixel]])
+                fit_pixel = model_flux(
+                    model_parameters, ifu.xpos_rel, ifu.ypos_rel, 
+                    np.array([ifu.lambda_range[bad_pixel]]), model_name)
+                rms_pixel = np.sqrt(np.nansum((ifu.data[keep, bad_pixel] - 
+                                               fit_pixel[keep])**2))
+                rms[bad_pixel] = rms_pixel
     return flux, background
+
+def extract_flux_slice(data, variance, xpos, ypos, psf_parameters_slice):
+    """Extract the flux from a single wavelength slice."""
+    good_data = np.where(np.isfinite(data))[0]
+    # Require at least half the fibres to perform a fit
+    if len(good_data) > 30:
+        data = data[good_data]
+        variance = variance[good_data]
+        xpos = xpos[good_data]
+        ypos = ypos[good_data]
+        model = moffat_normalised(psf_parameters_slice, xpos, ypos)
+        args = (model, data, variance)
+        # Initial guess for flux and background
+        guess = [np.sum(data), 0.0]
+        flux_slice, background_slice = leastsq(
+            residual_slice, guess, args=args)[0]
+    else:
+        flux_slice = np.nan
+        background_slice = np.nan
+    return flux_slice, background_slice
 
 def residual_slice(flux_background, model, data, variance):
     """Residual of the model flux in a single wavelength slice."""
