@@ -9,7 +9,6 @@ import itertools
 import os
 import sys
 import datetime
-import code
 
 # Cross-correlation function from scipy.signal (slow)
 from scipy.signal import correlate
@@ -33,11 +32,6 @@ from ..utils.mc_adr import DARCorrector
 
 # importing everything defined in the config file
 from ..config import *
-
-# WCS code
-import astropy.io.ascii as ascii
-from scipy.interpolate import griddata
-import urllib
 
 """
 This module covers functions required to create cubes from a dithered set of RSS frames.
@@ -69,13 +63,6 @@ HG_CHANGESET = utils.hg_changeset(__file__)
 
 epsilon = np.finfo(np.float).eps
 # Store the value of epsilon for quick access.
-
-# Some global constants:
-sample_size=0.5     #Size of output spaxel in arcsec
-drop_factor=0.5     #Size of drop size as a factor of the fibre size
-size_of_grid=50     #Size of a side of the cube such that the cube has 50x50 spaxels
-# @TODO: Compute the size of the grid instead of hard code it!??!
-
 
 def get_object_names(infile):
     """Get the object names observed in the file infile."""
@@ -117,7 +104,7 @@ def get_probe(infile, object_name, verbose=True):
     # Return the probe number
     return ifu
 
-def dithered_cubes_from_rss_files(inlist, objects='all', clip=True, plot=True, write=False):
+def dithered_cubes_from_rss_files(inlist, sample_size=0.5, drop_factor=0.5, objects='all', clip=True, plot=True, write=False):
     """A wrapper to make a cube from reduced RSS files. Only input files that go together - ie have the same objects."""
 
     start_time = datetime.datetime.now()
@@ -137,14 +124,11 @@ def dithered_cubes_from_rss_files(inlist, objects='all', clip=True, plot=True, w
     n_files = len(files)
 
     # For first file get the names of galaxies observed - assuming these are the same in all RSS files.
-    # @TODO: This is not necessarily true, and we should either through an exception or account for it
     if objects=='all':
         object_names=get_object_names(files[0])
     else:
         object_names=objects
         
-    
-    
     print "--------------------------------------------------------------"
     print "The following objects will be cubed:"
     print
@@ -163,21 +147,17 @@ def dithered_cubes_from_rss_files(inlist, objects='all', clip=True, plot=True, w
         
         ifu_list = []
         
-        for j in xrange(n_files):
+        for j in xrange(len(files)):
             ifu_list.append(utils.IFU(files[j], name, flag_name=True))
 
-
         # Call dithered_cube_from_rss to create the flux, variance and weight cubes for the object.
-        flux_cube, var_cube, weight_cube, diagnostics = dithered_cube_from_rss(ifu_list, clip=clip, plot=plot)
+        flux_cube, var_cube, weight_cube, diagnostics = dithered_cube_from_rss(ifu_list, sample_size=sample_size,
+                                          drop_factor=drop_factor, clip=clip, plot=plot)
         
-#        flux_cube = np.zeros((10,11,12))
-#        var_cube = np.zeros((10,11,12))
-#        weight_cube = np.zeros((10,11,12))
-
         # Write out FITS files.
         if write==True:
 
-            # First check if the object directory already exists or not.
+            # First check if the object directory already exisit or not.
             if os.path.isdir(name):
                 print "Directory Exists", name
                 print "Writing files to the existing directory"
@@ -193,31 +173,60 @@ def dithered_cubes_from_rss_files(inlist, objects='all', clip=True, plot=True, w
             # Need to liase.
     
             # For now create a rudimentary WCS with ONLY the correct wavelength scale.
-
-            # Equate Positional WCS via g-band
-            WCS_pos = WCS_position(ifu_list[0],flux_cube,name,"g",plot)
     
             # First get some info from one of the headers.
             list1=pf.open(files[0])
             hdr=list1[0].header
     
-            arm = ifu_list[0].spectrograph_arm
+            grating=hdr['GRATID']
+    
+            if grating=='580V':
+                print "Files are blue."
+                arm='blue'
+                
+            elif grating=='1000R':
+                print "Files are red."
+                arm='red'
+                
+            else:
+                print "I've no idea what grating you used, you crazy person!"
+                arm='unknown'
+    
+            # Create the wcs.
+            wcs_new=pw.WCS(naxis=3)
+            wcs_new.wcs.crpix = [1, 1, hdr['CRPIX1']]
+            print sample_size
+            #print str(sample_size)
+            wcs_new.wcs.cdelt = np.array([sample_size, sample_size, hdr['CDELT1']])
+            wcs_new.wcs.crval = [1, 1, hdr['CRVAL1']]
+            wcs_new.wcs.ctype = ["ARCSEC", "ARCSEC", hdr['CTYPE1']]
+            wcs_new.wcs.equinox = 2000
             
-            hdr_new = create_primary_header(ifu_list,name,files,WCS_pos)
-
+            # Create a header
+            hdr_new=wcs_new.to_header()
+            
+            # Add the name to the header
+            hdr_new.update('NAME', name, 'Object ID')
+    
+            # Add the mercurial changeset ID to the header
+            hdr_new.update('HGCUBING', HG_CHANGESET, 'Hg changeset ID for cubing code')
+    
+            # Put the RSS files into the header
+            for num in xrange(len(files)):
+                #print files[num]
+                rss_key='HIERARCH RSS_FILE '+str(num+1)
+                rss_string='Input RSS file '+str(num+1)
+                hdr_new.update(rss_key, os.path.basename(files[num]), rss_string)
+            
             # Create HDUs for each cube - note headers generated automatically for now.
             # Note - there is a 90-degree rotation in the cube, which I can't track down. I'm rolling the axes before
             # writing the FITS files to compensate.
             hdu1=pf.PrimaryHDU(np.transpose(flux_cube, (2,0,1)), hdr_new)
             hdu2=pf.ImageHDU(np.transpose(var_cube, (2,0,1)), name='VARIANCE')
             hdu3=pf.ImageHDU(np.transpose(weight_cube, (2,0,1)), name='WEIGHT')
-
-            # Create HDUs for meta-data
-            metadata_table = create_metadata_table(ifu_list)
-            
-
+                
             # Put individual HDUs into a HDU list
-            hdulist=pf.HDUList([hdu1,hdu2,hdu3,metadata_table])
+            hdulist=pf.HDUList([hdu1,hdu2,hdu3])
         
             # Write to FITS file.
             # NOTE - In here need to add the directory structure for the cubes.
@@ -233,170 +242,13 @@ def dithered_cubes_from_rss_files(inlist, objects='all', clip=True, plot=True, w
             
     print("Time dithered_cubes_from_files wall time: {0}".format(datetime.datetime.now() - start_time))
 
-def create_primary_header(ifu_list,name,files,WCS_pos):
-    """Create a primary header to attach to each cube from the RSS file headers"""
 
-    hdr = ifu_list[0].primary_header
-    fbr_hdr = ifu_list[0].fibre_table_header
-    
-    # Get positional information from WCS_pos
-    #### Do something here!!!
-
-    # Create the wcs.
-    wcs_new=pw.WCS(naxis=3)
-    wcs_new.wcs.crpix = [WCS_pos["CRPIX1"], WCS_pos["CRPIX2"], hdr['CRPIX1']]
-    wcs_new.wcs.cdelt = np.array([WCS_pos["CDELT1"], WCS_pos["CDELT2"], hdr['CDELT1']])
-    wcs_new.wcs.crval = [WCS_pos["CRVAL1"], WCS_pos["CRVAL2"], hdr['CRVAL1']]
-    wcs_new.wcs.ctype = [WCS_pos["CTYPE1"], WCS_pos["CTYPE2"], hdr['CTYPE1']]
-    wcs_new.wcs.equinox = 2000
-            
-    # Create a header
-    hdr_new=wcs_new.to_header()
-            
-    # Add the name to the header
-    hdr_new.update('NAME', name, 'Object ID')
-    # Need to implement a database specific-specific OBSTYPE keyword to indicate galaxies
-    # *NB* This is different to the OBSTYPE keyword already in the header below
-    
-    # Determine total exposure time and add to header
-    total_exptime = 0.
-    for ifu in ifu_list:
-        total_exptime+=ifu.primary_header['EXPOSED']
-    hdr_new.update('TOTALEXP',total_exptime,'Total exposure (seconds)')
-
-    # Add the mercurial changeset ID to the header
-    hdr_new.update('HGCUBING', HG_CHANGESET, 'Hg changeset ID for cubing code')
-    # Need to implement a global version number for the database
-    
-    # Put the RSS files into the header
-    for num in xrange(len(files)):
-        rss_key='HIERARCH RSS_FILE '+str(num+1)
-        rss_string='Input RSS file '+str(num+1)
-        hdr_new.update(rss_key, os.path.basename(files[num]), rss_string)
-
-    # Extract header keywords of interest from the metadata table, check for consistency
-    # then append to the main header
-
-    primary_header_keyword_list = ['DCT_DATE','DCT_VER','DETECXE','DETECXS','DETECYE','DETECYS',
-                                   'DETECTOR','XPIXSIZE','YPIXSIZE','METHOD','SPEED','READAMP','RO_GAIN',
-                                   'RO_NOISE','ORIGIN','TELESCOP','ALT_OBS','LAT_OBS','LONG_OBS',
-                                   'RCT_VER','RCT_DATE','RADECSYS','EQUINOX','INSTRUME','SPECTID',
-                                   'GRATID','GRATTILT','GRATLPMM','ORDER','TDFCTVER','TDFCTDAT','DICHROIC',
-                                   'OBSTYPE','TOPEND','AXIS','AXIS_X','AXIS_Y','TRACKING','TDFDRVER',
-                                   'HGCOORDS','COORDROT','COORDREV']
-
-    for keyword in primary_header_keyword_list:
-        val = []
-        for ifu in ifu_list: val.append(ifu.primary_header[keyword])
-        if len(set(val)) == 1: 
-            hdr_new.append(hdr.cards[keyword])
-        else:
-            print 'Non-unique value for keyword:',keyword
-
-    # Extract the couple of relevant keywords from the fibre table header and again
-    # check for consistency of keyword values
-
-    fibre_header_keyword_list = ['PLATEID','LABEL']
-
-    for keyword in fibre_header_keyword_list:
-        val = []
-        for ifu in ifu_list: val.append(ifu.fibre_table_header[keyword])
-        if len(set(val)) == 1:
-            hdr_new.append(ifu_list[0].fibre_table_header.cards[keyword])
-        else:
-            print 'Non-unique valie for keyword:',keyword
-
-    # Append HISTORY from the initial RSS file header, assuming HISTORY is
-    # common for all RSS frames.
-
-    hdr_new.append(hdr.cards['SCRUNCH'])
-    hist_ind = np.where(np.array(hdr.keys()) == 'HISTORY')[0]
-    for i in hist_ind: 
-        hdr_new.append(hdr.cards[i])
-
-    return hdr_new
-
-def create_metadata_table(ifu_list):
-    """Build a FITS binary table HDU containing all the meta data from individual IFU objects."""
-    
-    # List of columns for the meta-data table
-    columns = []
-    
-    # Number of rows to appear in the table (equal to the number of files used to create the cube)
-    n_rows = len(ifu_list)
-    
-    # For now we assume that all files have the same set of keywords, and complain if they don't.
-    
-    first_header = ifu_list[0].primary_header
-    
-    primary_header_keywords = first_header.keys()
-    
-    # We must remove COMMENT and HISTORY keywords, as they must be treated separately.
-    for i in xrange(primary_header_keywords.count('HISTORY')):
-        primary_header_keywords.remove('HISTORY')
-    for i in xrange(primary_header_keywords.count('COMMENT')):
-        primary_header_keywords.remove('COMMENT')
-    for i in xrange(primary_header_keywords.count('SIMPLE')):
-        primary_header_keywords.remove('SIMPLE')
-    for i in xrange(primary_header_keywords.count('EXTEND')):
-        primary_header_keywords.remove('EXTEND')
-    for i in xrange(primary_header_keywords.count('SCRUNCH')):
-        primary_header_keywords.remove('SCRUNCH')
-   
-    print 'Something is working at least'
-    
-    # TODO: Test/check that all ifu's have the same keywords and error if not
-
-    # Determine the FITS binary table column types types for each header keyword
-    # and create the corresponding columns. See the documentation here:
-    # 
-    #     https://astropy.readthedocs.org/en/v0.1/io/fits/usage/table.html#creating-a-fits-table
-
-    def get_primary_header_values(keyword, dtype):
-        return np.asarray(map(lambda x: x.primary_header[keyword],ifu_list), dtype)
-
-    for keyword in primary_header_keywords:
-        if (isinstance(first_header[keyword],bool)):
-            # Output type is Logical (boolean)
-            columns.append(pf.Column(
-                name=keyword,
-                format='L',
-                array=get_primary_header_values(keyword,np.bool)
-                )) 
-        elif (isinstance(first_header[keyword],int)):
-            columns.append(pf.Column(
-                name=keyword,
-                format='K',
-                array=get_primary_header_values(keyword,np.int)
-                )) # 64-bit integer
-        elif (isinstance(first_header[keyword],str)):
-            columns.append(pf.Column(
-                name=keyword,
-                format='128A',
-                array=get_primary_header_values(keyword,'|S128')                
-                )) # 128 character string
-        elif (isinstance(first_header[keyword],float)):
-            columns.append(pf.Column(
-                name=keyword,
-                format='E',
-                array=get_primary_header_values(keyword,np.float)
-                )) # single-precision float
-
-    del get_primary_header_values
-    
-    # TODO: Add columns for comments and history information.
-    #
-    # The code below tries to put these in a variable size character array
-    # column in the binary table, but it is very messy. Better might be a
-    # separate ascii table.
-    #
-    #columns.append(pf.Column(name='COMMENTS', format='80PA(100)')) # Up to 100 80-character lines
-    #columns.append(pf.Column(name='HISTORY', format='80PA(100)')) # Up to 100 80-character lines
-   
-    return pf.new_table(columns)
-
-def dithered_cube_from_rss(ifu_list, clip=True, plot=True, offsets='fit'):
+def dithered_cube_from_rss(ifu_list, sample_size=0.5, drop_factor=0.5, clip=True, plot=True, offsets='fit'):
         
+    # When resampling need to know the size of the grid in square output pixels
+    # @TODO: Compute the size of the grid instead of hard code it!
+    size_of_grid=50 
+    
 
     diagnostic_info = {}
 
@@ -818,266 +670,3 @@ class SAMIDrizzler:
     
         return self.drop_to_pixel, self.pixel_coverage
 
-#########################################################################################
-#
-# "WCS_position"
-#
-#   This function cross-correlates a g-band convolved SAMI cube with its respective
-#   SDSS g-band image and pins down the positional WCS for the central spaxel of the
-#   cube.
-#
-
-def WCS_position(myIFU,object_flux_cube,object_name,band,plot,write=False):
-    
-    # Equate the WCS position information from a cross-correlation between a g-band SAMI cube and a g-band SDSS image.
-    
-##########
-    
-    object_flux_cube = np.transpose(object_flux_cube, (2,0,1))
-    
-    # Get Object RA + DEC from fibre table (this is the input catalogues RA+DEC in deg)
-    object_RA = np.around(myIFU.obj_ra[myIFU.n == 1][0], decimals=6)
-    object_DEC = np.around(myIFU.obj_dec[myIFU.n == 1][0], decimals=6)
-    
-    # Build wavelength axis.
-    CRVAL3 = myIFU.crval1
-    CDELT3 = myIFU.cdelt1
-    Nwave  = np.shape(object_flux_cube)[0]
-    
-    # -- crval3 is middle of range and indexing starts at 0.
-    # -- this wave-axis agrees with QFitsView interpretation.
-    CRVAL3a = CRVAL3 - ((Nwave-1)/2)*CDELT3
-    wave = CRVAL3a + CDELT3*np.arange(Nwave)
-    
-    # Get SDSS g-band throughput curve
-    if not os.path.isfile("sdss_"+str(band)+".dat"):
-        urllib.urlretrieve("http://www.sdss.org/dr3/instruments/imager/filters/"+str(band)+".dat", "sdss_"+str(band)+".dat")
-    
-    # and convolve with the SDSS throughput
-    sdss_g = ascii.read("SDSS_"+str(band)+".dat", quotechar="#", names=["wave", "pt_secz=1.3", "ext_secz=1.3", "ext_secz=0.0", "extinction"])
-    
-    # re-grid g["wave"] -> wave
-    thru_regrid = griddata(sdss_g["wave"], sdss_g["ext_secz=1.3"], wave, method="cubic", fill_value=0.0)
-    
-    # initialise a 2D simulated g' band flux array.
-    len_axis = np.shape(object_flux_cube)[1]
-    reconstruct = np.zeros((len_axis,len_axis))
-    tester = np.zeros((len_axis,len_axis))
-    data_bit = np.zeros((Nwave,len_axis,len_axis))
-    
-    # Sum convolved flux:
-    for i in range(Nwave):
-        data_bit[i] = object_flux_cube[i]*thru_regrid[i]
-    
-    reconstruct = np.nansum(data_bit,axis=0) # not absolute right now
-    reconstruct[np.isnan(reconstruct)] = 0. # replacing nan with 0.0
-    reconstruct[reconstruct < 0] = 0.       # replacing negative fluxes with 0.0
-    
-    cube_image = reconstruct
-    xcube = len(cube_image[0])
-    ycube = len(cube_image[1])
-    cube_image_crop = cube_image[(len(cube_image[0])/2)-10:(len(cube_image[0])/2)+10,(len(cube_image[1])/2)-10:(len(cube_image[1])/2)+10]
-    cube_image_crop = sp.ndimage.zoom(cube_image_crop, 5, order=3)
-    cube_image_crop_norm = (cube_image_crop - np.min(cube_image_crop))/np.max(cube_image_crop - np.min(cube_image_crop))
-    
-    # Check if the user supplied a red RSS file, throw exception.
-    if np.array_equal(cube_image, tester):
-        raise SystemExit("All values are zero: please provide the cube corresponding to the requested spectral band of the image!")
-
-##########
-    
-    cube_size = np.around((size_of_grid*sample_size)/3600, decimals=6)
-    
-    # Get SDSS Image
-    if not os.path.isfile(str(object_name)+"_SDSS_"+str(band)+".fits"):
-        getSDSSimage(object_name=object_name, RA=object_RA, DEC=object_DEC, band=str(band), size=cube_size, number_of_pixels=size_of_grid)
-    
-    # Open SDSS image and extract data & header information
-    image_file = pf.open(str(object_name)+"_SDSS_"+str(band)+".fits")
-    image_data = image_file['Primary'].data
-    image_header = image_file['Primary'].header
-    img_crval1 = float(image_header['CRVAL1']) #RA
-    img_crval2 = float(image_header['CRVAL2']) #DEC
-    img_crpix1 = float(image_header['CRPIX1']) #Reference x-pixel
-    img_crpix2 = float(image_header['CRPIX2']) #Reference y-pixel
-    img_cdelt1 = float(image_header['CDELT1']) #Delta RA
-    img_cdelt2 = float(image_header['CDELT2']) #Delta DEC
-
-    SDSS_image = image_data
-    SDSS_image_crop = SDSS_image[(len(SDSS_image[0])/2)-10:(len(SDSS_image[0])/2)+10,(len(SDSS_image[1])/2)-10:(len(SDSS_image[1])/2)+10]
-    SDSS_image_crop = sp.ndimage.zoom(SDSS_image_crop, 5, order=3)
-    SDSS_image_crop_norm = (SDSS_image_crop - np.min(SDSS_image_crop))/np.max(SDSS_image_crop - np.min(SDSS_image_crop))
-
-##########
-
-    # Cross-correlate normalised SAMI-cube g-band image and SDSS g-band image
-    crosscorr_image = sp.signal.correlate2d(SDSS_image_crop_norm, cube_image_crop_norm)
-
-    # 2D Gauss Fit the cross-correlated cropped image
-    crosscorr_image_1d = np.ravel(crosscorr_image)
-    #use for loops to recover indicies in x and y positions of flux values
-    x_pos = []
-    y_pos = []
-    for i in xrange(np.shape(crosscorr_image)[0]):
-        for j in xrange(np.shape(crosscorr_image)[1]):
-            x_pos.append(i)
-            y_pos.append(j)
-    x_pos=np.array(x_pos)
-    y_pos=np.array(y_pos)
-
-    #define guess parameters for TwoDGaussFitter:
-    amplitude = max(crosscorr_image_1d)
-    mean_x = (np.shape(crosscorr_image)[0])/2
-    mean_y = (np.shape(crosscorr_image)[1])/2
-    sigma_x = 5.0 
-    sigma_y = 6.0 
-    rotation = 60.0 
-    offset = 4.0
-    p0 = [amplitude, mean_x, mean_y, sigma_x, sigma_y, rotation, offset]
-
-    # call SAMI TwoDGaussFitter
-    GF2d = fitting.TwoDGaussFitter(p0, x_pos, y_pos, crosscorr_image_1d)
-    # execute gauss fit using
-    GF2d.fit()
-    GF2d_xpos = GF2d.p[2]
-    GF2d_ypos = GF2d.p[1]
-
-    # reconstruct the fit
-    GF2d_reconstruct=GF2d(x_pos, y_pos)
-
-    x_shape = len(crosscorr_image[0])
-    y_shape = len(crosscorr_image[1])
-    x_offset_pix = GF2d_xpos - x_shape/2
-    y_offset_pix = GF2d_ypos - y_shape/2
-    x_offset_arcsec = -x_offset_pix * sample_size/5
-    y_offset_arcsec = y_offset_pix * sample_size/5
-    x_offset_degree = ((x_offset_arcsec/3600)/24)*360
-    y_offset_degree = (y_offset_arcsec/3600)
-
-    # Create dictionary of positional WCS
-    if isinstance(xcube/2, int):
-        WCS_pos={"CRVAL1":(img_crval1 + x_offset_degree), "CRVAL2":(img_crval2 + y_offset_degree), "CRPIX1":(xcube/2 + 0.5), "CRPIX2":(ycube/2 + 0.5), "CDELT1":(img_cdelt1), "CDELT2":(img_cdelt2), "CTYPE1":"DEGREE", "CTYPE2":"DEGREE"}
-    else:
-        WCS_pos={"CRVAL1":(img_crval1 + x_offset_degree), "CRVAL2":(img_crval2 + y_offset_degree), "CRPIX1":(xcube/2), "CRPIX2":(ycube/2), "CDELT1":(img_cdelt1), "CDELT2":(img_cdelt2), "CTYPE1":"DEGREE", "CTYPE2":"DEGREE"}
-
-##########
-
-    if plot==True or write==True:
-        
-        py.ioff()
-    
-        # PLOT for sanity's sake
-        fig = py.figure()
-        fig.set_size_inches(16, 3.2)
-        fig.suptitle("Cross Correlation Images for object: "+str(object_name)+"     Onsky Position (degrees): {0:.6f}".format(WCS_pos["CRVAL1"])+", {0:.6f}".format(WCS_pos["CRVAL2"])+"     Offset (arcsec): {0:.3f}".format(x_offset_arcsec)+", {0:.3f}".format(y_offset_arcsec), fontsize=11)
-    
-        #SUBPLOT-1
-        ax = fig.add_subplot(1,5,1)
-        ax.set_aspect('equal')
-        py.imshow(cube_image,cmap="pink")
-        py.setp(ax.get_xticklabels(), visible=False)
-        py.setp(ax.get_yticklabels(), visible=False)
-        py.title("SAMI Cube "+str(band)+"-Band Image", fontsize=11)
-        py.xlabel("<--- 25 arcsec --->", fontsize=11)
-        py.ylabel("<--- 25 arcsec --->", fontsize=11)
-    
-        #SUBPLOT-2
-        ax = fig.add_subplot(1,5,2)
-        ax.set_aspect('equal')
-        py.imshow(SDSS_image,cmap="pink")
-        py.setp(ax.get_xticklabels(), visible=False)
-        py.setp(ax.get_yticklabels(), visible=False)
-        py.title("SDSS g-Band Image", fontsize=11)
-        py.xlabel("<--- 25 arcsec --->", fontsize=11)
-        py.ylabel("<--- 25 arcsec --->", fontsize=11)
-    
-        #SUBPLOT-3
-        ax = fig.add_subplot(1,5,3)
-        ax.set_aspect('equal')
-        py.imshow(cube_image_crop,cmap="pink")
-        py.setp(ax.get_xticklabels(), visible=False)
-        py.setp(ax.get_yticklabels(), visible=False)
-        py.title("SAMI cube cropped "+str(band)+"-Band Image", fontsize=11)
-        py.xlabel("<--- 10 arcsec --->", fontsize=11)
-        py.ylabel("<--- 10 arcsec --->", fontsize=11)
-    
-        #SUBPLOT-4
-        ax = fig.add_subplot(1,5,4)
-        ax.set_aspect('equal')
-        py.imshow(SDSS_image_crop,cmap="pink")
-        py.setp(ax.get_xticklabels(), visible=False)
-        py.setp(ax.get_yticklabels(), visible=False)
-        py.title("SDSS cropped "+str(band)+"-Band Image", fontsize=11)
-        py.xlabel("<--- 10 arcsec --->", fontsize=11)
-        py.ylabel("<--- 10 arcsec --->", fontsize=11)
-    
-        #SUBPLOT-5
-        ax = fig.add_subplot(1,5,5)
-        ax.set_aspect('equal')
-        py.imshow(crosscorr_image,cmap="RdGy")
-        ax.contour(np.reshape(GF2d_reconstruct,(x_shape,y_shape)), cmap="gist_yarg")
-        py.scatter(GF2d_xpos,GF2d_ypos,color='1.0',marker='x',s=40) #2DGauss minimum
-        py.setp(ax.get_xticklabels(), visible=False)
-        py.setp(ax.get_yticklabels(), visible=False)
-        py.title("Cross-correlation Image", fontsize=11)
-
-        if write==True:
-            # Save figure in high-resolution
-            py.savefig(str(object_name)+"_WCS_position.png", bbox_inches=0, dpi=300)
-            py.close(fig)
-
-        if plot==True:
-            py.show(fig)
-
-        py.ion()
-
-    # Remove temporary files
-    os.remove("sdss_"+str(band)+".dat")
-    os.remove(str(object_name)+"_SDSS_"+str(band)+".fits")
-
-
-    return WCS_pos
-
-#########################################################################################
-#
-# "getSDSSimage"
-#
-#   This function queries the SDSS surver at skyview.gsfc.nasa.gov and returns an image
-#   with a user supplied set of parameters. A full description of the input parameters is
-#   given at - http://skyview.gsfc.nasa.gov/docs/batchpage.html
-#
-#   The parameters that can be set here are:
-#
-#   name - object name to include in file name for reference
-#   RA - in degrees
-#   DEC - in degrees
-#   band - u,g,r,i,z filters
-#   size - size of side of image in degrees
-#   number_of_pixels - number of pixels of side of image (i.e 50 will return 50x50)
-#   projection - 2D mapping of onsky projection. Tan is standard.
-#   url_show - this is a function variable if the user wants the url printed to terminal
-#
-
-def getSDSSimage(object_name="unknown", RA=0, DEC=0, band="g", size=0.006944, number_of_pixels=50, projection="Tan", url_show="False"):
-        
-    # Construct URL
-    RA = str(RA).split(".")
-    DEC = str(DEC).split(".")
-    size = str(size).split(".")
-    
-    URL = "http://skyview.gsfc.nasa.gov//cgi-bin/pskcall?position="+str(RA[0])+"%2e"+str(RA[1])+"%2c"+str(DEC[0])+"%2e"+str(DEC[1])+"&Survey=SDSSdr7"+str(band)+"&size="+str(size[0])+"%2e"+str(size[1])+"&pixels="+str(number_of_pixels)+"&proj="+str(projection)
-    
-    # Get SDSS image
-    urllib.urlretrieve(str(URL), str(object_name)+"_SDSS_"+str(band)+".fits")
-    
-    if url_show=="True":
-        print "SDSS "+str(band)+"-band image of object "+str(object_name)+" has finished downloading to the working directory with the file name: "+str(object_name)+"_SDSS_"+str(band)+".fits"
-        
-        print "The URL for this object is: ", URL
-
-
-#########################################################################################
-###                                                                                   ###
-#################################--- END OF FILE ---#####################################
-###                                                                                   ###
-#########################################################################################
