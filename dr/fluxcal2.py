@@ -603,6 +603,8 @@ def extract_total_flux(ifu, psf_parameters, model_name, clip=None):
             keep_bool = np.isfinite(ifu.data[:, bad_pixel])
             keep = np.where(keep_bool)[0]
             while rms[bad_pixel] >= (clip * rms_smoothed[bad_pixel]):
+                print 'Current RMS:', rms[bad_pixel]
+                print 'Target RMS:', clip * rms_smoothed[bad_pixel]
                 print len(keep), 'pixels remain'
                 # Clip out the fibre with the largest positive deviation
                 worst_pixel = np.argmax(ifu.data[keep, bad_pixel] - 
@@ -621,10 +623,28 @@ def extract_total_flux(ifu, psf_parameters, model_name, clip=None):
                     [background[bad_pixel]])
                 fit_pixel = model_flux(
                     model_parameters, ifu.xpos_rel, ifu.ypos_rel, 
-                    np.array([ifu.lambda_range[bad_pixel]]), model_name)
+                    np.array([ifu.lambda_range[bad_pixel]]), model_name)[:,0]
                 rms_pixel = np.sqrt(np.nansum((ifu.data[keep, bad_pixel] - 
                                                fit_pixel[keep])**2))
                 rms[bad_pixel] = rms_pixel
+    # Interpolate over any NaNs in the middle of the spectrum, but not 
+    # at the ends
+    interp_over = np.where(~np.isfinite(flux))[0]
+    # Take out leading NaNs
+    start = 0
+    while interp_over[0] == start:
+        start += 1
+        interp_over = interp_over[1:]
+    finish = n_pixel - 1
+    while interp_over[-1] == finish:
+        finish -= 1
+        interp_over = interp_over[:-1]
+    if len(interp_over) > 0:
+        interp_from = np.where(np.isfinite(flux))[0]
+        flux[interp_over] = np.interp(
+            interp_over, interp_from, flux[interp_from])
+        background[interp_over] = np.interp(
+            interp_over, interp_from, background[interp_from])
     return flux, background
 
 def extract_flux_slice(data, variance, xpos, ypos, psf_parameters_slice):
