@@ -74,11 +74,9 @@ import astropy.coordinates as coord
 from astropy import units
 import astropy.io.fits as pf
 import numpy as np
-from sami.utils.other import find_fibre_table
-from sami.general.cubing import dithered_cubes_from_rss_list
-from sami.dr import get_transfer_function, read_combined_transfer_fn
-from sami.dr import primary_flux_calibrate, perform_telluric_correction
-from sami.dr import fluxcal2
+from .utils.other import find_fibre_table
+from .general.cubing import dithered_cubes_from_rss_list
+from .dr import fluxcal2, telluric
 
 
 IDX_FILES_SLOW = {'1': 'sami580V_v1_2.idx',
@@ -1002,10 +1000,21 @@ class Manager:
 
     def telluric_correct(self, overwrite=False, **kwargs):
         """Apply telluric correction to object frames."""
-        # overwrite not yet implemented, so will always overwrite
         for fits in self.files(ndf_class='MFOBJECT', do_not_use=False,
-                               name='main', **kwargs):
-            perform_telluric_correction(fits.fluxcal_path)
+                               spectrophotometric=False, ccd='ccd_1', **kwargs):
+            if os.path.exists(fits.telluric_path) and not overwrite:
+                # Already been done; skip to the next file
+                continue
+            fits_2 = self.other_arm(fits)
+            path_pair = (fits.fluxcal_path, fits_2.fluxcal_path)
+            print ('Deriving telluric correction for ' + fits.filename +
+                   ' and ' + fits_2.filename)
+            telluric.correction_linear_fit(path_pair)
+            print 'Telluric correcting file:', fits_2.filename
+            if os.path.exists(fits_2.telluric_path):
+                os.remove(fits_2.telluric_path)
+            telluric.apply_correction(fits_2.fluxcal_path, 
+                                      fits_2.telluric_path)
         return
 
     def cube(self, overwrite=False, **kwargs):

@@ -628,11 +628,11 @@ def extract_total_flux(ifu, psf_parameters, model_name, clip=None):
     interp_over = np.where(~np.isfinite(flux))[0]
     # Take out leading NaNs
     start = 0
-    while interp_over[0] == start:
+    while len(interp_over) > 0 and interp_over[0] == start:
         start += 1
         interp_over = interp_over[1:]
     finish = n_pixel - 1
-    while interp_over[-1] == finish:
+    while len(interp_over) > 0 and interp_over[-1] == finish:
         finish -= 1
         interp_over = interp_over[:-1]
     if len(interp_over) > 0:
