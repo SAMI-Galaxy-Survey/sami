@@ -4,11 +4,14 @@ from .fluxcal2 import read_chunked_data, set_fixed_parameters, fit_model_flux
 from .fluxcal2 import insert_fixed_parameters, check_psf_parameters
 from .fluxcal2 import extract_total_flux, save_extracted_flux
 
+from .. import utils
 from ..utils.ifu import IFU
 
 import astropy.io.fits as pf
 import numpy as np
 import re
+
+HG_CHANGESET = utils.hg_changeset(__file__)
 
 # KEY:      SS = Secondary Standard
 
@@ -105,6 +108,8 @@ def correction_linear_fit(frame_list):
 
     # Update the file to include telluric correction factor
     hdulist = pf.open(frame_list[1], 'update', do_not_scale_image_data=True)
+    hdulist[0].header['HGTELLUR'] = (HG_CHANGESET, 
+                                     'Hg changeset ID for telluric code')
     hdu_name = 'FLUX_CALIBRATION'
     hdu = hdulist[hdu_name]
     data = hdu.data
@@ -167,5 +172,18 @@ def identify_secondary_standard(path):
     probenum = probenum[0]
     star_match = {'name': name, 'probenum': probenum}
     return star_match
+
+def apply_correction(path_in, path_out):
+    """Apply an already-derived correction to the file."""
+    hdulist = pf.open(path_in)
+    telluric_function = hdulist['FLUX_CALIBRATION'].data[2, :]
+    hdulist[0].data *= telluric_function
+    hdulist['VARIANCE'].data *= telluric_function**2
+    hdulist[0].header['HGTELLUR'] = (HG_CHANGESET, 
+                                     'Hg changeset ID for telluric code')
+    hdulist.writeto(path_out)
+    return
+
+
 
 ### END OF FILE ###
