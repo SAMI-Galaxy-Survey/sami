@@ -20,103 +20,86 @@ def correction_linear_fit(frame_list):
     regions.
     """
     
+    # Always re-extract the secondary standard
+    extract_secondary_standard(frame_list)
+
     # Get data
     hdulist = pf.open(frame_list[1])
     hdu_name = 'FLUX_CALIBRATION'
-    # Check if there's already "FLUX_CALIBRATION" extension, and execute SS flux extraction if not
-    try:
-        existing_index = hdulist.index_of(hdu_name)
-    except KeyError:
-        # extract observed_flux and observed_background from secondary standard and save as FLUX_CALIBRATION extension in *fcal.fits file.
-        extract_secondary_standard(frame_list)
-    else:
-        pass
-    hdulist.close()
+    hdu = hdulist[hdu_name]
+    # # Check if there's already "FLUX_CALIBRATION" extension, and execute SS flux extraction if not
+    # try:
+    #     existing_index = hdulist.index_of(hdu_name)
+    # except KeyError:
+    #     # extract observed_flux and observed_background from secondary standard and save as FLUX_CALIBRATION extension in *fcal.fits file.
+    #     extract_secondary_standard(frame_list)
+    # else:
+    #     pass
+    # hdulist.close()
 
     # Load in SS flux data
-    SS_flux_data_raw = pf.open(frame_list[1])['FLUX_CALIBRATION'].data[0,:]
-    SS_flux_background = pf.open(frame_list[1])['FLUX_CALIBRATION'].data[1,:]
-    # Replace NANs with nearest real value (maybe not correct method, but better than zeros)
-    SS_flux_data = pf.open(frame_list[1])['FLUX_CALIBRATION'].data[0,:]
-    ind = np.where(~np.isnan(SS_flux_data))[0]
-    first, last = ind[0], ind[-1]
-    SS_flux_data[:first] = SS_flux_data[first]
-    SS_flux_data[last + 1:] = SS_flux_data[last]
-    SS_flux_data[SS_flux_data < 0] = 0. # replacing negative fluxes with 0.0
-    # Wavelength
-    CRVAL1 = pf.open(frame_list[1])[0].header['CRVAL1']
-    CDELT1 = pf.open(frame_list[1])[0].header['CDELT1']
-    Nwave  = pf.open(frame_list[1])[0].header['NAXIS1']
-    CRVAL1 = CRVAL1 - ((Nwave-1)/2)*CDELT1
-    SS_wave_axis = CRVAL1 + CDELT1*np.arange(Nwave)
+    SS_flux_data_raw = hdu.data[0, :]
+    SS_flux_background = hdu.data[1, :]
+    # Might put in an interpolation over NaNs; for now just taking a straight copy
+    SS_flux_data = SS_flux_data_raw.copy()
+    header = hdulist[0].header
+    crval1 = header['CRVAL1']
+    cdelt1 = header['CDELT1']
+    naxis1 = header['NAXIS1']
+    crpix1 = header['CRPIX1']
+    SS_wave_axis = crval1 + cdelt1 * (np.arange(naxis1) + 1 - crpix1)
+
+    # Done with the file for now; will re-open in update mode later
+    hdulist.close()
+
+    # Select clean regions (no Halpha, no tellurics), to fit a straight line to
+    clean_limits = [[6600, 6850],
+                    [6970, 7140],
+                    [7450, 7560],
+                    [7770, 8100]]
+    in_clean = np.zeros(naxis1, dtype=bool)
+    for clean_limits_single in clean_limits:
+        in_clean[(SS_wave_axis >= clean_limits_single[0]) & 
+                 (SS_wave_axis <= clean_limits_single[1])] = True
+    SS_wave_axis_cut = SS_wave_axis[in_clean]
+    SS_flux_data_cut = SS_flux_data[in_clean]
             
-    # H_alpha + Tellurics + short wavelength oddities exclusions
-    SS_wave_axis_cen_1 = SS_wave_axis[(SS_wave_axis >= 6600) & (SS_wave_axis <= 6850)]
-    SS_wave_axis_cen_2 = SS_wave_axis[(SS_wave_axis >= 6970) & (SS_wave_axis <= 7140)]
-    SS_wave_axis_cen_3 = SS_wave_axis[(SS_wave_axis >= 7450) & (SS_wave_axis <= 7560)]
-    SS_wave_axis_cen_4 = SS_wave_axis[(SS_wave_axis >= 7770) & (SS_wave_axis <= 8100)]
-    
-    # Concatenate good wavelength cuts
-    SS_wave_axis_cut = np.asarray(np.concatenate((SS_wave_axis_cen_1,SS_wave_axis_cen_2,SS_wave_axis_cen_3,SS_wave_axis_cen_4)))
-    
-    # Get flux data for resepctive wavelength cuts
-    SS_flux_data_cut = []
-    for wav in SS_wave_axis:
-        if wav in SS_wave_axis_cut:
-            SS_flux_data_cut.append(SS_flux_data[np.where(SS_wave_axis == wav)])
-
-    # Ensure data is in array format
-    SS_flux_data_cut = np.asarray(SS_flux_data_cut)
-    SS_wave_axis_cut = np.asarray(SS_wave_axis_cut)
-
     # Fit linear slope to wavelength cut data
-    p=np.polyfit(SS_wave_axis_cut, SS_flux_data_cut, 1)
-    wav_lin=np.arange(np.min(SS_wave_axis), np.max(SS_wave_axis)+CDELT1, CDELT1)
-    fit=np.polyval(p, wav_lin)
+    p = np.polyfit(SS_wave_axis_cut, SS_flux_data_cut, 1)
+    # Sam's code defines a new wav_lin - why? Just use SS_wave_axis?
+    #wav_lin = np.arange(np.min(SS_wave_axis), np.max(SS_wave_axis)+CDELT1, CDELT1)
+    #fit = np.polyval(p, wav_lin)
+    fit = np.polyval(p, SS_wave_axis)
 
     # Extract telluric features from original data
-    SS_wave_axis_tell_1 = SS_wave_axis[(SS_wave_axis >= 6850) & (SS_wave_axis <= 6960)]
-    SS_wave_axis_tell_2 = SS_wave_axis[(SS_wave_axis >= 7130) & (SS_wave_axis <= 7360)]
-    SS_wave_axis_tell_3 = SS_wave_axis[(SS_wave_axis >= 7560) & (SS_wave_axis <= 7770)]
-    SS_wave_axis_tell_4 = SS_wave_axis[(SS_wave_axis >= 8100) & (SS_wave_axis <= 8360)]
-    SS_wave_axis_tell = np.asarray(np.concatenate((SS_wave_axis_tell_1,SS_wave_axis_tell_2,SS_wave_axis_tell_3,SS_wave_axis_tell_4)))
-
-    # Use original flux for telluric regions, but linear fit flux for non-telluric
-    SS_wave_axis_telluric = []
-    SS_flux_data_telluric = []
-    for wav in SS_wave_axis:
-        if wav in SS_wave_axis_tell:
-            SS_flux_data_telluric.append(SS_flux_data[np.where(SS_wave_axis == wav)][0])
-        else:
-            SS_flux_data_linear = np.polyval(p,wav)
-            SS_flux_data_telluric.append(SS_flux_data_linear[0])
-        SS_wave_axis_telluric.append(wav)
-
-    # Make sure data is in array format
-    SS_wave_axis_telluric = np.asarray(SS_wave_axis_telluric)
-    SS_flux_data_telluric = np.asarray(SS_flux_data_telluric)
+    telluric_limits = [[6850, 6960],
+                       [7130, 7360],
+                       [7560, 7770],
+                       [8100, 8360]]
+    # This is a copy-paste of earlier code - put into a subroutine
+    in_telluric = np.zeros(naxis1, dtype=bool)
+    for telluric_limits_single in telluric_limits:
+        in_telluric[(SS_wave_axis >= telluric_limits_single[0]) & 
+                    (SS_wave_axis <= telluric_limits_single[1])] = True
+    SS_flux_data_telluric = fit.copy()
+    SS_flux_data_telluric[in_telluric] = SS_flux_data[in_telluric]
 
     # Create the normalisation factor to apply to object data
-    SS_wave_axis_telluric_factor = np.asarray(SS_wave_axis_telluric)
     SS_flux_data_telluric_factor = fit / SS_flux_data_telluric
 
     # Update the file to include telluric correction factor
     hdulist = pf.open(frame_list[1], 'update', do_not_scale_image_data=True)
     hdu_name = 'FLUX_CALIBRATION'
-    hdu_header = pf.open(frame_list[1])['FLUX_CALIBRATION'].header
-    # Check if there's already "FLUX_CALIBRATION" extension, and delete if so
-    try:
-        existing_index = hdulist.index_of(hdu_name)
-    except KeyError:
-        pass
-    else:
-        del hdulist[existing_index]
-    # Compile data
-    data = np.vstack((SS_flux_data_raw,SS_flux_background,SS_flux_data_telluric_factor))
-    # Make the new HDU copying the header information from the original file
-    new_hdu = pf.ImageHDU(data, name=hdu_name)
-    new_hdu.header = hdu_header
-    hdulist.append(new_hdu)
+    hdu = hdulist[hdu_name]
+    data = hdu.data
+    if len(data) == 2:
+        # No previous telluric fit saved; append it to the data
+        data = np.vstack((data, SS_flux_data_telluric_factor))
+    elif len(data) == 3:
+        # Previous telluric fit to overwrite
+        data[2, :] = SS_flux_data_telluric_factor
+    # Save the data back into the FITS file
+    hdu.data = data
     hdulist.close()
     return
 
