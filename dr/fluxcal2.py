@@ -784,6 +784,9 @@ def read_standard_data(star):
     star_data = np.loadtxt(star['path'], dtype='d', skiprows=skiprows)
     wavelength = star_data[:, 0]
     flux = star_data[:, 1]
+    source = os.path.basename(os.path.dirname(star['path']))
+    if source == 'Bessell':
+        flux /= 1e-16
     standard_data = {'wavelength': wavelength,
                      'flux': flux}
     return standard_data
