@@ -104,7 +104,9 @@ def get_probe(infile, object_name, verbose=True):
     # Return the probe number
     return ifu
 
-def dithered_cubes_from_rss_files(inlist, sample_size=0.5, drop_factor=0.5, objects='all', clip=True, plot=True, write=False):
+def dithered_cubes_from_rss_files(inlist, sample_size=0.5, drop_factor=0.5, 
+                                  objects='all', clip=True, plot=True, 
+                                  write=False, suffix=''):
     """A wrapper to make a cube from reduced RSS files. Only input files that go together - ie have the same objects."""
 
     start_time = datetime.datetime.now()
@@ -230,7 +232,7 @@ def dithered_cubes_from_rss_files(inlist, sample_size=0.5, drop_factor=0.5, obje
         
             # Write to FITS file.
             # NOTE - In here need to add the directory structure for the cubes.
-            outfile_name=str(name)+'_'+str(arm)+'_'+str(len(files))+'.fits'
+            outfile_name=str(name)+'_'+str(arm)+'_'+str(len(files))+suffix+'.fits'
             outfile_name_full=os.path.join(name, outfile_name)
 
             print "Writing", outfile_name_full
