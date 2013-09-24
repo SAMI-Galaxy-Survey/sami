@@ -57,7 +57,7 @@ def correction_linear_fit(frame_list):
 
     # Select clean regions (no Halpha, no tellurics), to fit a straight line to
     clean_limits = [[6600, 6850],
-                    [6970, 7140],
+                    [6970, 7130],
                     [7450, 7560],
                     [7770, 8100]]
     in_clean = np.zeros(naxis1, dtype=bool)
