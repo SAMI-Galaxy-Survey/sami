@@ -143,7 +143,7 @@ def extract_secondary_standard(path_list,
     for path in path_list:
         ifu = IFU(path, star_match['probenum'], flag_name=False)
         observed_flux, observed_background = extract_total_flux(
-            ifu, psf_parameters, model_name)
+            ifu, psf_parameters, model_name, clip=5.0)
         save_extracted_flux(path, observed_flux, observed_background,
                             star_match, psf_parameters, model_name,
                             good_psf)
