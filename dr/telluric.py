@@ -81,11 +81,27 @@ def correction_linear_fit(frame_list):
     for telluric_limits_single in telluric_limits:
         in_telluric[(SS_wave_axis >= telluric_limits_single[0]) & 
                     (SS_wave_axis <= telluric_limits_single[1])] = True
+        # If there are only a few non-telluric pixels at the end of the
+        # spectrum, mark them as telluric anyway, in case the primary flux
+        # calibration screwed them up.
+        minimum_end_pixels = 50
+        n_blue_end = np.sum(SS_wave_axis < telluric_limits_single[0])
+        if n_blue_end > 0 and n_blue_end < minimum_end_pixels:
+            in_telluric[SS_wave_axis < telluric_limits_single[0]] = True
+        n_red_end = np.sum(SS_wave_axis > telluric_limits_single[1])
+        if n_red_end > 0 and n_red_end < minimum_end_pixels:
+            in_telluric[SS_wave_axis > telluric_limits_single[1]] = True
     SS_flux_data_telluric = fit.copy()
     SS_flux_data_telluric[in_telluric] = SS_flux_data[in_telluric]
 
     # Create the normalisation factor to apply to object data
     SS_flux_data_telluric_factor = fit / SS_flux_data_telluric
+    # Require that all corrections are > 1, as expected for absorption
+    SS_flux_data_telluric_factor = np.maximum(
+        SS_flux_data_telluric_factor, 1.0)
+    # Require that we actually have a correction factor everywhere
+    SS_flux_data_telluric_factor[
+        ~np.isfinite(SS_flux_data_telluric_factor)] = 1.0
 
     # Update the file to include telluric correction factor
     hdulist = pf.open(frame_list[1], 'update', do_not_scale_image_data=True)
