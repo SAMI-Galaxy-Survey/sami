@@ -599,13 +599,9 @@ def extract_total_flux(ifu, psf_parameters, model_name, clip=None):
         rms_smoothed = median_filter(rms, 41)
         bad = np.where(rms >= (clip * rms_smoothed))[0]
         for bad_pixel in bad:
-            print 'Re-examining pixel number', bad_pixel
             keep_bool = np.isfinite(ifu.data[:, bad_pixel])
             keep = np.where(keep_bool)[0]
             while rms[bad_pixel] >= (clip * rms_smoothed[bad_pixel]):
-                print 'Current RMS:', rms[bad_pixel]
-                print 'Target RMS:', clip * rms_smoothed[bad_pixel]
-                print len(keep), 'pixels remain'
                 # Clip out the fibre with the largest positive deviation
                 worst_pixel = np.argmax(ifu.data[keep, bad_pixel] - 
                                         fit[keep, bad_pixel])
