@@ -1,12 +1,13 @@
-from fluxcal2 import read_chunked_data, set_fixed_parameters, fit_model_flux
-from fluxcal2 import insert_fixed_parameters, check_psf_parameters
-from fluxcal2 import extract_total_flux, save_extracted_flux
+"""Code for correcting for telluric absorption in SAMI data."""
+
+from .fluxcal2 import read_chunked_data, set_fixed_parameters, fit_model_flux
+from .fluxcal2 import insert_fixed_parameters, check_psf_parameters
+from .fluxcal2 import extract_total_flux, save_extracted_flux
 
 from ..utils.ifu import IFU
 
 import astropy.io.fits as pf
 import numpy as np
-import pylab as py
 import re
 
 # KEY:      SS = Secondary Standard
