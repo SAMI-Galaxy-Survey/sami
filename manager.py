@@ -76,6 +76,7 @@ import astropy.io.fits as pf
 import numpy as np
 from .utils.other import find_fibre_table
 from .general.cubing import dithered_cubes_from_rss_list
+from .general.align_micron import find_dither
 from .dr import fluxcal2, telluric
 
 
@@ -1019,10 +1020,8 @@ class Manager:
 
     def cube(self, overwrite=False, **kwargs):
         """Make datacubes from the given RSS files."""
-        # tmp_dir = os.path.join(self.abs_root, 'cubed', 'tmp')
+        # overwrite not yet implemented
         target_dir = os.path.join(self.abs_root, 'cubed')
-        # rel_target_dir = os.path.relpath(target_dir, tmp_dir)
-        # By default, only use 'main' exposures of at least 10 minutes
         if 'min_exposure' in kwargs:
             min_exposure = kwargs['min_exposure']
             del kwargs['min_exposure']
@@ -1036,11 +1035,9 @@ class Manager:
         groups = self.group_files_by(
             ['field_id', 'ccd'], ndf_class='MFOBJECT', do_not_use=False,
             reduced=True, min_exposure=min_exposure, name=name, **kwargs)
-        # if not os.path.exists(tmp_dir):
-        #     os.makedirs(tmp_dir)
         with self.visit_dir(target_dir):
             for field, fits_list in groups.items():
-                print field
+                print 'Cubing field ID: {}, CCD: {}'.format(field[0], field[1])
                 path_list = []
                 for fits in fits_list:
                     if os.path.exists(fits.telluric_path):
@@ -1050,22 +1047,11 @@ class Manager:
                     else:
                         path = fits.reduced_path
                     path_list.append(path)
-                print path_list
+                # First calculate the offsets
+                find_dither(path_list, path_list[0], centroid=True, 
+                            remove_files=True)
+                # Now do the actual cubing
                 dithered_cubes_from_rss_list(path_list, write=True)
-        #         for galaxy_dir in os.listdir('.'):
-        #             for filename in os.listdir(galaxy_dir):
-        #                 if filename.lower().endswith(('.fit', '.fits')):
-
-
-
-        #                 target_path = os.path.join(rel_target_dir, filename)
-        #                 if os.path.exists(target_path):
-        #                     if overwrite:
-        #                         os.remove(target_path)
-        #                     else:
-        #                         os.remove(filename)
-        #                     self.move(filename, target_path)
-        # os.rmdir(tmp_dir)
         return
 
     def reduce_all(self, overwrite=False, **kwargs):
