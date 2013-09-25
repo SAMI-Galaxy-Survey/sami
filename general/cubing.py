@@ -359,7 +359,6 @@ def dithered_cube_from_rss(ifu_list, sample_size=0.5, drop_factor=0.5, clip=True
             # Adjust the micron positions of the fibres - for use in making final cubes.
             xm=galaxy_data.x_microns-gf1.p[1]
             ym=galaxy_data.y_microns-gf1.p[2]
-            print 'Probenum:', galaxy_data.ifu, 'Offsets:', gf1.p[1], gf1.p[2]
 
         elif (offsets == 'file'):
             # Use pre-measured offsets saved in the file itself
@@ -367,7 +366,6 @@ def dithered_cube_from_rss(ifu_list, sample_size=0.5, drop_factor=0.5, clip=True
             y_shift_full = galaxy_data.y_refmed - galaxy_data.y_shift
             xm=galaxy_data.x_microns-x_shift_full
             ym=galaxy_data.y_microns-y_shift_full
-            print 'Probenum:', galaxy_data.ifu, 'Offsets:', x_shift_full, y_shift_full
 
         else:
             # Perhaps use this place to allow definition of the offsets manually??
