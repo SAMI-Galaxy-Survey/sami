@@ -160,8 +160,8 @@ def find_dither(RSSname,reference,centroid=True,inter=False,plot=False,remove_fi
       for line in open(file_ref):
          n=n+1
          cols=line.split()
-         xref.append(cols[0])
-         yref.append(cols[1])
+         xref.append(float(cols[0]))
+         yref.append(float(cols[1]))
          RSScol.append(reference)
          ifscol.append(n)
          xshcol.append(0)
@@ -180,7 +180,8 @@ def find_dither(RSSname,reference,centroid=True,inter=False,plot=False,remove_fi
       file_geodb=string.join([string.strip(reference,'.fits'), "_dbsolution"],'') # File where the 2D solution of geomap is stored 
       if os.path.isfile(file_geodb):
                 os.remove(file_geodb)
-                
+
+      results = []                
      
       for i in xrange(len(RSSmatch)):
          
@@ -206,8 +207,8 @@ def find_dither(RSSname,reference,centroid=True,inter=False,plot=False,remove_fi
              yin=[]
              for line in open(file_centroid):
                  cols=line.split()
-                 xin.append(cols[0])
-                 yin.append(cols[1]) 
+                 xin.append(float(cols[0]))
+                 yin.append(float(cols[1]))
   
             
              f=open(file_geoin, 'w')
@@ -256,9 +257,19 @@ def find_dither(RSSname,reference,centroid=True,inter=False,plot=False,remove_fi
              # Read back the RMS from one of IRAF's files
              xrms, yrms, n_good = read_rms(file_stats)
 
-             # Save the results in the FITS header
-             save_results(RSSmatch[i], ifus, xin, yin, xref, yref, xshift, 
-                          yshift, xrms, yrms, n_good, reference)
+             # Store the results in a handy dictionary
+             results.append({'filename': RSSmatch[i],
+                             'ifus': np.array(ifus),
+                             'xin': np.array(xin),
+                             'yin': np.array(yin),
+                             'xref': np.array(xref),
+                             'yref': np.array(yref),
+                             'xshift': np.array(xshift),
+                             'yshift': np.array(yshift),
+                             'xrms': xrms,
+                             'yrms': yrms,
+                             'n_good': n_good,
+                             'reference': reference})
 
              if remove_files:
                  # Remove all the text files
@@ -272,10 +283,30 @@ def find_dither(RSSname,reference,centroid=True,inter=False,plot=False,remove_fi
           os.remove(file_geodb)
           os.remove(file_centralfib)
           os.remove(string.join([string.strip(reference,'.fits'), "_centroid"],''))
+
+      # Re-calculate the reference X and Y values
+      recalculate_ref(results)
+
+      # Save results for frames other than the reference frame in the FITS header
+      for result in results:
+          save_results(result)
                 
       # Save results for the reference frame in the FITS header
-      save_results(reference, ifus, xref, yref, xref, yref, [0.0 for i in ifus], [0.0 for i in ifus], 
-                   0.0, 0.0, len(ifus), reference)
+      ref_results_dict = {'filename': reference,
+                          'ifus': np.array(ifus),
+                          'xin': np.array(xref),
+                          'yin': np.array(yref),
+                          'xref': np.array(xref),
+                          'yref': np.array(yref),
+                          'xshift': np.zeros(len(ifus)),
+                          'yshift': np.zeros(len(ifus)),
+                          'xrms': 0.0,
+                          'yrms': 0.0,
+                          'n_good': len(ifus),
+                          'reference': reference,
+                          'xref_median': results[0]['xref_median'],
+                          'yref_median': results[0]['yref_median']}
+      save_results(ref_results_dict)
       
       ## Save final dither solution
       #file_results=string.join([string.strip(reference,'.fits'), "_dither_solution.txt"],'')    
@@ -348,26 +379,31 @@ def get_centroid(infile):
     f.close() # close the output file
 
 
-def save_results(filename, ifus, xin, yin, xref, yref, xshift, yshift, xrms, yrms, n_good, reference):
+def save_results(results):
     """Save the results in a new FITS header."""
     # Make the binary table HDU
-    ifus_col = pf.Column(name='PROBENUM', format='I', array=ifus)
-    xin_col = pf.Column(name='X_CEN', format='E', array=xin)
-    yin_col = pf.Column(name='Y_CEN', format='E', array=yin)
-    xref_col = pf.Column(name='X_REF', format='E', array=xref)
-    yref_col = pf.Column(name='Y_REF', format='E', array=yref)
-    xshift_col = pf.Column(name='X_SHIFT', format='E', array=xshift)
-    yshift_col = pf.Column(name='Y_SHIFT', format='E', array=yshift)
-    hdu = pf.new_table(pf.ColDefs([ifus_col, xin_col, yin_col, xref_col, yref_col,
-                                   xshift_col, yshift_col]))
-    hdu.header['X_RMS'] = (xrms, 'RMS of X_SHIFT')
-    hdu.header['Y_RMS'] = (yrms, 'RMS of Y_SHIFT')
-    hdu.header['N_GOOD'] = (n_good, 'Number of galaxies used in fit')
-    hdu.header['REF_FILE'] = (reference, 'Reference filename')
+    ifus_col = pf.Column(name='PROBENUM', format='I', array=results['ifus'])
+    xin_col = pf.Column(name='X_CEN', format='E', array=results['xin'])
+    yin_col = pf.Column(name='Y_CEN', format='E', array=results['yin'])
+    xref_col = pf.Column(name='X_REF', format='E', array=results['xref'])
+    yref_col = pf.Column(name='Y_REF', format='E', array=results['yref'])
+    xshift_col = pf.Column(name='X_SHIFT', format='E', array=results['xshift'])
+    yshift_col = pf.Column(name='Y_SHIFT', format='E', array=results['yshift'])
+    xref_median_col = pf.Column(name='X_REFMED', format='E', 
+                                array=results['xref_median'])
+    yref_median_col = pf.Column(name='Y_REFMED', format='E', 
+                                array=results['yref_median'])
+    hdu = pf.new_table(pf.ColDefs([ifus_col, xin_col, yin_col, xref_col, 
+                                   yref_col, xshift_col, yshift_col, 
+                                   xref_median_col, yref_median_col]))
+    hdu.header['X_RMS'] = (results['xrms'], 'RMS of X_SHIFT')
+    hdu.header['Y_RMS'] = (results['yrms'], 'RMS of Y_SHIFT')
+    hdu.header['N_GOOD'] = (results['n_good'], 'Number of galaxies used in fit')
+    hdu.header['REF_FILE'] = (results['reference'], 'Reference filename')
     hdu.header['HGALIGN'] = (HG_CHANGESET, 'Hg changeset ID for alignment code')
     hdu.update_ext_name('ALIGNMENT')
     # Open up the file for editing
-    hdulist = pf.open(filename, 'update')
+    hdulist = pf.open(results['filename'], 'update')
     # Remove the existing HDU, if it's there
     try:
         del hdulist['ALIGNMENT']
@@ -394,3 +430,19 @@ def read_rms(filename):
     n_good = len(ifus) - n_bad
     return xrms, yrms, n_good
 
+
+def recalculate_ref(results_list):
+    """Re-calculate the reference coordinates, taking the median."""
+    n_obs = len(results_list)
+    n_hexa = len(results_list[0]['ifus'])
+    xref = np.zeros((n_hexa, n_obs))
+    yref = np.zeros((n_hexa, n_obs))
+    for index, results in enumerate(results_list):
+        xref[:, index] = results['xin'] - results['xshift']
+        yref[:, index] = results['yin'] + results['yshift']
+    xref_median = np.median(xref, axis=1)
+    yref_median = np.median(yref, axis=1)
+    for results in results_list:
+        results['xref_median'] = xref_median
+        results['yref_median'] = yref_median
+    return
