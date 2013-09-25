@@ -260,7 +260,7 @@ def dithered_cubes_from_rss_list(files, sample_size=0.5, drop_factor=0.5,
     print("Time dithered_cubes_from_files wall time: {0}".format(datetime.datetime.now() - start_time))
 
 
-def dithered_cube_from_rss(ifu_list, sample_size=0.5, drop_factor=0.5, clip=True, plot=True, offsets='fit'):
+def dithered_cube_from_rss(ifu_list, sample_size=0.5, drop_factor=0.5, clip=True, plot=True, offsets='file'):
         
     # When resampling need to know the size of the grid in square output pixels
     # @TODO: Compute the size of the grid instead of hard code it!
@@ -357,8 +357,8 @@ def dithered_cube_from_rss(ifu_list, sample_size=0.5, drop_factor=0.5, clip=True
 
         elif (offsets == 'file'):
             # Use pre-measured offsets saved in the file itself
-            x_shift_full = galaxy_data.x_ref + galaxy_data.x_shift
-            y_shift_full = galaxy_data.y_ref - galaxy_data.y_shift
+            x_shift_full = galaxy_data.x_refmed + galaxy_data.x_shift
+            y_shift_full = galaxy_data.y_refmed - galaxy_data.y_shift
             xm=galaxy_data.x_microns-x_shift_full
             ym=galaxy_data.y_microns-y_shift_full
             print 'Probenum:', galaxy_data.ifu, 'Offsets:', x_shift_full, y_shift_full
@@ -376,9 +376,6 @@ def dithered_cube_from_rss(ifu_list, sample_size=0.5, drop_factor=0.5, clip=True
         var_all.append(galaxy_data.var)
 
         ifus_all.append(galaxy_data.ifu)
-
-    # Obviously take this out
-    #raise Exception
 
 
     xfibre_all=np.asanyarray(xfibre_all)
