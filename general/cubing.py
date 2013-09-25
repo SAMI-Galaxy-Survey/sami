@@ -354,6 +354,10 @@ def dithered_cube_from_rss(ifu_list, sample_size=0.5, drop_factor=0.5, clip=True
             xm=galaxy_data.x_microns-gf1.p[1]
             ym=galaxy_data.y_microns-gf1.p[2]
 
+        elif (offsets == 'file'):
+            # Use pre-measured offsets saved in the file itself
+            pass
+
         else:
             # Perhaps use this place to allow definition of the offsets manually??
             # Hopefully only useful for test purposes. LF 05/06/2013
