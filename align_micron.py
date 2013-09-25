@@ -243,12 +243,10 @@ def find_dither(inlist,reference,centroid=True,inter=False,plot=False):
              ## xshift and yshift are the same as xshcol, yshcol but for this frame only
              xshift = []
              yshift = []
-             ifs = []
              for line in open(file_geoxy):
                  n=n+1 
                  RSScol.append(RSSmatch[i])
                  ifscol.append(n)
-                 ifs.append(n)
                  cols=line.split()
                  x=-1*np.subtract(np.float(cols[0]),xcent[n-1]) #the -1 is to go back to on-sky positions
                  y=np.subtract(np.float(cols[1]),ycent[n-1])
@@ -259,19 +257,20 @@ def find_dither(inlist,reference,centroid=True,inter=False,plot=False):
                  galID.append(galname[n-1])
 
              # Read back the RMS from one of IRAF's files
-             xrms, yrms = read_rms(file_stats)
+             xrms, yrms, n_good = read_rms(file_stats)
 
              # Save the results in the FITS header
-             save_results(RSSmatch[i], xin, yin, xref, yref, xshift, yshift, xrms, yrms, reference)
+             save_results(RSSmatch[i], ifus, xin, yin, xref, yref, xshift, 
+                          yshift, xrms, yrms, n_good, reference)
                 
       # Save results for the reference frame in the FITS header
-      save_results(reference, xref, yref, xref, yref, [0.0 for i in ifus], [0.0 for i in ifus], 
-                   0.0, 0.0, reference)
+      save_results(reference, ifus, xref, yref, xref, yref, [0.0 for i in ifus], [0.0 for i in ifus], 
+                   0.0, 0.0, len(ifus), reference)
       
       ## Save final dither solution
-      file_results=string.join([string.strip(reference,'.fits'), "_dither_solution.txt"],'')    
-      results=np.column_stack((RSScol,ifscol,galID,xshcol,yshcol))
-      np.savetxt(file_results, results, fmt='%15s')
+      #file_results=string.join([string.strip(reference,'.fits'), "_dither_solution.txt"],'')    
+      #results=np.column_stack((RSScol,ifscol,galID,xshcol,yshcol))
+      #np.savetxt(file_results, results, fmt='%15s')
 
       
       if plot:
@@ -344,19 +343,21 @@ def get_centroid(infile):
     f.close() # close the output file
 
 
-def save_results(filename, xin, yin, xref, yref, xshift, yshift, xrms, yrms, reference):
+def save_results(filename, ifus, xin, yin, xref, yref, xshift, yshift, xrms, yrms, n_good, reference):
     """Save the results in a new FITS header."""
     # Make the binary table HDU
+    ifus_col = pf.Column(name='PROBENUM', format='I', array=ifus)
     xin_col = pf.Column(name='X_CEN', format='E', array=xin)
     yin_col = pf.Column(name='Y_CEN', format='E', array=yin)
     xref_col = pf.Column(name='X_REF', format='E', array=xref)
     yref_col = pf.Column(name='Y_REF', format='E', array=yref)
     xshift_col = pf.Column(name='X_SHIFT', format='E', array=xshift)
     yshift_col = pf.Column(name='Y_SHIFT', format='E', array=yshift)
-    hdu = pf.new_table(pf.ColDefs([xin_col, yin_col, xref_col, yref_col,
+    hdu = pf.new_table(pf.ColDefs([ifus_col, xin_col, yin_col, xref_col, yref_col,
                                    xshift_col, yshift_col]))
     hdu.header['X_RMS'] = (xrms, 'RMS of X_SHIFT')
     hdu.header['Y_RMS'] = (yrms, 'RMS of Y_SHIFT')
+    hdu.header['N_GOOD'] = (n_good, 'Number of galaxies used in fit')
     hdu.header['REF_FILE'] = (reference, 'Reference filename')
     hdu.header['HGALIGN'] = (HG_CHANGESET, 'Hg changeset ID for alignment code')
     hdu.update_ext_name('ALIGNMENT')
@@ -375,12 +376,16 @@ def save_results(filename, xin, yin, xref, yref, xshift, yshift, xrms, yrms, ref
 def read_rms(filename):
     """Read back the RMS from one of IRAF's results files."""
     with open(filename) as f:
-        while True:
+        n_bad = 0
+        line = 'a'
+        while line:
             line = f.readline()
             if line.startswith('#     Xin and Yin fit rms:'):
                 linesplit = line[:-1].split()
                 xrms = float(linesplit[-2])
                 yrms = float(linesplit[-1])
-                break
-    return xrms, yrms
+            elif 'INDEF' in line:
+                n_bad += 1
+    n_good = len(ifus) - n_bad
+    return xrms, yrms, n_good
 
