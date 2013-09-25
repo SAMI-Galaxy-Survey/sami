@@ -110,10 +110,10 @@ def find_dither(inlist,reference,centroid=True,inter=False):
           cols=line.split()
           cols[0]=str.strip(cols[0])
     
-      if centroid==True:
-          get_centroid(cols[0])   #Run centroid algorithm on each ifu and for each RSS file       
+          if centroid==True:
+              get_centroid(cols[0])   #Run centroid algorithm on each ifu and for each RSS file       
     
-      RSSname.append(np.str(cols[0]))
+          RSSname.append(np.str(cols[0]))
       
       nRSS=len(RSSname)
       
