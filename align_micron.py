@@ -102,7 +102,7 @@ HG_CHANGESET = utils.hg_changeset(__file__)
 
 ifus=[1,2,3,4,5,6,7,8,9,10,11,12,13]
 
-def find_dither(inlist,reference,centroid=True,inter=False,plot=False):
+def find_dither(inlist,reference,centroid=True,inter=False,plot=False,remove_files=True):
       
       
       ## For each file in inlist call the get_cetroid module, computes centroid coordinates and stores them 
@@ -262,6 +262,19 @@ def find_dither(inlist,reference,centroid=True,inter=False,plot=False):
              # Save the results in the FITS header
              save_results(RSSmatch[i], ifus, xin, yin, xref, yref, xshift, 
                           yshift, xrms, yrms, n_good, reference)
+
+             if remove_files:
+                 # Remove all the text files
+                 os.remove(file_centroid)
+                 os.remove(file_geoin)
+                 os.remove(file_stats)
+                 os.remove(file_geoxy)
+
+      if remove_files:
+          # Remove more text files
+          os.remove(file_geodb)
+          os.remove(file_centralfib)
+          os.remove(string.join([string.strip(reference,'.fits'), "_centroid"],''))
                 
       # Save results for the reference frame in the FITS header
       save_results(reference, ifus, xref, yref, xref, yref, [0.0 for i in ifus], [0.0 for i in ifus], 
