@@ -19,6 +19,11 @@ class IFU:
         variance_in=hdulist['VARIANCE'].data
         primary_header=hdulist['PRIMARY'].header
 
+        #TEMP - store full headers (Nic)
+        self.primary_header = hdulist['PRIMARY'].header
+        self.fibre_table_header = hdulist['FIBRES_IFU'].header
+        self.reduction_arguments = hdulist['REDUCTION_ARGS'].header
+
         fibre_table=hdulist['FIBRES_IFU'].data
 
         # Some useful stuff from the header
@@ -31,8 +36,17 @@ class IFU:
         self.meanra=primary_header['MEANRA']
         self.meandec=primary_header['MEANDEC']
 
+        # TEMP - determine and store which spectrograph ARM this is from (Nic)
+        if (self.primary_header['SPECTID'] == 'BL'):
+            self.spectrograph_arm = 'blue'
+        elif (self.primary_header['SPECTID'] == 'RD'):
+            self.spectrograph_arm = 'red'
+
         self.gratid=primary_header['GRATID']
         self.gain=primary_header['RO_GAIN']
+
+        self.zdstart=primary_header['ZDSTART']
+        self.zdend=primary_header['ZDEND']
         
         # Wavelength range
         x=np.arange(self.naxis1)+1
@@ -63,8 +77,7 @@ class IFU:
             table_find=fibre_table[msk0]
 
             # Pick out the place in the table with object names, rejecting SKY and empty strings.
-            object_names_nonsky = [s for s in table_find.field('NAME') if s.startswith('SKY')==False and len(s)>0]
-
+            object_names_nonsky = [s for s in table_find.field('NAME') if s.startswith('SKY')==False and s.startswith('Sky')==False and len(s)>0]
             #print np.shape(object_names_nonsky)
 
             self.name=list(set(object_names_nonsky))[0]
@@ -75,6 +88,10 @@ class IFU:
         #X and Y positions of fibres in absolute degrees.
         self.xpos=table_new.field('FIB_MRA') #RA add -1*
         self.ypos=table_new.field('FIB_MDEC') #Dec
+
+        # Positions in arcseconds relative to the field centre
+        self.xpos_rel=table_new.field('XPOS')
+        self.ypos_rel=table_new.field('YPOS')
  
         # Fibre number - used for tests.
         self.n=table_new.field('FIBNUM')
@@ -100,6 +117,10 @@ class IFU:
         self.var=variance_in[ind,:]/(self.exptime*self.exptime)
 
         # Added for Iraklis, might need to check this.
-        self.fibtab=fibre_table
+        self.fibtab=table_new
+
+        # TEMP -  object RA & DEC (Nic)
+        self.obj_ra=table_new.field('GRP_MRA')
+        self.obj_dec=table_new.field('GRP_MDEC')
 
         del hdulist
