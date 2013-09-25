@@ -99,7 +99,7 @@ You should not touch this one, as it is called automatically, in case needed.
 
 ifus=[1,2,3,4,5,6,7,8,9,10,11,12,13]
 
-def find_dither(inlist,reference,centroid=True,inter=False):
+def find_dither(inlist,reference,centroid=True,inter=False,plot=False):
       
       
       ## For each file in inlist call the get_cetroid module, computes centroid coordinates and stores them 
@@ -256,36 +256,36 @@ def find_dither(inlist,reference,centroid=True,inter=False):
       np.savetxt(file_results, results, fmt='%15s')
 
       
-      
-      ## Plot the final dither patterns
-      plt.ion()
+      if plot:
+          ## Plot the final dither patterns
+          plt.ion()
 
-      plt.subplot(1,1,1)
-      
-      ## Create 2dF FoV
-      plt.rc("font", size=12)
-      plt.ylim((-130000,130000))
-      plt.xlim((-130000,130000))
-      fov=plt.Circle((0,0),125000,fill=False,lw=0.5)
-      plt.gca().add_patch(fov)
-      
-      for i in xrange(len(ifus)):
+          plt.subplot(1,1,1)
+          
+          ## Create 2dF FoV
+          plt.rc("font", size=12)
+          plt.ylim((-130000,130000))
+          plt.xlim((-130000,130000))
+          fov=plt.Circle((0,0),125000,fill=False,lw=0.5)
+          plt.gca().add_patch(fov)
+          
+          for i in xrange(len(ifus)):
+                    
                 
-            
-            
-            
-            deltax=-1*np.multiply(np.extract((np.array(ifscol))==(i+1),xshcol),200)   #scale each offset by x200 in order to make it visible in the plot - the -1 is to go back in focal plane coordinates            
-            deltay=np.multiply(np.extract((np.array(ifscol))==(i+1),yshcol),200)   #scale each offset by x200 in order to make it visible in the plot
                 
-            x=np.add(deltax,xcent[i])
-            y=np.add(deltay,ycent[i])
-            
-            fiber=plt.Circle((xcent[i],ycent[i]),(200.*(105./2.)),fill=False, ls='dashed',color=cm.winter(1.*i/len(ifus)))  #circle corresponding to the size of each fiber x200
-            plt.gca().add_patch(fiber)  #plot central fiber
-            
-            #plt.title('IFS'+str(i+1))
-            plt.plot(x,y,color=cm.winter(1.*i/len(ifus)),lw=2.) # plot offset pattern 
-            plt.annotate('IFS'+str(i+1), xy=(xcent[i],np.add(ycent[i],(200.*(105./2.)))), xycoords='data',xytext=None, textcoords='data', arrowprops=None,color=cm.winter(1.*i/len(ifus)))  #plot IFS id
+                
+                deltax=-1*np.multiply(np.extract((np.array(ifscol))==(i+1),xshcol),200)   #scale each offset by x200 in order to make it visible in the plot - the -1 is to go back in focal plane coordinates            
+                deltay=np.multiply(np.extract((np.array(ifscol))==(i+1),yshcol),200)   #scale each offset by x200 in order to make it visible in the plot
+                    
+                x=np.add(deltax,xcent[i])
+                y=np.add(deltay,ycent[i])
+                
+                fiber=plt.Circle((xcent[i],ycent[i]),(200.*(105./2.)),fill=False, ls='dashed',color=cm.winter(1.*i/len(ifus)))  #circle corresponding to the size of each fiber x200
+                plt.gca().add_patch(fiber)  #plot central fiber
+                
+                #plt.title('IFS'+str(i+1))
+                plt.plot(x,y,color=cm.winter(1.*i/len(ifus)),lw=2.) # plot offset pattern 
+                plt.annotate('IFS'+str(i+1), xy=(xcent[i],np.add(ycent[i],(200.*(105./2.)))), xycoords='data',xytext=None, textcoords='data', arrowprops=None,color=cm.winter(1.*i/len(ifus)))  #plot IFS id
 
 
 
