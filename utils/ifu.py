@@ -73,8 +73,8 @@ class IFU:
         table_new=fibre_table[mask]
 
         #X and Y positions of fibres in absolute degrees.
-        self.xpos=table_new.field('FIB_ARA') #RA add -1*
-        self.ypos=table_new.field('FIB_ADEC') #Dec
+        self.xpos=table_new.field('FIB_MRA') #RA add -1*
+        self.ypos=table_new.field('FIB_MDEC') #Dec
  
         # Fibre number - used for tests.
         self.n=table_new.field('FIBNUM')
