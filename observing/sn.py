@@ -17,17 +17,47 @@ from .. import utils
 from .. import samifitting as fitting
 
 """
-This file contains a S/N estimation code used predominantly during SAMI observing runs.
+This file contains a couple of S/N estimation codes 
+ designed for use during SAMI observing runs.
 
-UPDATED: 8/4/13, Iraklis Konstantopoulos
-         -- editing to comply with new conventions in sami_utils; 
+UPDATED: 08.04.2013, Iraklis Konstantopoulos
+         -- edited to comply with new conventions in sami_utils; 
          -- edited to accept new target table format; 
 
-NOTES: 10/4/13, Iraklis Konstantopoulos
+         23.08.2012, Iraklis Konstantopoulos
+         -- changed name of "sn" to "sn_re"
+         -- writing new S/N code based on the secondary star observation. 
+
+NOTES: 10.04.2013, Iraklis Konstantopoulos
        -- I no longer return SN_all, but sn_Re, the median SN @Re. 
        -- I removed the SN_all array from the sn function. 
 
+       23.08.2013, Iraklis Konstantopoulos
+
 """
+
+def sn_map(rssin):
+    """ 
+    Plot SNR of all 12 SAMI targets across fraction of Re. 
+    
+    Process: 
+    - Deduce the noise level from the standard star
+     + obtain listed brightness of secondary star, 
+     + use existing 2D Gauss function to get SBP of star,
+     + figure out photometric aperture and correction,  
+     + normalise flux, 
+     + calculate integrated S/N for star, 
+     + establish noise level.  
+
+    - Run the SDSS-SB fuction on all targets, 
+     + Convert brightness to S/N, 
+     + Plot all 12 targets:
+      - x-axis: fraction of Re (from target selection table), 
+      - y-axis: S/N, 
+      - horizontal lines @S/N=5, 10.
+    """
+
+    print("HAY!")
 
 def sn_list(inlist, tablein, l1, l2, ifus='all'):
     """ 
@@ -64,7 +94,7 @@ def sn_list(inlist, tablein, l1, l2, ifus='all'):
     for i in range(len(files)):
 
         insami=files[i]
-        SN_all=sn(insami, tablein, plot=False, ifus=ifus, verbose=False)
+        SN_all=sn_re(insami, tablein, plot=False, ifus=ifus, verbose=False)
         
         SN_all_sq[:,i]=SN_all*SN_all
 
@@ -74,7 +104,7 @@ def sn_list(inlist, tablein, l1, l2, ifus='all'):
     print IFUlist
     print SN_tot
     
-def sn(insami, tablein, l1, l2, plot=False, ifus='all', 
+def sn_re(insami, tablein, l1, l2, plot=False, ifus='all', 
        log=True, verbose=True, output=False, seek_centroid=True):
 
     """ 
