@@ -1,4 +1,7 @@
-from pyraf import iraf
+try:
+    from pyraf import iraf
+except ImportError:
+    print "pyraf not found! Can't do image alignment here."
 import sami
 import string
 import sami.utils as utils
