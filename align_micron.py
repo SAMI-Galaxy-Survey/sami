@@ -102,22 +102,16 @@ HG_CHANGESET = utils.hg_changeset(__file__)
 
 ifus=[1,2,3,4,5,6,7,8,9,10,11,12,13]
 
-def find_dither(inlist,reference,centroid=True,inter=False,plot=False,remove_files=True):
+def find_dither(RSSname,reference,centroid=True,inter=False,plot=False,remove_files=True):
       
       
       ## For each file in inlist call the get_cetroid module, computes centroid coordinates and stores them 
       ## into a txt file.  
-      
-      RSSname=[]
-      for line in open(inlist):
-          cols=line.split()
-          cols[0]=str.strip(cols[0])
-    
-          if centroid==True:
-              get_centroid(cols[0])   #Run centroid algorithm on each ifu and for each RSS file       
-    
-          RSSname.append(np.str(cols[0]))
-      
+
+      if centroid:
+          for name in RSSname:
+              get_centroid(name)
+            
       nRSS=len(RSSname)
       
       
