@@ -134,8 +134,8 @@ class IFU:
             offsets = offsets_table[line_number]
             self.x_cen = -1 * offsets['X_CEN'] # Following sign convention for x_microns above
             self.y_cen = offsets['Y_CEN']
-            self.x_ref = -1 * offsets['X_REF']
-            self.y_ref = offsets['Y_REF']
+            self.x_refmed = -1 * offsets['X_REFMED']
+            self.y_refmed = offsets['Y_REFMED']
             self.x_shift = -1 * offsets['X_SHIFT']
             self.y_shift = offsets['Y_SHIFT']
 
