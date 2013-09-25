@@ -7,6 +7,7 @@ import sami.observing.centroid
 import os
 import matplotlib.pyplot as plt
 from matplotlib import cm
+import astropy.io.fits as pf
 
 
 """
@@ -96,6 +97,8 @@ You should not touch this one, as it is called automatically, in case needed.
 
 
 """
+
+HG_CHANGESET = utils.hg_changeset(__file__)
 
 ifus=[1,2,3,4,5,6,7,8,9,10,11,12,13]
 
@@ -237,18 +240,33 @@ def find_dither(inlist,reference,centroid=True,inter=False,plot=False):
              
              ## Append the results stored in file_geoxy on the RSScol,ifscol,xshcol,yshcol array so that they can be stored into a more user-friendly format
              n=0
+             ## xshift and yshift are the same as xshcol, yshcol but for this frame only
+             xshift = []
+             yshift = []
+             ifs = []
              for line in open(file_geoxy):
                  n=n+1 
                  RSScol.append(RSSmatch[i])
                  ifscol.append(n)
+                 ifs.append(n)
                  cols=line.split()
                  x=-1*np.subtract(np.float(cols[0]),xcent[n-1]) #the -1 is to go back to on-sky positions
                  y=np.subtract(np.float(cols[1]),ycent[n-1])
                  xshcol.append(x)
                  yshcol.append(y) 
+                 xshift.append(x)
+                 yshift.append(y)
                  galID.append(galname[n-1])
+
+             # Read back the RMS from one of IRAF's files
+             xrms, yrms = read_rms(file_stats)
+
+             # Save the results in the FITS header
+             save_results(RSSmatch[i], xin, yin, xref, yref, xshift, yshift, xrms, yrms, reference)
                 
-      
+      # Save results for the reference frame in the FITS header
+      save_results(reference, xref, yref, xref, yref, [0.0 for i in ifus], [0.0 for i in ifus], 
+                   0.0, 0.0, reference)
       
       ## Save final dither solution
       file_results=string.join([string.strip(reference,'.fits'), "_dither_solution.txt"],'')    
@@ -324,3 +342,45 @@ def get_centroid(infile):
             
             print ifu_data.ifu, x_out, y_out
     f.close() # close the output file
+
+
+def save_results(filename, xin, yin, xref, yref, xshift, yshift, xrms, yrms, reference):
+    """Save the results in a new FITS header."""
+    # Make the binary table HDU
+    xin_col = pf.Column(name='X_CEN', format='E', array=xin)
+    yin_col = pf.Column(name='Y_CEN', format='E', array=yin)
+    xref_col = pf.Column(name='X_REF', format='E', array=xref)
+    yref_col = pf.Column(name='Y_REF', format='E', array=yref)
+    xshift_col = pf.Column(name='X_SHIFT', format='E', array=xshift)
+    yshift_col = pf.Column(name='Y_SHIFT', format='E', array=yshift)
+    hdu = pf.new_table(pf.ColDefs([xin_col, yin_col, xref_col, yref_col,
+                                   xshift_col, yshift_col]))
+    hdu.header['X_RMS'] = (xrms, 'RMS of X_SHIFT')
+    hdu.header['Y_RMS'] = (yrms, 'RMS of Y_SHIFT')
+    hdu.header['REF_FILE'] = (reference, 'Reference filename')
+    hdu.header['HGALIGN'] = (HG_CHANGESET, 'Hg changeset ID for alignment code')
+    hdu.update_ext_name('ALIGNMENT')
+    # Open up the file for editing
+    hdulist = pf.open(filename, 'update')
+    # Remove the existing HDU, if it's there
+    try:
+        del hdulist['ALIGNMENT']
+    except KeyError:
+        pass
+    hdulist.append(hdu)
+    hdulist.close()
+    return
+    
+
+def read_rms(filename):
+    """Read back the RMS from one of IRAF's results files."""
+    with open(filename) as f:
+        while True:
+            line = f.readline()
+            if line.startswith('#     Xin and Yin fit rms:'):
+                linesplit = line[:-1].split()
+                xrms = float(linesplit[-2])
+                yrms = float(linesplit[-1])
+                break
+    return xrms, yrms
+
