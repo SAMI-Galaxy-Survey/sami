@@ -1051,7 +1051,8 @@ class Manager:
                 find_dither(path_list, path_list[0], centroid=True, 
                             remove_files=True)
                 # Now do the actual cubing
-                dithered_cubes_from_rss_list(path_list, write=True)
+                dithered_cubes_from_rss_list(path_list, suffix='_'+field[0], 
+                                             write=True)
         return
 
     def reduce_all(self, overwrite=False, **kwargs):
