@@ -123,4 +123,20 @@ class IFU:
         self.obj_ra=table_new.field('GRP_MRA')
         self.obj_dec=table_new.field('GRP_MDEC')
 
+        # Pre-measured offsets, if available
+        try:
+            offsets_table = hdulist['ALIGNMENT'].data
+        except KeyError:
+            # Haven't been measured yet; never mind
+            pass
+        else:
+            line_number = np.where(offsets_table['PROBENUM'] == self.ifu)[0][0]
+            offsets = offsets_table[line_number]
+            self.x_cen = -1 * offsets['X_CEN'] # Following sign convention for x_microns above
+            self.y_cen = offsets['Y_CEN']
+            self.x_ref = -1 * offsets['X_REF']
+            self.y_ref = offsets['Y_REF']
+            self.x_shift = -1 * offsets['X_SHIFT']
+            self.y_shift = offsets['Y_SHIFT']
+
         del hdulist
