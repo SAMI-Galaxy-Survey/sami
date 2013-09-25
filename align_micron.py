@@ -315,13 +315,9 @@ def find_dither(RSSname,reference,centroid=True,inter=False,plot=False,remove_fi
 
 def get_centroid(infile):
 
-    print "Calculating centroid for each IFU in file:", infile
-    
     ## Create name of the file where centroid coordinates are stored 
     
     out_txt=string.join([string.strip(infile,'.fits'), "_centroid"],'')
-    print "Output text file is:", out_txt
-
 
     f=open(out_txt, 'w')
     
@@ -346,7 +342,6 @@ def get_centroid(infile):
                     
             f.write(s)
             
-            print ifu_data.ifu, x_out, y_out
     f.close() # close the output file
 
 
