@@ -334,6 +334,12 @@ def dithered_cube_from_rss(ifu_list, sample_size=0.5, drop_factor=0.5, clip=True
         # Below is a diagnostic print out.
         #print("data_good.shape: ",np.shape(data_good))
 
+        # Check that we're not trying to use data that isn't there
+        # Change the offsets method if necessary
+        if offsets == 'file' and not hasattr(galaxy_data, 'x_refmed'):
+            print 'Offsets have not been pre-measured! Fitting them now.'
+            offsets = 'fit'
+
         if (offsets == 'fit'):
             # Fit parameter estimates from a crude centre of mass
             com_distr=utils.comxyz(x_good,y_good,data_good)
