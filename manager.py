@@ -1731,8 +1731,9 @@ class Manager:
             filename = fits_match.reduced_filename
         # These are the cases where we do want to make a link
         require_link = [
-            'tlmap', 'tlmap_flap', 'fflat', 'fflat_dome', 'wavel', 'thput', 
-            'thput_object']
+            'tlmap', 'tlmap_loose', 'tlmap_flap', 'tlmap_flap_loose', 
+            'fflat', 'fflat_loose', 'fflat_dome', 'fflat_dome_loose',
+            'wavel', 'thput', 'thput_object']
         if match_class.lower() in require_link:
             link_path = os.path.join(fits.reduced_dir, filename)
             source_path = os.path.join(fits_match.reduced_dir, filename)
