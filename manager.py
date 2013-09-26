@@ -1141,25 +1141,60 @@ class Manager:
                         options.extend(['-THRUPUT', '0'])
                         continue
                 elif match_class == 'tlmap':
-                    # Try to find a suitable flap flat instead
-                    filename_match = self.match_link(fits, 'tlmap_flap')
+                    # Try with looser criteria
+                    filename_match = self.match_link(fits, 'tlmap_loose')
                     if filename_match is None:
-                        # Still nothing. Raise an exception
-                        raise MatchException('No matching tlmap found for ' +
-                                             fits.filename)
+                        # Try using a flap flat instead
+                        filename_match = self.match_link(fits, 'tlmap_flap')
+                        if filename_match is None:
+                            # Try with looser criteria
+                            filename_match = self.match_link(
+                                fits, 'tlmap_flap_loose')
+                            if filename_match is None:
+                                # Still nothing. Raise an exception
+                                raise MatchException(
+                                    'No matching tlmap found for ' + 
+                                    fits.filename)
+                            else:
+                                print ('Warning: No good flat found for TLM. '
+                                    'Using flap flat from different field '
+                                    'for ' + fits.filename)
+                        else:
+                            print ('Warning: No dome flat found for TLM. '
+                                'Using flap flat instead for ' + fits.filename)
                     else:
-                        print ('Warning: No dome flat found for TLM. '
-                               'Using flap flat instead for '+fits.filename)
+                        print ('Warning: No matching flat found for TLM. '
+                            'Using flat from different field for ' + 
+                            fits.filename)
                 elif match_class == 'fflat':
-                    # Try to find a suitable dome flat instead
-                    filename_match = self.match_link(fits, 'fflat_dome')
+                    # Try with looser criteria
+                    filename_match = self.match_link(fits, 'fflat_loose')
                     if filename_match is None:
-                        # Still nothing. Raise an exception
-                        raise MatchException('No matching fflat found for ' +
-                                             fits.filename)
+                        # Try using a dome flat instead
+                        filename_match = self.match_link(fits, 'fflat_dome')
+                        if filename_match is None:
+                            # Try with looser criteria
+                            filename_match = self.match_link(
+                                fits, 'fflat_dome_loose')
+                            if filename_match is None:
+                                # Still nothing. Raise an exception
+                                raise MatchException(
+                                    'No matching fflat found for ' + 
+                                    fits.filename)
+                            else:
+                                print ('Warning: No good flat found for '
+                                    'flat fielding. '
+                                    'Using dome flat from different field '
+                                    'for ' + fits.filename)
+                        else:
+                            print ('Warning: No flap flat found for flat '
+                                'fielding. '
+                                'Using dome flat instead for ' + fits.filename)
                     else:
-                        print ('Warning: No flap flat found for flat fielding. '
-                               'Using dome flat instead for '+fits.filename)
+                        print ('Warning: No matching flat found for flat '
+                            'fielding. '
+                            'Using flat from different field for ' + 
+                            fits.filename)
                 else:
                     # Anything else missing is fatal
                     raise MatchException('No matching ' + match_class +
@@ -1462,21 +1497,25 @@ class Manager:
         """Return the file that should be used to help reduce the FITS file.
 
         match_class is one of the following:
-        tlmap -- Find a tramline map from the dome lamp
-        tlmap_flap -- As tlmap, but from the flap lamp
-        wavel -- Find a reduced arc file
-        fflat -- Find a reduced fibre flat field from the flap lamp
-        fflat_dome -- As fflat, but from the dome lamp
-        thput -- Find a reduced offset sky (twilight) file
-        thput_object -- As thput, but find a suitable object frame
-        bias  -- Find a combined bias frame
-        dark  -- Find a combined dark frame
-        lflat -- Find a combined long-slit flat frame
-        fcal  -- Find a reduced spectrophotometric standard star frame
-        fcal_loose -- As fcal, but with less strict criteria
+        tlmap            -- Find a tramline map from the dome lamp
+        tlmap_loose      -- As tlmap, but with less strict criteria
+        tlmap_flap       -- As tlmap, but from the flap lamp
+        tlmap_flap_loose -- As tlmap_flap, but with less strict criteria
+        wavel            -- Find a reduced arc file
+        fflat            -- Find a reduced fibre flat field from the flap lamp
+        fflat_loose      -- As fflat, but with less strict criteria
+        fflat_dome       -- As fflat, but from the dome lamp
+        fflat_dome_loose -- As fflat_dome, but with less strict criteria
+        thput            -- Find a reduced offset sky (twilight) file
+        thput_object     -- As thput, but find a suitable object frame
+        bias             -- Find a combined bias frame
+        dark             -- Find a combined dark frame
+        lflat            -- Find a combined long-slit flat frame
+        fcal             -- Find a reduced spectrophotometric standard star
+        fcal_loose       -- As fcal, but with less strict criteria
 
         The return type depends on what is asked for:
-        tlmap, tlmap_flap, wavel, fflat, fflat_dome, thput, thput_object, fcal 
+        tlmap, wavel, fflat, thput, fcal and related 
                                 -- A FITS file object
         bias, dark, lflat       -- The path to the combined file
         """
@@ -1510,11 +1549,18 @@ class Manager:
             return retfunc
         # Determine what actually needs to be matched, depending on match_class
         if match_class.lower() == 'tlmap':
-            # Find a tramline map, so need a fibre flat field
+            # Find a tramline map, so need a dome fibre flat field
             ndf_class = 'MFFFF'
             date = fits.date
             plate_id = fits.plate_id
             field_id = fits.field_id
+            ccd = fits.ccd
+            tlm_created = True
+            lamp = 'Dome'
+            fom = time_difference
+        elif match_class.lower() == 'tlmap_loose':
+            # Find a tramline map with looser criteria
+            ndf_class = 'MFFFF'
             ccd = fits.ccd
             tlm_created = True
             lamp = 'Dome'
@@ -1529,6 +1575,13 @@ class Manager:
             tlm_created = True
             lamp = 'Flap'
             fom = time_difference
+        elif match_class.lower() == 'tlmap_flap_loose':
+            # Tramline map from flap flat with looser criteria
+            ndf_class = 'MFFFF'
+            ccd = fits.ccd
+            tlm_created = True
+            lamp = 'Flap'
+            fom = time_difference
         elif match_class.lower() == 'wavel':
             # Find a reduced arc field
             ndf_class = 'MFARC'
@@ -1539,11 +1592,18 @@ class Manager:
             reduced = True
             fom = time_difference
         elif match_class.lower() == 'fflat':
-            # Find a reduced fibre flat field
+            # Find a reduced fibre flat field from the flap lamp
             ndf_class = 'MFFFF'
             date = fits.date
             plate_id = fits.plate_id
             field_id = fits.field_id
+            ccd = fits.ccd
+            reduced = True
+            lamp = 'Flap'
+            fom = time_difference
+        elif match_class.lower() == 'fflat_loose':
+            # Find a reduced fibre flat field with looser criteria
+            ndf_class = 'MFFFF'
             ccd = fits.ccd
             reduced = True
             lamp = 'Flap'
@@ -1554,6 +1614,13 @@ class Manager:
             date = fits.date
             plate_id = fits.plate_id
             field_id = fits.field_id
+            ccd = fits.ccd
+            reduced = True
+            lamp = 'Dome'
+            fom = time_difference
+        elif match_class.lower() == 'fflat_dome_loose':
+            # Fibre flat field from dome lamp with looser criteria
+            ndf_class = 'MFFFF'
             ccd = fits.ccd
             reduced = True
             lamp = 'Dome'
@@ -1664,8 +1731,9 @@ class Manager:
             filename = fits_match.reduced_filename
         # These are the cases where we do want to make a link
         require_link = [
-            'tlmap', 'tlmap_flap', 'fflat', 'fflat_dome', 'wavel', 'thput', 
-            'thput_object']
+            'tlmap', 'tlmap_loose', 'tlmap_flap', 'tlmap_flap_loose', 
+            'fflat', 'fflat_loose', 'fflat_dome', 'fflat_dome_loose',
+            'wavel', 'thput', 'thput_object']
         if match_class.lower() in require_link:
             link_path = os.path.join(fits.reduced_dir, filename)
             source_path = os.path.join(fits_match.reduced_dir, filename)
