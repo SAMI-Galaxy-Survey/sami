@@ -627,4 +627,67 @@ def centroid_fit(x,y,data,microns=True, circular=True):
             model[ii,jj]=gf.fitfunc(gf.p, xval, yval)
     
     return gf.p, data_sum, xlin, ylin, model
+
+
+def guider_focus(values):
     
+    """
+    #
+    # "guider_focus"
+    #
+    #   This function finds the best focus position for the telescope using the
+    #   FWHM pix values from the guide camera as obtained via the Night Assistant
+    #   using the View > Pick Object -> FWHM function in the GAIA Guide Camera
+    #   software (Telescope Control Software on main Control Desk).
+    #
+    #   Function Example:
+    #
+    #   quicklook.guider_focus([[36.7,26],[36.9,19],[37.1,19],[37.3,23],[37.5,28]])
+    #
+    #   Input Parameters:
+    #
+    #     values.......Array with each cell containing the Telescope focus
+    #                  positions in mm and the Guide Camera FWHM in pixels.
+    #
+    #                  quicklook.guider_focus([[mm,pix],[mm,pix],[mm,pix],etc...])
+    #
+    """
+    
+    focus_positions=[]
+    FWHMs=[]
+    
+    # Get focus values from function input
+    for value in values:
+        
+        focus_position = value[0]
+        FWHM = value[1]
+        
+        focus_positions.append(focus_position)
+        FWHMs.append(FWHM)
+    
+    # Fit 2nd order polynomial to data
+    p=np.polyfit(focus_positions, FWHMs, 2)
+    focus_lin=np.arange(np.min(focus_positions)-0.1, np.max(focus_positions)+0.1, 0.01)
+    fit=np.polyval(p, focus_lin)
+    
+    # Equate minimum
+    min_x = -p[1]/(p[0]*2)
+    min_y = p[0]*(min_x**2) + p[1]*min_x + p[2]
+    
+    min_FWHM = min_y*0.0787 #0.0787"/pix is the image scale on the SAMI guide camera
+
+    # Plot
+    fig = py.figure()
+    py.scatter(focus_positions, FWHMs)
+    py.scatter(min_x, min_y,marker="o",color="r")
+    py.plot(focus_lin, fit, "r")
+    py.title("Telescope focus from Guider"+"\n"+"Best focus position: {0:.2f}".format(min_x)+"mm        FWHM = {0:.2f}".format(min_FWHM)+'"')
+    py.xlabel("Telescope Focus Position (mm)")
+    py.ylabel("FWHM (Guider Pixels)")
+    
+    print "---> START"
+    print "--->"
+    print "---> The best focus position is: {0:.2f}".format(min_x)
+    print "--->"
+    print "---> END"
+
