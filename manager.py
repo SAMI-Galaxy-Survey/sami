@@ -1141,25 +1141,60 @@ class Manager:
                         options.extend(['-THRUPUT', '0'])
                         continue
                 elif match_class == 'tlmap':
-                    # Try to find a suitable flap flat instead
-                    filename_match = self.match_link(fits, 'tlmap_flap')
+                    # Try with looser criteria
+                    filename_match = self.match_link(fits, 'tlmap_loose')
                     if filename_match is None:
-                        # Still nothing. Raise an exception
-                        raise MatchException('No matching tlmap found for ' +
-                                             fits.filename)
+                        # Try using a flap flat instead
+                        filename_match = self.match_link(fits, 'tlmap_flap')
+                        if filename_match is None:
+                            # Try with looser criteria
+                            filename_match = self.match_link(
+                                fits, 'tlmap_flap_loose')
+                            if filename_match is None:
+                                # Still nothing. Raise an exception
+                                raise MatchException(
+                                    'No matching tlmap found for ' + 
+                                    fits.filename)
+                            else:
+                                print ('Warning: No good flat found for TLM. '
+                                    'Using flap flat from different field '
+                                    'for ' + fits.filename)
+                        else:
+                            print ('Warning: No dome flat found for TLM. '
+                                'Using flap flat instead for ' + fits.filename)
                     else:
-                        print ('Warning: No dome flat found for TLM. '
-                               'Using flap flat instead for '+fits.filename)
+                        print ('Warning: No matching flat found for TLM. '
+                            'Using flat from different field for ' + 
+                            fits.filename)
                 elif match_class == 'fflat':
-                    # Try to find a suitable dome flat instead
-                    filename_match = self.match_link(fits, 'fflat_dome')
+                    # Try with looser criteria
+                    filename_match = self.match_link(fits, 'fflat_loose')
                     if filename_match is None:
-                        # Still nothing. Raise an exception
-                        raise MatchException('No matching fflat found for ' +
-                                             fits.filename)
+                        # Try using a dome flat instead
+                        filename_match = self.match_link(fits, 'fflat_dome')
+                        if filename_match is None:
+                            # Try with looser criteria
+                            filename_match = self.match_link(
+                                fits, 'fflat_dome_loose')
+                            if filename_match is None:
+                                # Still nothing. Raise an exception
+                                raise MatchException(
+                                    'No matching fflat found for ' + 
+                                    fits.filename)
+                            else:
+                                print ('Warning: No good flat found for '
+                                    'flat fielding. '
+                                    'Using dome flat from different field '
+                                    'for ' + fits.filename)
+                        else:
+                            print ('Warning: No flap flat found for flat '
+                                'fielding. '
+                                'Using dome flat instead for ' + fits.filename)
                     else:
-                        print ('Warning: No flap flat found for flat fielding. '
-                               'Using dome flat instead for '+fits.filename)
+                        print ('Warning: No matching flat found for flat '
+                            'fielding. '
+                            'Using flat from different field for ' + 
+                            fits.filename)
                 else:
                     # Anything else missing is fatal
                     raise MatchException('No matching ' + match_class +
