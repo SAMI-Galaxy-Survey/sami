@@ -1462,21 +1462,25 @@ class Manager:
         """Return the file that should be used to help reduce the FITS file.
 
         match_class is one of the following:
-        tlmap -- Find a tramline map from the dome lamp
-        tlmap_flap -- As tlmap, but from the flap lamp
-        wavel -- Find a reduced arc file
-        fflat -- Find a reduced fibre flat field from the flap lamp
-        fflat_dome -- As fflat, but from the dome lamp
-        thput -- Find a reduced offset sky (twilight) file
-        thput_object -- As thput, but find a suitable object frame
-        bias  -- Find a combined bias frame
-        dark  -- Find a combined dark frame
-        lflat -- Find a combined long-slit flat frame
-        fcal  -- Find a reduced spectrophotometric standard star frame
-        fcal_loose -- As fcal, but with less strict criteria
+        tlmap            -- Find a tramline map from the dome lamp
+        tlmap_loose      -- As tlmap, but with less strict criteria
+        tlmap_flap       -- As tlmap, but from the flap lamp
+        tlmap_flap_loose -- As tlmap_flap, but with less strict criteria
+        wavel            -- Find a reduced arc file
+        fflat            -- Find a reduced fibre flat field from the flap lamp
+        fflat_loose      -- As fflat, but with less strict criteria
+        fflat_dome       -- As fflat, but from the dome lamp
+        fflat_dome_loose -- As fflat_dome, but with less strict criteria
+        thput            -- Find a reduced offset sky (twilight) file
+        thput_object     -- As thput, but find a suitable object frame
+        bias             -- Find a combined bias frame
+        dark             -- Find a combined dark frame
+        lflat            -- Find a combined long-slit flat frame
+        fcal             -- Find a reduced spectrophotometric standard star
+        fcal_loose       -- As fcal, but with less strict criteria
 
         The return type depends on what is asked for:
-        tlmap, tlmap_flap, wavel, fflat, fflat_dome, thput, thput_object, fcal 
+        tlmap, wavel, fflat, thput, fcal and related 
                                 -- A FITS file object
         bias, dark, lflat       -- The path to the combined file
         """
@@ -1510,11 +1514,18 @@ class Manager:
             return retfunc
         # Determine what actually needs to be matched, depending on match_class
         if match_class.lower() == 'tlmap':
-            # Find a tramline map, so need a fibre flat field
+            # Find a tramline map, so need a dome fibre flat field
             ndf_class = 'MFFFF'
             date = fits.date
             plate_id = fits.plate_id
             field_id = fits.field_id
+            ccd = fits.ccd
+            tlm_created = True
+            lamp = 'Dome'
+            fom = time_difference
+        elif match_class.lower() == 'tlmap_loose':
+            # Find a tramline map with looser criteria
+            ndf_class = 'MFFFF'
             ccd = fits.ccd
             tlm_created = True
             lamp = 'Dome'
@@ -1529,6 +1540,13 @@ class Manager:
             tlm_created = True
             lamp = 'Flap'
             fom = time_difference
+        elif match_class.lower() == 'tlmap_flap_loose':
+            # Tramline map from flap flat with looser criteria
+            ndf_class = 'MFFFF'
+            ccd = fits.ccd
+            tlm_created = True
+            lamp = 'Flap'
+            fom = time_difference
         elif match_class.lower() == 'wavel':
             # Find a reduced arc field
             ndf_class = 'MFARC'
@@ -1539,11 +1557,18 @@ class Manager:
             reduced = True
             fom = time_difference
         elif match_class.lower() == 'fflat':
-            # Find a reduced fibre flat field
+            # Find a reduced fibre flat field from the flap lamp
             ndf_class = 'MFFFF'
             date = fits.date
             plate_id = fits.plate_id
             field_id = fits.field_id
+            ccd = fits.ccd
+            reduced = True
+            lamp = 'Flap'
+            fom = time_difference
+        elif match_class.lower() == 'fflat_loose':
+            # Find a reduced fibre flat field with looser criteria
+            ndf_class = 'MFFFF'
             ccd = fits.ccd
             reduced = True
             lamp = 'Flap'
@@ -1554,6 +1579,13 @@ class Manager:
             date = fits.date
             plate_id = fits.plate_id
             field_id = fits.field_id
+            ccd = fits.ccd
+            reduced = True
+            lamp = 'Dome'
+            fom = time_difference
+        elif match_class.lower() == 'fflat_dome_loose':
+            # Fibre flat field from dome lamp with looser criteria
+            ndf_class = 'MFFFF'
             ccd = fits.ccd
             reduced = True
             lamp = 'Dome'
