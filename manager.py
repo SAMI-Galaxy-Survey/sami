@@ -1195,6 +1195,17 @@ class Manager:
                             'fielding. '
                             'Using flat from different field for ' + 
                             fits.filename)
+                elif match_class == 'wavel':
+                    # Try with looser criteria
+                    filename_match = self.match_link(fits, 'wavel_loose')
+                    if filename_match is None:
+                        # Still nothing. Raise an exception
+                        raise MatchException('No matching wavel found for ' +
+                                             fits.filename)
+                    else:
+                        print ('Warning: No good arc found for wavelength '
+                               'solution. Using arc from different field '
+                               'for ' + fits.filename)
                 else:
                     # Anything else missing is fatal
                     raise MatchException('No matching ' + match_class +
@@ -1502,6 +1513,7 @@ class Manager:
         tlmap_flap       -- As tlmap, but from the flap lamp
         tlmap_flap_loose -- As tlmap_flap, but with less strict criteria
         wavel            -- Find a reduced arc file
+        wavel_loose      -- As wavel, but with less strict criteria
         fflat            -- Find a reduced fibre flat field from the flap lamp
         fflat_loose      -- As fflat, but with less strict criteria
         fflat_dome       -- As fflat, but from the dome lamp
@@ -1588,6 +1600,12 @@ class Manager:
             date = fits.date
             plate_id = fits.plate_id
             field_id = fits.field_id
+            ccd = fits.ccd
+            reduced = True
+            fom = time_difference
+        elif match_class.lower() == 'wavel_loose':
+            # Find a reduced arc field, with looser criteria
+            ndf_class = 'MFARC'
             ccd = fits.ccd
             reduced = True
             fom = time_difference
@@ -1733,7 +1751,7 @@ class Manager:
         require_link = [
             'tlmap', 'tlmap_loose', 'tlmap_flap', 'tlmap_flap_loose', 
             'fflat', 'fflat_loose', 'fflat_dome', 'fflat_dome_loose',
-            'wavel', 'thput', 'thput_object']
+            'wavel', 'wavel_loose', 'thput', 'thput_object']
         if match_class.lower() in require_link:
             link_path = os.path.join(fits.reduced_dir, filename)
             source_path = os.path.join(fits_match.reduced_dir, filename)
