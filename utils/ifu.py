@@ -23,6 +23,11 @@ class IFU:
         self.fibre_table_header = hdulist['FIBRES_IFU'].header
         self.reduction_arguments = hdulist['REDUCTION_ARGS'].data 
 
+        #TEMP - store full headers (Nic)
+        self.primary_header = hdulist['PRIMARY'].header
+        self.fibre_table_header = hdulist['FIBRES_IFU'].header
+        self.reduction_arguments = hdulist['REDUCTION_ARGS'].header
+
         fibre_table=hdulist['FIBRES_IFU'].data
 
         # Some useful stuff from the header
@@ -35,14 +40,26 @@ class IFU:
         self.meanra = self.primary_header['MEANRA']
         self.meandec = self.primary_header['MEANDEC']
 
+<<<<<<< local
         # Determine and store which spectrograph ARM this is from (red/blue)
+=======
+        # TEMP - determine and store which spectrograph ARM this is from (Nic)
+>>>>>>> other
         if (self.primary_header['SPECTID'] == 'BL'):
             self.spectrograph_arm = 'blue'
         elif (self.primary_header['SPECTID'] == 'RD'):
             self.spectrograph_arm = 'red'
 
+<<<<<<< local
         self.gratid = self.primary_header['GRATID']
         self.gain = self.primary_header['RO_GAIN']
+=======
+        self.gratid=primary_header['GRATID']
+        self.gain=primary_header['RO_GAIN']
+
+        self.zdstart=primary_header['ZDSTART']
+        self.zdend=primary_header['ZDEND']
+>>>>>>> other
         
         # Wavelength range
         x=np.arange(self.naxis1)+1
@@ -73,8 +90,7 @@ class IFU:
             table_find=fibre_table[msk0]
 
             # Pick out the place in the table with object names, rejecting SKY and empty strings.
-            object_names_nonsky = [s for s in table_find.field('NAME') if s.startswith('SKY')==False and len(s)>0]
-
+            object_names_nonsky = [s for s in table_find.field('NAME') if s.startswith('SKY')==False and s.startswith('Sky')==False and len(s)>0]
             #print np.shape(object_names_nonsky)
 
             self.name=list(set(object_names_nonsky))[0]
@@ -122,7 +138,27 @@ class IFU:
         self.fibre_throughputs = hdulist['THPUT'].data[ind]
 
         # Added for Iraklis, might need to check this.
-        self.fibtab=fibre_table
+        self.fibtab=table_new
+
+        # TEMP -  object RA & DEC (Nic)
+        self.obj_ra=table_new.field('GRP_MRA')
+        self.obj_dec=table_new.field('GRP_MDEC')
+
+        # Pre-measured offsets, if available
+        try:
+            offsets_table = hdulist['ALIGNMENT'].data
+        except KeyError:
+            # Haven't been measured yet; never mind
+            pass
+        else:
+            line_number = np.where(offsets_table['PROBENUM'] == self.ifu)[0][0]
+            offsets = offsets_table[line_number]
+            self.x_cen = -1 * offsets['X_CEN'] # Following sign convention for x_microns above
+            self.y_cen = offsets['Y_CEN']
+            self.x_refmed = -1 * offsets['X_REFMED']
+            self.y_refmed = offsets['Y_REFMED']
+            self.x_shift = -1 * offsets['X_SHIFT']
+            self.y_shift = offsets['Y_SHIFT']
 
         # Object RA & DEC
         self.obj_ra=table_new.field('GRP_MRA')
