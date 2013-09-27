@@ -2,6 +2,8 @@ import pylab as py
 import numpy as np
 import scipy as sp
 
+import os
+
 # astropy fits file io (replacement for pyfits)
 import astropy.io.fits as pf
 
@@ -74,11 +76,11 @@ official value is also printed to screen.
 
 3) centroid_fit(x,y,data,microns=True)
 
-You shouldn't need to touch this one, it is called by the two functions above.
+You shouldn't need to touch this one, it is called by the functions above.
 
 """
 
-def centroid(infile, ifus='all', outfile=None, plot=True):
+def centroid(infile, ifus='all', savefile=True, plot=True):
     """Fits to positions of the stars in ifus for infile. Primary purpose is to produce the files needed as imput for
     Tony's code."""
 
@@ -126,15 +128,23 @@ def centroid(infile, ifus='all', outfile=None, plot=True):
     if plot==True:
         # Create the figure
         f0=py.figure()
+        #f1=py.figure() # Add a figure for the sky coords plots.
 
     # Open the output file for writing
-    if outfile!=None:
+    if savefile:
+
+        # Find the name of the input file
+        outfile=str.split(os.path.basename(infile), '.')[0]
         out_txt=string.join([outfile, ".txt"],'')
+        
         print "Output text file is:", out_txt
+        
+        # Open the text file for writing. Note this will overwrite existing files.
         f=open(out_txt, 'w')
 
     # List for the size of the Gaussian
     fwhm_arr=[]
+    fwhm_conv_arr=[] # For the converted numbers
 
     # Print the heading for the offsets
     print "-------------------------------------------------"
@@ -145,85 +155,94 @@ def centroid(infile, ifus='all', outfile=None, plot=True):
         # Use the utils module to extract data from a single IFU.
         ifu_data=utils.IFU(infile, ifu, flag_name=False)
 
-        #print ifu_data.xpos
+        # Remove the position of fibre 1, the central fibre, from all other positions to get a grid of relative positions
+        idx0=np.where(ifu_data.n==1)
+
+        x_degrees=ifu_data.xpos-ifu_data.xpos[idx0]
+        y_degrees=ifu_data.ypos-ifu_data.ypos[idx0]
+
+        x_microns=ifu_data.x_microns-ifu_data.x_microns[idx0]
+        y_microns=ifu_data.y_microns-ifu_data.y_microns[idx0]
 
         # Feed the wrapped fitter both the micron and sky values
-        p_sky, data_sky, xlin_sky, ylin_sky, model_sky=centroid_fit(ifu_data.xpos, ifu_data.ypos, ifu_data.data,
-                                                                    microns=False, circular=True)
-        p_mic, data_mic, xlin_mic, ylin_mic, model_mic=centroid_fit(ifu_data.x_microns, ifu_data.y_microns,
-                                                                    ifu_data.data, circular=True)
+        p_sky, data_sky, xlin_sky, ylin_sky, model_sky=centroid_fit(x_degrees, y_degrees, ifu_data.data, microns=False,
+                                                                    circular=True)
+        p_mic, data_mic, xlin_mic, ylin_mic, model_mic=centroid_fit(x_microns, y_microns, ifu_data.data, circular=True)
 
         # Expand out the returned fitted values.
         amplitude_sky, xout_sky, yout_sky, sig_sky, bias_sky=p_sky
         amplitude_mic, xout_mic, yout_mic, sig_mic, bias_mic=p_mic
-
-        #print p_sky
-
-        #print
-        #print np.where(ifu_data.n==1)
-        #print
-
-        #print ifu_data.xpos[np.sum(np.where(ifu_data.n==1))]
-        #print ifu_data.ypos[np.sum(np.where(ifu_data.n==1))]
         
         # Find offsets in arcseconds using both methods
-        x_off=3600*(xout_sky-ifu_data.xpos[np.sum(np.where(ifu_data.n==1))]) #*np.cos(np.pi*ifu_data.ypos[np.sum(np.where(ifu_data.n==1))]/180)
-        y_off=3600*(yout_sky-ifu_data.ypos[np.sum(np.where(ifu_data.n==1))])
-
-        xm_off=-1*(xout_mic-ifu_data.x_microns[np.where(ifu_data.n==1)])*plate_scale/1000
-        ym_off=(yout_mic-ifu_data.y_microns[np.where(ifu_data.n==1)])*plate_scale/1000
+        x_off=3600*xout_sky # Note - no need to subract the central fibre as that was done before the fit.
+        y_off=3600*yout_sky 
 
         # Use the micron values to calculate the offsets...
         centroid_microns_converted=utils.plate2sky(xout_mic, yout_mic)
-        hexa_centre_microns_converted=utils.plate2sky(ifu_data.x_microns[np.where(ifu_data.n==1)][0],
-                                                      ifu_data.y_microns[np.where(ifu_data.n==1)][0])
-
+        
         # Subtract the star postion from the hexabundle centre position
-        x_off_conv=-1*(centroid_microns_converted[0]-hexa_centre_microns_converted[0]) # plate2sky keeps micron sign convention
-        y_off_conv=centroid_microns_converted[1]-hexa_centre_microns_converted[1]
+        x_off_conv=-1*(centroid_microns_converted[0]) # plate2sky keeps micron sign convention
+        y_off_conv=centroid_microns_converted[1]
         
         # Find the widths
-        x_w=sig_sky*3600
-        xm_w=sig_mic*15.22/1000
+        x_w=sig_sky*3600.0
+        xm_w=sig_mic*15.22/1000.0
 
         # FWHM (a measure of seeing)
         fwhm=x_w*2.35
         fwhm_arr.append(fwhm)
 
-        # Compare the offsets and widths. Do something with these?!
-        #print "Differences (x,y,width)", np.abs(x_off-xm_off), np.abs(y_off-ym_off), np.abs(x_w-xm_w)
+        fwhm_conv=xm_w*2.35
+        fwhm_conv_arr.append(fwhm_conv)
 
-        print "Probe", ifu_data.ifu, x_off_conv, y_off_conv  #, xm_off, ym_off, x_off, y_off
+        #print "FWHM from four techniques:", fwhm, fwhm_corr, fwhm_conv, fwhm_conv_corr
+
+        print "Probe", ifu_data.ifu, x_off, y_off #,  x_off_conv, y_off_conv  #, xm_off, ym_off, x_off, y_off
 
         # Make an image of the bundle with the fit overlaid in contours. NOTE - plotting is done with the fit using
         # the micron values. This is more aesthetic and simple.
         if plot==True:
             
             # The limits for the axes (plotting in microns).
-            xm_lower=np.min(ifu_data.x_microns)-100
-            xm_upper=np.max(ifu_data.x_microns)+100
+            xm_lower=np.min(x_microns)-100
+            xm_upper=np.max(x_microns)+100
             
-            ym_lower=np.min(ifu_data.y_microns)-100
-            ym_upper=np.max(ifu_data.y_microns)+100
+            ym_lower=np.min(y_microns)-100
+            ym_upper=np.max(y_microns)+100
+
+            # Debugging.
+            # The limits for the axes (plotting in sky coords).
+            #xs_lower=np.min(x_degrees)-0.001
+            #xs_upper=np.max(x_degrees)+0.001
+            
+            #ys_lower=np.min(y_degrees)-0.001
+            #ys_upper=np.max(y_degrees)+0.001
+
+            #print np.min(ifu_data.xpos), np.max(ifu_data.xpos)
+            #print np.min(ifu_data.ypos), np.max(ifu_data.ypos)
             
             # Add axes to the figure
             ax0=f0.add_subplot(r,c,i+1, xlim=(xm_lower, xm_upper), ylim=(ym_lower, ym_upper), aspect='equal')
+
+            # For sky co-ords.
+            #ax1=f1.add_subplot(r,c,i+1, xlim=(xs_lower, xs_upper), ylim=(ys_lower, ys_upper), aspect='equal')
             
             data_norm=data_mic/np.nanmax(data_mic)
             mycolormap=py.get_cmap('YlGnBu_r')
 
             # Iterate over the x, y positions (and data value) making a circle patch for each fibre, with the
             # appropriate color.
-            for xmval, ymval, dataval in itertools.izip(ifu_data.x_microns, ifu_data.y_microns, data_norm):
+            for xmval, ymval, dataval in itertools.izip(x_microns, y_microns, data_norm):
 
                 # Make and add the fibre patch to the axes.
-                fibre=Circle(xy=(xmval,ymval), radius=52.5) # 52.5
-                ax0.add_artist(fibre)
+                fibre_microns=Circle(xy=(xmval,ymval), radius=52.5) # 52.5
+                ax0.add_artist(fibre_microns)
 
-                fibre.set_facecolor(mycolormap(dataval))
+                fibre_microns.set_facecolor(mycolormap(dataval))
 
             # Add the model fit as contors.
             con0=ax0.contour(xlin_mic, ylin_mic, np.transpose(model_mic), origin='lower')
+            #con1=ax1.contour(xlin_sky, ylin_sky, np.transpose(model_sky), origin='lower')
 
             # Title and get rid of ticks.
             title_string=string.join(['Probe ', str(ifu_data.ifu)])
@@ -231,41 +250,57 @@ def centroid(infile, ifus='all', outfile=None, plot=True):
 
             py.setp(ax0.get_xticklabels(), visible=False)
             py.setp(ax0.get_yticklabels(), visible=False)
+
+            # Needed in future for debugging...
+            #for xval, yval, dataval in itertools.izip(x_degrees, y_degrees, data_norm):
+
+                # Make and add the fibre patch to the axes.
+                #fibre_sky=Circle(xy=(xval,yval), radius=2.22e-4) # 52.5
+                #ax1.add_artist(fibre_sky)
+
+                #fibre_sky.set_facecolor(mycolormap(dataval))
+
+            #py.setp(ax1.get_xticklabels(), visible=False)
+            #py.setp(ax1.get_yticklabels(), visible=False)
         
         # -------------------------------------------------------
         # Write the results to file
         if outfile!=None:
             # Probe number, offset in RA ("), offset in Dec (")
-            s=str(ifu_data.ifu)+' '+str(x_off_conv)+' '+str(y_off_conv)+'\n' # the data to write to file
+            s=str(ifu_data.ifu)+' '+str(x_off)+' '+str(y_off)+'\n' # the data to write to file
             f.write(s)
 
+    print
+    print "-------------------------------------------------"
 
-    if plot==True:
+    if plot:
         py.suptitle(infile)
         py.show()
         
         # Save the figure
-        if outfile!=None:
-            out_fig=outfile+".pdf"
+        if savefile:
+            # Save the figure
+            out_fig=string.join([outfile, ".pdf"],'') # outfile has been defined above
+            print "Output pdf file is:", out_fig
+            
             py.savefig(out_fig, format='pdf')
     
-    if outfile!=None:
+    if savefile:
         f.close() # close the output file
 
     # Print out the measured width values from the sky coords calculation
     fwhm_arr=np.asanyarray(fwhm_arr)
-    print
+    fwhm_conv_arr=np.asanyarray(fwhm_conv_arr)
+    
     print "-------------------------------------------------"
+    print
     print "FWHM of fits (in \")."
     print fwhm_arr
-
+    #print fwhm_conv_arr
 
 def focus(inlist, ifu):
 
-    if len(ifu)!=1:
-        # Do an exception here.
-        pass
-
+    # Read in the files from the list of files.
     files=[]
     for line in open(inlist):
         cols=line.split()
@@ -276,11 +311,25 @@ def focus(inlist, ifu):
     # Number of files 
     n=len(files)
 
-    print
-    print "--------------------------------------------------------------------------"
-    print "I am running the focus script on probe", ifu[0], "for", n, "files."
-    print "--------------------------------------------------------------------------"
-    print
+    # Check the ifu makes some sense
+    all=[1,2,3,4,5,6,7,8,9,10,11,12,13]
+    
+    if ifu in all:
+
+        print
+        print "--------------------------------------------------------------------------"
+        print "I am running the focus script on probe", ifu, "for", n, "files."
+        print "--------------------------------------------------------------------------"
+        print
+
+    else:
+        print
+        print "-----------------------------------------------------------------------"
+        print "You have not provided a vaild probe number. Must be between 1 and 13."
+        print "-----------------------------------------------------------------------"
+
+        # Exit the function
+        return
 
     # Number of rows and columns needed in the final display box
     # This is a bit of a fudge...
@@ -327,10 +376,20 @@ def focus(inlist, ifu):
         # Use the utils module to extract data from a single IFU.
         ifu_data=utils.IFU(infile, ifu, flag_name=False)
 
+        # Remove the position of fibre 1, the central fibre, from all other positions to get a grid of relative positions
+        idx0=np.where(ifu_data.n==1)
+
+        x_degrees=ifu_data.xpos-ifu_data.xpos[idx0]
+        y_degrees=ifu_data.ypos-ifu_data.ypos[idx0]
+
+        x_microns=ifu_data.x_microns-ifu_data.x_microns[idx0]
+        y_microns=ifu_data.y_microns-ifu_data.y_microns[idx0]
+
+
         # Feed the wrapped fitter both the micron and sky values
-        p_sky, data_sky, xlin_sky, ylin_sky, model_sky=centroid_fit(ifu_data.xpos, ifu_data.ypos, ifu_data.data,
+        p_sky, data_sky, xlin_sky, ylin_sky, model_sky=centroid_fit(x_degrees, y_degrees, ifu_data.data,
                                                                     microns=False, circular=True)
-        p_mic, data_mic, xlin_mic, ylin_mic, model_mic=centroid_fit(ifu_data.x_microns, ifu_data.y_microns,
+        p_mic, data_mic, xlin_mic, ylin_mic, model_mic=centroid_fit(x_microns, y_microns,
                                                                     ifu_data.data, circular=True)
 
         # Expand out the returned fitted values.
@@ -338,22 +397,19 @@ def focus(inlist, ifu):
         amplitude_mic, xout_mic, yout_mic, sig_mic, bias_mic=p_mic
 
         # Find the widths
-        x_w=sig_sky*3600 # from sky coords fit
-        xm_w=sig_mic*15.22/1000 # from plate coords (microns) fit.
+        x_w=sig_sky*3600.0 # from sky coords fit
+        xm_w=sig_mic*15.22/1000.0 # from plate coords (microns) fit.
 
         # FWHM (a measure of seeing)
         fwhm=x_w*2.35
         fwhm_values[i]=fwhm
 
-        # Make a figure with the fits displayed
-        #ax0=f0.add_subplot(r,c,i+1)
-
         # The limits for the axes (plotting in microns).
-        xm_lower=np.min(ifu_data.x_microns)-100
-        xm_upper=np.max(ifu_data.x_microns)+100
+        xm_lower=np.min(x_microns)-100
+        xm_upper=np.max(x_microns)+100
         
-        ym_lower=np.min(ifu_data.y_microns)-100
-        ym_upper=np.max(ifu_data.y_microns)+100
+        ym_lower=np.min(y_microns)-100
+        ym_upper=np.max(y_microns)+100
         
         # Add axes to the figure
         ax0=f0.add_subplot(r,c,i+1, xlim=(xm_lower, xm_upper), ylim=(ym_lower, ym_upper), aspect='equal')
@@ -363,7 +419,7 @@ def focus(inlist, ifu):
         
         # Iterate over the x, y positions (and data value) making a circle patch for each fibre, with the
         # appropriate color.
-        for xmval, ymval, dataval in itertools.izip(ifu_data.x_microns, ifu_data.y_microns, data_norm):
+        for xmval, ymval, dataval in itertools.izip(x_microns, y_microns, data_norm):
             
             # Make and add the fibre patch to the axes.
             fibre=Circle(xy=(xmval,ymval), radius=52.5) # 52.5
@@ -381,7 +437,7 @@ def focus(inlist, ifu):
         py.setp(ax0.get_yticklabels(), visible=False)
 
     # Title and get rid of ticks.
-    title_string=string.join(['Focus Run: Probe ', str(ifu_data.ifu[0])])
+    title_string=string.join(['Focus Run: Probe ', str(ifu)])
     py.suptitle(title_string)
 
     # Now make a plot of the focus values vs FWHM of the Gaussian fit.    
@@ -406,7 +462,109 @@ def focus(inlist, ifu):
 
     py.show()
 
-    print "Focus value at minimum of fitted parabola: ", focus_lin[np.where(fit==np.min(fit))]
+    print "Focus value at minimum of fitted parabola: ", focus_lin[np.where(fit==np.min(fit))][0]
+
+def seeing(infile, ifu):
+    """
+    Calculate the seeing from the star observation in a particular field.
+    
+    Takes one ifu at a time so if you have many stars (i.e. a star field) then use the centroid function above.
+    """
+    
+    # Check the ifu makes some sense
+    all=[1,2,3,4,5,6,7,8,9,10,11,12,13]
+    
+    if ifu in all:
+        print
+        print "------------------------------------------------------"
+        print "You have told me that the PSF star is in probe", ifu
+        print "------------------------------------------------------"
+
+    else:
+        print
+        print "-----------------------------------------------------------------------"
+        print "You have not provided a vaild probe number. Must be between 1 and 13."
+        print "-----------------------------------------------------------------------"
+
+        # Exit the function
+        return
+
+    # Use the utils module to extract data from a single IFU.
+    ifu_data=utils.IFU(infile, ifu, flag_name=False)
+
+    # Remove the position of fibre 1, the central fibre, from all other positions to get a grid of relative positions
+    idx0=np.where(ifu_data.n==1)
+
+    x_degrees=ifu_data.xpos-ifu_data.xpos[idx0]
+    y_degrees=ifu_data.ypos-ifu_data.ypos[idx0]
+
+    x_microns=ifu_data.x_microns-ifu_data.x_microns[idx0]
+    y_microns=ifu_data.y_microns-ifu_data.y_microns[idx0]
+
+    # Feed the data to the fitter, using both types of coordinates.
+    p_sky, data_sky, xlin_sky, ylin_sky, model_sky=centroid_fit(x_degrees, y_degrees, ifu_data.data,
+                                                                    microns=False, circular=False)
+    p_mic, data_mic, xlin_mic, ylin_mic, model_mic=centroid_fit(x_microns, y_microns, ifu_data.data, circular=False)
+
+    # Expand out the returned fitted values.
+    amplitude_sky, xout_sky, yout_sky, sigx_sky, sigy_sky, rot_sky, bias_sky=p_sky
+    amplitude_mic, xout_mic, yout_mic, sigx_mic, sigy_mic, rot_mic, bias_mic=p_mic
+
+    # Find the widths
+    x_w=sigx_sky*3600 # from sky coords fit
+    y_w=sigy_sky*3600
+    
+    xm_w=sigx_mic*15.22/1000 # from plate coords (microns) fit. Rough conversion
+    ym_w=sigy_mic*15.22/1000 
+
+    # FWHM (a measure of seeing)
+    fwhmx_sky=x_w*2.35
+    fwhmy_sky=y_w*2.35
+    
+    fwhmx_mic=xm_w*2.35
+    fwhmy_mic=ym_w*2.35
+
+    print
+    print "FWHM X:", np.around(fwhmx_sky, 4)
+    print "FWHM Y:", np.around(fwhmy_sky, 4)
+    print
+    print "Seeing (average):", np.mean([fwhmx_sky, fwhmy_sky])
+
+    print 
+    print "FWHM X/FWHM Y:", np.around(fwhmx_sky, 4)/np.around(fwhmy_sky, 4)
+    print
+
+    # The limits for the axes (plotting in microns).
+    xm_lower=np.min(x_microns)-100
+    xm_upper=np.max(x_microns)+100
+    
+    ym_lower=np.min(y_microns)-100
+    ym_upper=np.max(y_microns)+100
+
+    # Create the figure
+    f0=py.figure()
+    
+    # Add axes to the figure
+    ax0=f0.add_subplot(1,1,1, xlim=(xm_lower, xm_upper), ylim=(ym_lower, ym_upper), aspect='equal')
+    
+    data_norm=data_mic/np.nanmax(data_mic)
+    mycolormap=py.get_cmap('YlGnBu_r')
+    
+    # Iterate over the x, y positions (and data value) making a circle patch for each fibre, with the
+    # appropriate color.
+    for xmval, ymval, dataval in itertools.izip(x_microns, y_microns, data_norm):
+        
+        # Make and add the fibre patch to the axes.
+        fibre=Circle(xy=(xmval,ymval), radius=52.5) # 52.5
+        ax0.add_artist(fibre)
+        
+        fibre.set_facecolor(mycolormap(dataval))
+
+    ax0.contour(xlin_mic, ylin_mic, np.transpose(model_mic), origin='lower')
+
+    # A title for the axes
+    title_string=string.join(['Probe ', str(ifu_data.ifu)])
+    ax0.set_title(title_string, fontsize=14)    
 
 def centroid_fit(x,y,data,microns=True, circular=True):
     """Fit the x,y,data values, regardless of what they are and return some useful stuff. Data is an array of spectra"""
@@ -469,4 +627,67 @@ def centroid_fit(x,y,data,microns=True, circular=True):
             model[ii,jj]=gf.fitfunc(gf.p, xval, yval)
     
     return gf.p, data_sum, xlin, ylin, model
+
+
+def guider_focus(values):
     
+    """
+    #
+    # "guider_focus"
+    #
+    #   This function finds the best focus position for the telescope using the
+    #   FWHM pix values from the guide camera as obtained via the Night Assistant
+    #   using the View > Pick Object -> FWHM function in the GAIA Guide Camera
+    #   software (Telescope Control Software on main Control Desk).
+    #
+    #   Function Example:
+    #
+    #   quicklook.guider_focus([[36.7,26],[36.9,19],[37.1,19],[37.3,23],[37.5,28]])
+    #
+    #   Input Parameters:
+    #
+    #     values.......Array with each cell containing the Telescope focus
+    #                  positions in mm and the Guide Camera FWHM in pixels.
+    #
+    #                  quicklook.guider_focus([[mm,pix],[mm,pix],[mm,pix],etc...])
+    #
+    """
+    
+    focus_positions=[]
+    FWHMs=[]
+    
+    # Get focus values from function input
+    for value in values:
+        
+        focus_position = value[0]
+        FWHM = value[1]
+        
+        focus_positions.append(focus_position)
+        FWHMs.append(FWHM)
+    
+    # Fit 2nd order polynomial to data
+    p=np.polyfit(focus_positions, FWHMs, 2)
+    focus_lin=np.arange(np.min(focus_positions)-0.1, np.max(focus_positions)+0.1, 0.01)
+    fit=np.polyval(p, focus_lin)
+    
+    # Equate minimum
+    min_x = -p[1]/(p[0]*2)
+    min_y = p[0]*(min_x**2) + p[1]*min_x + p[2]
+    
+    min_FWHM = min_y*0.0787 #0.0787"/pix is the image scale on the SAMI guide camera
+
+    # Plot
+    fig = py.figure()
+    py.scatter(focus_positions, FWHMs)
+    py.scatter(min_x, min_y,marker="o",color="r")
+    py.plot(focus_lin, fit, "r")
+    py.title("Telescope focus from Guider"+"\n"+"Best focus position: {0:.2f}".format(min_x)+"mm        FWHM = {0:.2f}".format(min_FWHM)+'"')
+    py.xlabel("Telescope Focus Position (mm)")
+    py.ylabel("FWHM (Guider Pixels)")
+    
+    print "---> START"
+    print "--->"
+    print "---> The best focus position is: {0:.2f}".format(min_x)
+    print "--->"
+    print "---> END"
+

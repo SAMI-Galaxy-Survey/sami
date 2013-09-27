@@ -116,14 +116,10 @@ def get_probe(infile, object_name, verbose=True):
     # Return the probe number
     return ifu
 
-def dithered_cubes_from_rss_files(inlist,objects='all', clip=True, plot=False, write=False):
-    """A wrapper to make a cube from reduced RSS files. Only input files that go together - ie have the same objects."""
-
-    start_time = datetime.datetime.now()
-
-    # Set a few numpy printing to terminal things
-    np.seterr(divide='ignore', invalid='ignore') # don't print division or invalid warnings.
-    np.set_printoptions(linewidth=120) # can also use to set precision of numbers printed to screen
+def dithered_cubes_from_rss_files(inlist, sample_size=0.5, drop_factor=0.5, 
+                                  objects='all', clip=True, plot=True, 
+                                  write=False, suffix=''):
+    """A wrapper to make a cube from reduced RSS files, passed as a filename containing a list of filenames. Only input files that go together - ie have the same objects."""
 
     # Read in the list of all the RSS files input by the user.
     files=[]
@@ -132,7 +128,23 @@ def dithered_cubes_from_rss_files(inlist,objects='all', clip=True, plot=False, w
         cols[0]=str.strip(cols[0])
 
         files.append(np.str(cols[0]))
+
+    dithered_cubes_from_rss_list(files, sample_size=sample_size, 
+                                 drop_factor=drop_factor, objects=objects, 
+                                 clip=clip, plot=plot, write=write, suffix=suffix)
+    return
+
+def dithered_cubes_from_rss_list(files, sample_size=0.5, drop_factor=0.5, 
+                                 objects='all', clip=True, plot=True, 
+                                 write=False, suffix=''):
+    """A wrapper to make a cube from reduced RSS files, passed as a list. Only input files that go together - ie have the same objects."""
         
+    start_time = datetime.datetime.now()
+
+    # Set a few numpy printing to terminal things
+    np.seterr(divide='ignore', invalid='ignore') # don't print division or invalid warnings.
+    np.set_printoptions(linewidth=120) # can also use to set precision of numbers printed to screen
+
     n_files = len(files)
 
     # For first file get the names of galaxies observed - assuming these are the same in all RSS files.
@@ -167,8 +179,15 @@ def dithered_cubes_from_rss_files(inlist,objects='all', clip=True, plot=False, w
 
 
         # Call dithered_cube_from_rss to create the flux, variance and weight cubes for the object.
-        flux_cube, var_cube, weight_cube, diagnostics = dithered_cube_from_rss(ifu_list, clip=clip, plot=plot)
         
+        # For now, putting in a try/except block to skip over any errors
+        try:
+            flux_cube, var_cube, weight_cube, diagnostics = dithered_cube_from_rss(ifu_list, sample_size=sample_size,
+                                          drop_factor=drop_factor, clip=clip, plot=plot)
+        except Exception:
+            print 'Cubing failed! Skipping to next galaxy.'
+            continue
+
         # Write out FITS files.
         if write==True:
 
@@ -214,7 +233,7 @@ def dithered_cubes_from_rss_files(inlist,objects='all', clip=True, plot=False, w
         
             # Write to FITS file.
             # NOTE - In here need to add the directory structure for the cubes.
-            outfile_name=str(name)+'_'+str(arm)+'_'+str(len(files))+'.fits'
+            outfile_name=str(name)+'_'+str(arm)+'_'+str(len(files))+suffix+'.fits'
             outfile_name_full=os.path.join(name, outfile_name)
 
             print "Writing", outfile_name_full
@@ -389,7 +408,7 @@ def create_metadata_table(ifu_list):
    
     return pf.new_table(columns)
 
-def dithered_cube_from_rss(ifu_list,clip=True, plot=False, offsets='fit'):
+def dithered_cube_from_rss(ifu_list, sample_size=0.5, drop_factor=0.5, clip=True, plot=True, offsets='file'):
         
     diagnostic_info = {}
 
@@ -458,6 +477,12 @@ def dithered_cube_from_rss(ifu_list,clip=True, plot=False, offsets='fit'):
         # Below is a diagnostic print out.
         #print("data_good.shape: ",np.shape(data_good))
 
+        # Check that we're not trying to use data that isn't there
+        # Change the offsets method if necessary
+        if offsets == 'file' and not hasattr(galaxy_data, 'x_refmed'):
+            print 'Offsets have not been pre-measured! Fitting them now.'
+            offsets = 'fit'
+
         if (offsets == 'fit'):
             # Fit parameter estimates from a crude centre of mass
             com_distr=utils.comxyz(x_good,y_good,data_good)
@@ -477,6 +502,13 @@ def dithered_cube_from_rss(ifu_list,clip=True, plot=False, offsets='fit'):
             # Adjust the micron positions of the fibres - for use in making final cubes.
             xm=galaxy_data.x_microns-gf1.p[1]
             ym=galaxy_data.y_microns-gf1.p[2]
+
+        elif (offsets == 'file'):
+            # Use pre-measured offsets saved in the file itself
+            x_shift_full = galaxy_data.x_refmed + galaxy_data.x_shift
+            y_shift_full = galaxy_data.y_refmed - galaxy_data.y_shift
+            xm=galaxy_data.x_microns-x_shift_full
+            ym=galaxy_data.y_microns-y_shift_full
 
         else:
             # Perhaps use this place to allow definition of the offsets manually??
