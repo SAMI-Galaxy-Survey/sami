@@ -796,11 +796,13 @@ class Manager:
     def link_calibrator(self, calibrator_type, overwrite=False):
         """Make necessary symbolic links for XXXXcombined.fits files."""
         if calibrator_type.lower() == 'bias':
-            dir_type_list = ['dark', 'lflat', 'calibrators', 'object']
+            dir_type_list = ['dark', 'lflat', 'calibrators', 'object',
+                             'spectrophotometric']
         elif calibrator_type.lower() == 'dark':
-            dir_type_list = ['lflat', 'calibrators', 'object']
+            dir_type_list = ['lflat', 'calibrators', 'object', 
+                             'spectrophotometric']
         elif calibrator_type.lower() == 'lflat':
-            dir_type_list = ['calibrators', 'object']
+            dir_type_list = ['calibrators', 'object', 'spectrophotometric']
         for ccd, exposure_str, filename, path in self.combined_filenames_paths(
                 calibrator_type, do_not_use=False):
             for dir_type in dir_type_list:
