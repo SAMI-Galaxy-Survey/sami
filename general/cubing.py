@@ -843,6 +843,10 @@ class SAMIDrizzler:
     
         return self.drop_to_pixel, self.pixel_coverage
 
+<<<<<<< local
+<<<<<<< local
+=======
+>>>>>>> other
 #########################################################################################
 #
 # "WCS_position"
@@ -996,8 +1000,15 @@ def WCS_position(myIFU,object_flux_cube,object_name,band,plot=False,write=False)
             WCS_pos={"CRVAL1":(img_crval1 + x_offset_degree), "CRVAL2":(img_crval2 + y_offset_degree), "CRPIX1":(xcube/2), 
                      "CRPIX2":(ycube/2), "CDELT1":(img_cdelt1), "CDELT2":(img_cdelt2), "CTYPE1":"DEGREE", "CTYPE2":"DEGREE"}
 
+<<<<<<< local
+##########
+=======
         ##########
+>>>>>>> other
 
+<<<<<<< local
+    # Remove temporary files
+=======
     if plot==True:
         
         py.ioff()
@@ -1068,6 +1079,7 @@ def WCS_position(myIFU,object_flux_cube,object_name,band,plot=False,write=False)
         py.ion()
 
         # Remove temporary files
+>>>>>>> other
     os.remove("sdss_"+str(band)+".dat")
     os.remove(str(object_name)+"_SDSS_"+str(band)+".fits")
     
@@ -1119,4 +1131,7 @@ def getSDSSimage(object_name="unknown", RA=0, DEC=0, band="g", size=0.006944,
 #################################--- END OF FILE ---#####################################
 ###                                                                                   ###
 #########################################################################################
+<<<<<<< local
+=======
 
+>>>>>>> other
