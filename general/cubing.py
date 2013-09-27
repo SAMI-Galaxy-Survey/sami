@@ -843,10 +843,6 @@ class SAMIDrizzler:
     
         return self.drop_to_pixel, self.pixel_coverage
 
-<<<<<<< local
-<<<<<<< local
-=======
->>>>>>> other
 #########################################################################################
 #
 # "WCS_position"
@@ -1000,86 +996,10 @@ def WCS_position(myIFU,object_flux_cube,object_name,band,plot=False,write=False)
             WCS_pos={"CRVAL1":(img_crval1 + x_offset_degree), "CRVAL2":(img_crval2 + y_offset_degree), "CRPIX1":(xcube/2), 
                      "CRPIX2":(ycube/2), "CDELT1":(img_cdelt1), "CDELT2":(img_cdelt2), "CTYPE1":"DEGREE", "CTYPE2":"DEGREE"}
 
-<<<<<<< local
+
 ##########
-=======
-        ##########
->>>>>>> other
 
-<<<<<<< local
     # Remove temporary files
-=======
-    if plot==True:
-        
-        py.ioff()
-    
-        # PLOT for sanity's sake
-        fig = py.figure()
-        fig.set_size_inches(16, 3.2)
-        fig.suptitle("Cross Correlation Images for object: "+str(object_name)+"     Onsky Position (degrees): {0:.6f}".format(WCS_pos["CRVAL1"])+", {0:.6f}".format(WCS_pos["CRVAL2"])+"     Offset (arcsec): {0:.3f}".format(x_offset_arcsec)+", {0:.3f}".format(y_offset_arcsec), fontsize=11)
-    
-        #SUBPLOT-1
-        ax = fig.add_subplot(1,5,1)
-        ax.set_aspect('equal')
-        py.imshow(cube_image,cmap="pink")
-        py.setp(ax.get_xticklabels(), visible=False)
-        py.setp(ax.get_yticklabels(), visible=False)
-        py.title("SAMI Cube "+str(band)+"-Band Image", fontsize=11)
-        py.xlabel("<--- 25 arcsec --->", fontsize=11)
-        py.ylabel("<--- 25 arcsec --->", fontsize=11)
-    
-        #SUBPLOT-2
-        ax = fig.add_subplot(1,5,2)
-        ax.set_aspect('equal')
-        py.imshow(SDSS_image,cmap="pink")
-        py.setp(ax.get_xticklabels(), visible=False)
-        py.setp(ax.get_yticklabels(), visible=False)
-        py.title("SDSS "+str(band)+"-Band Image", fontsize=11)
-        py.xlabel("<--- 25 arcsec --->", fontsize=11)
-        py.ylabel("<--- 25 arcsec --->", fontsize=11)
-    
-        #SUBPLOT-3
-        ax = fig.add_subplot(1,5,3)
-        ax.set_aspect('equal')
-        py.imshow(cube_image_crop,cmap="pink")
-        py.setp(ax.get_xticklabels(), visible=False)
-        py.setp(ax.get_yticklabels(), visible=False)
-        py.title("SAMI cube cropped "+str(band)+"-Band Image", fontsize=11)
-        py.xlabel("<--- 10 arcsec --->", fontsize=11)
-        py.ylabel("<--- 10 arcsec --->", fontsize=11)
-    
-        #SUBPLOT-4
-        ax = fig.add_subplot(1,5,4)
-        ax.set_aspect('equal')
-        py.imshow(SDSS_image_crop,cmap="pink")
-        py.setp(ax.get_xticklabels(), visible=False)
-        py.setp(ax.get_yticklabels(), visible=False)
-        py.title("SDSS cropped "+str(band)+"-Band Image", fontsize=11)
-        py.xlabel("<--- 10 arcsec --->", fontsize=11)
-        py.ylabel("<--- 10 arcsec --->", fontsize=11)
-    
-        #SUBPLOT-5
-        ax = fig.add_subplot(1,5,5)
-        ax.set_aspect('equal')
-        py.imshow(crosscorr_image,cmap="RdGy")
-        ax.contour(np.reshape(GF2d_reconstruct,(x_shape,y_shape)), cmap="gist_yarg")
-        py.scatter(GF2d_xpos,GF2d_ypos,color='1.0',marker='x',s=40) #2DGauss minimum
-        py.setp(ax.get_xticklabels(), visible=False)
-        py.setp(ax.get_yticklabels(), visible=False)
-        py.title("Cross-correlation Image", fontsize=11)
-
-        if write==True:
-            # Save figure in high-resolution
-            py.savefig(str(object_name)+"_WCS_position.png", bbox_inches=0, dpi=300)
-            py.close(fig)
-                
-        if plot==True:
-            py.show(fig)
-
-        py.ion()
-
-        # Remove temporary files
->>>>>>> other
     os.remove("sdss_"+str(band)+".dat")
     os.remove(str(object_name)+"_SDSS_"+str(band)+".fits")
     
@@ -1131,7 +1051,4 @@ def getSDSSimage(object_name="unknown", RA=0, DEC=0, band="g", size=0.006944,
 #################################--- END OF FILE ---#####################################
 ###                                                                                   ###
 #########################################################################################
-<<<<<<< local
-=======
 
->>>>>>> other
