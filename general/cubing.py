@@ -188,7 +188,7 @@ def dithered_cubes_from_rss_files(inlist,objects='all', clip=True, plot=False, w
                 raise SystemExit('Could not identify band. Exiting')
 
             # Equate Positional WCS
-            WCS_pos = WCS_position(ifu_list[0],flux_cube,name,band,plot)   
+            WCS_pos,WCS_flag = WCS_position(ifu_list[0],flux_cube,name,band,plot)   
             
             # First get some info from one of the headers.
             list1=pf.open(files[0])
@@ -196,7 +196,7 @@ def dithered_cubes_from_rss_files(inlist,objects='all', clip=True, plot=False, w
     
             arm = ifu_list[0].spectrograph_arm
             
-            hdr_new = create_primary_header(ifu_list,name,files,WCS_pos)
+            hdr_new = create_primary_header(ifu_list,name,files,WCS_pos,WCS_flag)
 
             # Create HDUs for each cube - note headers generated automatically for now.
             # Note - there is a 90-degree rotation in the cube, which I can't track down. I'm rolling the axes before
@@ -226,7 +226,7 @@ def dithered_cubes_from_rss_files(inlist,objects='all', clip=True, plot=False, w
             
     print("Time dithered_cubes_from_files wall time: {0}".format(datetime.datetime.now() - start_time))
 
-def create_primary_header(ifu_list,name,files,WCS_pos):
+def create_primary_header(ifu_list,name,files,WCS_pos,WCS_flag):
     """Create a primary header to attach to each cube from the RSS file headers"""
 
     hdr = ifu_list[0].primary_header
@@ -245,6 +245,7 @@ def create_primary_header(ifu_list,name,files,WCS_pos):
             
     # Create a header
     hdr_new=wcs_new.to_header()
+    hdr_new.update('WCS_SRC',WCS_flag,'WCS Source')
             
     # Add the name to the header
     hdr_new.update('NAME', name, 'Object ID')
@@ -888,6 +889,8 @@ def WCS_position(myIFU,object_flux_cube,object_name,band,plot=False,write=False)
     # Open SDSS image and extract data & header information
     image_file = pf.open(str(object_name)+"_SDSS_"+str(band)+".fits")
     image_data = image_file['Primary'].data
+
+    
     image_header = image_file['Primary'].header
     img_crval1 = float(image_header['CRVAL1']) #RA
     img_crval2 = float(image_header['CRVAL2']) #DEC
@@ -900,59 +903,68 @@ def WCS_position(myIFU,object_flux_cube,object_name,band,plot=False,write=False)
     SDSS_image_crop = SDSS_image[(len(SDSS_image[0])/2)-10:(len(SDSS_image[0])/2)+10,(len(SDSS_image[1])/2)-10:(len(SDSS_image[1])/2)+10]
     SDSS_image_crop_norm = (SDSS_image_crop - np.min(SDSS_image_crop))/np.max(SDSS_image_crop - np.min(SDSS_image_crop))
 
-##########
+    ##########
 
-    # Cross-correlate normalised SAMI-cube g-band image and SDSS g-band image
-    crosscorr_image = sp.signal.correlate2d(SDSS_image_crop_norm, cube_image_crop_norm)
+    if np.size(np.where(image_data == 0.0)) != 2*np.size(image_data):
+        # Cross-correlate normalised SAMI-cube g-band image and SDSS g-band image
+        WCS_flag = 'SDSS'
+        crosscorr_image = sp.signal.correlate2d(SDSS_image_crop_norm, cube_image_crop_norm)
 
-    # 2D Gauss Fit the cross-correlated cropped image
-    crosscorr_image_1d = np.ravel(crosscorr_image)
-    #use for loops to recover indicies in x and y positions of flux values
-    x_pos = []
-    y_pos = []
-    for i in xrange(np.shape(crosscorr_image)[0]):
-        for j in xrange(np.shape(crosscorr_image)[1]):
-            x_pos.append(i)
-            y_pos.append(j)
-    x_pos=np.array(x_pos)
-    y_pos=np.array(y_pos)
+        # 2D Gauss Fit the cross-correlated cropped image
+        crosscorr_image_1d = np.ravel(crosscorr_image)
+        #use for loops to recover indicies in x and y positions of flux values
+        x_pos = []
+        y_pos = []
+        for i in xrange(np.shape(crosscorr_image)[0]):
+            for j in xrange(np.shape(crosscorr_image)[1]):
+                x_pos.append(i)
+                y_pos.append(j)
+        x_pos=np.array(x_pos)
+        y_pos=np.array(y_pos)
 
-    #define guess parameters for TwoDGaussFitter:
-    amplitude = max(crosscorr_image_1d)
-    mean_x = (np.shape(crosscorr_image)[0])/2
-    mean_y = (np.shape(crosscorr_image)[1])/2
-    sigma_x = 5.0 
-    sigma_y = 6.0 
-    rotation = 60.0 
-    offset = 4.0
-    p0 = [amplitude, mean_x, mean_y, sigma_x, sigma_y, rotation, offset]
+        #define guess parameters for TwoDGaussFitter:
+        amplitude = max(crosscorr_image_1d)
+        mean_x = (np.shape(crosscorr_image)[0])/2
+        mean_y = (np.shape(crosscorr_image)[1])/2
+        sigma_x = 5.0 
+        sigma_y = 6.0 
+        rotation = 60.0 
+        offset = 4.0
+        p0 = [amplitude, mean_x, mean_y, sigma_x, sigma_y, rotation, offset]
 
-    # call SAMI TwoDGaussFitter
-    GF2d = fitting.TwoDGaussFitter(p0, x_pos, y_pos, crosscorr_image_1d)
-    # execute gauss fit using
-    GF2d.fit()
-    GF2d_xpos = GF2d.p[2]
-    GF2d_ypos = GF2d.p[1]
+        # call SAMI TwoDGaussFitter
+        GF2d = fitting.TwoDGaussFitter(p0, x_pos, y_pos, crosscorr_image_1d)
+        # execute gauss fit using
+        GF2d.fit()
+        GF2d_xpos = GF2d.p[2]
+        GF2d_ypos = GF2d.p[1]
 
-    # reconstruct the fit
-    GF2d_reconstruct=GF2d(x_pos, y_pos)
+        # reconstruct the fit
+        GF2d_reconstruct=GF2d(x_pos, y_pos)
 
-    x_shape = len(crosscorr_image[0])
-    y_shape = len(crosscorr_image[1])
-    x_offset_pix = GF2d_xpos - x_shape/2
-    y_offset_pix = GF2d_ypos - y_shape/2
-    x_offset_arcsec = -x_offset_pix * sample_size/5
-    y_offset_arcsec = y_offset_pix * sample_size/5
-    x_offset_degree = ((x_offset_arcsec/3600)/24)*360
-    y_offset_degree = (y_offset_arcsec/3600)
-
-    # Create dictionary of positional WCS
-    if isinstance(xcube/2, int):
-        WCS_pos={"CRVAL1":(img_crval1 + x_offset_degree), "CRVAL2":(img_crval2 + y_offset_degree), "CRPIX1":(xcube/2 + 0.5), "CRPIX2":(ycube/2 + 0.5), "CDELT1":(img_cdelt1), "CDELT2":(img_cdelt2), "CTYPE1":"DEGREE", "CTYPE2":"DEGREE"}
+        x_shape = len(crosscorr_image[0])
+        y_shape = len(crosscorr_image[1])
+        x_offset_pix = GF2d_xpos - x_shape/2
+        y_offset_pix = GF2d_ypos - y_shape/2
+        x_offset_arcsec = -x_offset_pix * sample_size/5
+        y_offset_arcsec = y_offset_pix * sample_size/5
+        x_offset_degree = ((x_offset_arcsec/3600)/24)*360
+        y_offset_degree = (y_offset_arcsec/3600)
+    
     else:
-        WCS_pos={"CRVAL1":(img_crval1 + x_offset_degree), "CRVAL2":(img_crval2 + y_offset_degree), "CRPIX1":(xcube/2), "CRPIX2":(ycube/2), "CDELT1":(img_cdelt1), "CDELT2":(img_cdelt2), "CTYPE1":"DEGREE", "CTYPE2":"DEGREE"}
+        WCS_flag = 'Nominal'
+        y_offset_degree = 0.0
+        x_offset_degree = 0.0
 
-##########
+        # Create dictionary of positional WCS
+    if isinstance(xcube/2, int):
+            WCS_pos={"CRVAL1":(img_crval1 + x_offset_degree), "CRVAL2":(img_crval2 + y_offset_degree), "CRPIX1":(xcube/2 + 0.5), 
+                     "CRPIX2":(ycube/2 + 0.5), "CDELT1":(img_cdelt1), "CDELT2":(img_cdelt2), "CTYPE1":"DEGREE", "CTYPE2":"DEGREE"}
+    else:
+            WCS_pos={"CRVAL1":(img_crval1 + x_offset_degree), "CRVAL2":(img_crval2 + y_offset_degree), "CRPIX1":(xcube/2), 
+                     "CRPIX2":(ycube/2), "CDELT1":(img_cdelt1), "CDELT2":(img_cdelt2), "CTYPE1":"DEGREE", "CTYPE2":"DEGREE"}
+
+        ##########
 
     if plot==True:
         
@@ -1017,17 +1029,17 @@ def WCS_position(myIFU,object_flux_cube,object_name,band,plot=False,write=False)
             # Save figure in high-resolution
             py.savefig(str(object_name)+"_WCS_position.png", bbox_inches=0, dpi=300)
             py.close(fig)
-
+                
         if plot==True:
             py.show(fig)
 
         py.ion()
 
-    # Remove temporary files
+        # Remove temporary files
     os.remove("sdss_"+str(band)+".dat")
     os.remove(str(object_name)+"_SDSS_"+str(band)+".fits")
     
-    return WCS_pos
+    return WCS_pos,WCS_flag
 
 #########################################################################################
 #
