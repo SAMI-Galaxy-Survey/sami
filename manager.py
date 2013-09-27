@@ -1096,6 +1096,7 @@ class Manager:
             files_to_match = ['bias', 'dark', 'lflat']
         elif fits.ndf_class == 'MFARC':
             files_to_match = ['bias', 'dark', 'lflat', 'tlmap']
+            options.extend(['-EXTR_OPERATION', 'GAUSS'])
         elif fits.ndf_class == 'MFFFF' and not tlm:
             files_to_match = ['bias', 'dark', 'lflat', 'tlmap', 'wavel']
         elif fits.ndf_class == 'MFSKY':
