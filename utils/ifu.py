@@ -40,26 +40,18 @@ class IFU:
         self.meanra = self.primary_header['MEANRA']
         self.meandec = self.primary_header['MEANDEC']
 
-<<<<<<< local
         # Determine and store which spectrograph ARM this is from (red/blue)
-=======
-        # TEMP - determine and store which spectrograph ARM this is from (Nic)
->>>>>>> other
+
         if (self.primary_header['SPECTID'] == 'BL'):
             self.spectrograph_arm = 'blue'
         elif (self.primary_header['SPECTID'] == 'RD'):
             self.spectrograph_arm = 'red'
 
-<<<<<<< local
         self.gratid = self.primary_header['GRATID']
         self.gain = self.primary_header['RO_GAIN']
-=======
-        self.gratid=primary_header['GRATID']
-        self.gain=primary_header['RO_GAIN']
 
-        self.zdstart=primary_header['ZDSTART']
-        self.zdend=primary_header['ZDEND']
->>>>>>> other
+        self.zdstart=self.primary_header['ZDSTART']
+        self.zdend=self.primary_header['ZDEND']
         
         # Wavelength range
         x=np.arange(self.naxis1)+1
