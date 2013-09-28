@@ -943,7 +943,17 @@ class Manager:
             path_pair = (fits.reduced_path, fits_2.reduced_path)
             print ('Deriving transfer function for ' + fits.filename + 
                    ' and ' + fits_2.filename)
-            fluxcal2.derive_transfer_function(path_pair)
+            try:
+                fluxcal2.derive_transfer_function(path_pair)
+            except ValueError:
+                print ('Warning: No star found in dataframe, skipping ' + 
+                       fits.filename)
+                continue
+            good_psf = pf.getval(fits.reduced_path, 'GOODPSF',
+                                 'FLUX_CALIBRATION')
+            if not good_psf:
+                print ('Warning: Bad PSF fit in ' + fits.filename + 
+                       '; will skip this one in combining.')
         return
 
     def combine_transfer_function(self, overwrite=False, **kwargs):
@@ -1071,6 +1081,7 @@ class Manager:
         self.reduce_sky(overwrite, **kwargs)
         self.reduce_object(overwrite, **kwargs)
         self.derive_transfer_function(overwrite, **kwargs)
+        self.combine_transfer_function(overwrite, **kwargs)
         self.flux_calibrate(overwrite, **kwargs)
         self.telluric_correct(overwrite, **kwargs)
         self.cube(overwrite, **kwargs)

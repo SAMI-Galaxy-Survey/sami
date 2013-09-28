@@ -982,14 +982,27 @@ def read_atmospheric_extinction(sso_extinction_table=SSO_EXTINCTION_TABLE):
     ext= np.array( ext ).astype( 'f' )   
     return wl, ext
 
-def combine_transfer_functions(path_list, path_out):
+def combine_transfer_functions(path_list, path_out, use_all=False):
     """Read a set of transfer functions, combine them, and save to file."""
     # Make an empty array to hold all the individual transfer functions
-    n_file = len(path_list)
-    n_pixel = pf.getval(path_list[0], 'NAXIS1')
+    if use_all:
+        path_list_good = path_list
+    else:
+        # Only keep paths where there is good flux calibration data
+        path_list_good = []
+        for path in path_list:
+            try:
+                good_psf = pf.getval(path, 'GOODPSF', 'FLUX_CALIBRATION')
+            except KeyError:
+                # There is no flux calibration data here
+                continue
+            if good_psf:
+                path_list_good.append(path)
+    n_file = len(path_list_good)
+    n_pixel = pf.getval(path_list_good[0], 'NAXIS1')
     tf_array = np.zeros((n_file, n_pixel))
     # Read the individual transfer functions
-    for index, path in enumerate(path_list):
+    for index, path in enumerate(path_list_good):
         tf_array[index, :] = pf.getdata(path, 'FLUX_CALIBRATION')[-1, :]
     # Make sure the overall scaling for each TF matches the others
     scale = tf_array[:, n_pixel//2].copy()
@@ -999,7 +1012,7 @@ def combine_transfer_functions(path_list, path_out):
     # For now, just take the mean. Maybe implement Ned's weighted combination
     # later, preferably when proper variance propagation is in place.
     tf_combined = nanmean(tf_array, axis=0)
-    save_combined_transfer_function(path_out, tf_combined, path_list)
+    save_combined_transfer_function(path_out, tf_combined, path_list_good)
     return
 
 def save_combined_transfer_function(path_out, tf_combined, path_list):
