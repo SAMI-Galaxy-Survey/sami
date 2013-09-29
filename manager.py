@@ -1106,11 +1106,12 @@ class Manager:
             # File to be created already exists, abandon this.
             return False
         options = []
+        # For now, setting all files to use GAUSS extraction
+        options.extend(['-EXTR_OPERATION', 'GAUSS'])
         if fits.ndf_class == 'MFFFF' and tlm:
             files_to_match = ['bias', 'dark', 'lflat']
         elif fits.ndf_class == 'MFARC':
             files_to_match = ['bias', 'dark', 'lflat', 'tlmap']
-            options.extend(['-EXTR_OPERATION', 'GAUSS'])
         elif fits.ndf_class == 'MFFFF' and not tlm:
             files_to_match = ['bias', 'dark', 'lflat', 'tlmap', 'wavel']
         elif fits.ndf_class == 'MFSKY':
