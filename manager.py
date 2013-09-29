@@ -423,13 +423,14 @@ class Manager:
     The other functions defined probably aren't useful to you.
     """
 
-    def __init__(self, root, copy_files=False, move_files=False, fast=False):
+    def __init__(self, root, copy_files=False, move_files=False, fast=False,
+                 gratlpmm=GRATLPMM):
         if fast:
             self.speed = 'fast'
         else:
             self.speed = 'slow'
         self.idx_files = IDX_FILES[self.speed]
-        self.gratlpmm = GRATLPMM
+        self.gratlpmm = gratlpmm
         self.root = root
         self.abs_root = os.path.abspath(root)
         # Match objects within 1'
