@@ -106,11 +106,13 @@ def read_chunked_data(path_list, probenum, n_drop=None, n_chunk=None,
             wavelength = np.hstack((wavelength, wavelength_i))
     xfibre = ifu.xpos_rel
     yfibre = ifu.ypos_rel
-    chunked_data = {'data': data,
-                    'variance': variance,
+    # Only keep unbroken fibres
+    good_fibre = (ifu.fib_type == 'P')
+    chunked_data = {'data': data[good_fibre, :],
+                    'variance': variance[good_fibre, :],
                     'wavelength': wavelength,
-                    'xfibre': xfibre,
-                    'yfibre': yfibre}
+                    'xfibre': xfibre[good_fibre],
+                    'yfibre': yfibre[good_fibre]}
     return chunked_data
 
 def chunk_data(ifu, n_drop=None, n_chunk=None, sigma_clip=None):
@@ -581,9 +583,11 @@ def extract_total_flux(ifu, psf_parameters, model_name, clip=None):
     n_pixel = len(psf_parameters_array)
     flux = np.zeros(n_pixel)
     background = np.zeros(n_pixel)
+    good_fibre = (ifu.fib_type == 'P')
     for index, psf_parameters_slice in enumerate(psf_parameters_array):
         flux[index], background[index] = extract_flux_slice(
-            ifu.data[:, index], ifu.var[:, index], ifu.xpos_rel, ifu.ypos_rel,
+            ifu.data[good_fibre, index], ifu.var[good_fibre, index], 
+            ifu.xpos_rel[good_fibre], ifu.ypos_rel[good_fibre],
             psf_parameters_slice)
     if clip is not None:
         # Clip out discrepant data. Wavelength slices are targeted based on
@@ -802,7 +806,8 @@ def take_ratio(standard_flux, standard_wavelength, observed_flux,
         ratio = fit_chebyshev(standard_wavelength, ratio)
         # ratio = smooth_ratio(ratio)
     # Put the ratio back onto the observed wavelength scale
-    ratio = np.interp(observed_wavelength, standard_wavelength, ratio)
+    ratio = 1.0 / np.interp(observed_wavelength, standard_wavelength, 
+                            1.0 / ratio)
     return ratio
 
 def smooth_ratio(ratio, width=10.0):
@@ -837,10 +842,14 @@ def smooth_ratio(ratio, width=10.0):
 
 def fit_chebyshev(wavelength, ratio, deg=7):
     """Fit a Chebyshev polynomial, and return the fit."""
-    good = np.isfinite(ratio) & ~(in_telluric_band(wavelength))
+    # Do the fit in terms of 1.0 / ratio, because observed flux can go to 0.
+    good = np.where(np.isfinite(ratio) & ~(in_telluric_band(wavelength)))[0]
     coefficients = np.polynomial.chebyshev.chebfit(
-        wavelength[good], ratio[good], deg)
-    fit = np.polynomial.chebyshev.chebval(wavelength, coefficients)
+        wavelength[good], (1.0 / ratio[good]), deg)
+    fit = 1.0 / np.polynomial.chebyshev.chebval(wavelength, coefficients)
+    # Mark with NaNs anything outside the fitted wavelength range
+    fit[:good[0]] = np.nan
+    fit[good[-1]+1:] = np.nan
     return fit
 
 def rebin_flux(target_wavelength, source_wavelength, source_flux):
@@ -1011,7 +1020,8 @@ def combine_transfer_functions(path_list, path_out, use_all=False):
     # Combine them.
     # For now, just take the mean. Maybe implement Ned's weighted combination
     # later, preferably when proper variance propagation is in place.
-    tf_combined = nanmean(tf_array, axis=0)
+    # Using inverse because it's more stable when observed flux is low
+    tf_combined = 1.0 / nanmean(1.0 / tf_array, axis=0)
     save_combined_transfer_function(path_out, tf_combined, path_list_good)
     return
 
