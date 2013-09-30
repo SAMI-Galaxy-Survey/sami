@@ -129,6 +129,7 @@ def find_dither(RSSname,reference,centroid=True,inter=False,plot=False,remove_fi
       xcent=[] #x coordinates of central fiber of each bundle
       ycent=[]  #y coordinates of central fiber of each bundle
       galname=[] #name of the target galaxy
+      ifu_good=[]
       for i, ifu in enumerate(ifus):
       
             try:
@@ -142,7 +143,7 @@ def find_dither(RSSname,reference,centroid=True,inter=False,plot=False,remove_fi
             f.write(s)
             xcent.append(x)
             ycent.append(y)
-            
+            ifu_good.append(ifu)
             galname.append(ifu_data.name)
       f.close() 
       
@@ -263,7 +264,7 @@ def find_dither(RSSname,reference,centroid=True,inter=False,plot=False,remove_fi
 
              # Store the results in a handy dictionary
              results.append({'filename': RSSmatch[i],
-                             'ifus': np.array(ifus),
+                             'ifus': np.array(ifu_good),
                              'xin': np.array(xin),
                              'yin': np.array(yin),
                              'xref': np.array(xref),
@@ -297,16 +298,16 @@ def find_dither(RSSname,reference,centroid=True,inter=False,plot=False,remove_fi
                 
       # Save results for the reference frame in the FITS header
       ref_results_dict = {'filename': reference,
-                          'ifus': np.array(ifus),
+                          'ifus': np.array(ifu_good),
                           'xin': np.array(xref),
                           'yin': np.array(yref),
                           'xref': np.array(xref),
                           'yref': np.array(yref),
-                          'xshift': np.zeros(len(ifus)),
-                          'yshift': np.zeros(len(ifus)),
+                          'xshift': np.zeros(len(ifu_good)),
+                          'yshift': np.zeros(len(ifu_good)),
                           'xrms': 0.0,
                           'yrms': 0.0,
-                          'n_good': len(ifus),
+                          'n_good': len(ifu_good),
                           'reference': reference,
                           'xref_median': results[0]['xref_median'],
                           'yref_median': results[0]['yref_median']}
