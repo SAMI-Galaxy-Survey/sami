@@ -442,7 +442,7 @@ def read_rms(filename):
 def recalculate_ref(results_list):
     """Re-calculate the reference coordinates, taking the median."""
     n_obs = len(results_list)
-    n_hexa = len(results_list[0]['ifus'])
+    n_hexa = len(results_list[0]['xshift'])
     xref = np.zeros((n_hexa, n_obs))
     yref = np.zeros((n_hexa, n_obs))
     for index, results in enumerate(results_list):
