@@ -204,7 +204,7 @@ def dithered_cubes_from_rss_list(files, sample_size=0.5, drop_factor=0.5,
             elif ifu_list[0].gratid == '1000R':
                 band = 'r'
             else:
-                raise SystemExit('Could not identify band. Exiting')
+                raise ValueError('Could not identify band. Exiting')
 
             # Equate Positional WCS
             WCS_pos,WCS_flag = WCS_position(ifu_list[0],flux_cube,name,band,plot)   
@@ -225,11 +225,10 @@ def dithered_cubes_from_rss_list(files, sample_size=0.5, drop_factor=0.5,
             hdu3=pf.ImageHDU(np.transpose(weight_cube, (2,0,1)), name='WEIGHT')
 
             # Create HDUs for meta-data
-            metadata_table = create_metadata_table(ifu_list)
+            #metadata_table = create_metadata_table(ifu_list)
             
-
             # Put individual HDUs into a HDU list
-            hdulist=pf.HDUList([hdu1,hdu2,hdu3,metadata_table])
+            hdulist=pf.HDUList([hdu1,hdu2,hdu3]) #,metadata_table])
         
             # Write to FITS file.
             # NOTE - In here need to add the directory structure for the cubes.
