@@ -131,7 +131,11 @@ def find_dither(RSSname,reference,centroid=True,inter=False,plot=False,remove_fi
       galname=[] #name of the target galaxy
       for i, ifu in enumerate(ifus):
       
-            ifu_data=utils.IFU(reference, ifu, flag_name=False) 
+            try:
+                ifu_data=utils.IFU(reference, ifu, flag_name=False) 
+            except IndexError:
+                # This probably means it's a dead hexabundle, just skip it
+                continue
             x=np.float(-1*ifu_data.x_microns[np.where(ifu_data.n==1)]) #x coordinate of central fiber (-1x is to have coordinates back on focal plane referenceO)
             y=np.float(ifu_data.y_microns[np.where(ifu_data.n==1)]) #y coordinate of central fiber
             s= str(x)+'  '+str(y)+'\n'
@@ -359,7 +363,11 @@ def get_centroid(infile):
     
     for i, ifu in enumerate(ifus):
 
-            ifu_data=utils.IFU(infile, ifu, flag_name=False)
+            try:
+                ifu_data=utils.IFU(infile, ifu, flag_name=False)
+            except IndexError:
+                # Probably a broken hexabundle
+                continue
                 
             p_mic, data_mic, xlin_mic, ylin_mic, model_mic=sami.observing.centroid.centroid_fit(ifu_data.x_microns, ifu_data.y_microns,
                                                                                     ifu_data.data, circular=True)
