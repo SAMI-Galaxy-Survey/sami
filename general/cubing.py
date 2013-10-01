@@ -118,7 +118,7 @@ def get_probe(infile, object_name, verbose=True):
 
 def dithered_cubes_from_rss_files(inlist, sample_size=0.5, drop_factor=0.5, 
                                   objects='all', clip=True, plot=True, 
-                                  write=False, suffix=''):
+                                  write=False, suffix='', root=''):
     """A wrapper to make a cube from reduced RSS files, passed as a filename containing a list of filenames. Only input files that go together - ie have the same objects."""
 
     # Read in the list of all the RSS files input by the user.
@@ -131,12 +131,13 @@ def dithered_cubes_from_rss_files(inlist, sample_size=0.5, drop_factor=0.5,
 
     dithered_cubes_from_rss_list(files, sample_size=sample_size, 
                                  drop_factor=drop_factor, objects=objects, 
-                                 clip=clip, plot=plot, write=write, suffix=suffix)
+                                 clip=clip, plot=plot, write=write, 
+                                 root=root, suffix=suffix)
     return
 
 def dithered_cubes_from_rss_list(files, sample_size=0.5, drop_factor=0.5, 
                                  objects='all', clip=True, plot=True, 
-                                 write=False, suffix='', nominal=False):
+                                 write=False, suffix='', nominal=False, root=''):
     """A wrapper to make a cube from reduced RSS files, passed as a list. Only input files that go together - ie have the same objects."""
         
     start_time = datetime.datetime.now()
@@ -193,12 +194,13 @@ def dithered_cubes_from_rss_list(files, sample_size=0.5, drop_factor=0.5,
         if write==True:
 
             # First check if the object directory already exists or not.
-            if os.path.isdir(name):
-                print "Directory Exists", name
+            directory = os.path.join(root, name)
+            if os.path.isdir(directory):
+                print "Directory Exists", directory
                 print "Writing files to the existing directory"
             else:
-                print "Making directory", name
-                os.mkdir(name)
+                print "Making directory", directory
+                os.mkdir(directory)
 
             if ifu_list[0].gratid == '580V':
                 band = 'g'
@@ -232,9 +234,8 @@ def dithered_cubes_from_rss_list(files, sample_size=0.5, drop_factor=0.5,
             hdulist=pf.HDUList([hdu1,hdu2,hdu3]) #,metadata_table])
         
             # Write to FITS file.
-            # NOTE - In here need to add the directory structure for the cubes.
             outfile_name=str(name)+'_'+str(arm)+'_'+str(len(files))+suffix+'.fits'
-            outfile_name_full=os.path.join(name, outfile_name)
+            outfile_name_full=os.path.join(directory, outfile_name)
 
             print "Writing", outfile_name_full
             "--------------------------------------------------------------"

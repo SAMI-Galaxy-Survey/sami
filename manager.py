@@ -1048,13 +1048,17 @@ class Manager:
         groups = self.group_files_by(
             ['field_id', 'ccd'], ndf_class='MFOBJECT', do_not_use=False,
             reduced=True, min_exposure=min_exposure, name=name, **kwargs)
+        # Add in the root path as well, so that cubing puts things in the 
+        # right place
+        cubed_root = os.path.join(self.root, 'cubed')
+        groups = [(item[0], item[1], cubed_root) for item in groups.items()]
         with self.visit_dir(target_dir):
             # Send the cubing tasks off to multiple CPUs
             # This actually puts the output in the wrong place, it seems
             # the visit_dir isn't inherited.
             # Also everything dies when they try to do the WCS (I think)
             # So for now, disabling the multiprocessing bit
-            self.pool.map(cube_group, groups.items())
+            self.pool.map(cube_group, groups)
             #map(cube_group, groups.items())
         return
 
@@ -2255,7 +2259,7 @@ def telluric_correct_pair(fits_pair):
 
 def cube_group(group):
     """Cube a set of RSS files."""
-    field, fits_list = group
+    field, fits_list, root = group
     print 'Cubing field ID: {}, CCD: {}'.format(field[0], field[1])
     path_list = []
     for fits in fits_list:
@@ -2273,11 +2277,8 @@ def cube_group(group):
     find_dither(path_list, path_list[0], centroid=True, 
                 remove_files=True)
     # Now do the actual cubing
-    print 'Really, these are the files:'
-    for path in path_list:
-        print '  ', os.path.basename(path)
     dithered_cubes_from_rss_list(path_list, suffix='_'+field[0], 
-                                 write=True, nominal=True)
+                                 write=True, nominal=True, root=root)
     return
 
 
