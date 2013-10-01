@@ -67,6 +67,7 @@ import shutil
 import os
 import re
 import subprocess
+import multiprocessing
 from contextlib import contextmanager
 from collections import defaultdict, deque
 
@@ -74,6 +75,7 @@ import astropy.coordinates as coord
 from astropy import units
 import astropy.io.fits as pf
 import numpy as np
+
 from .utils.other import find_fibre_table
 from .general.cubing import dithered_cubes_from_rss_list
 from .general.align_micron import find_dither
@@ -424,13 +426,15 @@ class Manager:
     """
 
     def __init__(self, root, copy_files=False, move_files=False, fast=False,
-                 gratlpmm=GRATLPMM):
+                 gratlpmm=GRATLPMM, n_cpu=1):
         if fast:
             self.speed = 'fast'
         else:
             self.speed = 'slow'
         self.idx_files = IDX_FILES[self.speed]
         self.gratlpmm = gratlpmm
+        self.n_cpu = n_cpu
+        self.pool = multiprocessing.Pool(n_cpu)
         self.root = root
         self.abs_root = os.path.abspath(root)
         # Match objects within 1'
@@ -1014,21 +1018,17 @@ class Manager:
 
     def telluric_correct(self, overwrite=False, **kwargs):
         """Apply telluric correction to object frames."""
+        # First make the list of file pairs to correct
+        pair_list = []
         for fits in self.files(ndf_class='MFOBJECT', do_not_use=False,
                                spectrophotometric=False, ccd='ccd_1', **kwargs):
             if os.path.exists(fits.telluric_path) and not overwrite:
                 # Already been done; skip to the next file
                 continue
             fits_2 = self.other_arm(fits)
-            path_pair = (fits.fluxcal_path, fits_2.fluxcal_path)
-            print ('Deriving telluric correction for ' + fits.filename +
-                   ' and ' + fits_2.filename)
-            telluric.correction_linear_fit(path_pair)
-            print 'Telluric correcting file:', fits_2.filename
-            if os.path.exists(fits_2.telluric_path):
-                os.remove(fits_2.telluric_path)
-            telluric.apply_correction(fits_2.fluxcal_path, 
-                                      fits_2.telluric_path)
+            pair_list.append((fits, fits_2))
+        # Now send this list to as many cores as we are using
+        self.pool.map(telluric_correct_pair, pair_list)
         return
 
     def cube(self, overwrite=False, **kwargs):
@@ -1049,23 +1049,13 @@ class Manager:
             ['field_id', 'ccd'], ndf_class='MFOBJECT', do_not_use=False,
             reduced=True, min_exposure=min_exposure, name=name, **kwargs)
         with self.visit_dir(target_dir):
-            for field, fits_list in groups.items():
-                print 'Cubing field ID: {}, CCD: {}'.format(field[0], field[1])
-                path_list = []
-                for fits in fits_list:
-                    if os.path.exists(fits.telluric_path):
-                        path = fits.telluric_path
-                    elif os.path.exists(fits.fluxcal_path):
-                        path = fits.fluxcal_path
-                    else:
-                        path = fits.reduced_path
-                    path_list.append(path)
-                # First calculate the offsets
-                find_dither(path_list, path_list[0], centroid=True, 
-                            remove_files=True)
-                # Now do the actual cubing
-                dithered_cubes_from_rss_list(path_list, suffix='_'+field[0], 
-                                             write=True)
+            # Send the cubing tasks off to multiple CPUs
+            # This actually puts the output in the wrong place, it seems
+            # the visit_dir isn't inherited.
+            # Also everything dies when they try to do the WCS (I think)
+            # So for now, disabling the multiprocessing bit
+            self.pool.map(cube_group, groups.items())
+            #map(cube_group, groups.items())
         return
 
     def reduce_all(self, overwrite=False, **kwargs):
@@ -2247,6 +2237,48 @@ class FITSFile:
             hdulist[0].header[key] = value_comment
             hdulist.close()
         return
+
+
+def telluric_correct_pair(fits_pair):
+    """Telluric correct a pair of fits files."""
+    fits, fits_2 = fits_pair
+    path_pair = (fits.fluxcal_path, fits_2.fluxcal_path)
+    print ('Deriving telluric correction for ' + fits.filename +
+           ' and ' + fits_2.filename)
+    telluric.correction_linear_fit(path_pair)
+    print 'Telluric correcting file:', fits_2.filename
+    if os.path.exists(fits_2.telluric_path):
+        os.remove(fits_2.telluric_path)
+    telluric.apply_correction(fits_2.fluxcal_path, 
+                              fits_2.telluric_path)
+    return
+
+def cube_group(group):
+    """Cube a set of RSS files."""
+    field, fits_list = group
+    print 'Cubing field ID: {}, CCD: {}'.format(field[0], field[1])
+    path_list = []
+    for fits in fits_list:
+        if os.path.exists(fits.telluric_path):
+            path = fits.telluric_path
+        elif os.path.exists(fits.fluxcal_path):
+            path = fits.fluxcal_path
+        else:
+            path = fits.reduced_path
+        path_list.append(path)
+    print 'These are the files:'
+    for path in path_list:
+        print '  ', os.path.basename(path)
+    # First calculate the offsets
+    find_dither(path_list, path_list[0], centroid=True, 
+                remove_files=True)
+    # Now do the actual cubing
+    print 'Really, these are the files:'
+    for path in path_list:
+        print '  ', os.path.basename(path)
+    dithered_cubes_from_rss_list(path_list, suffix='_'+field[0], 
+                                 write=True, nominal=True)
+    return
 
 
 class MatchException(Exception):
