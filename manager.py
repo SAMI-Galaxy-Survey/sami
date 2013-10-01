@@ -1020,13 +1020,14 @@ class Manager:
         """Apply telluric correction to object frames."""
         # First make the list of file pairs to correct
         pair_list = []
-        for fits in self.files(ndf_class='MFOBJECT', do_not_use=False,
-                               spectrophotometric=False, ccd='ccd_1', **kwargs):
-            if os.path.exists(fits.telluric_path) and not overwrite:
+        for fits_2 in self.files(ndf_class='MFOBJECT', do_not_use=False,
+                                 spectrophotometric=False, ccd='ccd_2', 
+                                 **kwargs):
+            if os.path.exists(fits_2.telluric_path) and not overwrite:
                 # Already been done; skip to the next file
                 continue
-            fits_2 = self.other_arm(fits)
-            pair_list.append((fits, fits_2))
+            fits_1 = self.other_arm(fits_2)
+            pair_list.append((fits_1, fits_2))
         # Now send this list to as many cores as we are using
         self.pool.map(telluric_correct_pair, pair_list)
         return
@@ -2251,9 +2252,13 @@ class FITSFile:
 
 def telluric_correct_pair(fits_pair):
     """Telluric correct a pair of fits files."""
-    fits, fits_2 = fits_pair
-    path_pair = (fits.fluxcal_path, fits_2.fluxcal_path)
-    print ('Deriving telluric correction for ' + fits.filename +
+    fits_1, fits_2 = fits_pair
+    if fits_1 is None or not os.path.exists(fits_1.fluxcal_path):
+        print ('Matching blue arm not found for ' + fits_2.filename +
+               '; skipping this file.')
+        return
+    path_pair = (fits_1.fluxcal_path, fits_2.fluxcal_path)
+    print ('Deriving telluric correction for ' + fits_1.filename +
            ' and ' + fits_2.filename)
     telluric.correction_linear_fit(path_pair)
     print 'Telluric correcting file:', fits_2.filename
