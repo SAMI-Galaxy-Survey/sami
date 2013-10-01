@@ -1049,23 +1049,13 @@ class Manager:
             ['field_id', 'ccd'], ndf_class='MFOBJECT', do_not_use=False,
             reduced=True, min_exposure=min_exposure, name=name, **kwargs)
         with self.visit_dir(target_dir):
-            for field, fits_list in groups.items():
-                print 'Cubing field ID: {}, CCD: {}'.format(field[0], field[1])
-                path_list = []
-                for fits in fits_list:
-                    if os.path.exists(fits.telluric_path):
-                        path = fits.telluric_path
-                    elif os.path.exists(fits.fluxcal_path):
-                        path = fits.fluxcal_path
-                    else:
-                        path = fits.reduced_path
-                    path_list.append(path)
-                # First calculate the offsets
-                find_dither(path_list, path_list[0], centroid=True, 
-                            remove_files=True)
-                # Now do the actual cubing
-                dithered_cubes_from_rss_list(path_list, suffix='_'+field[0], 
-                                             write=True)
+            # Send the cubing tasks off to multiple CPUs
+            # This actually puts the output in the wrong place, it seems
+            # the visit_dir isn't inherited.
+            # Also everything dies when they try to do the WCS (I think)
+            # So for now, disabling the multiprocessing bit
+            #self.pool.map(cube_group, groups.items())
+            map(cube_group, groups.items())
         return
 
     def reduce_all(self, overwrite=False, **kwargs):
@@ -2261,6 +2251,27 @@ def telluric_correct_pair(fits_pair):
         os.remove(fits_2.telluric_path)
     telluric.apply_correction(fits_2.fluxcal_path, 
                               fits_2.telluric_path)
+    return
+
+def cube_group(group):
+    """Cube a set of RSS files."""
+    field, fits_list = group
+    print 'Cubing field ID: {}, CCD: {}'.format(field[0], field[1])
+    path_list = []
+    for fits in fits_list:
+        if os.path.exists(fits.telluric_path):
+            path = fits.telluric_path
+        elif os.path.exists(fits.fluxcal_path):
+            path = fits.fluxcal_path
+        else:
+            path = fits.reduced_path
+        path_list.append(path)
+    # First calculate the offsets
+    find_dither(path_list, path_list[0], centroid=True, 
+                remove_files=True)
+    # Now do the actual cubing
+    dithered_cubes_from_rss_list(path_list, suffix='_'+field[0], 
+                                 write=True)
     return
 
 
