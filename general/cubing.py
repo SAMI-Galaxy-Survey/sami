@@ -136,7 +136,7 @@ def dithered_cubes_from_rss_files(inlist, sample_size=0.5, drop_factor=0.5,
 
 def dithered_cubes_from_rss_list(files, sample_size=0.5, drop_factor=0.5, 
                                  objects='all', clip=True, plot=True, 
-                                 write=False, suffix=''):
+                                 write=False, suffix='', nominal=False):
     """A wrapper to make a cube from reduced RSS files, passed as a list. Only input files that go together - ie have the same objects."""
         
     start_time = datetime.datetime.now()
@@ -208,7 +208,7 @@ def dithered_cubes_from_rss_list(files, sample_size=0.5, drop_factor=0.5,
                 raise ValueError('Could not identify band. Exiting')
 
             # Equate Positional WCS
-            WCS_pos,WCS_flag = WCS_position(ifu_list[0],flux_cube,name,band,plot)   
+            WCS_pos,WCS_flag = WCS_position(ifu_list[0],flux_cube,name,band,plot,nominal=nominal)   
             
             # First get some info from one of the headers.
             list1=pf.open(files[0])
@@ -852,92 +852,101 @@ class SAMIDrizzler:
 #   cube.
 #
 
-def WCS_position(myIFU,object_flux_cube,object_name,band,plot=False,write=False):
+def WCS_position(myIFU,object_flux_cube,object_name,band,plot=False,write=False,nominal=False):
     
     # Equate the WCS position information from a cross-correlation between a g-band SAMI cube and a g-band SDSS image.
     
 ##########
-    
+
     object_flux_cube = np.transpose(object_flux_cube, (2,0,1))
     
     # Get Object RA + DEC from fibre table (this is the input catalogues RA+DEC in deg)
     object_RA = np.around(myIFU.obj_ra[myIFU.n == 1][0], decimals=6)
     object_DEC = np.around(myIFU.obj_dec[myIFU.n == 1][0], decimals=6)
     
-    # Build wavelength axis.
-    CRVAL3 = myIFU.crval1
-    CDELT3 = myIFU.cdelt1
-    Nwave  = np.shape(object_flux_cube)[0]
-    
-    # -- crval3 is middle of range and indexing starts at 0.
-    # -- this wave-axis agrees with QFitsView interpretation.
-    CRVAL3a = CRVAL3 - ((Nwave-1)/2)*CDELT3
-    wave = CRVAL3a + CDELT3*np.arange(Nwave)
-    
-    # Get SDSS g-band throughput curve
-    if not os.path.isfile("sdss_"+str(band)+".dat"):
-        urllib.urlretrieve("http://www.sdss.org/dr3/instruments/imager/filters/"+str(band)+".dat", "sdss_"+str(band)+".dat")
-    
-    # and convolve with the SDSS throughput
-    sdss = ascii.read("SDSS_"+str(band)+".dat", quotechar="#", names=["wave", "pt_secz=1.3", "ext_secz=1.3", "ext_secz=0.0", "extinction"])
-    
-    # re-grid g["wave"] -> wave
-    thru_regrid = griddata(sdss["wave"], sdss["ext_secz=1.3"], wave, method="cubic", fill_value=0.0)
-    
-    # initialise a 2D simulated g' band flux array.
-    len_axis = np.shape(object_flux_cube)[1]
-    reconstruct = np.zeros((len_axis,len_axis))
-    tester = np.zeros((len_axis,len_axis))
-    data_bit = np.zeros((Nwave,len_axis,len_axis))
-    
-    # Sum convolved flux:
-    for i in range(Nwave):
-        data_bit[i] = object_flux_cube[i]*thru_regrid[i]
-    
-    reconstruct = np.nansum(data_bit,axis=0) # not absolute right now
-    reconstruct[np.isnan(reconstruct)] = 0. # replacing nan with 0.0
-    reconstruct[reconstruct < 0] = 0.       # replacing negative fluxes with 0.0
-    
-    cube_image = reconstruct
-    xcube = len(cube_image[0])
-    ycube = len(cube_image[1])
-    cube_image_crop = cube_image[(len(cube_image[0])/2)-10:(len(cube_image[0])/2)+10,(len(cube_image[1])/2)-10:(len(cube_image[1])/2)+10]
-    cube_image_crop = sp.ndimage.zoom(cube_image_crop, 5, order=3)
-    cube_image_crop_norm = (cube_image_crop - np.min(cube_image_crop))/np.max(cube_image_crop - np.min(cube_image_crop))
-    
-    # Check if the user supplied a red RSS file, throw exception.
-    if np.array_equal(cube_image, tester):
-        raise SystemExit("All values are zero: please provide the cube corresponding to the requested spectral band of the image!")
+    if nominal:
+        img_crval1 = object_RA
+        img_crval2 = object_DEC
+        xcube = size_of_grid
+        ycube = size_of_grid
+        img_cdelt1 = -1.0 * sample_size / 3600.0
+        img_cdelt2 = sample_size / 3600.0
+    else:
 
-##########
-    
-    cube_size = np.around((size_of_grid*sample_size)/3600, decimals=6)
-    
-    # Get SDSS Image
-    if not os.path.isfile(str(object_name)+"_SDSS_"+str(band)+".fits"):
-        getSDSSimage(object_name=object_name, RA=object_RA, DEC=object_DEC, 
-                     band=str(band), size=cube_size, number_of_pixels=size_of_grid)
-    
-    # Open SDSS image and extract data & header information
-    image_file = pf.open(str(object_name)+"_SDSS_"+str(band)+".fits")
-    image_data = image_file['Primary'].data
-
-    
-    image_header = image_file['Primary'].header
-    img_crval1 = float(image_header['CRVAL1']) #RA
-    img_crval2 = float(image_header['CRVAL2']) #DEC
-    img_crpix1 = float(image_header['CRPIX1']) #Reference x-pixel
-    img_crpix2 = float(image_header['CRPIX2']) #Reference y-pixel
-    img_cdelt1 = float(image_header['CDELT1']) #Delta RA
-    img_cdelt2 = float(image_header['CDELT2']) #Delta DEC
-
-    SDSS_image = image_data
-    SDSS_image_crop = SDSS_image[(len(SDSS_image[0])/2)-10:(len(SDSS_image[0])/2)+10,(len(SDSS_image[1])/2)-10:(len(SDSS_image[1])/2)+10]
-    SDSS_image_crop_norm = (SDSS_image_crop - np.min(SDSS_image_crop))/np.max(SDSS_image_crop - np.min(SDSS_image_crop))
+        # Build wavelength axis.
+        CRVAL3 = myIFU.crval1
+        CDELT3 = myIFU.cdelt1
+        Nwave  = np.shape(object_flux_cube)[0]
+        
+        # -- crval3 is middle of range and indexing starts at 0.
+        # -- this wave-axis agrees with QFitsView interpretation.
+        CRVAL3a = CRVAL3 - ((Nwave-1)/2)*CDELT3
+        wave = CRVAL3a + CDELT3*np.arange(Nwave)
+        
+        # Get SDSS g-band throughput curve
+        if not os.path.isfile("sdss_"+str(band)+".dat"):
+            urllib.urlretrieve("http://www.sdss.org/dr3/instruments/imager/filters/"+str(band)+".dat", "sdss_"+str(band)+".dat")
+        
+        # and convolve with the SDSS throughput
+        sdss = ascii.read("SDSS_"+str(band)+".dat", quotechar="#", names=["wave", "pt_secz=1.3", "ext_secz=1.3", "ext_secz=0.0", "extinction"])
+        
+        # re-grid g["wave"] -> wave
+        thru_regrid = griddata(sdss["wave"], sdss["ext_secz=1.3"], wave, method="cubic", fill_value=0.0)
+        
+        # initialise a 2D simulated g' band flux array.
+        len_axis = np.shape(object_flux_cube)[1]
+        reconstruct = np.zeros((len_axis,len_axis))
+        tester = np.zeros((len_axis,len_axis))
+        data_bit = np.zeros((Nwave,len_axis,len_axis))
+        
+        # Sum convolved flux:
+        for i in range(Nwave):
+            data_bit[i] = object_flux_cube[i]*thru_regrid[i]
+        
+        reconstruct = np.nansum(data_bit,axis=0) # not absolute right now
+        reconstruct[np.isnan(reconstruct)] = 0. # replacing nan with 0.0
+        reconstruct[reconstruct < 0] = 0.       # replacing negative fluxes with 0.0
+        
+        cube_image = reconstruct
+        xcube = len(cube_image[0])
+        ycube = len(cube_image[1])
+        cube_image_crop = cube_image[(len(cube_image[0])/2)-10:(len(cube_image[0])/2)+10,(len(cube_image[1])/2)-10:(len(cube_image[1])/2)+10]
+        cube_image_crop = sp.ndimage.zoom(cube_image_crop, 5, order=3)
+        cube_image_crop_norm = (cube_image_crop - np.min(cube_image_crop))/np.max(cube_image_crop - np.min(cube_image_crop))
+        
+        # Check if the user supplied a red RSS file, throw exception.
+        if np.array_equal(cube_image, tester):
+            raise SystemExit("All values are zero: please provide the cube corresponding to the requested spectral band of the image!")
 
     ##########
+        
+        cube_size = np.around((size_of_grid*sample_size)/3600, decimals=6)
+        
+        # Get SDSS Image
+        if not os.path.isfile(str(object_name)+"_SDSS_"+str(band)+".fits"):
+            getSDSSimage(object_name=object_name, RA=object_RA, DEC=object_DEC, 
+                         band=str(band), size=cube_size, number_of_pixels=size_of_grid)
+        
+        # Open SDSS image and extract data & header information
+        image_file = pf.open(str(object_name)+"_SDSS_"+str(band)+".fits")
+        image_data = image_file['Primary'].data
 
-    if np.size(np.where(image_data == 0.0)) != 2*np.size(image_data):
+        
+        image_header = image_file['Primary'].header
+        img_crval1 = float(image_header['CRVAL1']) #RA
+        img_crval2 = float(image_header['CRVAL2']) #DEC
+        img_crpix1 = float(image_header['CRPIX1']) #Reference x-pixel
+        img_crpix2 = float(image_header['CRPIX2']) #Reference y-pixel
+        img_cdelt1 = float(image_header['CDELT1']) #Delta RA
+        img_cdelt2 = float(image_header['CDELT2']) #Delta DEC
+
+        SDSS_image = image_data
+        SDSS_image_crop = SDSS_image[(len(SDSS_image[0])/2)-10:(len(SDSS_image[0])/2)+10,(len(SDSS_image[1])/2)-10:(len(SDSS_image[1])/2)+10]
+        SDSS_image_crop_norm = (SDSS_image_crop - np.min(SDSS_image_crop))/np.max(SDSS_image_crop - np.min(SDSS_image_crop))
+
+        ##########
+
+    if (not nominal) and np.size(np.where(image_data == 0.0)) != 2*np.size(image_data):
         # Cross-correlate normalised SAMI-cube g-band image and SDSS g-band image
         WCS_flag = 'SDSS'
         crosscorr_image = sp.signal.correlate2d(SDSS_image_crop_norm, cube_image_crop_norm)
@@ -1000,8 +1009,10 @@ def WCS_position(myIFU,object_flux_cube,object_name,band,plot=False,write=False)
 ##########
 
     # Remove temporary files
-    os.remove("sdss_"+str(band)+".dat")
-    os.remove(str(object_name)+"_SDSS_"+str(band)+".fits")
+    if os.path.exists("sdss_"+str(band)+".dat"):
+        os.remove("sdss_"+str(band)+".dat")
+    if os.path.exists(str(object_name)+"_SDSS_"+str(band)+".fits"):
+        os.remove(str(object_name)+"_SDSS_"+str(band)+".fits")
     
     return WCS_pos,WCS_flag
 

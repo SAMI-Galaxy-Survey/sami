@@ -1054,8 +1054,8 @@ class Manager:
             # the visit_dir isn't inherited.
             # Also everything dies when they try to do the WCS (I think)
             # So for now, disabling the multiprocessing bit
-            #self.pool.map(cube_group, groups.items())
-            map(cube_group, groups.items())
+            self.pool.map(cube_group, groups.items())
+            #map(cube_group, groups.items())
         return
 
     def reduce_all(self, overwrite=False, **kwargs):
@@ -2266,12 +2266,18 @@ def cube_group(group):
         else:
             path = fits.reduced_path
         path_list.append(path)
+    print 'These are the files:'
+    for path in path_list:
+        print '  ', os.path.basename(path)
     # First calculate the offsets
     find_dither(path_list, path_list[0], centroid=True, 
                 remove_files=True)
     # Now do the actual cubing
+    print 'Really, these are the files:'
+    for path in path_list:
+        print '  ', os.path.basename(path)
     dithered_cubes_from_rss_list(path_list, suffix='_'+field[0], 
-                                 write=True)
+                                 write=True, nominal=True)
     return
 
 
