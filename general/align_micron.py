@@ -213,6 +213,10 @@ def find_dither(RSSname,reference,centroid=True,inter=False,plot=False,remove_fi
             
              f=open(file_geoin, 'w')
              for j in xrange(len(xin)):
+                 # Immediately censor any point that's moved by more than 980um
+                 # (The diameter of a hexabundle)
+                 if np.sqrt((xin[j] - xref[j])**2 + (yin[j] - yref[j])**2) > 980.0:
+                     continue
                  s=str(xin[j])+' '+str(yin[j])+' '+str(xref[j])+' '+str(yref[j])+'\n' 
                  f.write(s)
   
