@@ -118,7 +118,8 @@ def get_probe(infile, object_name, verbose=True):
 
 def dithered_cubes_from_rss_files(inlist, sample_size=0.5, drop_factor=0.5, 
                                   objects='all', clip=True, plot=True, 
-                                  write=False, suffix='', root=''):
+                                  write=False, suffix='', root='',
+                                  overwrite=False):
     """A wrapper to make a cube from reduced RSS files, passed as a filename containing a list of filenames. Only input files that go together - ie have the same objects."""
 
     # Read in the list of all the RSS files input by the user.
@@ -132,12 +133,13 @@ def dithered_cubes_from_rss_files(inlist, sample_size=0.5, drop_factor=0.5,
     dithered_cubes_from_rss_list(files, sample_size=sample_size, 
                                  drop_factor=drop_factor, objects=objects, 
                                  clip=clip, plot=plot, write=write, 
-                                 root=root, suffix=suffix)
+                                 root=root, suffix=suffix, overwrite=overwrite)
     return
 
 def dithered_cubes_from_rss_list(files, sample_size=0.5, drop_factor=0.5, 
                                  objects='all', clip=True, plot=True, 
-                                 write=False, suffix='', nominal=False, root=''):
+                                 write=False, suffix='', nominal=False, root='',
+                                 overwrite=False):
     """A wrapper to make a cube from reduced RSS files, passed as a list. Only input files that go together - ie have the same objects."""
         
     start_time = datetime.datetime.now()
@@ -167,6 +169,20 @@ def dithered_cubes_from_rss_list(files, sample_size=0.5, drop_factor=0.5,
     print "--------------------------------------------------------------"
 
     for name in object_names:
+
+        # Filename to write to
+        outfile_name=str(name)+'_'+str(arm)+'_'+str(len(files))+suffix+'.fits'
+        outfile_name_full=os.path.join(directory, outfile_name)
+
+        # Check if the filename already exists
+        if write and os.path.exists(outfile_name_full):
+            if overwrite:
+                os.remove(outfile_name_full)
+            else:
+                print 'Output file already exists:'
+                print outfile_name_full
+                print 'Skipping this object'
+                continue
 
         print
         print "--------------------------------------------------------------"
@@ -233,10 +249,7 @@ def dithered_cubes_from_rss_list(files, sample_size=0.5, drop_factor=0.5,
             # Put individual HDUs into a HDU list
             hdulist=pf.HDUList([hdu1,hdu2,hdu3]) #,metadata_table])
         
-            # Write to FITS file.
-            outfile_name=str(name)+'_'+str(arm)+'_'+str(len(files))+suffix+'.fits'
-            outfile_name_full=os.path.join(directory, outfile_name)
-
+            # Write the file
             print "Writing", outfile_name_full
             "--------------------------------------------------------------"
             hdulist.writeto(outfile_name_full)
