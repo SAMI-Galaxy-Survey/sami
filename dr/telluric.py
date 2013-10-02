@@ -15,7 +15,7 @@ HG_CHANGESET = utils.hg_changeset(__file__)
 
 # KEY:      SS = Secondary Standard
 
-def correction_linear_fit(frame_list):
+def correction_linear_fit(frame_list, n_trim=0):
     """
     Finds the telluric correction factor to multiply object data by. The factor 
     as a function of wavelength is saved into the red frame under the extension 
@@ -24,7 +24,7 @@ def correction_linear_fit(frame_list):
     """
     
     # Always re-extract the secondary standard
-    extract_secondary_standard(frame_list)
+    extract_secondary_standard(frame_list, n_trim=n_trim)
 
     # Get data
     hdulist = pf.open(frame_list[1])
@@ -125,7 +125,8 @@ def correction_linear_fit(frame_list):
     return
 
 def extract_secondary_standard(path_list, 
-                               model_name='ref_centre_alpha_dist_circ'):
+                               model_name='ref_centre_alpha_dist_circ',
+                               n_trim=0):
     """Identify and extract the secondary standard in a reduced RSS file."""
     
     # First check which hexabundle we need to look at
@@ -133,6 +134,7 @@ def extract_secondary_standard(path_list,
     # Read the observed data, in chunks
     chunked_data = read_chunked_data(path_list, star_match['probenum'], 
                                      sigma_clip=5)
+    trim_chunked_data(chunked_data, n_trim)
     # Fit the PSF
     fixed_parameters = set_fixed_parameters(path_list, model_name)
     psf_parameters = fit_model_flux(
@@ -152,6 +154,13 @@ def extract_secondary_standard(path_list,
         save_extracted_flux(path, observed_flux, observed_background,
                             star_match, psf_parameters, model_name,
                             good_psf)
+    return
+
+def trim_chunked_data(chunked_data, n_trim):
+    """Trim off the extreme blue end of the chunked data, because it's bad."""
+    chunked_data['data'] = chunked_data['data'][:, n_trim:]
+    chunked_data['variance'] = chunked_data['variance'][:, n_trim:]
+    chunked_data['wavelength'] = chunked_data['wavelength'][n_trim:]
     return
 
 def identify_secondary_standard(path):

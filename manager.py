@@ -1025,9 +1025,15 @@ class Manager:
                 print ('Matching blue arm not found for ' + fits_2.filename +
                        '; skipping this file.')
             path_pair = (fits_1.fluxcal_path, fits_2.fluxcal_path)
+            if fits_1.epoch < 2013.0:
+                # SAMI v1 had awful throughput at blue end of blue, need to
+                # trim that data
+                n_trim = 3
+            else:
+                n_trim = 0
             print ('Deriving telluric correction for ' + fits_1.filename +
                    ' and ' + fits_2.filename)
-            telluric.correction_linear_fit(path_pair)
+            telluric.correction_linear_fit(path_pair, n_trim=n_trim)
             print 'Telluric correcting file:', fits_2.filename
             if os.path.exists(fits_2.telluric_path):
                 os.remove(fits_2.telluric_path)
