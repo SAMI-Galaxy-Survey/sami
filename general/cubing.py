@@ -170,20 +170,6 @@ def dithered_cubes_from_rss_list(files, sample_size=0.5, drop_factor=0.5,
 
     for name in object_names:
 
-        # Filename to write to
-        outfile_name=str(name)+'_'+str(arm)+'_'+str(len(files))+suffix+'.fits'
-        outfile_name_full=os.path.join(directory, outfile_name)
-
-        # Check if the filename already exists
-        if write and os.path.exists(outfile_name_full):
-            if overwrite:
-                os.remove(outfile_name_full)
-            else:
-                print 'Output file already exists:'
-                print outfile_name_full
-                print 'Skipping this object'
-                continue
-
         print
         print "--------------------------------------------------------------"
         print "Starting with object:", name
@@ -193,6 +179,31 @@ def dithered_cubes_from_rss_list(files, sample_size=0.5, drop_factor=0.5,
         
         for j in xrange(n_files):
             ifu_list.append(utils.IFU(files[j], name, flag_name=True))
+
+        if write:
+            # First check if the object directory already exists or not.
+            directory = os.path.join(root, name)
+            if os.path.isdir(directory):
+                print "Directory Exists", directory
+                print "Writing files to the existing directory"
+            else:
+                print "Making directory", directory
+                os.mkdir(directory)
+
+            # Filename to write to
+            arm = ifu_list[0].spectrograph_arm            
+            outfile_name=str(name)+'_'+str(arm)+'_'+str(len(files))+suffix+'.fits'
+            outfile_name_full=os.path.join(directory, outfile_name)
+
+            # Check if the filename already exists
+            if os.path.exists(outfile_name_full):
+                if overwrite:
+                    os.remove(outfile_name_full)
+                else:
+                    print 'Output file already exists:'
+                    print outfile_name_full
+                    print 'Skipping this object'
+                    continue
 
 
         # Call dithered_cube_from_rss to create the flux, variance and weight cubes for the object.
@@ -210,15 +221,6 @@ def dithered_cubes_from_rss_list(files, sample_size=0.5, drop_factor=0.5,
         # Write out FITS files.
         if write==True:
 
-            # First check if the object directory already exists or not.
-            directory = os.path.join(root, name)
-            if os.path.isdir(directory):
-                print "Directory Exists", directory
-                print "Writing files to the existing directory"
-            else:
-                print "Making directory", directory
-                os.mkdir(directory)
-
             if ifu_list[0].gratid == '580V':
                 band = 'g'
             elif ifu_list[0].gratid == '1000R':
@@ -233,8 +235,6 @@ def dithered_cubes_from_rss_list(files, sample_size=0.5, drop_factor=0.5,
             list1=pf.open(files[0])
             hdr=list1[0].header
     
-            arm = ifu_list[0].spectrograph_arm
-            
             hdr_new = create_primary_header(ifu_list,name,files,WCS_pos,WCS_flag)
 
             # Create HDUs for each cube - note headers generated automatically for now.
