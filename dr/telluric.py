@@ -9,6 +9,7 @@ from ..utils.ifu import IFU
 
 import astropy.io.fits as pf
 import numpy as np
+from scipy.ndimage.filters import median_filter
 import re
 
 HG_CHANGESET = utils.hg_changeset(__file__)
@@ -64,8 +65,11 @@ def correction_linear_fit(frame_list, n_trim=0):
     for clean_limits_single in clean_limits:
         in_clean[(SS_wave_axis >= clean_limits_single[0]) & 
                  (SS_wave_axis <= clean_limits_single[1])] = True
+    in_clean[~(np.isfinite(SS_flux_data))] = False
     SS_wave_axis_cut = SS_wave_axis[in_clean]
     SS_flux_data_cut = SS_flux_data[in_clean]
+    # Mild smoothing so that one bad pixel doesn't screw up the linear fit
+    SS_flux_data_cut = median_filter(SS_flux_data_cut, 5)
             
     # Fit linear slope to wavelength cut data
     p = np.polyfit(SS_wave_axis_cut, SS_flux_data_cut, 1)
