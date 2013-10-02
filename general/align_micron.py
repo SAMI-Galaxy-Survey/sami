@@ -188,7 +188,6 @@ def find_dither(RSSname,reference,centroid=True,inter=False,plot=False,remove_fi
          yshcol.append(0) 
          galID.append(cols[0])
 
-
       RSSmatch=list(RSSname)
       RSSmatch.remove(reference)  ## Remove the reference RSS from the list of RSS files to align
      
