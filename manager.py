@@ -1034,7 +1034,6 @@ class Manager:
 
     def cube(self, overwrite=False, **kwargs):
         """Make datacubes from the given RSS files."""
-        # overwrite not yet implemented
         target_dir = os.path.join(self.abs_root, 'cubed')
         if 'min_exposure' in kwargs:
             min_exposure = kwargs['min_exposure']
@@ -1052,7 +1051,8 @@ class Manager:
         # Add in the root path as well, so that cubing puts things in the 
         # right place
         cubed_root = os.path.join(self.root, 'cubed')
-        groups = [(item[0], item[1], cubed_root) for item in groups.items()]
+        groups = [(item[0], item[1], cubed_root, overwrite) 
+                  for item in groups.items()]
         with self.visit_dir(target_dir):
             # Send the cubing tasks off to multiple CPUs
             # This actually puts the output in the wrong place, it seems
@@ -2270,7 +2270,7 @@ def telluric_correct_pair(fits_pair):
 
 def cube_group(group):
     """Cube a set of RSS files."""
-    field, fits_list, root = group
+    field, fits_list, root, overwrite = group
     print 'Cubing field ID: {}, CCD: {}'.format(field[0], field[1])
     path_list = []
     for fits in fits_list:
@@ -2289,7 +2289,8 @@ def cube_group(group):
                 remove_files=True)
     # Now do the actual cubing
     dithered_cubes_from_rss_list(path_list, suffix='_'+field[0], 
-                                 write=True, nominal=True, root=root)
+                                 write=True, nominal=True, root=root,
+                                 overwrite=overwrite)
     return
 
 
