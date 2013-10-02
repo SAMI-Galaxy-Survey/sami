@@ -202,9 +202,10 @@ def dithered_cubes_from_rss_list(files, sample_size=0.5, drop_factor=0.5,
             flux_cube, var_cube, weight_cube, diagnostics = dithered_cube_from_rss(ifu_list, sample_size=sample_size,
                                           drop_factor=drop_factor, clip=clip, plot=plot)
         except Exception:
-            # print 'Cubing failed! Skipping to next galaxy.'
-            # continue
-            raise
+            print 'Cubing failed! Skipping to next galaxy.'
+            print 'Object:', name, 'files:', files
+            continue
+            #raise
 
         # Write out FITS files.
         if write==True:
