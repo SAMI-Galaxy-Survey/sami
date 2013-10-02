@@ -126,28 +126,46 @@ def find_dither(RSSname,reference,centroid=True,inter=False,plot=False,remove_fi
       f=open(file_centralfib,'w')
       
       
-      xcent=[] #x coordinates of central fiber of each bundle
-      ycent=[]  #y coordinates of central fiber of each bundle
+      # xcent=[] #x coordinates of central fiber of each bundle
+      # ycent=[]  #y coordinates of central fiber of each bundle
       galname=[] #name of the target galaxy
-      for i, ifu in enumerate(ifus):
+      # ifu_good=[]
+      central_data = []
+      object_order = {}
+      i = 0
+      for ifu in ifus:
       
-            ifu_data=utils.IFU(reference, ifu, flag_name=False) 
+            try:
+                ifu_data=utils.IFU(reference, ifu, flag_name=False) 
+            except IndexError:
+                # This probably means it's a dead hexabundle, just skip it
+                continue
             x=np.float(-1*ifu_data.x_microns[np.where(ifu_data.n==1)]) #x coordinate of central fiber (-1x is to have coordinates back on focal plane referenceO)
             y=np.float(ifu_data.y_microns[np.where(ifu_data.n==1)]) #y coordinate of central fiber
             s= str(x)+'  '+str(y)+'\n'
             f.write(s)
-            xcent.append(x)
-            ycent.append(y)
-            
+            central_data.append({'name': ifu_data.name,
+                                 'ifu': ifu,
+                                 'xcent': x,
+                                 'ycent': y})
+            object_order[ifu_data.name] = i
+            # xcent.append(x)
+            # ycent.append(y)
+            # ifu_good.append(ifu)
             galname.append(ifu_data.name)
+            i += 1
       f.close() 
+      n_ifu = len(central_data)
+      xcent = np.array([data['xcent'] for data in central_data])
+      ycent = np.array([data['ycent'] for data in central_data])
       
       
       file_ref=string.join([string.strip(reference,'.fits'), "_centroid"],'')  # Name of the file containing the centroid coordinates for the RSS used as a reference
       
-      xref=[]   #x coordinates of centroid in each ifu of the reference RSS
-      yref=[]   #y coordinates of centroid in each ifu of the reference RSS
-      
+      xref=np.zeros(n_ifu)   #x coordinates of centroid in each ifu of the reference RSS
+      yref=np.zeros(n_ifu)   #y coordinates of centroid in each ifu of the reference RSS
+      ifuref=np.zeros(n_ifu, dtype=int)
+
       ### Starting from the reference RSS, will start filling the next 4 arrays which will become the main output of this procedure
       ### Obviously for the reference RSS xshcol and yshcol are 0 by definition.
       
@@ -160,15 +178,15 @@ def find_dither(RSSname,reference,centroid=True,inter=False,plot=False,remove_fi
       for line in open(file_ref):
          n=n+1
          cols=line.split()
-         xref.append(float(cols[0]))
-         yref.append(float(cols[1]))
+         index = object_order[cols[0]]
+         ifuref[index] = int(cols[1])
+         xref[index] = float(cols[2])
+         yref[index] = float(cols[3])
          RSScol.append(reference)
-         ifscol.append(n)
+         ifscol.append(int(cols[1]))
          xshcol.append(0)
          yshcol.append(0) 
-         galID.append(galname[n-1])
-
-
+         galID.append(cols[0])
 
       RSSmatch=list(RSSname)
       RSSmatch.remove(reference)  ## Remove the reference RSS from the list of RSS files to align
@@ -203,16 +221,23 @@ def find_dither(RSSname,reference,centroid=True,inter=False,plot=False,remove_fi
              
              ## The next two loops simply create file_geoin
              
-             xin=[]
-             yin=[]
+             # xin=[]
+             # yin=[]
+             ifu_good = np.zeros(n_ifu, dtype=int)
+             xin = np.zeros(n_ifu)
+             yin = np.zeros(n_ifu)
              for line in open(file_centroid):
                  cols=line.split()
-                 xin.append(float(cols[0]))
-                 yin.append(float(cols[1]))
+                 # xin.append(float(cols[2]))
+                 # yin.append(float(cols[3]))
+                 index = object_order[cols[0]]
+                 ifu_good[index] = int(cols[1])
+                 xin[index] = float(cols[2])
+                 yin[index] = float(cols[3])
   
             
              f=open(file_geoin, 'w')
-             for j in xrange(len(xin)):
+             for j in xrange(n_ifu):
                  # Immediately censor any point that's moved by more than 980um
                  # (The diameter of a hexabundle)
                  if np.sqrt((xin[j] - xref[j])**2 + (yin[j] - yref[j])**2) > 980.0:
@@ -243,19 +268,19 @@ def find_dither(RSSname,reference,centroid=True,inter=False,plot=False,remove_fi
              ## Append the results stored in file_geoxy on the RSScol,ifscol,xshcol,yshcol array so that they can be stored into a more user-friendly format
              n=0
              ## xshift and yshift are the same as xshcol, yshcol but for this frame only
-             xshift = []
-             yshift = []
-             for line in open(file_geoxy):
+             xshift = np.zeros(n_ifu)
+             yshift = np.zeros(n_ifu)
+             for index, line in enumerate(open(file_geoxy)):
                  n=n+1 
                  RSScol.append(RSSmatch[i])
                  ifscol.append(n)
                  cols=line.split()
-                 x=-1*np.subtract(np.float(cols[0]),xcent[n-1]) #the -1 is to go back to on-sky positions
-                 y=np.subtract(np.float(cols[1]),ycent[n-1])
+                 x=-1*np.subtract(np.float(cols[0]),xcent[index]) #the -1 is to go back to on-sky positions
+                 y=np.subtract(np.float(cols[1]),ycent[index])
                  xshcol.append(x)
                  yshcol.append(y) 
-                 xshift.append(x)
-                 yshift.append(y)
+                 xshift[index] = x
+                 yshift[index] = y
                  galID.append(galname[n-1])
 
              # Read back the RMS from one of IRAF's files
@@ -263,13 +288,13 @@ def find_dither(RSSname,reference,centroid=True,inter=False,plot=False,remove_fi
 
              # Store the results in a handy dictionary
              results.append({'filename': RSSmatch[i],
-                             'ifus': np.array(ifus),
-                             'xin': np.array(xin),
-                             'yin': np.array(yin),
-                             'xref': np.array(xref),
-                             'yref': np.array(yref),
-                             'xshift': np.array(xshift),
-                             'yshift': np.array(yshift),
+                             'ifus': ifu_good,
+                             'xin': xin,
+                             'yin': yin,
+                             'xref': xref,
+                             'yref': yref,
+                             'xshift': xshift,
+                             'yshift': yshift,
                              'xrms': xrms,
                              'yrms': yrms,
                              'n_good': n_good,
@@ -297,16 +322,16 @@ def find_dither(RSSname,reference,centroid=True,inter=False,plot=False,remove_fi
                 
       # Save results for the reference frame in the FITS header
       ref_results_dict = {'filename': reference,
-                          'ifus': np.array(ifus),
-                          'xin': np.array(xref),
-                          'yin': np.array(yref),
-                          'xref': np.array(xref),
-                          'yref': np.array(yref),
-                          'xshift': np.zeros(len(ifus)),
-                          'yshift': np.zeros(len(ifus)),
+                          'ifus': ifuref,
+                          'xin': xref,
+                          'yin': yref,
+                          'xref': xref,
+                          'yref': yref,
+                          'xshift': np.zeros(n_ifu),
+                          'yshift': np.zeros(n_ifu),
                           'xrms': 0.0,
                           'yrms': 0.0,
-                          'n_good': len(ifus),
+                          'n_good': n_ifu,
                           'reference': reference,
                           'xref_median': results[0]['xref_median'],
                           'yref_median': results[0]['yref_median']}
@@ -363,7 +388,11 @@ def get_centroid(infile):
     
     for i, ifu in enumerate(ifus):
 
-            ifu_data=utils.IFU(infile, ifu, flag_name=False)
+            try:
+                ifu_data=utils.IFU(infile, ifu, flag_name=False)
+            except IndexError:
+                # Probably a broken hexabundle
+                continue
                 
             p_mic, data_mic, xlin_mic, ylin_mic, model_mic=sami.observing.centroid.centroid_fit(ifu_data.x_microns, ifu_data.y_microns,
                                                                                     ifu_data.data, circular=True)
@@ -376,7 +405,8 @@ def get_centroid(infile):
             x_out= -1*xout_mic
             y_out= yout_mic
             
-            s=str(x_out)+' '+str(y_out)+'\n' # the data to write to file
+            # the data to write to file
+            s=ifu_data.name+' '+str(ifu_data.ifu)+' '+str(x_out)+' '+str(y_out)+'\n'
                     
             f.write(s)
             
@@ -438,7 +468,7 @@ def read_rms(filename):
 def recalculate_ref(results_list):
     """Re-calculate the reference coordinates, taking the median."""
     n_obs = len(results_list)
-    n_hexa = len(results_list[0]['ifus'])
+    n_hexa = len(results_list[0]['xshift'])
     xref = np.zeros((n_hexa, n_obs))
     yref = np.zeros((n_hexa, n_obs))
     for index, results in enumerate(results_list):
