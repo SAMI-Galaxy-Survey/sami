@@ -64,6 +64,7 @@ def correction_linear_fit(frame_list, n_trim=0):
     for clean_limits_single in clean_limits:
         in_clean[(SS_wave_axis >= clean_limits_single[0]) & 
                  (SS_wave_axis <= clean_limits_single[1])] = True
+    in_clean[~(np.isfinite(SS_flux_data))] = False
     SS_wave_axis_cut = SS_wave_axis[in_clean]
     SS_flux_data_cut = SS_flux_data[in_clean]
             
