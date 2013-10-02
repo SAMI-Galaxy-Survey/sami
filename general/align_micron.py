@@ -170,7 +170,7 @@ def find_dither(RSSname,reference,centroid=True,inter=False,plot=False,remove_fi
 
 
 
-      RSSmatch=RSSname
+      RSSmatch=list(RSSname)
       RSSmatch.remove(reference)  ## Remove the reference RSS from the list of RSS files to align
      
       ## Run the loop where the dither solution is computed on the list of RSS files excluding the reference one.  
