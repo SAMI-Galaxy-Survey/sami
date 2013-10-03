@@ -489,7 +489,7 @@ def refractive_index(wavelength, temperature=None, pressure=None,
                          / ( 1. + 0.003661 * temperature ) ) * vapour_pressure
     return 1e-6 * (seaLevelDry * altitudeCorrection - vapourCorrection) + 1
 
-def derive_transfer_function(path_list, max_sep_arcsec=60.0,
+def derive_transfer_function(path_list, max_sep_arcsec=600.0,
                              catalogues=STANDARD_CATALOGUES,
                              model_name='ref_centre_alpha_dist_circ'):
     """Derive transfer function and save it in each FITS file."""
@@ -528,7 +528,7 @@ def derive_transfer_function(path_list, max_sep_arcsec=60.0,
         save_transfer_function(path, transfer_function)
     return
 
-def match_standard_star(filename, max_sep_arcsec=60.0, 
+def match_standard_star(filename, max_sep_arcsec=600.0, 
                         catalogues=STANDARD_CATALOGUES):
     """Return details of the standard star that was observed in this file."""
     fibre_table = pf.getdata(filename, 'FIBRES_IFU')
@@ -548,7 +548,7 @@ def match_standard_star(filename, max_sep_arcsec=60.0,
     # code deal with it.
     return
 
-def match_star_coordinates(ra, dec, max_sep_arcsec=60.0, 
+def match_star_coordinates(ra, dec, max_sep_arcsec=600.0, 
                            catalogues=STANDARD_CATALOGUES):
     """Return details of the star nearest to the supplied coordinates."""
     for index_path in catalogues:
