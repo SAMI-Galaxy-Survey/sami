@@ -946,10 +946,16 @@ class Manager:
                     continue
             fits_2 = self.other_arm(fits)
             path_pair = (fits.reduced_path, fits_2.reduced_path)
+            if fits.epoch < 2013.0:
+                # SAMI v1 had awful throughput at blue end of blue, need to
+                # trim that data
+                n_trim = 3
+            else:
+                n_trim = 0
             print ('Deriving transfer function for ' + fits.filename + 
                    ' and ' + fits_2.filename)
             try:
-                fluxcal2.derive_transfer_function(path_pair)
+                fluxcal2.derive_transfer_function(path_pair, n_trim=n_trim)
             except ValueError:
                 print ('Warning: No star found in dataframe, skipping ' + 
                        fits.filename)

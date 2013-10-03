@@ -115,6 +115,13 @@ def read_chunked_data(path_list, probenum, n_drop=None, n_chunk=None,
                     'yfibre': yfibre[good_fibre]}
     return chunked_data
 
+def trim_chunked_data(chunked_data, n_trim):
+    """Trim off the extreme blue end of the chunked data, because it's bad."""
+    chunked_data['data'] = chunked_data['data'][:, n_trim:]
+    chunked_data['variance'] = chunked_data['variance'][:, n_trim:]
+    chunked_data['wavelength'] = chunked_data['wavelength'][n_trim:]
+    return
+
 def chunk_data(ifu, n_drop=None, n_chunk=None, sigma_clip=None):
     """Condence a spectrum into a number of chunks."""
     n_pixel = ifu.naxis1
@@ -489,9 +496,10 @@ def refractive_index(wavelength, temperature=None, pressure=None,
                          / ( 1. + 0.003661 * temperature ) ) * vapour_pressure
     return 1e-6 * (seaLevelDry * altitudeCorrection - vapourCorrection) + 1
 
-def derive_transfer_function(path_list, max_sep_arcsec=600.0,
+def derive_transfer_function(path_list, max_sep_arcsec=60.0,
                              catalogues=STANDARD_CATALOGUES,
-                             model_name='ref_centre_alpha_dist_circ'):
+                             model_name='ref_centre_alpha_dist_circ',
+                             n_trim=0):
     """Derive transfer function and save it in each FITS file."""
     # First work out which star we're looking at, and which hexabundle it's in
     star_match = match_standard_star(
@@ -501,6 +509,7 @@ def derive_transfer_function(path_list, max_sep_arcsec=600.0,
     standard_data = read_standard_data(star_match)
     # Read the observed data, in chunks
     chunked_data = read_chunked_data(path_list, star_match['probenum'])
+    trim_chunked_data(chunked_data, n_trim)
     # Fit the PSF
     fixed_parameters = set_fixed_parameters(path_list, model_name)
     psf_parameters = fit_model_flux(
@@ -528,14 +537,15 @@ def derive_transfer_function(path_list, max_sep_arcsec=600.0,
         save_transfer_function(path, transfer_function)
     return
 
-def match_standard_star(filename, max_sep_arcsec=600.0, 
+def match_standard_star(filename, max_sep_arcsec=60.0, 
                         catalogues=STANDARD_CATALOGUES):
     """Return details of the standard star that was observed in this file."""
     fibre_table = pf.getdata(filename, 'FIBRES_IFU')
     probenum_list = np.unique([fibre['PROBENUM'] for fibre in fibre_table
                                if 'SKY' not in fibre['PROBENAME']])
     for probenum in probenum_list:
-        this_probe = (fibre_table['PROBENUM'] == probenum)
+        this_probe = ((fibre_table['PROBENUM'] == probenum) &
+                      (fibre_table['TYPE'] == 'P'))
         ra = np.mean(fibre_table['FIB_MRA'][this_probe])
         dec = np.mean(fibre_table['FIB_MDEC'][this_probe])
         star_match = match_star_coordinates(
@@ -548,7 +558,7 @@ def match_standard_star(filename, max_sep_arcsec=600.0,
     # code deal with it.
     return
 
-def match_star_coordinates(ra, dec, max_sep_arcsec=600.0, 
+def match_star_coordinates(ra, dec, max_sep_arcsec=60.0, 
                            catalogues=STANDARD_CATALOGUES):
     """Return details of the star nearest to the supplied coordinates."""
     for index_path in catalogues:
