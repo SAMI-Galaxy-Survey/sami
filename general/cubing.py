@@ -868,7 +868,7 @@ class SAMIDrizzler:
 #
 
 def WCS_position(myIFU,object_flux_cube,object_name,band,plot=False,write=False,nominal=False,
-                 remove_thput_file=remove_thput_file):
+                 remove_thput_file=True):
     """Wrapper for WCS_position_coords, extracting coords from IFU."""
 
     # Get Object RA + DEC from fibre table (this is the input catalogues RA+DEC in deg)
@@ -1035,7 +1035,7 @@ def WCS_position_coords(object_RA, object_DEC, wave, object_flux_cube, object_na
     # Remove temporary files
     if remove_thput_file and os.path.exists("sdss_"+str(band)+".dat"):
         os.remove("sdss_"+str(band)+".dat")
-    os.path.exists(str(object_name)+"_SDSS_"+str(band)+".fits"):
+    if os.path.exists(str(object_name)+"_SDSS_"+str(band)+".fits"):
         os.remove(str(object_name)+"_SDSS_"+str(band)+".fits")
     
     return WCS_pos,WCS_flag

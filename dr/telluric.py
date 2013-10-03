@@ -2,7 +2,7 @@
 
 from .fluxcal2 import read_chunked_data, set_fixed_parameters, fit_model_flux
 from .fluxcal2 import insert_fixed_parameters, check_psf_parameters
-from .fluxcal2 import extract_total_flux, save_extracted_flux
+from .fluxcal2 import extract_total_flux, save_extracted_flux, trim_chunked_data
 
 from .. import utils
 from ..utils.ifu import IFU
@@ -158,13 +158,6 @@ def extract_secondary_standard(path_list,
         save_extracted_flux(path, observed_flux, observed_background,
                             star_match, psf_parameters, model_name,
                             good_psf)
-    return
-
-def trim_chunked_data(chunked_data, n_trim):
-    """Trim off the extreme blue end of the chunked data, because it's bad."""
-    chunked_data['data'] = chunked_data['data'][:, n_trim:]
-    chunked_data['variance'] = chunked_data['variance'][:, n_trim:]
-    chunked_data['wavelength'] = chunked_data['wavelength'][n_trim:]
     return
 
 def identify_secondary_standard(path):
