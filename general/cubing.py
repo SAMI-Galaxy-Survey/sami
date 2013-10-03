@@ -867,18 +867,36 @@ class SAMIDrizzler:
 #   cube.
 #
 
-def WCS_position(myIFU,object_flux_cube,object_name,band,plot=False,write=False,nominal=False):
-    
-    # Equate the WCS position information from a cross-correlation between a g-band SAMI cube and a g-band SDSS image.
-    
-##########
+def WCS_position(myIFU,object_flux_cube,object_name,band,plot=False,write=False,nominal=False,
+                 remove_thput_file=remove_thput_file):
+    """Wrapper for WCS_position_coords, extracting coords from IFU."""
 
-    object_flux_cube = np.transpose(object_flux_cube, (2,0,1))
-    
     # Get Object RA + DEC from fibre table (this is the input catalogues RA+DEC in deg)
     object_RA = np.around(myIFU.obj_ra[myIFU.n == 1][0], decimals=6)
     object_DEC = np.around(myIFU.obj_dec[myIFU.n == 1][0], decimals=6)
     
+    # Build wavelength axis.
+    CRVAL3 = myIFU.crval1
+    CDELT3 = myIFU.cdelt1
+    Nwave  = np.shape(object_flux_cube)[0]
+    
+    # -- crval3 is middle of range and indexing starts at 0.
+    # -- this wave-axis agrees with QFitsView interpretation.
+    CRVAL3a = CRVAL3 - ((Nwave-1)/2)*CDELT3
+    wave = CRVAL3a + CDELT3*np.arange(Nwave)
+        
+    object_flux_cube = np.transpose(object_flux_cube, (2,0,1))
+    
+    return WCS_position_coords(object_RA, object_DEC, wave, object_flux_cube,
+                               object_name, band, plot=plot, write=write,
+                               nominal=nominal)
+
+
+def WCS_position_coords(object_RA, object_DEC, wave, object_flux_cube, object_name, band,
+                        plot=False, write=False, nominal=False, remove_thput_file=True):
+    """Equate the WCS position information from a cross-correlation between a 
+    g-band SAMI cube and a g-band SDSS image."""
+
     if nominal:
         img_crval1 = object_RA
         img_crval2 = object_DEC
@@ -888,16 +906,6 @@ def WCS_position(myIFU,object_flux_cube,object_name,band,plot=False,write=False,
         img_cdelt2 = sample_size / 3600.0
     else:
 
-        # Build wavelength axis.
-        CRVAL3 = myIFU.crval1
-        CDELT3 = myIFU.cdelt1
-        Nwave  = np.shape(object_flux_cube)[0]
-        
-        # -- crval3 is middle of range and indexing starts at 0.
-        # -- this wave-axis agrees with QFitsView interpretation.
-        CRVAL3a = CRVAL3 - ((Nwave-1)/2)*CDELT3
-        wave = CRVAL3a + CDELT3*np.arange(Nwave)
-        
         # Get SDSS g-band throughput curve
         if not os.path.isfile("sdss_"+str(band)+".dat"):
             urllib.urlretrieve("http://www.sdss.org/dr3/instruments/imager/filters/"+str(band)+".dat", "sdss_"+str(band)+".dat")
@@ -910,6 +918,7 @@ def WCS_position(myIFU,object_flux_cube,object_name,band,plot=False,write=False,
         
         # initialise a 2D simulated g' band flux array.
         len_axis = np.shape(object_flux_cube)[1]
+        Nwave = len(wave)
         reconstruct = np.zeros((len_axis,len_axis))
         tester = np.zeros((len_axis,len_axis))
         data_bit = np.zeros((Nwave,len_axis,len_axis))
@@ -1024,12 +1033,50 @@ def WCS_position(myIFU,object_flux_cube,object_name,band,plot=False,write=False,
 ##########
 
     # Remove temporary files
-    if os.path.exists("sdss_"+str(band)+".dat"):
+    if remove_thput_file and os.path.exists("sdss_"+str(band)+".dat"):
         os.remove("sdss_"+str(band)+".dat")
-    if os.path.exists(str(object_name)+"_SDSS_"+str(band)+".fits"):
+    os.path.exists(str(object_name)+"_SDSS_"+str(band)+".fits"):
         os.remove(str(object_name)+"_SDSS_"+str(band)+".fits")
     
     return WCS_pos,WCS_flag
+
+
+def update_WCS_coords(filename, nominal=False, remove_thput_file=True):
+    """Recalculate the WCS data in a SAMI datacube."""
+    # Pick out the relevant data
+    header = pf.getheader(filename)
+    ra = (header['CRVAL1'] + 
+          (1 + np.arange(header['NAXIS1']) - header['CRPIX1']) * 
+          header['CDELT1'])
+    dec = (header['CRVAL2'] + 
+           (1 + np.arange(header['NAXIS2']) - header['CRPIX2']) * 
+           header['CDELT2'])
+    wave = (header['CRVAL3'] + 
+            (1 + np.arange(header['NAXIS3']) - header['CRPIX3']) * 
+            header['CDELT3'])
+    object_RA = np.mean(ra)
+    object_DEC = np.mean(dec)
+    object_flux_cube = pf.getdata(filename)
+    object_name = header['NAME']
+    if header['GRATID'] == '580V':
+        band = 'g'
+    elif header['GRATID'] == '1000R':
+        band = 'r'
+    else:
+        raise ValueError('Could not identify band. Exiting')
+    # Calculate the WCS
+    WCS_pos, WCS_flag = WCS_position_coords(
+        object_RA, object_DEC, wave, object_flux_cube, object_name, band,
+        nominal=nominal, remove_thput_file=remove_thput_file)
+    # Update the file
+    hdulist = pf.open(filename, 'update', do_not_scale_image_data=True)
+    header = hdulist[0].header
+    for key, value in WCS_pos.items():
+        header[key] = value
+    header['WCS_SRC'] = WCS_flag
+    hdulist.close()
+    return
+
 
 #########################################################################################
 #
