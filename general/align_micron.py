@@ -314,7 +314,7 @@ def find_dither(RSSname,reference,centroid=True,inter=False,plot=False,remove_fi
           os.remove(string.join([string.strip(reference,'.fits'), "_centroid"],''))
 
       # Re-calculate the reference X and Y values
-      recalculate_ref(results)
+      recalculate_ref(results, central_data)
 
       # Save results for frames other than the reference frame in the FITS header
       for result in results:
@@ -465,7 +465,7 @@ def read_rms(filename):
     return xrms, yrms, n_good
 
 
-def recalculate_ref(results_list):
+def recalculate_ref(results_list, central_data):
     """Re-calculate the reference coordinates, taking the median."""
     n_obs = len(results_list)
     n_hexa = len(results_list[0]['xshift'])
@@ -476,6 +476,14 @@ def recalculate_ref(results_list):
         yref[:, index] = results['yin'] + results['yshift']
     xref_median = np.median(xref, axis=1)
     yref_median = np.median(yref, axis=1)
+    for index in xrange(n_hexa):
+        delta_x = xref_median[index] - central_data[index]['xcent']
+        delta_y = yref_median[index] - central_data[index]['ycent']
+        if np.sqrt(delta_x**2 + delta_y**2) > 490.0:
+            # The median position is outside the hexabundle
+            # Reject it and just use the centre instead
+            xref_median[index] = central_data[index]['xcent']
+            yref_median[index] = central_data[index]['ycent']
     for results in results_list:
         results['xref_median'] = xref_median
         results['yref_median'] = yref_median
