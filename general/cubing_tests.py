@@ -14,6 +14,7 @@ from random import randint
 import cProfile
 import timeit
 import datetime
+import os
 
 # Package imports
 import sami.samifitting as samifitting
@@ -22,12 +23,15 @@ import sami.samifitting as samifitting
 from .. import utils
 from .cubing import *
 
-test_data_dir = '/Users/agreen/Research/sami_survey/data/april/sampling_test/10G1F2/'
+# Test data directory. Default assumes that it is in subdir "test_data" at the
+# same level as the sami package.
+test_data_dir = os.path.dirname(__file__) + '/../../test_data/'
+#test_data_dir = '/Users/agreen/Research/sami_survey/data/april/sampling_test/10G1F2/'
 
 def dummy_ifu():
     """Returns a dummy IFU object which can have arbitrary data inserted."""
     
-    return utils.IFU('/Users/agreen/Research/sami_survey/data/april/sampling_test/10G1F2/12apr20037red.fits', '63027', flag_name=True)
+    return utils.IFU(test_data_dir +'12apr10036red.fits', '63027', flag_name=True)
     
 def speed_test():
     """Time the standard code on a cutdown cube."""
