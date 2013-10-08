@@ -1,6 +1,7 @@
 import pylab as py
 import numpy as np
 import scipy as sp
+import matplotlib.pyplot as plt
 
 # use astropy for all astronomy related things.
 import astropy.io.fits as pf
@@ -21,18 +22,24 @@ This file contains a couple of S/N estimation codes
  designed for use during SAMI observing runs.
 
 UPDATED: 08.04.2013, Iraklis Konstantopoulos
-         -- edited to comply with new conventions in sami_utils; 
-         -- edited to accept new target table format; 
+         - Edited to comply with new conventions in sami_utils. 
+         - Edited to accept new target table format. 
 
          23.08.2012, Iraklis Konstantopoulos
-         -- changed name of "sn" to "sn_re"
-         -- writing new S/N code based on the secondary star observation. 
+         - Changed name of "sn" function to "sn_re". 
+         - Writing new S/N code based on the secondary star observation. 
 
 NOTES: 10.04.2013, Iraklis Konstantopoulos
-       -- I no longer return SN_all, but sn_Re, the median SN @Re. 
-       -- I removed the SN_all array from the sn function. 
+       - I no longer return SN_all, but sn_Re, the median SN @Re. 
+       - Removed the SN_all array from the sn function. 
 
-       23.08.2013, Iraklis Konstantopoulos
+       26.08.2013, Iraklis Konstantopoulos
+       - Updated fields for the SAMI target table. 
+       - Also changed all mentions of 'z' to 'zpec'. 
+       - Major bug fixes in case where target not found on target table.  
+
+       27.08.2013, Iraklis Konstantopoulos
+       - Writing surface brightness map function. 
 
 """
 
@@ -41,10 +48,10 @@ def sn_map(rssin):
     Plot SNR of all 12 SAMI targets across fraction of Re. 
     
     Process: 
-    - Deduce the noise level from the standard star
-     + obtain listed brightness of secondary star, 
-     + use existing 2D Gauss function to get SBP of star,
-     + figure out photometric aperture and correction,  
+    - Deduce the noise level from the standard star: 
+     + obtain listed brightness, 
+     + use existing 2D Gauss function to get SBP,
+     + (photometric aperture and aperture correction?),  
      + normalise flux, 
      + calculate integrated S/N for star, 
      + establish noise level.  
@@ -144,9 +151,9 @@ def sn_re(insami, tablein, l1, l2, plot=False, ifus='all',
 
     if verbose: 
         print('')
-        print('-----------------------------------')
-        print('Process: SAMI_utils. Function: SNR.')
-        print('-----------------------------------')
+        print('--------------------------------')
+        print('Running sami.observing.sn.sn_re.')
+        print('--------------------------------')
         print('')
         if n_IFU == 1: print 'Processing', n_IFU, 'IFU. Plotting is', 
         if n_IFU > 1:  print 'Processing', n_IFU, 'IFUs. Plotting is', 
@@ -197,6 +204,12 @@ def sn_re(insami, tablein, l1, l2, plot=False, ifus='all',
         elif n_IFU>6 and n_IFU<=9:
             im_n_row = 3
             im_n_col = 3
+        elif n_IFU>9 and n_IFU<=12:
+            im_n_row = 3
+            im_n_col = 4
+        elif n_IFU>12:
+            im_n_row = 4
+            im_n_col = 4
         
         # ISK: trying to improve the rows and columns a bit: 
         # def isodd(num): return num & 1 and True or False
@@ -210,10 +223,11 @@ def sn_re(insami, tablein, l1, l2, plot=False, ifus='all',
     # ----------------------
     # (2) Read target table
     # ----------------------
-    tabname = ['name', 'ra', 'dec', 'r_petro', 'r_auto', 'z', 'M_r', 
-               'Re', '<mu_Re>', 'mu(Re)', 'mu(2Re)', 'M*', 'g-i', 'A_g', 
-               'CATID', 'SURV_SAMI', 'PRI_SAMI', 'BAD_CLASS']
+    tabname = ['name', 'ra', 'dec', 'r_petro', 'r_auto', 'z_tonry', 'zspec', 
+               'M_r', 'Re', '<mu_Re>', 'mu(Re)', 'mu(2Re)', 'ellip', 'PA', 'M*',
+               'g-i', 'A_g', 'CATID', 'SURV_SAMI', 'PRI_SAMI', 'BAD_CLASS']
     target_table = tab.read(tablein, names=tabname, data_start=0)
+    CATID = target_table['CATID'].tolist()
 
     # Start a little counter to keep track 
     # -- a fudge for the way the plot loop is set up... 
@@ -228,46 +242,71 @@ def sn_re(insami, tablein, l1, l2, plot=False, ifus='all',
 
         # Read single IFU
         myIFU = utils.IFU(insami, ifu_num, flag_name=False)
+
+        # And find the row index for this SAMI target. 
+        try: 
+            this_galaxy = CATID.index(int(myIFU.name))
+            no_such_galaxy = False
+        except:
+            this_galaxy = []
+            no_such_galaxy = True
+            pass
+
+        """
+        There are other ways to do this with a numpy array as input. 
+        Lists are far better at this, so have made a CATID list. 
         
+        this_galaxy = np.where(target_table['CATID'] == int(myIFU.name))
+        this_galaxy = np.where(CATID == int(myIFU.name))
+        this_galaxy = [CATID == int(myIFU.name)]
+        """
+
         # ----------------------------
         # (3) Define wavelength range
         # ----------------------------
-        #z_target=target_table.field('z')==myIFU.name
-        #print z_target
 
-        z_target=target_table['z'][target_table['CATID']==myIFU.name]
-        print z_target
+        if no_such_galaxy:
+            z_target = 0.0
+            z_string = '0.0'
+            
+            # see below for explanation of this. 
+            idx1 = l1
+            idx2 = l2
 
-        l_range = myIFU.lambda_range
-        l_rest = l_range/(1+z_target)
+            print('-- IFU #' + str(ifu_num))
+            print("   This galaxy was not found in the Target Table. ")
 
-        # identify array elements closest to l1, l2 **in rest frame**
-        idx1 = (np.abs(l_rest - l1)).argmin()
-        idx2 = (np.abs(l_rest - l2)).argmin()
+        else: 
+            z_target = target_table['zspec'][this_galaxy]
+            z_string = str(z_target)
 
-        if verbose: 
-            this_gal_z = target_table['z'][target_table['name'] == myIFU.name]
-            if n_IFU > 1: print('-- IFU #' + str(ifu_num))
-
-            print('   Spectral range: ' + 
-                  str(np.around([l_rest[idx1], l_rest[idx2]])))
-            print('   Observed at:    ' + 
-                  str(np.around([l_range[idx1], l_range[idx2]])))
-
-            print('')
+            l_range = myIFU.lambda_range
+            l_rest = l_range/(1+z_target)
+            
+            # identify array elements closest to l1, l2 **in rest frame**
+            idx1 = (np.abs(l_rest - l1)).argmin()
+            idx2 = (np.abs(l_rest - l2)).argmin()
+            
+            if verbose: 
+                print('-------------------------------------------------------')
+                print(' IFU #' + str(ifu_num))
+                print('-------------------------------------------------------')
+                print('   Redshift:       ' + z_string)
+                print('   Spectral range: ' + 
+                      str(np.around([l_rest[idx1], l_rest[idx2]])))
+                
+                print('   Observed at:    ' + 
+                      str(np.around([l_range[idx1], l_range[idx2]])))
+                print('')
         
         # -------------------------
         # (4) Get SNR of all cores
         # -------------------------
         sn_spec = myIFU.data/np.sqrt(myIFU.var)
         
-        # Sum up the data
-        #sum = np.nansum(myIFU.data[:, idx1:idx2], axis=1)
-        #med = stats.nanmedian(myIFU.data[:, idx1:idx2], axis=1)
-        
         # Median SN over lambda range (per Angstrom)
         sn = stats.nanmedian(sn_spec[:, idx1:idx2], axis=1) * (1./myIFU.cdelt1)
-
+        
         # ----------------------------------
         # (5) Find galaxy centre (peak SNR)
         # ----------------------------------
@@ -278,26 +317,34 @@ def sn_re(insami, tablein, l1, l2, plot=False, ifus='all',
         centroid_dec = 0.
         
         # Get target Re from table (i.e., match entry by name)
-        re_target = target_table['Re'][target_table['CATID'] == int(myIFU.name)]
-        # if Re is not listed (i.e., Re = -99.99), then quote centroid SNR. 
-        if re_target == -99.99: 
-            print("*** No Re listed, calculating at centroid instead.")
+        if no_such_galaxy:
+            print("   No Re listed, calculating SNR at centroid instead.")
+            re_target = 0.
 
+        else:
+            re_target = target_table['Re'][this_galaxy]
+            
         # Get either centroid, or table RA, DEC
         if seek_centroid: 
-            centroid = np.where(sn == np.nanmax(sn))
-            centroid_ra  = myIFU.xpos[centroid]
-            centroid_dec = myIFU.ypos[centroid]
+            if no_such_galaxy:
+                centroid = np.where(myIFU.n ==1)
+            else:
+                centroid = np.where(sn == np.nanmax(sn))
+                centroid_ra  = myIFU.xpos[centroid]
+                centroid_dec = myIFU.ypos[centroid]
 
         if not seek_centroid: 
-            centroid_ra = target_table['ra'][target_table['CATID'] == int(myIFU.name)]
-            centroid_dec=target_table['dec'][target_table['CATID'] == int(myIFU.name)]
-
-            test_distance = 3600.* np.sqrt(
-                (myIFU.xpos - centroid_ra)**2 +
-                (myIFU.ypos - centroid_dec)**2 )
-            centroid = np.abs(test_distance - 0).argmin()
-
+            if no_such_galaxy:
+                centroid = np.where(myIFU.n ==1)
+            else:
+                centroid_ra = target_table['ra'][this_galaxy]
+                centroid_dec = target_table['dec'][this_galaxy]
+                
+                test_distance = 3600.* np.sqrt(
+                    (myIFU.xpos - centroid_ra)**2 +
+                    (myIFU.ypos - centroid_dec)**2 )
+                centroid = np.abs(test_distance - 0).argmin()
+                
         if verbose: 
             print '   S/N @Centroid =', np.round(sn[centroid]), '[/Angstrom]'
             print ''
@@ -306,23 +353,38 @@ def sn_re(insami, tablein, l1, l2, plot=False, ifus='all',
         # (6) Identify cores at approximately Re
         # ---------------------------------------- 
 
-        core_distance = 3600.* np.sqrt(
-            (myIFU.xpos - centroid_ra)**2 +
-            (myIFU.ypos - centroid_dec)**2 )
+        # Check that there is an Re listed, some times there isn't. 
+        if no_such_galaxy:
+            sn_Re = 0.
+        else:
+            core_distance = 3600.* np.sqrt(
+                (myIFU.xpos - centroid_ra)**2 +
+                (myIFU.ypos - centroid_dec)**2 )
+            
+            good_core[(core_distance > re_target - 0.5*r_core) 
+                      & (core_distance < re_target + 0.5*r_core)] = True
+            
+            # Get median S/N of cores @Re: 
+            if 1 in good_core:
+                sn_Re = stats.nanmedian(sn[good_core == True])        
+                sn_min = min(sn[good_core == True])
+                sn_max = max(sn[good_core == True])
+                
+            if verbose: 
+                if not 1 in good_core:
+                    sn_str = str(np.round(stats.nanmedian(sn)))
+                    print("** Could not match Re")
+                    print('=> Median overall S/N = '+sn_str)
+                    print('')
 
-        good_core[(core_distance > re_target - 0.5*r_core) 
-                  & (core_distance < re_target + 0.5*r_core)] = True
+                else:
+                    print '=> [Min, Max, Median] S/N @Re = [',
+                    print '%0.2f' % min(sn[good_core == True]), ',',
+                    print '%0.2f' % max(sn[good_core == True]), ',',
+                    print '%0.2f' % sn_Re, '] [/Angstrom]'
+                    print('')
         
-        # Get median S/N of cores @Re: 
-        sn_Re = stats.nanmedian(sn[good_core == True])        
 
-        if verbose == True: 
-            print '=> Min, Max, Median S/N @Re = ',
-            print '%0.2f' % min(sn[good_core == True]), ',',
-            print '%0.2f' % max(sn[good_core == True]), ',',
-            print '%0.2f' % sn_Re, '[/Angstrom]'
-            print('')
-        
         # ----------
         # DRAW PLOT 
         # ----------
@@ -356,11 +418,7 @@ def sn_re(insami, tablein, l1, l2, plot=False, ifus='all',
                 
                 core_x.append(nx)
                 core_y.append(ny)
-                
-            if verbose: 
-                print("Displaying IFU #" + str(ifu_num))
-                print('')
-            
+                            
             # Make empty image.
             frame = np.empty((size_im,size_im)) + np.nan
             ax = fig.add_subplot(im_n_row, im_n_col, counter)
@@ -374,11 +432,6 @@ def sn_re(insami, tablein, l1, l2, plot=False, ifus='all',
             a = 0 #reset index
             for a in range(n_core):
 
-                # Find indices of points in appropriate Bresenham circles
-                # Note 5 is chosen as the radius as 1 pixel=1/10th spaxel
-
-                # *** NEED to replace this with circle patches. 
-
                 # Make a Circle patch for each fibre in the bundle: 
                 art_core = Circle(xy = (core_x[a], core_y[a]), 
                                   radius=4.8, color=str(sn_norm[a]))
@@ -390,19 +443,8 @@ def sn_re(insami, tablein, l1, l2, plot=False, ifus='all',
                                   radius=4.8, alpha=0.7)
                     ax.add_artist(art_good)
 
-                frame[core_x[a], core_y[a]] = sn[a]   #sum[a]
+                frame[core_x[a], core_y[a]] = sn[a]
                 
-                """
-                circle_x, \
-                circle_y=SAMI_utils_V.bresenham_circle(core_x[a],core_y[a],5)
-
-                frame[circle_x, circle_y] = sn[a]   #sum[a]
-                
-                # mark cores intersected by Re
-                if good_core[a]: 
-                    ax.plot(core_x[a], core_y[a], 'bo', ms=20, lw=3, mfc=None)
-                """
-                    
             ax = fig.add_subplot(im_n_row, im_n_col, counter)
             im = ax.imshow(np.transpose(frame), origin='lower', 
                            interpolation='nearest', cmap='gray')
@@ -420,8 +462,281 @@ def sn_re(insami, tablein, l1, l2, plot=False, ifus='all',
         py.suptitle(insami+', S/N map')
 
     if verbose: 
-        print ''
-        print '-----------------------------------'
+        print('-------------------------------------------------------')
 
-    #return SN_all
-    return('Median S/N @Re = '+str(np.round(sn_Re, decimals=1)))
+ 
+def read_targ_tab(tablein):
+    """ Read a SAMI target table. """
+    tabname = ['name', 'ra', 'dec', 'r_petro', 'r_auto', 'z_tonry', 'zspec', 
+               'M_r', 'Re', '<mu_Re>', 'mu(Re)', 'mu(2Re)', 'ellip', 'PA', 'M*',
+               'g-i', 'A_g', 'CATID', 'SURV_SAMI', 'PRI_SAMI', 'BAD_CLASS']
+    target_table = tab.read(tablein, names=tabname, data_start=0)
+    return target_table
+
+
+def sb(rssin, tablein, starin, ifus='all', 
+       starIDcol=0, starMAGcol=[5,6], area='fibre'):
+    """ Make surface brightness maps of all IFUs in rssin, indicate SNR. """
+
+    from scipy.interpolate import griddata
+
+    """ 
+    Use the secondary star to deduce zeropoint. 
+    Then translate flux to surface brightness. 
+
+    This should make use of the Gauss-fit code to fit the SBP of the star. 
+    For now I am just keeping the thing simple. 
+
+    1) Identify secondary star. Should be only target not on 'tablein'. 
+    2) Measure flux (for now of the whole probe). 
+    3) Look up brightness of star on star table. 
+    4) Deduce zeropoint. 
+    5) Map SB of targets in all other probes. 
+
+    The 'area' input corresponds to the area over which the surface brightness
+    is inter/extrapolated. The default is to measure per SAMI fibre, but it is
+    possible to provide any area (e.g., per sq/ arcsec). 
+    """
+    
+    # ---------------------------
+    # (1) Identify secondary star 
+    # ---------------------------
+
+    # First of all, read the colour of the spectrum in the primary header. 
+    myHDU = pf.open(rssin)
+    colour = myHDU[0].header['SPECTID']
+    myHDU.close()
+
+    # Interpret input
+    if ifus == 'all':
+        IFUlist = [1,2,3,4,5,6,7,8,9,10,11,12,13]
+    else:
+        IFUlist = ifu_num = [int(ifus)]
+
+    n_IFU = len(IFUlist)
+
+    # Read star table
+    star_table = tab.read(starin, header_start=0, data_start=1)
+    RowID = star_table['RowID'].tolist()
+    
+    # Read SDSS throughputs
+    sdss_col = ['wave', 'pt_secz=1.3', 'ext_secz=1.3', 
+                'ext_secz=0.0', 'extinction']
+    sdss_g = tab.read('SDSS_g.dat', quotechar="#", names=sdss_col)
+    sdss_r = tab.read('SDSS_r.dat', quotechar="#", names=sdss_col)
+
+    # Cycle through probes, identify star through CATID//RowID. 
+    found_star = False
+    for ifu_num in IFUlist: 
+        
+        # Read single IFU
+        myIFU = utils.IFU(rssin, ifu_num, flag_name=False)
+        nfib = np.shape(myIFU.data)[0]
+        
+        if int(myIFU.name) in RowID:
+            found_star = True
+            star = ifu_num
+            print("Star found in Probe #"+str(star))
+
+            # ----------------
+            # (2) Measure flux
+            # ----------------
+            """
+            This needs to take into account the flux in limited spectral and 
+            spatial ranges. The spectral is taken care of (convolving with 
+            SDSS filter throughput), but the spatial is not. Should use the 
+            Gauss fit function and integrate, currently summing up all fibres.
+            """
+            wave = myIFU.lambda_range
+            if colour == 'RD':
+                thru_regrid = griddata(sdss_r['wave'], sdss_r['ext_secz=1.3'], 
+                                       wave, method='cubic', fill_value=0.0)
+            else:
+                thru_regrid = griddata(sdss_g['wave'], sdss_g['ext_secz=1.3'], 
+                                       wave, method='cubic', fill_value=0.0)
+
+            # Convolve flux and sum in a per-core basis.
+            conv_fib = np.zeros(len(myIFU.data))
+            for fib in range(nfib):
+                conv_fib[fib] = np.nansum(myIFU.data[fib]*thru_regrid)
+                
+            """ 
+            Blue spectrum overlaps well with g' band, but r' does not, need 
+            extrapolate a flux according to the fixed F-type star spec-slope. 
+            The slope is straight, so a triangle approximation is alright. My 
+            model is this F-star:
+            
+              http://www.sdss.org/dr5/algorithms/spectemplates/spDR2-007.gif
+            
+            which I approximate to a right-angle triangle. The opposing and 
+            adjacent sides of the full (entire r' band) and curtailed (SAMI)
+            triangles are [50, 1800] and [30, 1000], in units of [flux, Ang].  
+
+            The relative areas are therefore differ by a factor of three and 
+            the extrapolated flux contained in the area of overlap between 
+            the SDSS r' and the SAMI red spectrum is 3. 
+            """ 
+            if colour == 'RD':
+                flux = 3* np.nansum(conv_fib)
+            else: 
+                flux = np.nansum(conv_fib)
+
+            print("S(Flux) = "+str(np.round(flux))+" cts")
+
+            """ 
+            Finally, need to check if the user is looking for a flux inter/
+            extrapolated to an area different to that of the SAMI fibre. 
+            pi * (0.8")**2 ~= 2.01 sq. asec.
+            """ 
+            if area != 'fibre':
+                flux = flux * (np.pi*0.8**2)/area
+
+            # -------------------------
+            # (3) Get listed brightness
+            # -------------------------
+
+            # Get g (blue) or r (red) mag from stars catalogue.
+
+            # ID is column zero, unless otherwise set by starIDcol, 
+            # and g, r are 5, 6, unless set otherwise in starMAGcol.
+            this_star = RowID.index(int(myIFU.name))
+
+            if colour == 'RD':
+                mag = star_table['r'][this_star]
+            else:
+                mag = star_table['g'][this_star]
+            print("[ID, brightness] = ", RowID[this_star], mag)
+            
+    # --------------------
+    # (4) Deduce zeropoint
+    # --------------------
+    # Red zeropoint tricky, as not entire r' is covered. Secondary stars are 
+    # F-class, so can assume a spectral slope. Going with flat, roughly OK. 
+
+    if colour == 'RD':
+        # SAMI spectra roughly run from 6250 to 7450 A. 
+        # The SDSS r' band throughput between 5400 and 7230 A. 
+    
+        zmag = mag + 2.5 * np.log10(flux)
+        print("Calculated zeropoint as "+str(np.round(zmag,decimals=2))+" mag.")
+            
+    # -------------------------
+    # (5) Map SB of all targets
+    # -------------------------
+
+    # Set up plot
+    fig = plt.gcf()
+    fig.clf()
+
+    # Cycle through all IFUs. 
+    for ifu_num in IFUlist: 
+        
+        if ifu_num != star: 
+            myIFU = utils.IFU(rssin, ifu_num, flag_name=False)
+            s_flux = np.zeros(nfib)
+
+            # and some plotty things
+            fibtab = myIFU.fibtab
+            offset_ra  = np.zeros(nfib, dtype='double')
+            offset_dec = np.zeros(nfib, dtype='double')
+
+            # And loop through all fibres to get summed flux
+            for fibnum in range(nfib):
+                s_flux[fibnum] = np.nansum(myIFU.data[fibnum][:])
+
+                # do some fibre positions while you're looping
+
+                """
+                Adapting the plotting method from the BDF creation code. 
+                Not sure if this is the best. Check Lisa's display code. 
+                Should do it that way. 
+                """
+                
+                # Get RAs and DECs of all fibres. 
+                ra1    = np.radians(myIFU.xpos[np.where(myIFU.n == 1)])
+                dec1   = np.radians(myIFU.ypos[np.where(myIFU.n == 1)])
+                ra_fib  = np.radians(myIFU.xpos[fibnum])
+                dec_fib = np.radians(myIFU.ypos[fibnum])
+                
+                # Angular distance
+                cosA = np.cos(np.pi/2-dec1) * np.cos(np.pi/2-dec_fib) + \
+                       np.sin(np.pi/2-dec1) * np.sin(np.pi/2-dec_fib) * \
+                       np.cos(ra1-ra_fib) 
+
+                # DEC offset
+                cos_dRA  = np.cos(np.pi/2-dec1) * np.cos(np.pi/2-dec1) + \
+                           np.sin(np.pi/2-dec1) * np.sin(np.pi/2-dec1) * \
+                           np.cos(ra1-ra_fib) 
+
+                # RA offset
+                cos_dDEC = np.cos(np.pi/2-dec1) * np.cos(np.pi/2-dec_fib) + \
+                           np.sin(np.pi/2-dec1) * np.sin(np.pi/2-dec_fib) * \
+                           np.cos(ra1-ra1) 
+
+                # Sign check; trig collapses everything to a single quadrant
+                if (ra_fib >= ra1) and (dec_fib >= dec1):  # 1. quadrant (+, +)
+                    offset_ra[fibnum]  = np.degrees(np.arccos(cos_dRA[0]))
+                    offset_dec[fibnum] = np.degrees(np.arccos(cos_dDEC[0]))
+
+                if (ra_fib <= ra1) and (dec_fib >= dec1):  # 2. quadrant (-, +)
+                    offset_ra[fibnum] = \
+                                np.negative(np.degrees(np.arccos(cos_dRA[0])))
+                    offset_dec[fibnum] = np.degrees(np.arccos(cos_dDEC[0]))
+
+                if (ra_fib <= ra1) and (dec_fib <= dec1):  # 3. quadrant (-, -)
+                    offset_ra[fibnum] = \
+                                np.negative(np.degrees(np.arccos(cos_dRA[0])))
+                    offset_dec[fibnum] = \
+                                np.negative(np.degrees(np.arccos(cos_dDEC[0])))
+
+                if (ra_fib >= ra1) and (dec_fib <= dec1):  # 4. quadrant (+, -)
+                    offset_ra[fibnum]  = np.degrees(np.arccos(cos_dRA[0]))
+                    offset_dec[fibnum] = \
+                                np.negative(np.degrees(np.arccos(cos_dDEC[0])))
+
+            # Write a dictionary of relative RA, DEC lists
+            datatab = {'RA': offset_ra, 
+                    'DEC': offset_dec} # proper, spherical trig, sky-projected
+
+            # And finally get that surface brightness
+            sb = zmag - 2.5 * np.log10(s_flux)
+            
+            # -------------------------
+            # PLOT
+            # -------------------------
+
+            ax = fig.add_subplot(4,4,ifu_num)
+            ax.set_aspect('equal')
+            ax.set_xlim(-0.0022, 0.0022)
+            ax.set_ylim(-0.0022, 0.0022)
+            ax.set_xticks([])
+            ax.set_yticks([])
+            ax.set_xticklabels([])
+            ax.set_yticklabels([])
+            plt.title("Probe #"+str(ifu_num))
+
+            # Normalise sb array for plot colouring
+            norm = sb-min(sb)
+            sb_norm = norm/max(norm)
+
+            # Make a colorbar that maintains scale
+            mappable = plt.cm.ScalarMappable(cmap='gray')
+            mappable.set_array(sb)
+            plt.colorbar(mappable)
+
+            for i in range(nfib):
+                this_col = str(sb_norm[i])
+                circ = Circle((datatab['RA'][i], 
+                               datatab['DEC'][i]), 0.8/3600.,
+                              edgecolor='none', facecolor=this_col)
+                ax.add_patch(circ)
+            plt.show()
+
+
+
+    # Report if no star was identified in the supplied RSS file or probe. 
+    if not found_star:
+        if ifus=='all':
+            print("Did not find a secondary star in RSS file '"+rssin+"'")
+        else:
+            print("Did not find a secondary star in Probe #"+str(ifus)+".")
