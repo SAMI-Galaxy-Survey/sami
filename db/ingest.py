@@ -111,8 +111,11 @@ def import_cube(blue_cube, red_cube, h5file,
     be available for monochrome importing. 
 
     [TODO] Set the default 'dataroot' to a header ticket stored by the DR 
-    manager code. 
-    
+    manager code. This ticket is not yet there. 
+
+    [TODO] Change versioning to be defined by header tickets in the cubes being 
+    imported. This ticket is not yet there. 
+
     The main data archive will not include basic calibrations. These will live 
     in their own filesystem, the data-flow endpoint, as organised by the DRWG. 
     There is a "Calibrators" folder in the archive where we can store secondary
@@ -158,10 +161,6 @@ def import_cube(blue_cube, red_cube, h5file,
     # If the "SAMI" group exists, let's make some data blocks
         
     # Read the header, find out the target name. 
-    """ 
-    NOTE: There is a bit of a redundancy here. Shouldn't open and close a unit
-          I will be opening and closing again further down. Keep open? 
-    """
     hduBLUE = pf.open(blue_cube)
     hduRED  = pf.open(red_cube)
     
@@ -210,7 +209,7 @@ def import_cube(blue_cube, red_cube, h5file,
     NOTE: Need to check if OW or 2x =True but there are no data. The problem 
     here is that once the target group in question has been created, the code
     will always be tricked into thinking that this is the case -- the newly 
-    created target gropu will be empty... This is tough to work around, as the
+    created target group will be empty... This is tough to work around, as the
     group has to be defined within specific loops. Original code follows. 
 
     I can ignore the duplicate bit: the code will make a new version, but NOT 
@@ -363,7 +362,7 @@ def import_cube(blue_cube, red_cube, h5file,
                     sami.utils that makes all extensions and headers 
                     available in their entirety. 
                     """
-                        
+                    
                     # RSS: variance: data
                     rss_var = targ_group.require_dataset(colour[i]+
                                                 "_RSS_variance_"+rss_index, 
