@@ -215,11 +215,14 @@ def dithered_cubes_from_rss_files(inlist, sample_size=0.5, drop_factor=0.5, obje
                 hdr_new.update(rss_key, os.path.basename(files[num]), rss_string)
             
             # Create HDUs for each cube - note headers generated automatically for now.
-            # Note - there is a 90-degree rotation in the cube, which I can't track down. I'm rolling the axes before
-            # writing the FITS files to compensate.
-            hdu1=pf.PrimaryHDU(np.transpose(flux_cube, (2,0,1)), hdr_new)
-            hdu2=pf.ImageHDU(np.transpose(var_cube, (2,0,1)), name='VARIANCE')
-            hdu3=pf.ImageHDU(np.transpose(weight_cube, (2,0,1)), name='WEIGHT')
+           #
+            # @NOTE: PyFITS writes axes to FITS files in the reverse of the sense
+            # of the axes in Numpy/Python. So a numpy array with dimensions
+            # (5,10,20) will produce a FITS cube with x-dimension 20,
+            # y-dimension 10, and the cube (wavelength) dimension 5.  --AGreen
+            hdu1=pf.PrimaryHDU(np.transpose(flux_cube, (2,1,0)), hdr_new)
+            hdu2=pf.ImageHDU(np.transpose(var_cube, (2,1,0)), name='VARIANCE')
+            hdu3=pf.ImageHDU(np.transpose(weight_cube, (2,1,0)), name='WEIGHT')
 
             # Create HDUs for meta-data
             metadata_table = create_metadata_table(ifu_list)
@@ -733,8 +736,14 @@ class SAMIDrizzler:
         yfib=(fibrey-self.y[0])/self.dx
         
         # Create the overlap map from the circ.py code
-        overlap_map=utils.circ.resample_circle(self.size_of_grid, self.size_of_grid, xfib, yfib, \
-                                         self.oversample/2.0)
+        #
+        # @NOTE: The circ.py code returns an array which has the x-coodinate in
+        # the second index and the y-coordinate in the first index. Therefore,
+        # we transpose the result here so that the x-cooridnate (north positive)
+        # is in the first index, and y-coordinate (east positive) is in the
+        # second index.
+        overlap_map=np.transpose(utils.circ.resample_circle(self.size_of_grid, self.size_of_grid, xfib, yfib, \
+                                         self.oversample/2.0))
         
         input_frac_map=overlap_map/self.fib_area_pix # Fraction of input fibre/drop in each output pixel
         output_frac_map=overlap_map/1.0 # divided by area of ind. sq. (output) pixel.
