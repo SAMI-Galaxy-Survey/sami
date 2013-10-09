@@ -290,12 +290,14 @@ def import_cube(blue_cube, red_cube, h5file,
                 raise SystemExit("No RSS files found inside the "+ 
                                  "specified root directory. Please check "+
                                  "your 'dataroot' input variable")
-            if n_rss < 7:
-                print("")
-                print("WARNING: located only "+str(n_rss)+" RSS files for "+
-                      "target "+sami_name+".")
-                print("")
-                
+            else:
+            #if n_rss < 7:
+                if verbose: 
+                    print("")
+                    print("Located "+str(n_rss)+" RSS files for "+
+                          "target "+sami_name+".")
+                    print("")
+                    
         """
         Comment on data types: integers are 'i2', 'i4', float are 'f', 
         strings are 'S10' etc. 
