@@ -155,13 +155,9 @@ def dithered_cubes_from_rss_files(inlist, sample_size=0.5, drop_factor=0.5, obje
 
 
         # Call dithered_cube_from_rss to create the flux, variance and weight cubes for the object.
-        #flux_cube, var_cube, weight_cube, diagnostics = dithered_cube_from_rss(ifu_list, sample_size=sample_size,
-        #                                  drop_factor=drop_factor, clip=clip, plot=plot)
-        
-        flux_cube = np.zeros((10,11,12))
-        var_cube = np.zeros((10,11,12))
-        weight_cube = np.zeros((10,11,12))
-        
+        flux_cube, var_cube, weight_cube, diagnostics = dithered_cube_from_rss(ifu_list, sample_size=sample_size,
+                                          drop_factor=drop_factor, clip=clip, plot=plot)
+                
         # Write out FITS files.
         if write==True:
 
@@ -504,20 +500,23 @@ def dithered_cube_from_rss(ifu_list, sample_size=0.5, drop_factor=0.5, clip=True
         utils.saturated_partial_pressure_water(dar_corrector.air_pres, dar_corrector.temperature) * \
         ifu_list[0].fibre_table_header['ATMRHUM']
     
-    # TODO: This is the field ZD, not the target HA. Also, the mean is probably
-    # not the right computation to determine the best ZD for the correction.
+    # TODO: This is the field ZD, not the target ZD. Also, the mean is probably
+    # not the best indicator of the time averaged ZD.
     dar_corrector.zenith_distance = \
         (ifu_list[0].primary_header['ZDSTART'] + ifu_list[0].primary_header['ZDEND']) / 2
- 
+
     # TODO: This is the field HA, not the target HA.
     dar_corrector.hour_angle = \
         (ifu_list[0].primary_header['HASTART'] + ifu_list[0].primary_header['HAEND']) / 2
     
+    # @TODO: Note, the "meandec" used below is not the mean dec of the bundle,
+    # but the field (needs to be fixed in ifu.py)
     parallactic_angle = compute_parallactic_angle(dar_corrector.hour_angle, 
-                                          dar_corrector.zenith_distance, 
+                                          ifu_list[0].meandec, 
                                           latitude.degrees)
     
     dar_corrector.print_setup()
+    print("Parallactic Angle: {}".format(parallactic_angle))
     
     # Load the wavelength solution for the datacubes. 
     #
@@ -563,8 +562,11 @@ def dithered_cube_from_rss(ifu_list, sample_size=0.5, drop_factor=0.5, clip=True
         # Determine differential atmospheric refraction correction for this slice
         dar_r = dar_corrector.correction(wavelength_array[l]) * 1000.0 / plate_scale 
         # TODO: Need to change to arcsecs!
-        dar_x = dar_r * np.cos(np.radians(parallactic_angle))
-        dar_y = dar_r * np.sin(np.radians(parallactic_angle))
+        
+        # Parallactic angle is direction to zenith measured north through east.
+        # Must move light away from the zenith to correct for DAR.
+        dar_x = dar_r * np.sin(np.radians(parallactic_angle))
+        dar_y = -dar_r * np.cos(np.radians(parallactic_angle))
 
         print( "DAR lambda: {:5.0f} r: {:5.2f}, x: {:5.2f}, y: {:5.2f}".format(wavelength_array[l],
                                                                        dar_r * plate_scale/1000.0, 
