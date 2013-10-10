@@ -167,7 +167,7 @@ def dar_correction_test(verbose=False):
     lambda_step = 100
 
     # First, we create a set of n_obs mock observations. 
-    ifu_list = [utils.IFU(test_data_dir + "12apr10036red.fits", 3, flag_name=False)]
+    ifu_list = [utils.IFU(test_data_dir + "12apr10040red.fits", 3, flag_name=False)]
  
     ifu_list[0].data = ifu_list[0].data[:,100:2000:lambda_step]
     ifu_list[0].var = ifu_list[0].var[:,100:2000:lambda_step]
@@ -196,10 +196,12 @@ def dar_correction_test(verbose=False):
                                          (np.ravel(yvals))[mask],
                                          (np.ravel(data_cube[:,:,i_slice]))[mask]
                                          )
-        gf.fit()
-        
-        print("Residual Offset: ({0:.2}, {1:.2}), norm: {2:.2}".format(gf.p[1],gf.p[2],np.linalg.norm(gf.p[1:3]) ) )
-            
+        try:
+            gf.fit()
+            print("Residual Offset: ({0:.2}, {1:.2}), norm: {2:.2}".format(gf.p[1],gf.p[2],np.linalg.norm(gf.p[1:3]) ) )
+        except:
+            print("Fit failed for slice {}".format(i_slice))
+
             
             
             

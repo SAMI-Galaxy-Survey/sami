@@ -155,13 +155,9 @@ def dithered_cubes_from_rss_files(inlist, sample_size=0.5, drop_factor=0.5, obje
 
 
         # Call dithered_cube_from_rss to create the flux, variance and weight cubes for the object.
-        #flux_cube, var_cube, weight_cube, diagnostics = dithered_cube_from_rss(ifu_list, sample_size=sample_size,
-        #                                  drop_factor=drop_factor, clip=clip, plot=plot)
-        
-        flux_cube = np.zeros((10,11,12))
-        var_cube = np.zeros((10,11,12))
-        weight_cube = np.zeros((10,11,12))
-        
+        flux_cube, var_cube, weight_cube, diagnostics = dithered_cube_from_rss(ifu_list, sample_size=sample_size,
+                                          drop_factor=drop_factor, clip=clip, plot=plot)
+                
         # Write out FITS files.
         if write==True:
 
@@ -215,7 +211,7 @@ def dithered_cubes_from_rss_files(inlist, sample_size=0.5, drop_factor=0.5, obje
                 hdr_new.update(rss_key, os.path.basename(files[num]), rss_string)
             
             # Create HDUs for each cube - note headers generated automatically for now.
-            #
+           #
             # @NOTE: PyFITS writes axes to FITS files in the reverse of the sense
             # of the axes in Numpy/Python. So a numpy array with dimensions
             # (5,10,20) will produce a FITS cube with x-dimension 20,
@@ -482,9 +478,9 @@ def dithered_cube_from_rss(ifu_list, sample_size=0.5, drop_factor=0.5, clip=True
         
 
     # Now create a new array to hold the final data cube and build it slice by slice
-    flux_cube   = np.zeros( (size_of_grid, size_of_grid, n_obs * n_fibres) )
-    var_cube    = np.zeros( (size_of_grid, size_of_grid, n_obs * n_fibres) )
-    weight_cube = np.empty( (size_of_grid, size_of_grid, n_obs * n_fibres) )
+    flux_cube=np.zeros((size_of_grid, size_of_grid, np.shape(data_all)[1]))
+    var_cube=np.zeros((size_of_grid, size_of_grid, np.shape(data_all)[1]))
+    weight_cube=np.empty((size_of_grid, size_of_grid, np.shape(data_all)[1]))
     
     print("data_all.shape: ", np.shape(data_all))
 
@@ -506,19 +502,22 @@ def dithered_cube_from_rss(ifu_list, sample_size=0.5, drop_factor=0.5, clip=True
         ifu_list[0].fibre_table_header['ATMRHUM']
     
     # TODO: This is the field ZD, not the target ZD. Also, the mean is probably
-    # not the right computation to determine the best ZD for the correction.
+    # not the best indicator of the time averaged ZD.
     dar_corrector.zenith_distance = \
         (ifu_list[0].primary_header['ZDSTART'] + ifu_list[0].primary_header['ZDEND']) / 2
- 
+
     # TODO: This is the field HA, not the target HA.
     dar_corrector.hour_angle = \
         (ifu_list[0].primary_header['HASTART'] + ifu_list[0].primary_header['HAEND']) / 2
     
+    # @TODO: Note, the "meandec" used below is not the mean dec of the bundle,
+    # but the field (needs to be fixed in ifu.py)
     parallactic_angle = compute_parallactic_angle(dar_corrector.hour_angle, 
-                                          dar_corrector.zenith_distance, 
+                                          ifu_list[0].meandec, 
                                           latitude.degrees)
     
     dar_corrector.print_setup()
+    print("Parallactic Angle: {}".format(parallactic_angle))
     
     # Load the wavelength solution for the datacubes. 
     #
@@ -563,9 +562,12 @@ def dithered_cube_from_rss(ifu_list, sample_size=0.5, drop_factor=0.5, clip=True
 
         # Determine differential atmospheric refraction correction for this slice
         dar_r = dar_corrector.correction(wavelength_array[l]) * 1000.0 / plate_scale 
-        # @NOTE: Could change to arcsecs instead of microns.
-        dar_x = dar_r * np.cos(np.radians(parallactic_angle))
-        dar_y = dar_r * np.sin(np.radians(parallactic_angle))
+        # TODO: Need to change to arcsecs!
+        
+        # Parallactic angle is direction to zenith measured north through east.
+        # Must move light away from the zenith to correct for DAR.
+        dar_x = dar_r * np.sin(np.radians(parallactic_angle))
+        dar_y = -dar_r * np.cos(np.radians(parallactic_angle))
 
         print( "DAR lambda: {:5.0f} r: {:5.2f}, x: {:5.2f}, y: {:5.2f}".format(wavelength_array[l],
                                                                        dar_r * plate_scale/1000.0, 
@@ -739,11 +741,11 @@ class SAMIDrizzler:
         # Create the overlap map from the circ.py code
         #
         # @NOTE: The circ.py code returns an array which has the x-coodinate in
-        # the first index and the y-coordinate in the zeroth index. Therefore,
+        # the second index and the y-coordinate in the first index. Therefore,
         # we transpose the result here so that the x-cooridnate (north positive)
-        # is in the zeroth index, and y-coordinate (east positive) is in the
-        # first index.
-        overlap_map = np.transpose(utils.circ.resample_circle(self.size_of_grid, self.size_of_grid, xfib, yfib, \
+        # is in the first index, and y-coordinate (east positive) is in the
+        # second index.
+        overlap_map=np.transpose(utils.circ.resample_circle(self.size_of_grid, self.size_of_grid, xfib, yfib, \
                                          self.oversample/2.0))
         
         input_frac_map=overlap_map/self.fib_area_pix # Fraction of input fibre/drop in each output pixel
@@ -753,6 +755,7 @@ class SAMIDrizzler:
     
     def drizzle(self, xfibre_all, yfibre_all):
         """Compute a mapping from fibre drops to output pixels for all given fibre locations."""
+            
         if (np.array_equal(self._last_drizzle,np.asarray([xfibre_all,yfibre_all]))):
             # We've been asked to recompute the same answer as last time, so don't recompute.
             return self.drop_to_pixel, self.pixel_coverage

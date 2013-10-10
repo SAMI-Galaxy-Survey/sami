@@ -68,26 +68,37 @@ def adr_r(wavelength, zenith_distance, air_pres=700.0, temperature=0.0, water_pr
     tanz = (seczd**2 - 1.0)**0.5
     return 206265.0 * nlam * tanz
 
-def compute_parallactic_angle(hour_angle, zenith_distance, latitude):
+def compute_parallactic_angle(hour_angle, declination, latitude):
     """
     Return parallactic angle in degrees for a given observing condition.
     
     Inputs in degrees. Hour angle is positive if west of the meridian.
     
-    Written by Andy Green, based on Fillipenko (1982) Equation 9.
+    The parallactic angle returned is the direction to the zenith measured north
+    through east.
+    
+    Written by Andy Green, confirmed to give the same results as Fillipenko
+    (1982) Equation 9, but with correct sign/direction for all areas of the sky.
+    Actual formula from:
+    
+    https://github.com/brandon-rhodes/pyephem/issues/24
+    
+    "A treatise on spherical astronomy" By Sir Robert Stawell Ball
+    (p. 91, as viewed on Google Books)
     
     """
-    
-    # Define two convenience functions to simplify the following code.
-    sin_d = lambda x: numpy.sin(numpy.radians(x))
-    arcsin_d = lambda x: numpy.degrees(numpy.arcsin(x))
 
-    return arcsin_d(
-        sin_d(hour_angle) * 
-        sin_d(numpy.pi/2 - latitude) /
-        sin_d(zenith_distance) 
+    sin_dec = numpy.sin(numpy.radians(declination))
+    cos_dec = numpy.cos(numpy.radians(declination))
+    sin_lat = numpy.sin(numpy.radians(latitude))
+    cos_lat = numpy.cos(numpy.radians(latitude))
+    sin_ha =  numpy.sin(numpy.radians(hour_angle))
+    cos_ha =  numpy.cos(numpy.radians(hour_angle))
+
+    return numpy.degrees(
+        -numpy.arctan2( cos_lat * sin_ha, sin_lat * cos_dec - cos_lat * sin_dec * cos_ha)
         )
-
+    
 
 class DARCorrector:
     """
