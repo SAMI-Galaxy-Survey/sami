@@ -29,39 +29,54 @@ import os
 import sys
 import sami
 
+""" 
+For commit message: 
+
+Continuing changes to data-import routines. 
+
+(1) The 'format' code has been merged with the 'create' code, making the 'format' code obsolete. 'format' has been commented out for now. 
+(2) The 'import_cube' function has been moved to 'import_cube_old', rather than immediately deleted. A new importer placeholder function has been created in its place. No changes to the importer yet, those will be implemented in the next step. 
+
+"""
 
 def create(h5file, overwrite=False, verbose=True):
-    """ Create a generic HDF5 file. Will crash if type(h5file) is not str. """
+    """ Create a SAMI-formatted  HDF5 file """
 
-    # Check that 'h5file' has a .h5 extension
+    # Check that the 'h5file' string has a .h5 extension
     if not h5file[-3:] == '.h5': h5file = h5file + '.h5'
 
-    # Initiate a little token used to control screen output
-    screen_output = 0
-    
     # Check if file already exists, overwite if overwrite==True
     if os.path.isfile(h5file):
-        screen_output += 1
+        file_already_exists = True
+        print(file_already_exists)
         if not overwrite:
             raise SystemExit("The nominated h5 file ('"+h5file
                              +"') already exists. Please raise the overwrite "
                              +"flag if you wish to prodceed. Exiting.")
+    else: file_already_exists = False
     
     # Create an h5 file
     if (not os.path.isfile(h5file)) or (overwrite==True):
         f = h5.File(h5file, 'w')
-        f.close()
+
+    # And require a SAMI root directory
+    root = f.require_group("SAMI")
     
+    # Close h5file
+    f.close()
+
     # Screen output
     if verbose:
-        if screen_output > 0: prefix = 'Re-'
+        if file_already_exists: prefix = 'Re-'
         else: prefix = ''
         print(prefix+"Initialised file '"+h5file+"'.")
     
 
+""" HIERARCHY HAS CHANGED. Now versioning at level 1. Create code rules.
 def format(h5file):
-    """ Set up an h5 file with the SAMI database hierarchy """
-    
+
+    Set up an h5 file with the SAMI database hierarchy
+
     # Ad an extension to the file if it isn't already '.h5'
     if not h5file[-3:] == '.h5': h5file = h5file + '.h5'
     
@@ -78,13 +93,19 @@ def format(h5file):
     calib = root.require_group("Calibrators")
     
     f.close()
+"""
 
 
-def import_cube(blue_cube, red_cube, h5file, 
+def import_cube():
+    """ Import a set of dataubes and parents to the SAMI Archive """ 
+
+def import_cube_old(blue_cube, red_cube, h5file, 
                 duplicate=False, overwrite=False, digest_rss=True, 
                 rss_only=False, dataroot='./', 
                 safe_mode=True, verbose=False):
-    """ Import a SAMI datacube to the HDF5 data archive. 
+    """ Original version, now superseded by immport_cube (in progress). 
+
+    Import a SAMI datacube to the HDF5 data archive. 
  
     blue_cube:   BLUE datacube to be added to the SAMI DB. 
     red_cube:    RED datacube to be added to the SAMI DB. 
