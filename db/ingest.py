@@ -34,12 +34,14 @@ For commit message:
 
 Continuing changes to data-import routines. 
 
-(1) The 'format' code has been merged with the 'create' code, making the 'format' code obsolete. 'format' has been commented out for now. 
-(2) The 'import_cube' function has been moved to 'import_cube_old', rather than immediately deleted. A new importer placeholder function has been created in its place. No changes to the importer yet, those will be implemented in the next step. 
+(1) The 'format' function (commented out in the previous version) has now been removed altogether. 
 
+(2) A blueprint has been set up for the new 'import_cube' function. 
 """
 
+# ~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~
 def create(h5file, overwrite=False, verbose=True):
+# ~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~
     """ Create a SAMI-formatted  HDF5 file """
 
     # Check that the 'h5file' string has a .h5 extension
@@ -72,32 +74,129 @@ def create(h5file, overwrite=False, verbose=True):
         print(prefix+"Initialised file '"+h5file+"'.")
     
 
-""" HIERARCHY HAS CHANGED. Now versioning at level 1. Create code rules.
-def format(h5file):
+# ~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~
+def import_cube(h5file, version, safe_mode=False, verbose=True):
+# ~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~
+    """ Import a set of dataubes and parents to the SAMI Archive 
+    
+    Overhaul of original import code. The main change is the treatment of 
+    versioning, which now comes from the DR pipeline (instead of being 
+    automatically determined within import_cube). 
+    
+    The new rationale gives rise to the following blueprint: 
+    
+    (1) Check if the nominated h5 file (h5file) exists. 
+    
+    (2) Check h5file for the data version to be imported*: 
+      <> Does version already exist on archive? EXIT with error. 
+      <> No? Create version group. 
+    
+    (3) Check observation type by cross-ID on target/star catalogues*: 
+      <> Found on star list? Add to "Calibrator" group (require group). 
+      <> Found on target list? Add to "Target" group (require group). 
+      <> Not found? EXIT with error. 
+    
+    (4) Start data import, deal with digest_rss in same way as before. 
+    
+    (5) Perform any QC tests and cleaning, EXIT successfully. 
+    
+    * Steps (2) and (3) will eventually rely on reading header tickets.
+    
+    [TODO] Every SAMI h5 file should contain the Target and Star catalogues as 
+    tables, so that QC checks can be performed (many other reasons exist). This
+    could be problematic when it comes to cluster fields. Do they all live in 
+    the same archive? What is stopping us? Different Target tables... 
 
-    Set up an h5 file with the SAMI database hierarchy
+    [TODO] While two cubes should always be delivered, the functionality should 
+    be available for monochrome importing. 
+    
+    [TODO] Set the default 'dataroot' to a header ticket stored by the DR 
+    manager code. This ticket is not yet there. 
+    
+    [TODO] Change versioning to be defined by header tickets in the cubes being 
+    imported. This ticket is not yet there. 
 
-    # Ad an extension to the file if it isn't already '.h5'
-    if not h5file[-3:] == '.h5': h5file = h5file + '.h5'
+    [TODO] In export code, give the user the option to package the PSF star that
+    corresponds to any Target cube being downloaded. 
+     
+    Arguments: 
     
-    # Open the input file for reading and writing
-    f = h5.File(h5file, 'r+')
+    h5file      [str]  The name of the SAMI archive file onto which to save. 
+    version     [str]  Version number (eventually a header item). 
+    safe_mode   [boo]  Automatically creates a time-stamped backup archive. 
+    verbose     [boo]  Toggles diagnostic and declarative verbosity. 
+    """ 
     
-    # Check if a SAMI root directory exists; create if not (require, not create)
-    root = f.require_group("SAMI")
+    # Check if the nominated h5 file exists; prompt for creation if not, exit. 
+    if not os.path.isfile(h5file):
+        raise SystemExit("Cannot find the nominated HDF5 file ('"+h5file+"'). "+
+                         "Please create a file using the 'create' function")
+        
+    # If file does exist, open (copy in safe_mode) and allow write privileges. 
+    if safe_mode:
+        import datetime
+        import shutil
+        if verbose: print("Safe Mode: beginning file copy.")
+        date = datetime.datetime.now()
+        datestamp = str(date.year).zfill(2)+str(date.month).zfill(2)+\
+                    str(date.day).zfill(2)+'_'+\
+                    str(date.hour).zfill(2)+str(date.minute).zfill(2)+\
+                    str(date.second).zfill(2)
+        bkp_file = h5file[:-3]+"_"+datestamp+".h5"
+        shutil.copyfile(h5file,bkp_file)
+        if verbose: print("Safe Mode: file successfully copied to '"+
+                          bkp_file+"'.")
+
+    hdf = h5.File(h5file, 'r+')
+
+    # Check that the SAMI filesystem has been set up in this file. 
+    if "SAMI" not in hdf.keys():
+        hdf.close()
+        raise SystemExit("The nominated HDF5 file ('"+h5file+"') "+
+                         "is not properly formatted. Please initialise the "+
+                         "filesystem using 'SAMI_DB.format'")
+
+    if version in hdf['SAMI'].keys(): 
+        hdf.close()
+        raise SystemExit("The nominated HDF5 file ('"+h5file+"') "+
+                         "already contains an entry for data version "+
+                         version+". Please check input argument. ")
     
-    # ...create the observations directory (science targets only)
-    targ = root.require_group("Targets")
+    else: 
+        # First check the format of the version, If string, interpret. 
+        if type(version) is str:  v_numeric = float(version)
+        if type(version) is float: v_numeric = version
+
+        # Require a group, leave file open
+        v_group = hdf.require_group("SAMI/"+version)
+
+    """ 
+    NOTE: Will data releases always represent a re-reduction of all data? Or 
+    might a release consist of some galaxies updated to the current version? 
+    If the latter, then shouldn't exit before checking that nominated cubes of
+    the given version already exist--that is, don't exit just because a version
+    group exists... 
+
+    Will there always be DR updates? What if the DR reaches a plateau and data 
+    need no further tweaking? In this case we'll only be adding more galaxies, 
+    not more versions. Should this code then up-link those blocks? 
+    """
     
-    # ...create the calibrations directory (stars etc.)
-    calib = root.require_group("Calibrators")
-    
-    f.close()
-"""
+    # Version group in place, let's import some data! 
+    """ 
+    In the current version there is a built-in QC check to assign an observation
+    type to the cube being imported. May change to reading a DR header ticket. 
+    """
 
 
-def import_cube():
-    """ Import a set of dataubes and parents to the SAMI Archive """ 
+    # Close h5file, exit successfully
+    hdf.close()
+
+    if verbose: 
+        print
+        print("Exiting successfully")
+    
+
 
 def import_cube_old(blue_cube, red_cube, h5file, 
                 duplicate=False, overwrite=False, digest_rss=True, 
@@ -128,15 +227,6 @@ def import_cube_old(blue_cube, red_cube, h5file,
     will be imported (in bulk) later using tailored codes. There is no need to 
     store SDSS cutouts, as those can be generated on-the-fly. 
     
-    [TODO] While two cubes should always be delivered, the functionality should 
-    be available for monochrome importing. 
-
-    [TODO] Set the default 'dataroot' to a header ticket stored by the DR 
-    manager code. This ticket is not yet there. 
-
-    [TODO] Change versioning to be defined by header tickets in the cubes being 
-    imported. This ticket is not yet there. 
-
     The main data archive will not include basic calibrations. These will live 
     in their own filesystem, the data-flow endpoint, as organised by the DRWG. 
     There is a "Calibrators" folder in the archive where we can store secondary
