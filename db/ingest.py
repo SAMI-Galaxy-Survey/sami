@@ -34,7 +34,7 @@ For commit message:
 
 Continuing changes to data-import routines. 
 
-The archive hierarchy has changed to reflect the data release method of DR. 'import_cube' now stores data in a SAMI/version/target filesystem, rather than the previous SAMI/target/version. RSS parent importing has been implemented. More development ongoing. 
+Importing of cubes and RSS strips has been implemented. Fibre table not yet taken care of, its mix of datatypes require insertion as a compound dataset. Header information is being recorded, but comments are not supported by HDF5. This still needs to be sorted. And there are currently no variance headers accessible through the IFU object. I will return to this on Monday. 
 """
 
 # ~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~
@@ -74,7 +74,7 @@ def create(h5file, overwrite=False, verbose=True):
 
 # ~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~
 def import_cube(blue_cube, red_cube, h5file, version, safe_mode=False, 
-                obstype='Target', ingest_rss=False, rss_only=False, 
+                obstype='Target', ingest_rss=True, rss_only=False, 
                 dataroot='./', verbose=True):
 # ~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~
     """ Import a set of dataubes and parents to the SAMI Archive 
@@ -204,7 +204,7 @@ def import_cube(blue_cube, red_cube, h5file, version, safe_mode=False,
                          "and cubes. ")
     
     # Data import: begin big colour loop.
-    colour = ['Blue', 'Red']
+    colour = ['B', 'R']
     hdulist = [blue_cube, red_cube]
     
     for i in [0,1]:
@@ -212,9 +212,8 @@ def import_cube(blue_cube, red_cube, h5file, version, safe_mode=False,
         if verbose: 
             print
             print(HDU.info())
-        HDU.close()
 
-        # RSS ingestion loop. 
+        # Identify RSS parents, locate in filesystem. 
         if (ingest_rss) or (rss_only):
 
             # First check if there are any already in here. 
@@ -238,10 +237,79 @@ def import_cube(blue_cube, red_cube, h5file, version, safe_mode=False,
                 raise SystemExit("No RSS files found inside the specified "+ 
                                  "root directory ("+dataroot+"). Please check "+
                                  "your 'dataroot' argument")
+    
+        # IMPORT CUBE
+        # -----------
+        """ 
+        PROBLEM: attributes cannot have comments. Can think of two ways to 
+         deal with this: 
+         (a) store comments as string arrays, 
+         (b) store a dictionary of header key meanings. 
+        """ 
 
+        # Cube: data: data -- require group (need to specify shape)
+        cube_data = g_target.require_dataset(colour[i]+"_cube_data", 
+                                             np.shape(HDU[0].data), 'f8', 
+                                             exact=False,
+                                             data=HDU[0].data, 
+                                             chunks=True, compression='gzip')
 
+        # Cube: data: header -- store all hdr fields as h5 attributes
+        for n_hdr in range(len(HDU[0].header)):
+            cube_data.attrs[HDU[0].header.keys()[n_hdr]] = \
+                                HDU[0].header.values()[n_hdr]
+        
+        # Cube: variance: data
+        cube_var = g_target.require_dataset(colour[i]+
+                                              "_cube_variance", 
+                                              np.shape(HDU[1].data), 
+                                              'f8', data=HDU[1].data, 
+                                              chunks=True, compression='gzip')
+        # Cube: variance: header
+        for n_hdr in range(len(HDU[1].header)):
+            cube_var.attrs[HDU[1].header.keys()[n_hdr]] = \
+                                    HDU[1].header.values()[n_hdr]
+        
+        # Cube: weight: data
+        cube_wht = g_target.require_dataset(colour[i]+
+                                              "_cube_weight", 
+                                              np.shape(HDU[2].data), 
+                                              'f8', data=HDU[2].data, 
+                                              chunks=True, compression='gzip')
+        # Cube: weight: header
+        for n_hdr in range(len(HDU[2].header)):
+            cube_wht.attrs[HDU[2].header.keys()[n_hdr]] = \
+                                    HDU[2].header.values()[n_hdr]
+                
+        if ingest_rss or rss_only:
+            for rss_loop in range(n_rss):
+                rss_index = str(rss_loop+1)
+                myIFU = sami.utils.IFU(rss_list[rss_loop], 
+                                       sami_name, flag_name=True)
+                # RSS: data: data
+                rss_data = g_target.require_dataset(colour[i]+
+                            "_RSS_data_"+rss_index, np.shape(myIFU.data), 'f8', 
+                            data=myIFU.data, chunks=True, compression='gzip')
+                
+                # RSS: data: header
+                for n_hdr in range(len(myIFU.primary_header)):
+                    rss_data.attrs[myIFU.primary_header.keys()[n_hdr]] = \
+                                        myIFU.primary_header.values()[n_hdr]
 
+                # RSS: variance: data
+                rss_var = g_target.require_dataset(colour[i]+
+                                                "_RSS_variance_"+rss_index, 
+                                                np.shape(myIFU.var), 'f8', 
+                                                data=myIFU.var, chunks=True, 
+                                                compression='gzip')
 
+                # RSS: fibre table: data
+                """ Needs to be imported as a compound dataset. """
+
+                # RSS: fibre table: header
+                """ Cannot be inserted before the CD has been sorted. """
+                
+        HDU.close()
 
     # Close h5file, exit successfully
     hdf.close()
