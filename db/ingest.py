@@ -34,9 +34,7 @@ For commit message:
 
 Continuing changes to data-import routines. 
 
-(1) The 'format' function (commented out in the previous version) has now been removed altogether. 
-
-(2) A blueprint has been set up for the new 'import_cube' function. 
+The archive hierarchy has changed to reflect the data release method of DR. 'import_cube' now stores data in a SAMI/version/target filesystem, rather than the previous SAMI/target/version. RSS parent importing has been implemented. More development ongoing. 
 """
 
 # ~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~
@@ -75,7 +73,9 @@ def create(h5file, overwrite=False, verbose=True):
     
 
 # ~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~
-def import_cube(h5file, version, safe_mode=False, verbose=True):
+def import_cube(blue_cube, red_cube, h5file, version, safe_mode=False, 
+                obstype='Target', ingest_rss=False, rss_only=False, 
+                dataroot='./', verbose=True):
 # ~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~
     """ Import a set of dataubes and parents to the SAMI Archive 
     
@@ -87,18 +87,20 @@ def import_cube(h5file, version, safe_mode=False, verbose=True):
     
     (1) Check if the nominated h5 file (h5file) exists. 
     
-    (2) Check h5file for the data version to be imported*: 
-      <> Does version already exist on archive? EXIT with error. 
-      <> No? Create version group. 
+    (2) Require a group for the nominated (/header-supplied) data version. 
     
-    (3) Check observation type by cross-ID on target/star catalogues*: 
+    (3) Check h5file for the SAMI cubes in the data version to be imported*: 
+      <> Do any data exist in this data version? EXIT with error. 
+      <> No? Create target group. 
+    
+    (4) Check observation type by cross-ID on target/star catalogues*: 
       <> Found on star list? Add to "Calibrator" group (require group). 
       <> Found on target list? Add to "Target" group (require group). 
       <> Not found? EXIT with error. 
     
-    (4) Start data import, deal with digest_rss in same way as before. 
+    (5) Start data import, deal with digest_rss in same way as before. 
     
-    (5) Perform any QC tests and cleaning, EXIT successfully. 
+    (6) Perform any QC tests and cleaning, EXIT successfully. 
     
     * Steps (2) and (3) will eventually rely on reading header tickets.
     
@@ -113,17 +115,19 @@ def import_cube(h5file, version, safe_mode=False, verbose=True):
     [TODO] Set the default 'dataroot' to a header ticket stored by the DR 
     manager code. This ticket is not yet there. 
     
-    [TODO] Change versioning to be defined by header tickets in the cubes being 
-    imported. This ticket is not yet there. 
-
     [TODO] In export code, give the user the option to package the PSF star that
     corresponds to any Target cube being downloaded. 
      
     Arguments: 
     
+    blue_cube   [str]  The name of a FITS file containing a blue SAMI cube. 
+    red_cube    [str]  The name of a FITS file containing a red SAMI cube. 
     h5file      [str]  The name of the SAMI archive file onto which to save. 
     version     [str]  Version number (eventually a header item). 
     safe_mode   [boo]  Automatically creates a time-stamped backup archive. 
+    ingest_rss  [boo]  Locate and import RSS parents as 'strips'. 
+    rss_only    [boo]  Only import RSS parents, no cubes. 
+    dataroot    [boo]  The root directory to scan for RSS parents. 
     verbose     [boo]  Toggles diagnostic and declarative verbosity. 
     """ 
     
@@ -155,38 +159,88 @@ def import_cube(h5file, version, safe_mode=False, verbose=True):
         raise SystemExit("The nominated HDF5 file ('"+h5file+"') "+
                          "is not properly formatted. Please initialise the "+
                          "filesystem using 'SAMI_DB.format'")
-
-    if version in hdf['SAMI'].keys(): 
-        hdf.close()
-        raise SystemExit("The nominated HDF5 file ('"+h5file+"') "+
-                         "already contains an entry for data version "+
-                         version+". Please check input argument. ")
     
-    else: 
-        # First check the format of the version, If string, interpret. 
-        if type(version) is str:  v_numeric = float(version)
-        if type(version) is float: v_numeric = version
+    # First check the format of the version, If string, interpret. 
+    if type(version) is str:  v_numeric = float(version)
+    if type(version) is float: v_numeric = version
+    
+    # Require a group, leave file open
+    if (verbose) and (version in hdf['SAMI'].keys()): 
+        print
+        print("NOTE: Some data may already be archived in this version. ")
 
-        # Require a group, leave file open
-        v_group = hdf.require_group("SAMI/"+version)
-
-    """ 
-    NOTE: Will data releases always represent a re-reduction of all data? Or 
-    might a release consist of some galaxies updated to the current version? 
-    If the latter, then shouldn't exit before checking that nominated cubes of
-    the given version already exist--that is, don't exit just because a version
-    group exists... 
-
-    Will there always be DR updates? What if the DR reaches a plateau and data 
-    need no further tweaking? In this case we'll only be adding more galaxies, 
-    not more versions. Should this code then up-link those blocks? 
-    """
+    g_version = hdf.require_group("SAMI/"+version)
     
     # Version group in place, let's import some data! 
     """ 
     In the current version there is a built-in QC check to assign an observation
     type to the cube being imported. May change to reading a DR header ticket. 
     """
+    # Read the header, find out the target name. 
+    hduBLUE = pf.open(blue_cube)
+    hduRED  = pf.open(red_cube)
+    
+    # Check that the nominated blue/red cubes are indeed of same target. 
+    if hduBLUE[0].header['NAME'] == hduRED[0].header['NAME']:
+        sami_name = hduBLUE[0].header['NAME']  # 'NAME' is the unique SAMI ID 
+    else: 
+        hdf.close()
+        raise SystemExit("The two cube files are not matched according to "+
+                         "their header-listed names. Please review the files "+
+                         "and the validity of their headers. ")
+    hduBLUE.close()
+    hduRED.close()
+
+    # What sort of observation this is: Target or Calibrator? Make group. 
+    ### For now adding dev argument 'obstype' instead of cat cross-ID. 
+    g_obstype = g_version.require_group(obstype)
+    g_target = g_obstype.require_group(sami_name)
+
+    # Check if data already exist in this version for this target. 
+    if (g_target.keys() != []) and (not rss_only):
+        raise SystemExit("The nominated HDF5 file ('"+h5file+"') "+
+                         "already contains data for the nominated SAMI "+
+                         "target ("+sami_name+"). Please check archive "+
+                         "and cubes. ")
+    
+    # Data import: begin big colour loop.
+    colour = ['Blue', 'Red']
+    hdulist = [blue_cube, red_cube]
+    
+    for i in [0,1]:
+        HDU = pf.open(hdulist[i])
+        if verbose: 
+            print
+            print(HDU.info())
+        HDU.close()
+
+        # RSS ingestion loop. 
+        if (ingest_rss) or (rss_only):
+
+            # First check if there are any already in here. 
+            if colour[i]+'_RSS_data_1' in g_target.keys(): 
+                raise SystemExit("The nominated HDF5 file ('"+h5file+"') "+
+                        "already contains RSS strips for the nominated SAMI "+
+                        "target ("+sami_name+"). Please check archive "+
+                        "and cubes. ")
+
+            rss_list = locate_rss(hdulist[i], dataroot, verbose=verbose)
+            n_rss = len(rss_list)
+            
+            if (n_rss != 0) and (verbose):
+                print("")
+                print("Located "+str(n_rss)+" RSS files for "+
+                      "target "+sami_name+".")
+                print("")
+
+            else:
+                hdf.close()
+                raise SystemExit("No RSS files found inside the specified "+ 
+                                 "root directory ("+dataroot+"). Please check "+
+                                 "your 'dataroot' argument")
+
+
+
 
 
     # Close h5file, exit successfully
