@@ -32,9 +32,9 @@ import sami
 """ 
 For commit message: 
 
-Continuing changes to data-import routines. 
+Added support for RSS_data headers to 'ingest.py'. 
 
-Importing of cubes and RSS strips has been implemented. Fibre table not yet taken care of, its mix of datatypes require insertion as a compound dataset. Header information is being recorded, but comments are not supported by HDF5. This still needs to be sorted. And there are currently no variance headers accessible through the IFU object. I will return to this on Monday. 
+No RSS_variance headers available through the IFU object, as those are basic FITS headers that can be generated (by pyFITS) upon exporting data. Header tickets are stored as HDF5 attributes, which do not allow for the inclusion of a comment field. Instead, comments were included as additional attributes, named after each header ticket name and prefixed with "comment ". 
 """
 
 # ~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~
@@ -99,16 +99,21 @@ def import_cube(blue_cube, red_cube, h5file, version, safe_mode=False,
       <> Not found? EXIT with error. 
     
     (5) Start data import, deal with digest_rss in same way as before. 
-    
+      <> Record all header card comments, insert into table (version-specific).
+
     (6) Perform any QC tests and cleaning, EXIT successfully. 
     
     * Steps (2) and (3) will eventually rely on reading header tickets.
+
+    [TODO] HDF attributes do not support comments, which are included with every
+    FITS header card. Need to start a dictionary of some description to hold the
+    comment text snippets. Place it in a 'Tables' group within a version group. 
     
     [TODO] Every SAMI h5 file should contain the Target and Star catalogues as 
     tables, so that QC checks can be performed (many other reasons exist). This
     could be problematic when it comes to cluster fields. Do they all live in 
     the same archive? What is stopping us? Different Target tables... 
-
+    
     [TODO] While two cubes should always be delivered, the functionality should 
     be available for monochrome importing. 
     
@@ -258,7 +263,10 @@ def import_cube(blue_cube, red_cube, h5file, version, safe_mode=False,
         for n_hdr in range(len(HDU[0].header)):
             cube_data.attrs[HDU[0].header.keys()[n_hdr]] = \
                                 HDU[0].header.values()[n_hdr]
-        
+            # also save header comment card as attribute 
+            cube_data.attrs["comment "+HDU[0].header.keys()[n_hdr]] = \
+                                            HDU[0].header.comments[n_hdr]
+            
         # Cube: variance: data
         cube_var = g_target.require_dataset(colour[i]+
                                               "_cube_variance", 
@@ -269,7 +277,9 @@ def import_cube(blue_cube, red_cube, h5file, version, safe_mode=False,
         for n_hdr in range(len(HDU[1].header)):
             cube_var.attrs[HDU[1].header.keys()[n_hdr]] = \
                                     HDU[1].header.values()[n_hdr]
-        
+            cube_data.attrs["comment "+HDU[0].header.keys()[n_hdr]] = \
+                                            HDU[0].header.comments[n_hdr]
+
         # Cube: weight: data
         cube_wht = g_target.require_dataset(colour[i]+
                                               "_cube_weight", 
@@ -280,7 +290,11 @@ def import_cube(blue_cube, red_cube, h5file, version, safe_mode=False,
         for n_hdr in range(len(HDU[2].header)):
             cube_wht.attrs[HDU[2].header.keys()[n_hdr]] = \
                                     HDU[2].header.values()[n_hdr]
-                
+            cube_data.attrs["comment "+HDU[0].header.keys()[n_hdr]] = \
+                                            HDU[0].header.comments[n_hdr]
+        
+        # IMPORT RSS
+        # ----------
         if ingest_rss or rss_only:
             for rss_loop in range(n_rss):
                 rss_index = str(rss_loop+1)
@@ -295,6 +309,9 @@ def import_cube(blue_cube, red_cube, h5file, version, safe_mode=False,
                 for n_hdr in range(len(myIFU.primary_header)):
                     rss_data.attrs[myIFU.primary_header.keys()[n_hdr]] = \
                                         myIFU.primary_header.values()[n_hdr]
+                    rss_data.attrs\
+                        ["comment "+myIFU.primary_header.keys()[n_hdr]] = \
+                                        myIFU.primary_header.comments[n_hdr]
 
                 # RSS: variance: data
                 rss_var = g_target.require_dataset(colour[i]+
