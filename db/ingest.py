@@ -32,9 +32,6 @@ import sami
 """ 
 For commit message: 
 
-Added support for RSS_data headers to 'ingest.py'. 
-
-No RSS_variance headers available through the IFU object, as those are basic FITS headers that can be generated (by pyFITS) upon exporting data. Header tickets are stored as HDF5 attributes, which do not allow for the inclusion of a comment field. Instead, comments were included as additional attributes, named after each header ticket name and prefixed with "comment ". 
 """
 
 # ~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~
@@ -77,7 +74,7 @@ def import_cube(blue_cube, red_cube, h5file, version, safe_mode=False,
                 obstype='Target', ingest_rss=True, rss_only=False, 
                 dataroot='./', verbose=True):
 # ~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~
-    """ Import a set of dataubes and parents to the SAMI Archive 
+    """ Import a set of data-cubes and parents to the SAMI Archive 
     
     Overhaul of original import code. The main change is the treatment of 
     versioning, which now comes from the DR pipeline (instead of being 
@@ -104,18 +101,11 @@ def import_cube(blue_cube, red_cube, h5file, version, safe_mode=False,
     (6) Perform any QC tests and cleaning, EXIT successfully. 
     
     * Steps (2) and (3) will eventually rely on reading header tickets.
-
-    [TODO] HDF attributes do not support comments, which are included with every
-    FITS header card. Need to start a dictionary of some description to hold the
-    comment text snippets. Place it in a 'Tables' group within a version group. 
-    
+        
     [TODO] Every SAMI h5 file should contain the Target and Star catalogues as 
     tables, so that QC checks can be performed (many other reasons exist). This
     could be problematic when it comes to cluster fields. Do they all live in 
     the same archive? What is stopping us? Different Target tables... 
-    
-    [TODO] While two cubes should always be delivered, the functionality should 
-    be available for monochrome importing. 
     
     [TODO] Set the default 'dataroot' to a header ticket stored by the DR 
     manager code. This ticket is not yet there. 
@@ -125,8 +115,8 @@ def import_cube(blue_cube, red_cube, h5file, version, safe_mode=False,
      
     Arguments: 
     
-    blue_cube   [str]  The name of a FITS file containing a blue SAMI cube. 
-    red_cube    [str]  The name of a FITS file containing a red SAMI cube. 
+    blue_cube   [str]  FITS filename of blue SAMI cube ("" for none). 
+    red_cube    [str]  FITS filename of red SAMI cube ("" for none). 
     h5file      [str]  The name of the SAMI archive file onto which to save. 
     version     [str]  Version number (eventually a header item). 
     safe_mode   [boo]  Automatically creates a time-stamped backup archive. 
@@ -182,19 +172,36 @@ def import_cube(blue_cube, red_cube, h5file, version, safe_mode=False,
     type to the cube being imported. May change to reading a DR header ticket. 
     """
     # Read the header, find out the target name. 
-    hduBLUE = pf.open(blue_cube)
-    hduRED  = pf.open(red_cube)
+    if blue_cube != '': hduBLUE = pf.open(blue_cube)
+    if red_cube != '': hduRED  = pf.open(red_cube)
     
     # Check that the nominated blue/red cubes are indeed of same target. 
-    if hduBLUE[0].header['NAME'] == hduRED[0].header['NAME']:
-        sami_name = hduBLUE[0].header['NAME']  # 'NAME' is the unique SAMI ID 
-    else: 
-        hdf.close()
-        raise SystemExit("The two cube files are not matched according to "+
-                         "their header-listed names. Please review the files "+
-                         "and the validity of their headers. ")
-    hduBLUE.close()
-    hduRED.close()
+    if (blue_cube != '') and (red_cube != ''): # if B+R cubes are nominated
+
+        if hduBLUE[0].header['NAME'] == hduRED[0].header['NAME']:
+            # Store SAMI ID as 'NAME'. 
+            sami_name = hduBLUE[0].header['NAME']
+            
+            # And close the two HDUs. 
+            hduBLUE.close()
+            hduRED.close()
+
+        else: 
+            hdf.close()
+            raise SystemExit("The two cube files are not matched according to "+
+                        "their header-listed names. Please review the files "+
+                         "(listed below) and the validity of their headers: \n"+
+                         '\n  > blue cube: "'+blue_cube+
+                         '"\n  > red cube:  "'+red_cube+'"')
+
+    else:
+        if blue_cube != '': 
+            sami_name = hduBLUE[0].header['NAME']
+            hduBLUE.close() 
+
+        if red_cube != '':  
+            sami_name = hduRED[0].header['NAME']
+            hduRED.close()
 
     # What sort of observation this is: Target or Calibrator? Make group. 
     ### For now adding dev argument 'obstype' instead of cat cross-ID. 
@@ -209,10 +216,19 @@ def import_cube(blue_cube, red_cube, h5file, version, safe_mode=False,
                          "and cubes. ")
     
     # Data import: begin big colour loop.
-    colour = ['B', 'R']
-    hdulist = [blue_cube, red_cube]
+    colour= []
+    hdulist = []
+
+    # Sort out monochrome input. 
+    if blue_cube != '': 
+        colour.append('B')
+        hdulist.append(blue_cube)
+
+    if red_cube != '': 
+        colour.append('R')
+        hdulist.append(red_cube)
     
-    for i in [0,1]:
+    for i in range(len(hdulist)):
         HDU = pf.open(hdulist[i])
         if verbose: 
             print
@@ -245,12 +261,6 @@ def import_cube(blue_cube, red_cube, h5file, version, safe_mode=False,
     
         # IMPORT CUBE
         # -----------
-        """ 
-        PROBLEM: attributes cannot have comments. Can think of two ways to 
-         deal with this: 
-         (a) store comments as string arrays, 
-         (b) store a dictionary of header key meanings. 
-        """ 
 
         # Cube: data: data -- require group (need to specify shape)
         cube_data = g_target.require_dataset(colour[i]+"_cube_data", 
@@ -258,7 +268,7 @@ def import_cube(blue_cube, red_cube, h5file, version, safe_mode=False,
                                              exact=False,
                                              data=HDU[0].data, 
                                              chunks=True, compression='gzip')
-
+        
         # Cube: data: header -- store all hdr fields as h5 attributes
         for n_hdr in range(len(HDU[0].header)):
             cube_data.attrs[HDU[0].header.keys()[n_hdr]] = \
@@ -277,9 +287,9 @@ def import_cube(blue_cube, red_cube, h5file, version, safe_mode=False,
         for n_hdr in range(len(HDU[1].header)):
             cube_var.attrs[HDU[1].header.keys()[n_hdr]] = \
                                     HDU[1].header.values()[n_hdr]
-            cube_data.attrs["comment "+HDU[0].header.keys()[n_hdr]] = \
+            cube_var.attrs["comment "+HDU[0].header.keys()[n_hdr]] = \
                                             HDU[0].header.comments[n_hdr]
-
+            
         # Cube: weight: data
         cube_wht = g_target.require_dataset(colour[i]+
                                               "_cube_weight", 
@@ -290,7 +300,7 @@ def import_cube(blue_cube, red_cube, h5file, version, safe_mode=False,
         for n_hdr in range(len(HDU[2].header)):
             cube_wht.attrs[HDU[2].header.keys()[n_hdr]] = \
                                     HDU[2].header.values()[n_hdr]
-            cube_data.attrs["comment "+HDU[0].header.keys()[n_hdr]] = \
+            cube_wht.attrs["comment "+HDU[0].header.keys()[n_hdr]] = \
                                             HDU[0].header.comments[n_hdr]
         
         # IMPORT RSS
