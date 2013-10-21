@@ -32,10 +32,11 @@ import sami
 """ 
 For commit message: 
 
-Introduced eat_cube() function for standardising data import. 
+Now importing fibre table to archive. 
 
-Wrote a function to import things in a homogeneous fashion. Minimises error margin and makes maintenance clearer. Could not extend use of this function to input of RSS strips, as they are accessed through the IFU object, not as HDUs. Verbose input still in place for RSS. 
+The added code strips only the information we need to store from the fibre table, namely FIBNUM, FIB_MRA, FIB_MDEC, FIB_ARA, and FIB_ADEC. Could not find fibtab header in IFU object, so no header info added at this juncture. 
 
+Additionally cleaned up RSS input. Changed from 'requiring' a dataset to creating it, as enough control check are in place to ensure no attempt is made to overwrite existing data. 
 """
 
 # ~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~
@@ -108,6 +109,7 @@ def import_cube(blue_cube, red_cube, h5file, version, safe_mode=False,
 
     [TODO] Strip useful bits of fibre table in a separate function: 
       FIB_MRA, FIB_MDEC, FIB_ARA, FIB_ADEC [8-byte doubles]
+    -> Fields 21-24, i.e., indices 20-23. 
     No need for all header info, just CENRA, CENDEC, APPRA, APPDEC. 
 
     [TODO] Every SAMI h5 file should contain the Target and Star catalogues as 
@@ -282,6 +284,14 @@ def import_cube(blue_cube, red_cube, h5file, version, safe_mode=False,
 
             return the_array
 
+        def eat_fibtab(group, myIFU):
+            """ Strip useful bits of fibre table 
+
+            No need for all header info, just CENRA, CENDEC, APPRA, APPDEC. 
+            """            
+            return the_array
+
+
 
         # Cube: data, variance, weight
         cube_data = eat_cube(g_target, colour[i]+"_cube_data", HDU[0])
@@ -296,31 +306,36 @@ def import_cube(blue_cube, red_cube, h5file, version, safe_mode=False,
                 myIFU = sami.utils.IFU(rss_list[rss_loop], 
                                        sami_name, flag_name=True)
                 # RSS: data: data
-                rss_data = g_target.require_dataset(colour[i]+
-                            "_RSS_data_"+rss_index, np.shape(myIFU.data), 'f8', 
-                            data=myIFU.data, chunks=True, compression='gzip')
+                rss_data = g_target.create_dataset(colour[i]+
+                            "_RSS_data_"+rss_index, data=myIFU.data, 
+                            chunks=True, compression='gzip')
                 
                 # RSS: data: header
                 for n_hdr in range(len(myIFU.primary_header)):
                     rss_data.attrs[myIFU.primary_header.keys()[n_hdr]] = \
                                         myIFU.primary_header.values()[n_hdr]
                     rss_data.attrs\
-                        ["comment "+myIFU.primary_header.keys()[n_hdr]] = \
+                        ["[comm]"+myIFU.primary_header.keys()[n_hdr]] = \
                                         myIFU.primary_header.comments[n_hdr]
 
                 # RSS: variance: data
-                rss_var = g_target.require_dataset(colour[i]+
-                                                "_RSS_variance_"+rss_index, 
-                                                np.shape(myIFU.var), 'f8', 
-                                                data=myIFU.var, chunks=True, 
-                                                compression='gzip')
+                rss_var = g_target.create_dataset(colour[i]+
+                            "_RSS_variance_"+rss_index, data=myIFU.var, 
+                            chunks=True, compression='gzip')
 
-                # RSS: fibre table: data
-                ### Needs to be imported as a compound dataset.
+                # RSS: fibre table: data [only five selected columns]
+                tempTab = [ myIFU.fibtab['FIBNUM'], 
+                            myIFU.fibtab['FIB_MRA'], myIFU.fibtab['FIB_MDEC'],
+                            myIFU.fibtab['FIB_ARA'], myIFU.fibtab['FIB_ADEC'] ]
+                fibcomb = np.transpose(np.array(tempTab))
+                
+                rss_fibtab = g_target.create_dataset(colour[i]+
+                                '_RSS_FibreTable'+rss_index, data=fibcomb, 
+                                dtype='f8', chunks=True, compression='gzip')
 
                 # RSS: fibre table: header
-                ### Cannot be inserted before the CD has been sorted.
-                
+                # No header in FibTab..? 
+
         HDU.close()
 
     # Close h5file, exit successfully
