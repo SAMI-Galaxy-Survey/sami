@@ -32,6 +32,10 @@ import sami
 """ 
 For commit message: 
 
+Introduced eat_cube() function for standardising data import. 
+
+Wrote a function to import things in a homogeneous fashion. Minimises error margin and makes maintenance clearer. Could not extend use of this function to input of RSS strips, as they are accessed through the IFU object, not as HDUs. Verbose input still in place for RSS. 
+
 """
 
 # ~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~
@@ -101,7 +105,11 @@ def import_cube(blue_cube, red_cube, h5file, version, safe_mode=False,
     (6) Perform any QC tests and cleaning, EXIT successfully. 
     
     * Steps (2) and (3) will eventually rely on reading header tickets.
-        
+
+    [TODO] Strip useful bits of fibre table in a separate function: 
+      FIB_MRA, FIB_MDEC, FIB_ARA, FIB_ADEC [8-byte doubles]
+    No need for all header info, just CENRA, CENDEC, APPRA, APPDEC. 
+
     [TODO] Every SAMI h5 file should contain the Target and Star catalogues as 
     tables, so that QC checks can be performed (many other reasons exist). This
     could be problematic when it comes to cluster fields. Do they all live in 
@@ -219,7 +227,7 @@ def import_cube(blue_cube, red_cube, h5file, version, safe_mode=False,
     colour= []
     hdulist = []
 
-    # Sort out monochrome input. 
+    # Monochrome input: check if either cube input is an empty string. 
     if blue_cube != '': 
         colour.append('B')
         hdulist.append(blue_cube)
@@ -258,51 +266,28 @@ def import_cube(blue_cube, red_cube, h5file, version, safe_mode=False,
                 raise SystemExit("No RSS files found inside the specified "+ 
                                  "root directory ("+dataroot+"). Please check "+
                                  "your 'dataroot' argument")
-    
+
         # IMPORT CUBE
         # -----------
+        def eat_cube(group, name, hdu):
+            """ Import datasets and headers in a consistent manner. """
 
-        # Cube: data: data -- require group (need to specify shape)
-        cube_data = g_target.require_dataset(colour[i]+"_cube_data", 
-                                             np.shape(HDU[0].data), 'f8', 
-                                             exact=False,
-                                             data=HDU[0].data, 
+            the_array = group.create_dataset(name, data=hdu.data, 
                                              chunks=True, compression='gzip')
-        
-        # Cube: data: header -- store all hdr fields as h5 attributes
-        for n_hdr in range(len(HDU[0].header)):
-            cube_data.attrs[HDU[0].header.keys()[n_hdr]] = \
-                                HDU[0].header.values()[n_hdr]
-            # also save header comment card as attribute 
-            cube_data.attrs["comment "+HDU[0].header.keys()[n_hdr]] = \
-                                            HDU[0].header.comments[n_hdr]
             
-        # Cube: variance: data
-        cube_var = g_target.require_dataset(colour[i]+
-                                              "_cube_variance", 
-                                              np.shape(HDU[1].data), 
-                                              'f8', data=HDU[1].data, 
-                                              chunks=True, compression='gzip')
-        # Cube: variance: header
-        for n_hdr in range(len(HDU[1].header)):
-            cube_var.attrs[HDU[1].header.keys()[n_hdr]] = \
-                                    HDU[1].header.values()[n_hdr]
-            cube_var.attrs["comment "+HDU[0].header.keys()[n_hdr]] = \
-                                            HDU[0].header.comments[n_hdr]
-            
-        # Cube: weight: data
-        cube_wht = g_target.require_dataset(colour[i]+
-                                              "_cube_weight", 
-                                              np.shape(HDU[2].data), 
-                                              'f8', data=HDU[2].data, 
-                                              chunks=True, compression='gzip')
-        # Cube: weight: header
-        for n_hdr in range(len(HDU[2].header)):
-            cube_wht.attrs[HDU[2].header.keys()[n_hdr]] = \
-                                    HDU[2].header.values()[n_hdr]
-            cube_wht.attrs["comment "+HDU[0].header.keys()[n_hdr]] = \
-                                            HDU[0].header.comments[n_hdr]
-        
+            for n_hdr in range(len(hdu.header)):
+                the_array.attrs[hdu.header.keys()[n_hdr]] = hdu.header.values()[n_hdr]
+                # also save header comment card as attribute (temp measure)
+                the_array.attrs["[comm]"+hdu.header.keys()[n_hdr]] = hdu.header.comments[n_hdr]
+
+            return the_array
+
+
+        # Cube: data, variance, weight
+        cube_data = eat_cube(g_target, colour[i]+"_cube_data", HDU[0])
+        cube_var  = eat_cube(g_target, colour[i]+"_cube_variance", HDU[1])
+        cube_wht  = eat_cube(g_target, colour[i]+"_cube_weight", HDU[2])
+
         # IMPORT RSS
         # ----------
         if ingest_rss or rss_only:
@@ -331,10 +316,10 @@ def import_cube(blue_cube, red_cube, h5file, version, safe_mode=False,
                                                 compression='gzip')
 
                 # RSS: fibre table: data
-                """ Needs to be imported as a compound dataset. """
+                ### Needs to be imported as a compound dataset.
 
                 # RSS: fibre table: header
-                """ Cannot be inserted before the CD has been sorted. """
+                ### Cannot be inserted before the CD has been sorted.
                 
         HDU.close()
 
