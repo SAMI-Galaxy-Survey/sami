@@ -30,11 +30,9 @@ import sami
 """ 
 For commit message: 
 
-Automatic identification of observation type. Plus updates. 
+Updated import list creation tool make_list() 
 
-Added a couple of lines in import_cube() to diagnose the observation type through the ID number. GAMA ids are up to 7 digits; F-stars are always 8 digits and start with 1000; cluster IDs are 10 digits long and start with 9. 
-
-Also updated import_many to conform with new import_cube input arguments. 
+Fully redesigned to comply with new data-flow model and directory structure. Thecode no longer checks the contents of cubes that share a directory within <obsrun>/cubed to speed up, as this check is performed in the import code. The new code is far simpler, owing to improvements in the directory structure. 
 """
 
 # ~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~
@@ -340,39 +338,42 @@ def import_cube(blue_cube, red_cube, h5file, version, safe_mode=False,
     
 
 # ~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~
-def import_many(tablein, h5file, safe_mode=True, 
-                digest_rss=True, rss_only=False, dataroot='./', 
+def import_many(tablein, h5file, version, safe_mode=False, 
+                ingest_rss=True, rss_only=False, dataroot='./', 
                 verbose=True, timing=True):
 # ~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~
     """ Wrapper for import_cube to digest any number of cubes. 
     
     'tablein' needs to list the blue and red cubes in each space-separated row. 
     All other arguments refer to the 'import_cube' args. 
+
+    Safe Mode is tricky. It will produce an intermediate file for every cube it
+    adds, rather than a single backup file. Problem. 
     """
-
+    
     ### OBSTYPE NEEDS TO BE DEFINED
-
+    
     if timing: 
         import time
         timer_zero = time.time()
-
+        
     tabdata = ascii.read(tablein, data_start=0, names=['blue', 'red'])
-
+    
     for loop in range(len(tabdata)):
         if timing: timer_start = time.time()
         if verbose: print("Processing "+
                           os.path.basename(tabdata['blue'][loop])+", "+
                           os.path.basename(tabdata['red'][loop]))
-
+        
         import_cube(tabdata['blue'][loop], tabdata['red'][loop], h5file, 
-                    version, safe_mode=safe_mode, digest_rss=digest_rss, 
+                    version, safe_mode=safe_mode, ingest_rss=ingest_rss, 
                     rss_only=rss_only, dataroot=dataroot, verbose=verbose)
         if timing: 
             timer_end = time.time()
             print(loop,timer_end-timer_start)
             time_elapsed = timer_end-timer_zero
             print(time_elapsed/(loop+1))
-
+    
 
 # ~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~
 def import_table(h5file, tabin, cdf='', h5dir='/', verbose=False):
@@ -518,14 +519,57 @@ def locate_rss(cubein, dataroot='./', verbose=True):
     
 
 # ~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~
-def make_list(basedir='', tableout='SAMI_input.lis', 
-              overwrite=False, append=False, debug=True):
+def make_list(dataroot='./', tableout='SAMI_input.lis', 
+                  overwrite=False, append=False, debug=True):
+# ~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~
+    """ Make an .import_many import list based on contents of basedir. 
+
+    There has been radical change in the structure of the data reduction 
+    directory substructure. Data now organised in a <version>/<dates>/cubed/ 
+    fashion, which makes the old make_list() code defunct. 
+
+    The code should now scan a directory that pertains to a single observing
+    run, list the contents and combine the filenames within eack sami-named 
+    folder into an import_many() command. 
+
+    The dataroot is now an observing run folder. 
+    """
+
+    # Check if both the overwrite and append flags are up, exit of so.
+    if (overwrite) and (append):
+        raise SystemExit("Both the 'overwrite' and 'append' flags have " +
+                         "been raised. That won't work, you have to choose " +
+                         "just one! Exiting. ")
+    
+    # Scan the dataroot/cubed subdirectory. 
+    nameList = os.listdir(dataroot+'/cubed')
+    nameList.remove('.DS_Store')
+
+    # Create a file buffer, decide whether to overwrite or append: 
+    if not append: f = open(tableout, 'w')
+    if append: f = open(tableout, 'a')
+
+    # Little function to compose a single list line. 
+    def writeLine(name):
+        base = dataroot+'/cubed/'+name+'/'
+        fnames = os.listdir(base)
+        f.write(base+fnames[0]+" "+base+fnames[1]+"\n")
+
+    writeAll = [writeLine(str_in) for str_in in nameList]
+
+    f.close()
+
+
+
+# ~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~
+def make_list_old(basedir='', tableout='SAMI_input.lis', 
+                  overwrite=False, append=False, debug=True):
 # ~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~
     """ Make an .import_many digestion list based on contents of basedir. 
  
     This code relies on the existence of the standard ccd_1 and ccd_2 subdirs, 
-    as deleivered by the good people at the Data Reduction Working Group. This 
-    should not change (ever!), but major revision will be required if it does. 
+    as delivered by the good people in the Data Reduction Working Group. This 
+    should not change (ever!). Major revision will be required if it does. 
 
     The code also relies on the naming convention for SAMI cubes as: 
       <SAMI_ID>_<ccd>_<N(dithers)>.fits
