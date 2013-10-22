@@ -32,11 +32,11 @@ import sami
 """ 
 For commit message: 
 
-Now importing fibre table to archive. 
+1. Fibre table header now imported; 2. eat_cube() update. 
 
-The added code strips only the information we need to store from the fibre table, namely FIBNUM, FIB_MRA, FIB_MDEC, FIB_ARA, and FIB_ADEC. Could not find fibtab header in IFU object, so no header info added at this juncture. 
+The following fibtab header items are now being imported: CENRA, CENDEC, APPRA, APPDEC. More can easily be included upon request (just need to edit one line of code). 
 
-Additionally cleaned up RSS input. Changed from 'requiring' a dataset to creating it, as enough control check are in place to ensure no attempt is made to overwrite existing data. 
+In addition, have adapted the eat_cube() function to work for RSS strips as well. It has been renamed to eat_data() and is very flexible in terms of input: header input is optional and a list of header tickets can be included selectively, rather than an entire header. 
 """
 
 # ~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~
@@ -106,11 +106,6 @@ def import_cube(blue_cube, red_cube, h5file, version, safe_mode=False,
     (6) Perform any QC tests and cleaning, EXIT successfully. 
     
     * Steps (2) and (3) will eventually rely on reading header tickets.
-
-    [TODO] Strip useful bits of fibre table in a separate function: 
-      FIB_MRA, FIB_MDEC, FIB_ARA, FIB_ADEC [8-byte doubles]
-    -> Fields 21-24, i.e., indices 20-23. 
-    No need for all header info, just CENRA, CENDEC, APPRA, APPDEC. 
 
     [TODO] Every SAMI h5 file should contain the Target and Star catalogues as 
     tables, so that QC checks can be performed (many other reasons exist). This
@@ -269,34 +264,48 @@ def import_cube(blue_cube, red_cube, h5file, version, safe_mode=False,
                                  "root directory ("+dataroot+"). Please check "+
                                  "your 'dataroot' argument")
 
+        # DEFINE DATA IMPORT FUNCTION
+        # ---------------------------
+        def eat_data(group, name, hdu, hdr='', importHdr=True, hdrItems=[]):
+            """ Import datasets and headers in a consistent manner. 
+            
+            Header input is a little different for RSS and cube, due to the 
+            naming of headers in the two situations: hdu.data/header for cubes,
+            but altogether different names on the IFU object. 
+            """
+
+            the_array = group.create_dataset(name, data=hdu, 
+                                             chunks=True, compression='gzip')
+
+            if importHdr:
+
+                # If importing selectively from the header: 
+                if hdrItems != []:
+                    # Create and populate a list of cards. 
+                    cardList = []
+                    for hcard in range(len(hdrItems)):
+                        cardList.append(hdr.cards[hdrItems[hcard]])
+                    
+                    # Redefine header as subset of entire thing. 
+                    hdr = pf.Header(cards=cardList)
+                    
+                for n_hdr in range(len(hdr)):
+                    the_array.attrs\
+                        [hdr.keys()[n_hdr]] = hdr.values()[n_hdr]
+                    # Save header comments as separate attributes (temp). 
+                    the_array.attrs\
+                        ["[comm]"+hdr.keys()[n_hdr]] = hdr.comments[n_hdr]
+
+            return the_array
+
         # IMPORT CUBE
         # -----------
-        def eat_cube(group, name, hdu):
-            """ Import datasets and headers in a consistent manner. """
-
-            the_array = group.create_dataset(name, data=hdu.data, 
-                                             chunks=True, compression='gzip')
-            
-            for n_hdr in range(len(hdu.header)):
-                the_array.attrs[hdu.header.keys()[n_hdr]] = hdu.header.values()[n_hdr]
-                # also save header comment card as attribute (temp measure)
-                the_array.attrs["[comm]"+hdu.header.keys()[n_hdr]] = hdu.header.comments[n_hdr]
-
-            return the_array
-
-        def eat_fibtab(group, myIFU):
-            """ Strip useful bits of fibre table 
-
-            No need for all header info, just CENRA, CENDEC, APPRA, APPDEC. 
-            """            
-            return the_array
-
-
-
-        # Cube: data, variance, weight
-        cube_data = eat_cube(g_target, colour[i]+"_cube_data", HDU[0])
-        cube_var  = eat_cube(g_target, colour[i]+"_cube_variance", HDU[1])
-        cube_wht  = eat_cube(g_target, colour[i]+"_cube_weight", HDU[2])
+        cube_data = eat_data(g_target, colour[i]+"_Cube_Data", 
+                             HDU[0].data, hdr=HDU[0].header)
+        cube_var  = eat_data(g_target, colour[i]+"_Cube_Variance", 
+                             HDU[1].data, hdr=HDU[1].header)
+        cube_wht  = eat_data(g_target, colour[i]+"_Cube_Weight", 
+                             HDU[2].data, hdr=HDU[2].header)
 
         # IMPORT RSS
         # ----------
@@ -305,36 +314,21 @@ def import_cube(blue_cube, red_cube, h5file, version, safe_mode=False,
                 rss_index = str(rss_loop+1)
                 myIFU = sami.utils.IFU(rss_list[rss_loop], 
                                        sami_name, flag_name=True)
-                # RSS: data: data
-                rss_data = g_target.create_dataset(colour[i]+
-                            "_RSS_data_"+rss_index, data=myIFU.data, 
-                            chunks=True, compression='gzip')
-                
-                # RSS: data: header
-                for n_hdr in range(len(myIFU.primary_header)):
-                    rss_data.attrs[myIFU.primary_header.keys()[n_hdr]] = \
-                                        myIFU.primary_header.values()[n_hdr]
-                    rss_data.attrs\
-                        ["[comm]"+myIFU.primary_header.keys()[n_hdr]] = \
-                                        myIFU.primary_header.comments[n_hdr]
+                # RSS: Data, Variance. 
+                rss_data = eat_data(g_target, colour[i]+"_RSS_Data_"+rss_index,
+                                    myIFU.data, hdr=myIFU.primary_header)
+                rss_var = eat_data(g_target, colour[i]+"_RSS_Variance_"+\
+                                   rss_index, myIFU.var, importHdr=False)
 
-                # RSS: variance: data
-                rss_var = g_target.create_dataset(colour[i]+
-                            "_RSS_variance_"+rss_index, data=myIFU.var, 
-                            chunks=True, compression='gzip')
-
-                # RSS: fibre table: data [only five selected columns]
+                # RSS: Fibre Table. Only wish to import bits an pieces. 
                 tempTab = [ myIFU.fibtab['FIBNUM'], 
                             myIFU.fibtab['FIB_MRA'], myIFU.fibtab['FIB_MDEC'],
                             myIFU.fibtab['FIB_ARA'], myIFU.fibtab['FIB_ADEC'] ]
-                fibcomb = np.transpose(np.array(tempTab))
-                
-                rss_fibtab = g_target.create_dataset(colour[i]+
-                                '_RSS_FibreTable'+rss_index, data=fibcomb, 
-                                dtype='f8', chunks=True, compression='gzip')
+                fibComb = np.transpose(np.array(tempTab))
 
-                # RSS: fibre table: header
-                # No header in FibTab..? 
+                rss_fibtab = eat_data(g_target, colour[i]+'_RSS_FibreTable_'+\
+                        rss_index, fibComb, hdr=myIFU.fibre_table_header, \
+                        hdrItems=['CENRA', 'CENDEC', 'APPRA', 'APPDEC'])
 
         HDU.close()
 
