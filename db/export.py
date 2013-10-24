@@ -26,31 +26,24 @@ import sami
 """ 
 Commit message: 
 
-Adapted fetch_cube() code to new filesystem structure. 
+Updated fetch_cube() to not require obstype as input. 
 
--- Added a version argument and threfore the capability to fetch any version of the requested data. This comes with a version-reader loop that identifies the latest data release. 
-
--- Changed header creation method. Comment inclusion pending. NOTE: Unlike what is written in the h5 manual, attribute lists *can* be sliced. 
-
--- Adaptation of advanced export() code pending. 
-
+fetch_cube() shouldn't take 'obstype' as an input, as the end-user will not know what it is. It was edited to instead search through all keys() and determine the obstype depending on where (if anyplace) it finds the requested SAMI ID. 
 """
 
-def fetch_cube(name, h5file, version='', obstype='Target', 
-               colour='', outfile=''):
+def fetch_cube(name, h5file, version='', colour='', outfile=''):
     """ A tool to fetch a datacube in FITS format. 
 
     name     [str]  The name of the SAMI target required. 
     h5file   [str]  The SAMI archive file from which to export. 
     version  [str]  Data version sought. Latest is default. 
-    colour   [str]  Colour-specific export. Set to 'blue' or 'red'. 
+    colour   [str]  Colour-specific export. Set to 'B' or 'R'. 
     outfile  [str]  The name of the file to be output. Default: "col_name".
     """
-    
-    # Digest SAMI name, search within h5file, identify block, write .fits.
-    
+
+    # Open HDF5 file. 
     hdf = h5.File(h5file, 'r')
-    
+
     # Check that h5file is SAMI-formatted.
     if 'SAMI' not in hdf.keys():
         raise SystemExit('The nominated h5 file ('+h5file+') is not '+\
@@ -66,34 +59,39 @@ def fetch_cube(name, h5file, version='', obstype='Target',
         SystemExit('The nominated h5 file ('+h5file+') does not '+\
                    'appear to contain any SAMI data releases. Try again!')
 
-    if name not in hdf['SAMI/'+version+'/'+obstype].keys():
+    # Determine observation type. 
+    if name in hdf['SAMI/'+version+'/Target'].keys():
+        obstype = 'Target'
+    if name in hdf['SAMI/'+version+'/Calibrator'].keys():
+        obstype = 'Calibrator'
+
+    # Determine target group. 
+    if (name not in hdf['SAMI/'+version+'/Target']) and\
+       (name not in hdf['SAMI/'+version+'/Calibrator']):
         raise SystemExit('The nominated h5 file ('+h5file+') does not '+\
                          'contain a target block for SAMI '+name)
-
     else:
         g_target = hdf['SAMI/'+version+'/'+obstype+'/'+name]
     
     # Checks done, extract some cubes. 
-        
-    # Look for cubes:
-    if ('B_Cube_Data' not in g_target.keys()) or \
-       ('B_Cube_Variance' not in g_target.keys()) or \
-       ('B_Cube_Weight' not in g_target.keys()) or \
-       ('R_Cube_Data' not in g_target.keys()) or \
-       ('R_Cube_Variance' not in g_target.keys()) or \
-       ('R_Cube_Weight' not in g_target.keys()):
-        
-        raise SystemExit(
-            'The target block is incomplete, please check archive.')
-        
+
     # Check if only one colour is requested:
-    if colour == '': colour = ['B','R']
+    if colour == '': 
+        colour = ['B','R']
     
     for col in range(len(colour)):
+
+        # Look for cubes:
+        if (colour[col]+'_Cube_Data' not in g_target.keys()) or \
+           (colour[col]+'_Cube_Variance' not in g_target.keys()) or \
+           (colour[col]+'_Cube_Weight' not in g_target.keys()):
+        
+            raise SystemExit(
+                'The target block is incomplete, please check archive.')
         
         # Set name for output file (if not set): 
         if outfile == '': 
-            this_outfile = 'SAMI_'+name+'_'+colour[col]+'_cube.fits'
+            outfile = 'SAMI_'+name+'_'+colour[col]+'_cube.fits'
         
         # Check if outfile already exists
         if os.path.isfile(outfile):
@@ -129,7 +127,7 @@ def fetch_cube(name, h5file, version='', obstype='Target',
         hdu_c3 = pf.ImageHDU(np.array(wht), name='WEIGHT', header=hdr3)
         
         hdulist = pf.HDUList([hdu_c1, hdu_c2, hdu_c3])
-        hdulist.writeto(this_outfile)
+        hdulist.writeto(outfile)
         
         hdulist.close()
         
