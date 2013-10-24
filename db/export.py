@@ -9,7 +9,7 @@ Contact: iraklis@aao.gov.au
 
 Updates: .-
 
-Table of Contents (* to-be, **: under construction): 
+Table of Contents: 
 
 .fetch_cube     Extract a cube or set of cubes. 
 .export         Export any amount of data products of various types. 
@@ -23,53 +23,71 @@ import os
 import sys
 import sami
 
+""" 
+Commit message: 
 
-def fetch_cube(name, h5file, colour='', outfile=''):
+Adapted fetch_cube() code to new filesystem structure. 
+
+-- Added a version argument and threfore the capability to fetch any version of the requested data. This comes with a version-reader loop that identifies the latest data release. 
+
+-- Changed header creation method. Comment inclusion pending. NOTE: Unlike what is written in the h5 manual, attribute lists *can* be sliced. 
+
+-- Adaptation of advanced export() code pending. 
+
+"""
+
+def fetch_cube(name, h5file, version='', obstype='Target', 
+               colour='', outfile=''):
     """ A tool to fetch a datacube in FITS format. 
 
     name     [str]  The name of the SAMI target required. 
     h5file   [str]  The SAMI archive file from which to export. 
+    version  [str]  Data version sought. Latest is default. 
     colour   [str]  Colour-specific export. Set to 'blue' or 'red'. 
     outfile  [str]  The name of the file to be output. Default: "col_name".
     """
     
     # Digest SAMI name, search within h5file, identify block, write .fits.
     
-    hdf = h5.File(h5file)
+    hdf = h5.File(h5file, 'r')
     
     # Check that h5file is SAMI-formatted.
     if 'SAMI' not in hdf.keys():
         raise SystemExit('The nominated h5 file ('+h5file+') is not '+\
                          'SAMI-formatted')
     
-    # Check that h5file contains a target block for name.
-    if name not in hdf['SAMI/Targets'].keys():
+    # Identify version sought, or the latest availabe (default). 
+    if hdf['SAMI'].keys() != '':
+        
+        if version == '':
+            numeric_versions = [float(str_in) for str_in in hdf['SAMI'].keys()]
+            version = str(max(numeric_versions))
+    else:
+        SystemExit('The nominated h5 file ('+h5file+') does not '+\
+                   'appear to contain any SAMI data releases. Try again!')
+
+    if name not in hdf['SAMI/'+version+'/'+obstype].keys():
         raise SystemExit('The nominated h5 file ('+h5file+') does not '+\
                          'contain a target block for SAMI '+name)
+
+    else:
+        g_target = hdf['SAMI/'+version+'/'+obstype+'/'+name]
     
     # Checks done, extract some cubes. 
-    
-    # Determine latest version, and therefore target block path.
-    versions = hdf["SAMI/Targets/"+name].keys()
-    v_num = [int(versions[-1][-2:])]  # version numbers as integers
-    v_latest = max(v_num)             # latest version as largest v_num
-    
-    v_str = '/v'+str(v_latest).zfill(2) # version number as string
-    targ_group = hdf.require_group("SAMI/Targets/"+name+v_str)
-    
+        
     # Look for cubes:
-    if ('Blue_cube_data' not in targ_group.keys()) or \
-       ('Blue_cube_variance' not in targ_group.keys()) or \
-       ('Blue_cube_weight' not in targ_group.keys()) or \
-       ('Red_cube_data' not in targ_group.keys()) or \
-       ('Red_cube_variance' not in targ_group.keys()) or \
-       ('Red_cube_weight' not in targ_group.keys()):
+    if ('B_Cube_Data' not in g_target.keys()) or \
+       ('B_Cube_Variance' not in g_target.keys()) or \
+       ('B_Cube_Weight' not in g_target.keys()) or \
+       ('R_Cube_Data' not in g_target.keys()) or \
+       ('R_Cube_Variance' not in g_target.keys()) or \
+       ('R_Cube_Weight' not in g_target.keys()):
         
         raise SystemExit(
             'The target block is incomplete, please check archive.')
         
     # Check if only one colour is requested:
-    if colour == '': colour = ['Blue','Red']
+    if colour == '': colour = ['B','R']
     
     for col in range(len(colour)):
         
@@ -84,26 +102,31 @@ def fetch_cube(name, h5file, colour='', outfile=''):
                              outfile + "') already exists. Try again! ")
             
         # Data is primary HDU, VAR and WHT are extra HDUs. 
-        data = targ_group[colour[col]+'_cube_data']
-        var =  targ_group[colour[col]+'_cube_variance']
-        wht =  targ_group[colour[col]+'_cube_weight']
+        data = g_target[colour[col]+'_Cube_Data']
+        var =  g_target[colour[col]+'_Cube_Variance']
+        wht =  g_target[colour[col]+'_Cube_Weight']
         
-        # And construct headers -- 
-        # -- just the data header for now, the VAR and WHT headers supplied by 
-        #    the current cubes are dummies. 
+        # Construct headers. 
+        def makeHead(dset):
+            cards = []
+
+            for ihdr in range(len(dset.attrs.keys())):
+                aCard = pf.Card(keyword=dset.attrs.keys()[ihdr], 
+                                value=dset.attrs.values()[ihdr])
+                cards.append(aCard)
+
+            hdr = pf.Header(cards=cards)
+
+            return hdr
         
-        # Make data header: first set all keys...
-        hdr1 = pf.Header.fromkeys(data.attrs.keys())
-        
-        # ...then set all values
-        for ihdr in range(len(hdr1)):
-            hdr1[ihdr] = data.attrs.values()[ihdr]
-        
-        # And now set up the Image Data Units...
-        # (A) Cubes: 
+        hdr1 = makeHead(data)
+        hdr2 = makeHead(var)
+        hdr3 = makeHead(wht)
+      
+        # And now set up the Image Data Units. 
         hdu_c1 = pf.PrimaryHDU(np.array(data), hdr1)
-        hdu_c2 = pf.ImageHDU(np.array(var), name='VARIANCE')
-        hdu_c3 = pf.ImageHDU(np.array(wht), name='WEIGHT')
+        hdu_c2 = pf.ImageHDU(np.array(var), name='VARIANCE', header=hdr2)
+        hdu_c3 = pf.ImageHDU(np.array(wht), name='WEIGHT', header=hdr3)
         
         hdulist = pf.HDUList([hdu_c1, hdu_c2, hdu_c3])
         hdulist.writeto(this_outfile)
