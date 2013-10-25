@@ -26,29 +26,38 @@ import sami
 """ 
 Commit message: 
 
-Updated fetch_cube() to not require obstype as input. 
+Modularised fetch_cube().
 
-fetch_cube() shouldn't take 'obstype' as an input, as the end-user will not know what it is. It was edited to instead search through all keys() and determine the obstype depending on where (if anyplace) it finds the requested SAMI ID. 
+Wrote a series of functions that the export() code can envoke to perform small tasks: 
+ + checkSAMIformat() checks that the input file is SAMI-formatted. 
+ + getObstype determines observation type. 
+ + getVersion determines the latest version of a target available, if the provided 'version' is a blank string. 
+ + getTargetGroup() finds the h5 group where data for the requested target live.
+ + completeCube() checks if the archive holds all [data, var, wht] extensions fot the requested target 
+ + defOutfile() defines the output (FITS) filename, if one is not provided. 
+
+WARNING: This version of the code contains some collateral in export() from its upcoming adaptation to the new filesystem. This will be the only export code and the new fetchCube will just eenvoke export() with pre-set arguments.  
 """
 
-def fetch_cube(name, h5file, version='', colour='', outfile=''):
-    """ A tool to fetch a datacube in FITS format. 
-
-    name     [str]  The name of the SAMI target required. 
-    h5file   [str]  The SAMI archive file from which to export. 
-    version  [str]  Data version sought. Latest is default. 
-    colour   [str]  Colour-specific export. Set to 'B' or 'R'. 
-    outfile  [str]  The name of the file to be output. Default: "col_name".
-    """
-
-    # Open HDF5 file. 
-    hdf = h5.File(h5file, 'r')
-
-    # Check that h5file is SAMI-formatted.
+# ~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~
+def checkSAMIformat(hdf):
+# ~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~
+    """ Check that h5file is SAMI-formatted. """    
     if 'SAMI' not in hdf.keys():
         raise SystemExit('The nominated h5 file ('+h5file+') is not '+\
                          'SAMI-formatted')
-    
+
+    else: 
+        SAMIformatted = True
+
+    return SAMIformatted
+
+
+# ~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~
+def getVersion(hdf, version):
+# ~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~
+    """ Identify (latest) version in a given SAMI archive. """
+
     # Identify version sought, or the latest availabe (default). 
     if hdf['SAMI'].keys() != '':
         
@@ -59,46 +68,111 @@ def fetch_cube(name, h5file, version='', colour='', outfile=''):
         SystemExit('The nominated h5 file ('+h5file+') does not '+\
                    'appear to contain any SAMI data releases. Try again!')
 
-    # Determine observation type. 
+    return version
+        
+
+# ~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~
+def getObstype(hdf, name, version):
+# ~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~
+    """ Identify observation type for a given SAMI target. """
+
     if name in hdf['SAMI/'+version+'/Target'].keys():
         obstype = 'Target'
     if name in hdf['SAMI/'+version+'/Calibrator'].keys():
         obstype = 'Calibrator'
 
-    # Determine target group. 
+    return obstype
+
+
+# ~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~
+def getTargetGroup(hdf, name, version, obstype):
+# ~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~
+    """ Determine target group of requested SAMI galaxy/star. """
+
+    # If it isn't there, throw a fit. 
     if (name not in hdf['SAMI/'+version+'/Target']) and\
        (name not in hdf['SAMI/'+version+'/Calibrator']):
         raise SystemExit('The nominated h5 file ('+h5file+') does not '+\
                          'contain a target block for SAMI '+name)
     else:
         g_target = hdf['SAMI/'+version+'/'+obstype+'/'+name]
-    
-    # Checks done, extract some cubes. 
+        return g_target
 
-    # Check if only one colour is requested:
-    if colour == '': 
+
+# ~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~
+def completeCube(hdf, colour, group):
+# ~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~
+    """ Check that a requested cube is all there (data, var, wht). """
+    
+    if (colour+'_Cube_Data' not in group.keys()) or \
+       (colour+'_Cube_Variance' not in group.keys()) or \
+       (colour+'_Cube_Weight' not in group.keys()):
+        
+        hdf.close()
+        raise SystemExit(
+            'The target block is incomplete, please check archive.')
+        
+    else:
+        cubeIsComplete = True
+        return cubeIsComplete
+    
+
+# ~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~
+def defOutfile(hdf, name, colour, outfile):
+# ~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~
+    """ Define the output filename, if not set """
+
+    if outfile == '': 
+        outfile = 'SAMI_'+name+'_'+colour+'_cube.fits'
+        
+    # Check if outfile already exists
+    if os.path.isfile(outfile):
+        hdf.close()
+        raise SystemExit("The nominated output .fits file ('" + 
+                         outfile + "') already exists. Try again! ")
+
+    return outfile
+
+
+# ~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~
+def fetchCube(name, h5file, colour=''):
+# ~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~
+    """ Run export() with simplest settings, fetch only cube. """
+
+
+# ~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~
+def fetch_cube(name, h5file, version='', colour='', outfile=''):
+# ~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~
+    """ A tool to fetch a datacube in FITS format. 
+
+    name     [str]  The name of the SAMI target required. 
+    h5file   [str]  The SAMI archive file from which to export. 
+    version  [str]  Data version sought. Latest is default. 
+    colour   [str]  Colour-specific export. Set to 'B' or 'R'. 
+    outfile  [str]  The name of the file to be output. Default: "col_name".
+    """
+
+    # Open HDF5 file and run a series of tests and diagnostics. 
+    hdf = h5.File(h5file, 'r')
+
+    SAMIformatted = checkSAMIformat(hdf)         # Check for SAMI formatting
+    if version == '':                            # Get the data version
+        version = getVersion(hdf, version)
+    obstype = getObstype(hdf, name, version)     # Get observation type
+    g_target = getTargetGroup(hdf, name,         # ID target group 
+                              version, obstype)
+    if colour == '':                             # Check for monochrome output
         colour = ['B','R']
     
     for col in range(len(colour)):
 
         # Look for cubes:
-        if (colour[col]+'_Cube_Data' not in g_target.keys()) or \
-           (colour[col]+'_Cube_Variance' not in g_target.keys()) or \
-           (colour[col]+'_Cube_Weight' not in g_target.keys()):
-        
-            raise SystemExit(
-                'The target block is incomplete, please check archive.')
-        
+        cubeIsComplete = completeCube(hdf, colour[col], g_target)
+
         # Set name for output file (if not set): 
         if outfile == '': 
-            outfile = 'SAMI_'+name+'_'+colour[col]+'_cube.fits'
-        
-        # Check if outfile already exists
-        if os.path.isfile(outfile):
-            hdf.close()
-            raise SystemExit("The nominated output .fits file ('" + 
-                             outfile + "') already exists. Try again! ")
-            
+            outfile = defOutfile(hdf, name, colour[col], outfile)
+
         # Data is primary HDU, VAR and WHT are extra HDUs. 
         data = g_target[colour[col]+'_Cube_Data']
         var =  g_target[colour[col]+'_Cube_Variance']
@@ -135,8 +209,10 @@ def fetch_cube(name, h5file, version='', colour='', outfile=''):
     hdf.close()
     
 
+# ~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~
 def export(name, h5file, get_cube=False, get_rss=False, 
            colour='', all_versions=False):
+# ~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~
     """ The main SAMI_DB .fits export function 
  
     name       [str]  The name(s) of the SAMI target(s) required. 
@@ -150,35 +226,21 @@ def export(name, h5file, get_cube=False, get_rss=False,
     outfile    [str]  The name of the file to be output. Default: "col_name".
     """
     
-    # Check that some data has been requested: 
+    # Check that some data have been requested: 
     if (not get_cube) and (not get_rss): 
         raise SystemExit("Please raise at least one of the 'get_???' flags.")
     
-    # Digest SAMI name, search h5file, identify blocks, write .fits.
-    
-    hdf = h5.File(h5file)
-    
-    # Check that h5file is SAMI-formatted.
-    if 'SAMI' not in hdf.keys():
-        raise SystemExit('The nominated h5 file ('+h5file+') is not '+\
-                         'SAMI-formatted')
-    
-    # Check that h5file contains a target block for name.
-    if name not in hdf['SAMI/Targets'].keys():
-        raise SystemExit('The nominated h5 file ('+h5file+') does not '+\
-                         'contain a target block for SAMI '+name)
-    
-    # Checks done, extract some cubes. 
-    
-    # ***Begin multi-target loop here*** (not yet implemented)
+    # Open HDF5 file and run a series of tests and diagnostics. 
+    hdf = h5.File(h5file, 'r')
 
-    # Determine latest version, and therefore target block path.
-    versions = hdf["SAMI/Targets/"+name].keys()
-    v_num = [int(versions[-1][-2:])]  # version numbers as integers
-    v_latest = max(v_num)             # latest version as largest v_num
-    
-    v_str = '/v'+str(v_latest).zfill(2) # version number as string
-    targ_group = hdf.require_group("SAMI/Targets/"+name+v_str)
+    SAMIformatted = checkSAMIformat(hdf)         # Check for SAMI formatting
+    if version == '':                            # Get the data version
+        version = getVersion(hdf, version)
+    obstype = getObstype(hdf, name, version)     # Get observation type
+    g_target = getTargetGroup(hdf, name,         # ID target group 
+                              version, obstype)
+    if colour == '':                             # Check for monochrome output
+        colour = ['B','R']
     
     # Look for cubes:
     if ('Blue_cube_data' not in targ_group.keys()) or \
@@ -191,9 +253,6 @@ def export(name, h5file, get_cube=False, get_rss=False,
         raise SystemExit(
             'The target block is incomplete, please check archive.')
 
-    # Check if only one colour is requested:
-    if colour == '': colour = ['Blue','Red']
-    
     # Start the HDU and extension lists
     all_hdu = []
     all_ext = []
@@ -209,9 +268,9 @@ def export(name, h5file, get_cube=False, get_rss=False,
     
         if get_cube: 
 
-            data = targ_group[colour[col]+'_cube_data']
-            var =  targ_group[colour[col]+'_cube_variance']
-            wht =  targ_group[colour[col]+'_cube_weight']
+            data = targ_group[colour[col]+'_Cube_Data']
+            var =  targ_group[colour[col]+'_Cube_Variance']
+            wht =  targ_group[colour[col]+'_Cube_Weight']
 
             all_ext.append(colour[col]+' Cube Data')
             all_hdu.append(pf.ImageHDU(np.array(data), 
