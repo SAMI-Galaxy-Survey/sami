@@ -106,35 +106,76 @@ HG_CHANGESET = utils.hg_changeset(__file__)
 ifus=[1,2,3,4,5,6,7,8,9,10,11,12,13]
 
 def find_dither(RSSname,reference,centroid=True,inter=False,plot=False,remove_files=True):
+      """Measure the dithers between a set of observations using all bundles.
+      
+      Inputs
+      ------
+      
+      RSSname (list): RSS file names/paths
+      
+      reference (string): RSS filename to use as the reference positions 
+      
+      centroid (boolean): Whether the centroiding of each bundle in each file
+      should be redone, or use the result in the corresponding files (presumably
+      from a previous run of this command). See also the "get_centroid" function
+      in this module.
+    
+      inter (boolean): Whether the IRAF tasks should be run in interactive mode.
+      
+      plot (boolean): Display diagnostic plots at the end.
+      
+      remove_files (boolean): Whether the files containing the intermediary
+      results are saved or not.
       
       
-      ## For each file in inlist call the get_cetroid module, computes centroid coordinates and stores them 
-      ## into a txt file.  
-
+      Outputs
+      -------
+      
+      
+      
+      Text file with the various results if "remove_files" is False.
+      
+      """
+      
+      # Create text files for each input RSS that list the centroid fits for each bundle.
+      #
+      # @TODO: Change this to just return the values here rather than reading
+      # them back in via file.
       if centroid:
           for name in RSSname:
               get_centroid(name)
-            
-      nRSS=len(RSSname)
+      
+      # number of RSS files.      
+      nRSS = len(RSSname)
       
       
-      ### For the reference frame extracts the position in micron for the central fibers of each IFU
-      ### N.B. The huge assumption here is that the coordinates in micron of each central fibers on the focal 
-      ### plane will remain exactly the same in the various exposures!  
+      # For the reference, frame extract the position in microns for the central fibers of each IFU
+      # N.B. The huge assumption here is that the coordinates in micron of each central fibers on the focal 
+      # plane will remain exactly the same in the various exposures!  
+      # @TODO: Fix this so that it does not depend on the coordinates of the central fibre in each bundle.
       
-      file_centralfib=string.join([string.strip(reference,'.fits'), "ref_centrFIB.txt"],'') 
-      f=open(file_centralfib,'w')
+      file_centralfib = string.join([string.strip(reference, '.fits'), "ref_centrFIB.txt"], '') 
+      f = open(file_centralfib, 'w')
       
       
-      xcent=[] #x coordinates of central fiber of each bundle
-      ycent=[]  #y coordinates of central fiber of each bundle
-      galname=[] #name of the target galaxy
+      xcent = [] #x coordinates of central fiber of each bundle
+      ycent = []  #y coordinates of central fiber of each bundle
+      galname = [] #name of the target galaxy
+      
       for i, ifu in enumerate(ifus):
       
-            ifu_data=utils.IFU(reference, ifu, flag_name=False) 
-            x=np.float(-1*ifu_data.x_microns[np.where(ifu_data.n==1)]) #x coordinate of central fiber (-1x is to have coordinates back on focal plane referenceO)
-            y=np.float(ifu_data.y_microns[np.where(ifu_data.n==1)]) #y coordinate of central fiber
-            s= str(x)+'  '+str(y)+'\n'
+            ifu_data = utils.IFU(reference, ifu, flag_name=False) 
+            
+            # x coordinate of central fiber (-1x is to have coordinates back on
+            # focal plane referenceO) @BUG: This differs from the convention
+            # used in get_centroid!
+            x = np.float(-1*ifu_data.x_microns[np.where(ifu_data.n==1)]) 
+            
+            #y coordinate of central fiber
+            y = np.float(ifu_data.y_microns[np.where(ifu_data.n==1)]) 
+            
+            # Write to file and add to list
+            s = str(x) + '  ' + str(y) + '\n'
             f.write(s)
             xcent.append(x)
             ycent.append(y)
@@ -142,24 +183,34 @@ def find_dither(RSSname,reference,centroid=True,inter=False,plot=False,remove_fi
             galname.append(ifu_data.name)
       f.close() 
       
+      # Name of the file containing the centroid coordinates for the RSS used as
+      # a reference @BUG: This assumes the corresponding file has already been
+      # created (e.g., because it was included in the list of RSS files to this
+      # function), and that it has the same filename assigned to it in
+      # get_centroid. The filename should be determined in only one place!
+      file_ref = string.join([string.strip(reference, '.fits'), "_centroid"], '')  
       
-      file_ref=string.join([string.strip(reference,'.fits'), "_centroid"],'')  # Name of the file containing the centroid coordinates for the RSS used as a reference
+      xref = []   # x coordinates of centroid in each ifu of the reference RSS
+      yref = []   # y coordinates of centroid in each ifu of the reference RSS
       
-      xref=[]   #x coordinates of centroid in each ifu of the reference RSS
-      yref=[]   #y coordinates of centroid in each ifu of the reference RSS
+      # Starting from the reference RSS, will start filling the next 4 arrays
+      # which will become the main output of this procedure. For the
+      # reference RSS, xshcol and yshcol are 0 by definition.
+      #
+      # @NOTE: These arrays are carefully constructed, but are not used anywhere!
       
-      ### Starting from the reference RSS, will start filling the next 4 arrays which will become the main output of this procedure
-      ### Obviously for the reference RSS xshcol and yshcol are 0 by definition.
-      
-      RSScol=[]  # RSS name
-      galID=[]   #galaxy ID
-      ifscol=[]  # ifs
-      xshcol=[]  # xshift in micron
-      yshcol=[]  # yshif in micron
-      n=0
+      RSScol = []  # RSS file name/path
+      galID = []   # List over bundles for the current RSS file of galaxy IDs
+      ifscol = []  # 
+      xshcol = []  # List over bundles for all RSS frames of x-shifts in microns
+      yshcol = []  # List over bundles for all RSS frame of y-shifts in microns
+
+
+      n = 0
+      # @TODO: Change this to use enumerate: n+1 is very poor python practice.
       for line in open(file_ref):
-         n=n+1
-         cols=line.split()
+         n = n + 1
+         cols = line.split()
          xref.append(float(cols[0]))
          yref.append(float(cols[1]))
          RSScol.append(reference)
@@ -169,15 +220,17 @@ def find_dither(RSSname,reference,centroid=True,inter=False,plot=False,remove_fi
          galID.append(galname[n-1])
 
 
-
-      RSSmatch=list(RSSname)
-      RSSmatch.remove(reference)  ## Remove the reference RSS from the list of RSS files to align
+      # This list is identical to RSSname, but has the reference RSS removed.
+      RSSmatch = list(RSSname) 
+      RSSmatch.remove(reference)  # Remove the reference RSS from the list of RSS files to align
      
-      ## Run the loop where the dither solution is computed on the list of RSS files excluding the reference one.  
+      # Run the loop where the dither solution is computed on the list of RSS
+      # files excluding the reference one.
       
       ## Check if IRAF output db already exist. If yes, delete it
       
-      file_geodb=string.join([string.strip(reference,'.fits'), "_dbsolution"],'') # File where the 2D solution of geomap is stored 
+      # File where the 2D solution of geomap is stored 
+      file_geodb = string.join([string.strip(reference, '.fits'), "_dbsolution"], '') 
       if os.path.isfile(file_geodb):
                 os.remove(file_geodb)
 
@@ -187,76 +240,110 @@ def find_dither(RSSname,reference,centroid=True,inter=False,plot=False,remove_fi
          
              ## Define names of all the files used in this part of the module 
              
-             name=string.strip(RSSmatch[i],'.fits')
-             file_centroid=string.join([name, "_centroid"],'') # File containing the centroid coordinates. Produce by get_centroid
-             file_geoin=string.join([name, "_mapin.txt"],'') # This is the input file of geomap. It includes 4 columns having the x,y coordinates of the centroid in the inupt RSS and the ones in the reference RSS
-             file_stats=string.join([name, "_fit"],'') # File containing the detailed statistics for each fit. The content of each file is shown on the terminal.
-             file_geoxy=string.join([name, "_xytrans"],'') # Output of geoxytrans containing the coordinates of each central fiber in the coordinate system of the reference frame. 
+             name = string.strip(RSSmatch[i], '.fits')
+             
+             # File containing the centroid coordinates. Produce by get_centroid
+             file_centroid = string.join([name, "_centroid"], '') 
+             
+             # This is the input file of geomap. It includes 4 columns having
+             # the x,y coordinates of the centroid in the inupt RSS and the ones
+             # in the reference RSS
+             file_geoin = string.join([name, "_mapin.txt"], '') 
+
+             # File containing the detailed statistics for each fit. The content
+             # of each file is shown on the terminal.
+             file_stats = string.join([name, "_fit"], '') 
+            
+             # Output of geoxytrans containing the coordinates of each central
+             # fiber in the coordinate system of the reference frame.
+             file_geoxy = string.join([name, "_xytrans"], '') 
             
              
-             ## Check if IRAF output files already exist. If yes, delete them otherwise IRAF will crash!!!
-             
+             # Check if IRAF output files already exist. If yes, delete them
+             # otherwise IRAF will crash!!!
              if os.path.isfile(file_stats):
                     os.remove(file_stats)
              if os.path.isfile(file_geoxy):
                     os.remove(file_geoxy)
              
-             ## The next two loops simply create file_geoin
-             
-             xin=[]
-             yin=[]
+             # The next two loops simply create file_geoin. @TODO: Why does this
+             # need to be two loops? @TODO: This should just use values in
+             # memory returned from (a modified) get_centroid rather than re-
+             # reading from disk?!
+             xin = []
+             yin = []
              for line in open(file_centroid):
-                 cols=line.split()
+                 cols = line.split()
                  xin.append(float(cols[0]))
                  yin.append(float(cols[1]))
   
             
-             f=open(file_geoin, 'w')
+             f = open(file_geoin, 'w')
+             # Note: j is an index over bundles
              for j in xrange(len(xin)):
                  # Immediately censor any point that's moved by more than 980um
                  # (The diameter of a hexabundle)
                  if np.sqrt((xin[j] - xref[j])**2 + (yin[j] - yref[j])**2) > 980.0:
                      continue
-                 s=str(xin[j])+' '+str(yin[j])+' '+str(xref[j])+' '+str(yref[j])+'\n' 
+                 s = str(xin[j]) + ' ' + str(yin[j]) + ' ' + str(xref[j]) + ' ' + str(yref[j]) + '\n' 
                  f.write(s)
   
              f.close()
     
              
-             ## Run the IRAF geomap task 
-            
-             iraf.images.immatch.geomap(input=file_geoin,database=file_geodb,xmin="INDEF",ymin="INDEF",xmax="INDEF",ymax="INDEF",results=file_stats,xxorder=2.,yyorder=2.,xyorder=2.,yxorder=2.,
-                         fitgeom='rscale', function='polynomial', interactive=inter, maxiter=10., reject=2.,verbose=0)
+             # Run the IRAF geomap task. @TODO: What does this do? What is the
+             # order of the fit? Is this the right model.
+            #
+            # For fitgeom='rscale', xxorder, yyorder, etc are meaningless, as is function='polynomial'
+             iraf.images.immatch.geomap(input=file_geoin, database=file_geodb, 
+                                        xmin="INDEF", ymin="INDEF", xmax="INDEF", ymax="INDEF",
+                                        results=file_stats, 
+                                        xxorder=2., yyorder=2., xyorder=2., yxorder=2.,
+                                        fitgeom='rscale', function='polynomial', 
+                                        interactive=inter, 
+                                        maxiter=10., reject=2., verbose=0)
                          
              
-             ## Show the statistics of each fit on the screen
-             ## The parameters to check are the RMS in X and Y and make sure that not more than 1-2 objects have INDEF on the residual values
-             ## INDEF values are present if the fiber has been rejected during the fit because too deviant from the best solution.  
+             # Show the statistics of each fit on the screen. The parameters to
+             # check are the RMS in X and Y and make sure that not more than 1-2
+             # objects have INDEF on the residual values INDEF values are
+             # present if the fiber has been rejected during the fit because too
+             # deviant from the best solution. 
+             #
+             # @BUG: This should be checked programatically, and an error
+             # raised or a flag set in the data.
              
-             s='head -6'+' '+str(file_stats)
+             # @TODO: Why is the "6" hard coded? And what does it mean? 
+             s = 'head -6' + ' ' + str(file_stats)
              os.system(s)            
         
-             iraf.images.immatch.geoxytran(input=file_centralfib,output=file_geoxy, transform=file_geoin, database=file_geodb)
+             iraf.images.immatch.geoxytran(input=file_centralfib, output=file_geoxy, 
+                                           transform=file_geoin, database=file_geodb)
                  
              
              
-             ## Append the results stored in file_geoxy on the RSScol,ifscol,xshcol,yshcol array so that they can be stored into a more user-friendly format
-             n=0
-             ## xshift and yshift are the same as xshcol, yshcol but for this frame only
+             # Append the results stored in file_geoxy on the
+             # RSScol,ifscol,xshcol,yshcol array so that they can be stored into
+             # a more user-friendly format
+             
+             # @TODO: get rid of the n+1 nonsense in favour of enumerate.
+             n = 0
+             # xshift and yshift are the same as xshcol, yshcol but for this frame only
              xshift = []
              yshift = []
              for line in open(file_geoxy):
-                 n=n+1 
+                 n = n + 1 
                  RSScol.append(RSSmatch[i])
                  ifscol.append(n)
-                 cols=line.split()
-                 x=-1*np.subtract(np.float(cols[0]),xcent[n-1]) #the -1 is to go back to on-sky positions
-                 y=np.subtract(np.float(cols[1]),ycent[n-1])
+                 cols = line.split()
+                 # @BUG: Another sign flip (presumably undoing the ones above)
+                 x = -1 * np.subtract(np.float(cols[0]), xcent[n - 1])  # the -1 is to go back to on-sky positions
+                 y = np.subtract(np.float(cols[1]), ycent[n - 1])
                  xshcol.append(x)
                  yshcol.append(y) 
                  xshift.append(x)
                  yshift.append(y)
-                 galID.append(galname[n-1])
+                 galID.append(galname[n - 1])
 
              # Read back the RMS from one of IRAF's files
              xrms, yrms, n_good = read_rms(file_stats)
@@ -286,9 +373,13 @@ def find_dither(RSSname,reference,centroid=True,inter=False,plot=False,remove_fi
           # Remove more text files
           os.remove(file_geodb)
           os.remove(file_centralfib)
-          os.remove(string.join([string.strip(reference,'.fits'), "_centroid"],''))
+          os.remove(string.join([string.strip(reference, '.fits'), "_centroid"], ''))
 
       # Re-calculate the reference X and Y values
+      #
+      # @BUG: This recentering doesnt seem to change the reference file, so are
+      # the offsets stored in the headers on the same system between the
+      # reference frame and all the other frames?
       recalculate_ref(results)
 
       # Save results for frames other than the reference frame in the FITS header
@@ -296,6 +387,7 @@ def find_dither(RSSname,reference,centroid=True,inter=False,plot=False,remove_fi
           save_results(result)
                 
       # Save results for the reference frame in the FITS header
+      # @BUG: Why is the reference file treated separately?
       ref_results_dict = {'filename': reference,
                           'ifus': np.array(ifus),
                           'xin': np.array(xref),
@@ -352,31 +444,36 @@ def find_dither(RSSname,reference,centroid=True,inter=False,plot=False,remove_fi
 
 
 def get_centroid(infile):
+    """For the given RSS file(name), create a text file listing centroid positions for each bundle."""
 
-    ## Create name of the file where centroid coordinates are stored 
+    # Create and open a file to store centroid coordinates 
+    out_txt = string.join([string.strip(infile,'.fits'), "_centroid"],'')
+    f = open(out_txt, 'w')
     
-    out_txt=string.join([string.strip(infile,'.fits'), "_centroid"],'')
 
-    f=open(out_txt, 'w')
-    
-    ## Run centroid fit on each IFU
-    
+    # Run centroid fit on each IFU within the file
     for i, ifu in enumerate(ifus):
 
-            ifu_data=utils.IFU(infile, ifu, flag_name=False)
-                
-            p_mic, data_mic, xlin_mic, ylin_mic, model_mic=sami.observing.centroid.centroid_fit(ifu_data.x_microns, ifu_data.y_microns,
-                                                                                    ifu_data.data, circular=True)
-            amplitude_mic, xout_mic, yout_mic, sig_mic, bias_mic=p_mic
+            ifu_data = utils.IFU(infile, ifu, flag_name=False)
             
-            ##Get coordinates in micron. 
-            ##Since centroid_fit currently inverts the x coordinates to have 'on-sky' coordinates, here 
-            ##I need to re-multiply x coordinates by -1 to have them in the focal plane reference 
-             
-            x_out= -1*xout_mic
-            y_out= yout_mic
+            # Fit circular gaussian to the flux for this IFU
+            # @TODO: Should be elliptical Gaussian with PA.
+            p_mic, data_mic, xlin_mic, ylin_mic, model_mic = \
+                sami.observing.centroid.centroid_fit(ifu_data.x_microns, ifu_data.y_microns,
+                                                     ifu_data.data, circular=True)
+            # Split out parameters of best fit:
+            amplitude_mic, xout_mic, yout_mic, sig_mic, bias_mic = p_mic
             
-            s=str(x_out)+' '+str(y_out)+'\n' # the data to write to file
+            # @BUG: The sign of x_microns is reversed from the input RSS in IFU.
+            # The sign flip below attempts to return to the original convention.
+            # However, this is incorrect because only the result of the fit has
+            # been reversed, not the original data.
+
+            x_out = -1*xout_mic
+            y_out = yout_mic
+            
+            # the data to write to file
+            s = str(x_out) + ' ' + str(y_out) + '\n' 
                     
             f.write(s)
             
