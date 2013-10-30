@@ -26,17 +26,12 @@ import sami
 """ 
 Commit message: 
 
-Modularised fetch_cube().
+Modularised fetch_cube() further. Bug fixes. 
 
-Wrote a series of functions that the export() code can envoke to perform small tasks: 
- + checkSAMIformat() checks that the input file is SAMI-formatted. 
- + getObstype determines observation type. 
- + getVersion determines the latest version of a target available, if the provided 'version' is a blank string. 
- + getTargetGroup() finds the h5 group where data for the requested target live.
- + completeCube() checks if the archive holds all [data, var, wht] extensions fot the requested target 
- + defOutfile() defines the output (FITS) filename, if one is not provided. 
-
-WARNING: This version of the code contains some collateral in export() from its upcoming adaptation to the new filesystem. This will be the only export code and the new fetchCube will just eenvoke export() with pre-set arguments.  
+-- moved makeHead() function outside fetch_cube(). 
+-- writeto() had a clobber flag added, as it was creaed and written to separately. That didn't fly with the latest version of pyFITS. Should suppress warning from pyFITS ("Overwriting existing file"), as it is misleading. 
+-- Introduced option to overwrite an existing file. 
+-- fetch_cube() can now morph into the export() function by adding an RSS exporter segment. 
 """
 
 # ~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~
@@ -76,9 +71,11 @@ def getObstype(hdf, name, version):
 # ~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~
     """ Identify observation type for a given SAMI target. """
 
-    if name in hdf['SAMI/'+version+'/Target'].keys():
+    if (('Target' in hdf['SAMI/'+version].keys()) and 
+        (name in hdf['SAMI/'+version+'/Target'].keys())):
         obstype = 'Target'
-    if name in hdf['SAMI/'+version+'/Calibrator'].keys():
+    if (('Calibrator' in hdf['SAMI/'+version].keys()) and 
+        name in hdf['SAMI/'+version+'/Calibrator'].keys()):
         obstype = 'Calibrator'
 
     return obstype
@@ -118,7 +115,7 @@ def completeCube(hdf, colour, group):
     
 
 # ~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~
-def defOutfile(hdf, name, colour, outfile):
+def defOutfile(hdf, name, colour, outfile, overwrite):
 # ~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~
     """ Define the output filename, if not set """
 
@@ -126,12 +123,28 @@ def defOutfile(hdf, name, colour, outfile):
         outfile = 'SAMI_'+name+'_'+colour+'_cube.fits'
         
     # Check if outfile already exists
-    if os.path.isfile(outfile):
+    if os.path.isfile(outfile) and (not overwrite):
         hdf.close()
         raise SystemExit("The nominated output .fits file ('" + 
                          outfile + "') already exists. Try again! ")
 
     return outfile
+
+
+# ~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~
+def makeHead(dset):
+# ~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~
+    """ Construct a header out of a set of HDF5 dataset attributes. """
+    
+    cards = []
+    
+    for ihdr in range(len(dset.attrs.keys())):
+        aCard = pf.Card(keyword=dset.attrs.keys()[ihdr], 
+                        value=dset.attrs.values()[ihdr])
+        cards.append(aCard)
+        
+    hdr = pf.Header(cards=cards)
+    return hdr
 
 
 # ~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~
@@ -141,15 +154,17 @@ def fetchCube(name, h5file, colour=''):
 
 
 # ~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~
-def fetch_cube(name, h5file, version='', colour='', outfile=''):
+def fetch_cube(name, h5file, version='', colour='', outfile='', 
+               getCube=True, getRSS=False, getAll=False, overwrite=False):
 # ~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~
     """ A tool to fetch a datacube in FITS format. 
 
-    name     [str]  The name of the SAMI target required. 
-    h5file   [str]  The SAMI archive file from which to export. 
-    version  [str]  Data version sought. Latest is default. 
-    colour   [str]  Colour-specific export. Set to 'B' or 'R'. 
-    outfile  [str]  The name of the file to be output. Default: "col_name".
+    name      [str]  The name of the SAMI target required. 
+    h5file    [str]  The SAMI archive file from which to export. 
+    version   [str]  Data version sought. Latest is default. 
+    colour    [str]  Colour-specific export. Set to 'B' or 'R'. 
+    outfile   [str]  The name of the file to be output. Default: "col_name".
+    overwrite [boo]  Overwrite output file as default. 
     """
 
     # Open HDF5 file and run a series of tests and diagnostics. 
@@ -171,7 +186,7 @@ def fetch_cube(name, h5file, version='', colour='', outfile=''):
 
         # Set name for output file (if not set): 
         if outfile == '': 
-            outfile = defOutfile(hdf, name, colour[col], outfile)
+            outfile = defOutfile(hdf, name, colour[col], outfile, overwrite)
 
         # Data is primary HDU, VAR and WHT are extra HDUs. 
         data = g_target[colour[col]+'_Cube_Data']
@@ -179,18 +194,6 @@ def fetch_cube(name, h5file, version='', colour='', outfile=''):
         wht =  g_target[colour[col]+'_Cube_Weight']
         
         # Construct headers. 
-        def makeHead(dset):
-            cards = []
-
-            for ihdr in range(len(dset.attrs.keys())):
-                aCard = pf.Card(keyword=dset.attrs.keys()[ihdr], 
-                                value=dset.attrs.values()[ihdr])
-                cards.append(aCard)
-
-            hdr = pf.Header(cards=cards)
-
-            return hdr
-        
         hdr1 = makeHead(data)
         hdr2 = makeHead(var)
         hdr3 = makeHead(wht)
@@ -201,7 +204,7 @@ def fetch_cube(name, h5file, version='', colour='', outfile=''):
         hdu_c3 = pf.ImageHDU(np.array(wht), name='WEIGHT', header=hdr3)
         
         hdulist = pf.HDUList([hdu_c1, hdu_c2, hdu_c3])
-        hdulist.writeto(outfile)
+        hdulist.writeto(outfile, clobber=overwrite)
         
         hdulist.close()
         
