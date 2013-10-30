@@ -1,11 +1,14 @@
-try:
-    from pyraf import iraf
-except ImportError:
-    print "pyraf not found! Can't do image alignment here."
+# try:
+#     from pyraf import iraf
+# except ImportError:
+#     print "pyraf not found! Can't do image alignment here."
 import sami
 import string
 import sami.utils as utils
 import numpy as np
+from numpy.linalg import norm
+from scipy.optimize import leastsq
+from scipy import std
 import sami.observing.centroid
 import os
 import matplotlib.pyplot as plt
@@ -235,7 +238,9 @@ def find_dither(RSSname,reference,centroid=True,inter=False,plot=False,remove_fi
                 os.remove(file_geodb)
 
       results = []                
-     
+      
+      fits = []
+      # Loop over files/observations
       for i in xrange(len(RSSmatch)):
          
              ## Define names of all the files used in this part of the module 
@@ -293,16 +298,22 @@ def find_dither(RSSname,reference,centroid=True,inter=False,plot=False,remove_fi
              
              # Run the IRAF geomap task. @TODO: What does this do? What is the
              # order of the fit? Is this the right model.
-            #
-            # For fitgeom='rscale', xxorder, yyorder, etc are meaningless, as is function='polynomial'
-             iraf.images.immatch.geomap(input=file_geoin, database=file_geodb, 
-                                        xmin="INDEF", ymin="INDEF", xmax="INDEF", ymax="INDEF",
-                                        results=file_stats, 
-                                        xxorder=2., yyorder=2., xyorder=2., yxorder=2.,
-                                        fitgeom='rscale', function='polynomial', 
-                                        interactive=inter, 
-                                        maxiter=10., reject=2., verbose=0)
-                         
+             #
+             # For fitgeom='rscale', xxorder, yyorder, etc are meaningless, as is function='polynomial'
+             #iraf.images.immatch.geomap(input=file_geoin, database=file_geodb, 
+             #                           xmin="INDEF", ymin="INDEF", xmax="INDEF", ymax="INDEF",
+             #                           results=file_stats, 
+             #                           xxorder=2., yyorder=2., xyorder=2., yxorder=2.,
+             #                           fitgeom='rscale', function='polynomial', 
+             #                           interactive=inter, 
+             #                           maxiter=10., reject=2., verbose=0)
+            
+             fit = leastsq(plate_scale_model_residuals, [0,0,0,1], 
+                    args=(np.array([xin,yin]).T, np.array([xref,yref]).T))
+             print fit[0]
+             
+             fits.append(fit)
+             
              
              # Show the statistics of each fit on the screen. The parameters to
              # check are the RMS in X and Y and make sure that not more than 1-2
@@ -317,8 +328,8 @@ def find_dither(RSSname,reference,centroid=True,inter=False,plot=False,remove_fi
              s = 'head -6' + ' ' + str(file_stats)
              os.system(s)            
         
-             iraf.images.immatch.geoxytran(input=file_centralfib, output=file_geoxy, 
-                                           transform=file_geoin, database=file_geodb)
+             #iraf.images.immatch.geoxytran(input=file_centralfib, output=file_geoxy, 
+             #                              transform=file_geoin, database=file_geodb)
                  
              
              
@@ -327,27 +338,37 @@ def find_dither(RSSname,reference,centroid=True,inter=False,plot=False,remove_fi
              # a more user-friendly format
              
              # @TODO: get rid of the n+1 nonsense in favour of enumerate.
-             n = 0
+             #n = 0
              # xshift and yshift are the same as xshcol, yshcol but for this frame only
-             xshift = []
-             yshift = []
-             for line in open(file_geoxy):
-                 n = n + 1 
-                 RSScol.append(RSSmatch[i])
-                 ifscol.append(n)
-                 cols = line.split()
-                 # @BUG: Another sign flip (presumably undoing the ones above)
-                 x = -1 * np.subtract(np.float(cols[0]), xcent[n - 1])  # the -1 is to go back to on-sky positions
-                 y = np.subtract(np.float(cols[1]), ycent[n - 1])
-                 xshcol.append(x)
-                 yshcol.append(y) 
-                 xshift.append(x)
-                 yshift.append(y)
-                 galID.append(galname[n - 1])
+#              xshift = []
+#              yshift = []
+#              for line in open(file_geoxy):
+#                  n = n + 1 
+#                  RSScol.append(RSSmatch[i])
+#                  ifscol.append(n)
+#                  cols = line.split()
+#                  # @BUG: Another sign flip (presumably undoing the ones above)
+#                  x = -1 * np.subtract(np.float(cols[0]), xcent[n - 1])  # the -1 is to go back to on-sky positions
+#                  y = np.subtract(np.float(cols[1]), ycent[n - 1])
+#                  xshcol.append(x)
+#                  yshcol.append(y) 
+#                  xshift.append(x)
+#                  yshift.append(y)
+#                  galID.append(galname[n - 1])
+# 
+#              # Read back the RMS from one of IRAF's files
+#              xrms, yrms, n_good = read_rms(file_stats)
 
-             # Read back the RMS from one of IRAF's files
-             xrms, yrms, n_good = read_rms(file_stats)
+             model_positions = plate_scale_model(fit[0],np.array([xref,yref]).T)
 
+             xshift = -1*model_positions[:,0] - xcent
+             yshift = model_positions[:,1] - ycent
+
+             xrms = std(model_positions[:,0] - xin)
+             yrms = std(model_positions[:,1] - yin)
+             
+             n_good = len(model_positions)
+             
              # Store the results in a handy dictionary
              results.append({'filename': RSSmatch[i],
                              'ifus': np.array(ifus),
@@ -441,6 +462,51 @@ def find_dither(RSSname,reference,centroid=True,inter=False,plot=False,remove_fi
                 plt.plot(x,y,color=cm.winter(1.*i/len(ifus)),lw=2.) # plot offset pattern 
                 plt.annotate('IFS'+str(i+1), xy=(xcent[i],np.add(ycent[i],(200.*(105./2.)))), xycoords='data',xytext=None, textcoords='data', arrowprops=None,color=cm.winter(1.*i/len(ifus)))  #plot IFS id
 
+      return fits                
+
+def plate_scale_model(p,ref):
+    """Return the residual of a simple scale, translation, rotation model. 
+    
+    Parameters in p:
+        p[0]: Angle (in theta)
+        p[1]: x-offset
+        p[2]: y-offset
+        p[3]: scale
+    
+    off (N x 2 array): coordinate pairs of galaxy position in offset observation
+    ref (N x 2 array): coordinate pairs of galaxy positions in reference observation.
+    
+    """
+    
+    scale = p[3]
+    x_offset = p[1]
+    y_offset = p[2]
+    theta = p[0]
+    
+    xout = scale * ((ref[:,0] + x_offset) * np.cos(theta) \
+                                  - (ref[:,1] + y_offset) * np.sin(theta))
+    yout = scale * ((ref[:,1] + y_offset) * np.cos(theta) \
+                                  + (ref[:,0] + x_offset) * np.sin(theta))
+
+    return np.array([xout, yout]).T
+
+def plate_scale_model_residuals(p,off,ref):
+    """Return the residual of a simple scale, translation, rotation model. 
+    
+    Parameters in p:
+        p[0]: Angle (in theta)
+        p[1]: x-offset
+        p[2]: y-offset
+        p[3]: scale
+    
+    off (N x 2 array): coordinate pairs of galaxy position in offset observation
+    ref (N x 2 array): coordinate pairs of galaxy positions in reference observation.
+    
+    """
+
+    residual = off - plate_scale_model(p,ref)
+    
+    return np.apply_along_axis(norm,1,residual)
 
 
 def get_centroid(infile):
