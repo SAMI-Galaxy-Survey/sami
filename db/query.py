@@ -11,19 +11,29 @@ Updates: .-
 
 Table of Contents: 
 
-.query_master    Query a SAMI target table. 
+.queryMaster    Query a SAMI target table. 
 .query_multiple  Perform any number of queries on any number of SAMI tables. 
 .search          The query prototype.
 .test_contents   ??
 
 For commit message:
 
-Minor doc-fixes (e.g., package description on header). 
+Adapting query.py to new filesystem. 
+
+Started with query_master(), which has ben renamed to queryMaster(): 
+1) Adapted to change of location for DMUs and SAMI target tables. 
+2) Changed h5file to hdf and h5in to h5file for consistency with ingest.py. 
+3) Now calling getVersion() within queryMAster(). Added version arg. 
+
+Point (2) above also applied to query_multiple, which is now queryMultiple(). 
+
+NOTE: Once versioning is applied to tables, the query codes will break. We will need to soft-link the latest version of each table to its name without the version suffix, to make this simpler. Changing the query codes to add the table version would be bad book-keeeping. 
 
 """
 
 import numpy as np
 import h5py as h5
+import tables
 import astropy.io.fits as pf
 import astropy.io.ascii as ascii
 import os
@@ -32,10 +42,12 @@ import sami
 
 
 # ~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~
-def query_master(h5in, query, idfile='sami_query.lis', 
+def queryMaster(h5file, query, version='', idfile='sami_query.lis', 
                 verbose=True, returnID=True, overwrite=True):
 # ~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~
     """ Read a SAMI master table and perform a query """
+
+    import sami.db.export as export
 
     """
     NOTES: 
@@ -44,16 +56,19 @@ def query_master(h5in, query, idfile='sami_query.lis',
     containing such a string. Adding '@list' functionality will facilitate 
     browser-generated queries farther down the track. 
     """
-   
-    import tables
 
     # Interpret the 'query' argument (look for a filename). 
     if os.path.isfile(query):
         fq = open(query, 'r')
         query = fq.readlines()[0]
 
+    # Get latest data version, if not supplied
+    hdf0 = h5.File(h5file, 'r')
+    version = export.getVersion(h5file, hdf0, version)
+    hdf0.close()
+
     # Open-read h5file. 
-    h5file = tables.openFile(h5in, mode = "r")
+    hdf = tables.openFile(h5file, 'r')
 
     # Optionally open an ascii file to write IDs returned by the query. 
     if returnID:
@@ -66,8 +81,9 @@ def query_master(h5in, query, idfile='sami_query.lis',
         f = open(idfile, 'w')
         idlist = []
 
-    # Identify the SAMI master table -- assumed to live in the root directory
-    master = h5file.root.SAMI_MASTER
+    # Identify the SAMI master table, assumed to live in the Table directory
+    g_table = hdf.getNode('/SAMI/'+version+'/Table/')
+    master = g_table.SAMI_MASTER
 
     # Define a Row Iterator for screen output. 
     def print_sami(s):
@@ -83,16 +99,14 @@ def query_master(h5in, query, idfile='sami_query.lis',
         
     print_sami(master.where(query))
 
-    h5file.close()
+    hdf.close()
     if returnID: f.close()
 
 
 # ~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~
-def query_multiple(h5in, qfile, verbose=True):
+def query_multiple(h5file, qfile, verbose=True):
 # ~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~
     """ Query multiple tables within an h5 archive and combine results """
-
-    import tables
 
     """ 
     This is modelled after query_master. One main difference is the query 
@@ -100,7 +114,7 @@ def query_multiple(h5in, qfile, verbose=True):
     
     """
     # Check that the input files exist
-    if (not os.path.isfile(h5in)) or (not os.path.isfile(qfile)):
+    if (not os.path.isfile(h5file)) or (not os.path.isfile(qfile)):
         raise System.Exit("One of the nominated files does not exist. Exiting.")
 
     # Open and read the query file line-per-line (even=table,odd=query) 
@@ -130,20 +144,20 @@ def query_multiple(h5in, qfile, verbose=True):
 
     # Now run all queries: 
     # Open h5 file with PyTabs: 
-    h5file = tables.openFile(h5in, mode = "r")
+    hdf = tables.openFile(h5file, mode = "r")
 
     # Cannot provide any table name. They have to be defined here.
     # Need to write an 'identify table' function. 
     def id_tab(s):
-        if s == 'SAMI_MASTER': return h5file.root.SAMI_MASTER
-        if s == 'SAMI_MASTER_2': return h5file.root.SAMI_MASTER_2
+        if s == 'SAMI_MASTER': return hdf.root.SAMI_MASTER
+        if s == 'SAMI_MASTER_2': return hdf.root.SAMI_MASTER_2
 
     # and run that function on all tabs: 
     h5tabs = []
     for i in range(counter/2):
         h5tabs.append(id_tab(tabs[i]))
 
-    h5file.close()
+    hdf.close()
     
     # OK, have the tables defined as variables, now need to query them. 
     # I will copy-paste the print_sami code here, but need to do better.
