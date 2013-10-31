@@ -1,7 +1,7 @@
 """
 'query.py', module within 'sami.db'
 
-Description: Import codes for the SAMI Galaxy Survey data archive. 
+Description: Query codes for the SAMI Galaxy Survey data archive. 
 
 Written: 08.10.2013, Iraklis Konstantopoulos. Based on 'db.database'.
 
@@ -9,12 +9,17 @@ Contact: iraklis@aao.gov.au
 
 Updates: .-
 
-Table of Contents (* to-be, **: under construction): 
+Table of Contents: 
 
-.query_master**   Query a SAMI target table. 
-.query_multiple** Perform any number of queries on any number of SAMI tables. 
-.search**         The query prototype.
-.test_contents**  ??
+.query_master    Query a SAMI target table. 
+.query_multiple  Perform any number of queries on any number of SAMI tables. 
+.search          The query prototype.
+.test_contents   ??
+
+For commit message:
+
+Minor doc-fixes (e.g., package description on header). 
+
 """
 
 import numpy as np
@@ -26,16 +31,18 @@ import sys
 import sami
 
 
+# ~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~
 def query_master(h5in, query, idfile='sami_query.lis', 
                 verbose=True, returnID=True, overwrite=True):
-    """ 
-    ~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~- 
-    Read a SAMI master table and perform a query
+# ~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~
+    """ Read a SAMI master table and perform a query """
+
+    """
+    NOTES: 
 
     The query should be passed either as a string argument or as an ascii file 
     containing such a string. Adding '@list' functionality will facilitate 
     browser-generated queries farther down the track. 
-    ~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~- 
     """
    
     import tables
@@ -80,12 +87,10 @@ def query_master(h5in, query, idfile='sami_query.lis',
     if returnID: f.close()
 
 
+# ~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~
 def query_multiple(h5in, qfile, verbose=True):
-    """ 
-    ~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~- 
-    Query multiple tables within an h5 archive and combine results 
-    ~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~- 
-    """
+# ~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~
+    """ Query multiple tables within an h5 archive and combine results """
 
     import tables
 
@@ -168,7 +173,9 @@ def query_multiple(h5in, qfile, verbose=True):
     print(final_idlist)
 
 
+# ~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~
 def test_contents(h5file):
+# ~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~
     """ Check if h5file contains cubes and RSS datasets. """
 
     ### UNDER CONSTRUCTION ###
@@ -201,7 +208,9 @@ def test_contents(h5file):
 
 
 
+# ~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~
 def search(h5file, query_item, query_value, verbose=True):
+# ~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~
     """ A prototype query tool """
     
     # Need to search each group recursively
