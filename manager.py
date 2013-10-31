@@ -67,6 +67,7 @@ import shutil
 import os
 import re
 import subprocess
+import multiprocessing
 from contextlib import contextmanager
 from collections import defaultdict, deque
 
@@ -74,6 +75,7 @@ import astropy.coordinates as coord
 from astropy import units
 import astropy.io.fits as pf
 import numpy as np
+
 from .utils.other import find_fibre_table
 from .general.cubing import dithered_cubes_from_rss_list
 from .general.align_micron import find_dither
@@ -424,13 +426,19 @@ class Manager:
     """
 
     def __init__(self, root, copy_files=False, move_files=False, fast=False,
-                 gratlpmm=GRATLPMM):
+                 gratlpmm=GRATLPMM, n_cpu=1):
         if fast:
             self.speed = 'fast'
         else:
             self.speed = 'slow'
         self.idx_files = IDX_FILES[self.speed]
         self.gratlpmm = gratlpmm
+        self.n_cpu = n_cpu
+        if n_cpu > 1:
+            self.pool = multiprocessing.Pool(n_cpu)
+            self.map = self.pool.map
+        else:
+            self.map = map
         self.root = root
         self.abs_root = os.path.abspath(root)
         # Match objects within 1'
@@ -942,10 +950,16 @@ class Manager:
                     continue
             fits_2 = self.other_arm(fits)
             path_pair = (fits.reduced_path, fits_2.reduced_path)
+            if fits.epoch < 2013.0:
+                # SAMI v1 had awful throughput at blue end of blue, need to
+                # trim that data
+                n_trim = 3
+            else:
+                n_trim = 0
             print ('Deriving transfer function for ' + fits.filename + 
                    ' and ' + fits_2.filename)
             try:
-                fluxcal2.derive_transfer_function(path_pair)
+                fluxcal2.derive_transfer_function(path_pair, n_trim=n_trim)
             except ValueError:
                 print ('Warning: No star found in dataframe, skipping ' + 
                        fits.filename)
@@ -1014,6 +1028,8 @@ class Manager:
 
     def telluric_correct(self, overwrite=False, **kwargs):
         """Apply telluric correction to object frames."""
+        # First make the list of file pairs to correct
+        pair_list = []
         for fits_2 in self.files(ndf_class='MFOBJECT', do_not_use=False,
                                  spectrophotometric=False, ccd='ccd_2', 
                                  **kwargs):
@@ -1021,29 +1037,13 @@ class Manager:
                 # Already been done; skip to the next file
                 continue
             fits_1 = self.other_arm(fits_2)
-            if fits_1 is None or not os.path.exists(fits_1.fluxcal_path):
-                print ('Matching blue arm not found for ' + fits_2.filename +
-                       '; skipping this file.')
-            path_pair = (fits_1.fluxcal_path, fits_2.fluxcal_path)
-            if fits_1.epoch < 2013.0:
-                # SAMI v1 had awful throughput at blue end of blue, need to
-                # trim that data
-                n_trim = 3
-            else:
-                n_trim = 0
-            print ('Deriving telluric correction for ' + fits_1.filename +
-                   ' and ' + fits_2.filename)
-            telluric.correction_linear_fit(path_pair, n_trim=n_trim)
-            print 'Telluric correcting file:', fits_2.filename
-            if os.path.exists(fits_2.telluric_path):
-                os.remove(fits_2.telluric_path)
-            telluric.apply_correction(fits_2.fluxcal_path, 
-                                      fits_2.telluric_path)
+            pair_list.append((fits_1, fits_2))
+        # Now send this list to as many cores as we are using
+        self.map(telluric_correct_pair, pair_list)
         return
 
     def cube(self, overwrite=False, **kwargs):
         """Make datacubes from the given RSS files."""
-        # overwrite not yet implemented
         target_dir = os.path.join(self.abs_root, 'cubed')
         if 'min_exposure' in kwargs:
             min_exposure = kwargs['min_exposure']
@@ -1058,24 +1058,14 @@ class Manager:
         groups = self.group_files_by(
             ['field_id', 'ccd'], ndf_class='MFOBJECT', do_not_use=False,
             reduced=True, min_exposure=min_exposure, name=name, **kwargs)
+        # Add in the root path as well, so that cubing puts things in the 
+        # right place
+        cubed_root = os.path.join(self.root, 'cubed')
+        groups = [(item[0], item[1], cubed_root, overwrite) 
+                  for item in groups.items()]
         with self.visit_dir(target_dir):
-            for field, fits_list in groups.items():
-                print 'Cubing field ID: {}, CCD: {}'.format(field[0], field[1])
-                path_list = []
-                for fits in fits_list:
-                    if os.path.exists(fits.telluric_path):
-                        path = fits.telluric_path
-                    elif os.path.exists(fits.fluxcal_path):
-                        path = fits.fluxcal_path
-                    else:
-                        path = fits.reduced_path
-                    path_list.append(path)
-                # First calculate the offsets
-                find_dither(path_list, path_list[0], centroid=True, 
-                            remove_files=True)
-                # Now do the actual cubing
-                dithered_cubes_from_rss_list(path_list, suffix='_'+field[0], 
-                                             write=True)
+            # Send the cubing tasks off to multiple CPUs
+            self.map(cube_group, groups)
         return
 
     def reduce_all(self, overwrite=False, **kwargs):
@@ -2257,6 +2247,56 @@ class FITSFile:
             hdulist[0].header[key] = value_comment
             hdulist.close()
         return
+
+
+def telluric_correct_pair(fits_pair):
+    """Telluric correct a pair of fits files."""
+    fits_1, fits_2 = fits_pair
+    if fits_1 is None or not os.path.exists(fits_1.fluxcal_path):
+        print ('Matching blue arm not found for ' + fits_2.filename +
+               '; skipping this file.')
+        return
+    if fits_1.epoch < 2013.0:
+        # SAMI v1 had awful throughput at blue end of blue, need to
+        # trim that data
+        n_trim = 3
+    else:
+        n_trim = 0
+    path_pair = (fits_1.fluxcal_path, fits_2.fluxcal_path)
+    print ('Deriving telluric correction for ' + fits_1.filename +
+           ' and ' + fits_2.filename)
+    telluric.correction_linear_fit(path_pair, n_trim=n_trim)
+    print 'Telluric correcting file:', fits_2.filename
+    if os.path.exists(fits_2.telluric_path):
+        os.remove(fits_2.telluric_path)
+    telluric.apply_correction(fits_2.fluxcal_path, 
+                              fits_2.telluric_path)
+    return
+
+def cube_group(group):
+    """Cube a set of RSS files."""
+    field, fits_list, root, overwrite = group
+    print 'Cubing field ID: {}, CCD: {}'.format(field[0], field[1])
+    path_list = []
+    for fits in fits_list:
+        if os.path.exists(fits.telluric_path):
+            path = fits.telluric_path
+        elif os.path.exists(fits.fluxcal_path):
+            path = fits.fluxcal_path
+        else:
+            path = fits.reduced_path
+        path_list.append(path)
+    print 'These are the files:'
+    for path in path_list:
+        print '  ', os.path.basename(path)
+    # First calculate the offsets
+    find_dither(path_list, path_list[0], centroid=True, 
+                remove_files=True)
+    # Now do the actual cubing
+    dithered_cubes_from_rss_list(path_list, suffix='_'+field[0], 
+                                 write=True, nominal=True, root=root,
+                                 overwrite=overwrite)
+    return
 
 
 class MatchException(Exception):
