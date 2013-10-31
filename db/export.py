@@ -26,12 +26,7 @@ import sami
 """ 
 Commit message: 
 
-Modularised fetch_cube() further. Bug fixes. 
-
--- moved makeHead() function outside fetch_cube(). 
--- writeto() had a clobber flag added, as it was creaed and written to separately. That didn't fly with the latest version of pyFITS. Should suppress warning from pyFITS ("Overwriting existing file"), as it is misleading. 
--- Introduced option to overwrite an existing file. 
--- fetch_cube() can now morph into the export() function by adding an RSS exporter segment. 
+Changes were made, but then reverted, not necessary. 
 """
 
 # ~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~
@@ -49,9 +44,9 @@ def checkSAMIformat(hdf):
 
 
 # ~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~
-def getVersion(hdf, version):
+def getVersion(h5file, hdf, version):
 # ~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~
-    """ Identify (latest) version in a given SAMI archive. """
+    """ Identify latest version in a given SAMI archive. """
 
     # Identify version sought, or the latest availabe (default). 
     if hdf['SAMI'].keys() != '':
