@@ -18,16 +18,17 @@ Table of Contents:
 
 For commit message:
 
-Adapting query.py to new filesystem. 
+Adapted query.py to new filesystem. 
 
-Started with query_master(), which has ben renamed to queryMaster(): 
-1) Adapted to change of location for DMUs and SAMI target tables. 
-2) Changed h5file to hdf and h5in to h5file for consistency with ingest.py. 
-3) Now calling getVersion() within queryMAster(). Added version arg. 
+query_multiple is now queryMultiple(). 
 
-Point (2) above also applied to query_multiple, which is now queryMultiple(). 
+-- Added getVersion() loop.
+-- Updated location of Tables within version loop. 
+-- Changed the way it looks for tables, now as PyTables 'nodes'. 
+-- Function now writes query results to an overwrite=protected file. 
+-- Moved print_sami(), now printQuery(), outside codes so it can be a grown-up function. 
 
-NOTE: Once versioning is applied to tables, the query codes will break. We will need to soft-link the latest version of each table to its name without the version suffix, to make this simpler. Changing the query codes to add the table version would be bad book-keeeping. 
+Also updated queryMaster() to use the external function. Also now returns the set of values researched. 
 
 """
 
@@ -42,7 +43,36 @@ import sami
 
 
 # ~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~
-def queryMaster(h5file, query, version='', idfile='sami_query.lis', 
+def print_sami(s, idfile, queryText, outFile=True, verbose=True):
+# ~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~
+    """ Define a Row Iterator for screen output """ 
+
+    # Prepare some variables. 
+    counter = 0
+    idlist = []
+
+    # Iterate over all supplied rows. 
+    for tables.row in s:
+        name, z = tables.row['CATID'], tables.row['z_spec']
+        if verbose:
+            print("  Found SAMI galaxy %s at redshift z=%g" % (name, z))
+        counter += 1
+        idlist.append(name)
+        if outFile: 
+            f = open(idfile, 'w')
+            f.write(str(name)+'\n')
+    if verbose:
+        print("\n  Found "+str(counter)+" galaxies satisfying query:\n  "+
+              queryText)
+
+    if outFile: 
+        f.close()
+    
+    return(idlist)
+
+
+# ~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~
+def queryMaster(h5file, queryIn, version='', idfile='sami_query.lis', 
                 verbose=True, returnID=True, overwrite=True):
 # ~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~
     """ Read a SAMI master table and perform a query """
@@ -58,9 +88,11 @@ def queryMaster(h5file, query, version='', idfile='sami_query.lis',
     """
 
     # Interpret the 'query' argument (look for a filename). 
-    if os.path.isfile(query):
-        fq = open(query, 'r')
-        query = fq.readlines()[0]
+    if os.path.isfile(queryIn):
+        fq = open(queryIn, 'r')
+        queryText = fq.readlines()[0]
+    else:
+        queryText = queryIn
 
     # Get latest data version, if not supplied
     hdf0 = h5.File(h5file, 'r')
@@ -78,41 +110,36 @@ def queryMaster(h5file, query, version='', idfile='sami_query.lis',
                 raise SystemExit("The nominated output file ('"+idfile+"') "+
                                  "already exists. Please raise the 'overwrite'"+
                                  " flag or enter a different filename. ")
-        f = open(idfile, 'w')
-        idlist = []
+        #f = open(idfile, 'w')
+        #idlist = []
 
     # Identify the SAMI master table, assumed to live in the Table directory
     g_table = hdf.getNode('/SAMI/'+version+'/Table/')
     master = g_table.SAMI_MASTER
 
-    # Define a Row Iterator for screen output. 
-    def print_sami(s):
-        counter = 0
-        for tables.row in s:
-            name, z = tables.row['CATID'], tables.row['z_spec']
-            if verbose:
-                print("  Found SAMI galaxy %s at redshift z=%g" % (name, z))
-            counter += 1
-            idlist.append(name)
-            if returnID: f.write(str(name)+'\n')
-        print("\n  Found "+str(counter)+" galaxies satisfying query:\n  "+query)
-        
-    print_sami(master.where(query))
+    # Run the row iterator. 
+    idlist = print_sami(master.where(queryText), idfile, 
+                         queryText, outFile=returnID, verbose=True)
 
+    # Close h5 file and return query results. 
     hdf.close()
-    if returnID: f.close()
+    return(idlist)
+
 
 
 # ~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~
-def query_multiple(h5file, qfile, verbose=True):
+def queryMultiple(h5file, qfile, writeFile=True, outFile='multipleQuery.lis', 
+                  overwrite=False, verbose=True, version=''):
 # ~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~
     """ Query multiple tables within an h5 archive and combine results """
 
+    import sami.db.export as export
+    
     """ 
     This is modelled after query_master. One main difference is the query 
     argument, which has to be a file in this case, rather than a string. 
-    
     """
+    
     # Check that the input files exist
     if (not os.path.isfile(h5file)) or (not os.path.isfile(qfile)):
         raise System.Exit("One of the nominated files does not exist. Exiting.")
@@ -142,49 +169,53 @@ def query_multiple(h5file, qfile, verbose=True):
 
     f.close()
 
+    # Get latest data version, if not supplied
+    hdf0 = h5.File(h5file, 'r')
+    version = export.getVersion(h5file, hdf0, version)
+    hdf0.close()
+
     # Now run all queries: 
+
     # Open h5 file with PyTabs: 
-    hdf = tables.openFile(h5file, mode = "r")
+    hdf = tables.openFile(h5file, 'r')
 
-    # Cannot provide any table name. They have to be defined here.
-    # Need to write an 'identify table' function. 
-    def id_tab(s):
-        if s == 'SAMI_MASTER': return hdf.root.SAMI_MASTER
-        if s == 'SAMI_MASTER_2': return hdf.root.SAMI_MASTER_2
-
-    # and run that function on all tabs: 
+    # Read all tables, append to list
     h5tabs = []
     for i in range(counter/2):
-        h5tabs.append(id_tab(tabs[i]))
+        h5tabs.append(hdf.getNode('/SAMI/'+version+'/Table/', tabs[i]))
 
-    hdf.close()
-    
     # OK, have the tables defined as variables, now need to query them. 
-    # I will copy-paste the print_sami code here, but need to do better.
-    
-    # Define a Row Iterator for screen output. 
-    idlist = []
-    def print_sami(s):
-        count = 0
-        for tables.row in s:
-            name, z = tables.row['CATID'], tables.row['z_spec']
-            #if verbose:
-            #    print("  Found SAMI galaxy %s at redshift z=%g" % (name, z))
-            count += 1
-            idlist.append(name)
-        return idlist
-        
+
     # Run each query: 
     all_lists = []
     for i in range(counter/2):
-        print_sami(h5tabs[i].where(queries[i]))
-        print("Query "+str(i+1)+": Found "+str(len(idlist))+
-              " galaxies satisfying "+queries[i])
+        idlist = print_sami(h5tabs[i].where(queries[i]), outFile, 
+                            queries[i], outFile=False, verbose=False)
+        if verbose: 
+            print("Query "+str(i+1)+": Found "+str(len(idlist))+
+                  " galaxies satisfying "+queries[i])
         all_lists.append(idlist)
 
-    # And now intersect all idlists within all_lists container
+    # This seems like a good place to close the h5 file.
+    hdf.close()
+
+    # Finally, intersect all idlists within all_lists container return, exit.
     final_idlist = set(all_lists[0]).intersection(*all_lists)
-    print(final_idlist)
+    if verbose: 
+            print(" ------- Found "+str(len(final_idlist))+
+                  " galaxies satisfying all queries.")
+    if writeFile:
+        # Check if the file exists. 
+        if (os.path.isfile(outFile)) and (not overwrite):
+                print("\nFile already exists, please choose other filename or "+
+                      "raise 'overwrite' flag.")
+
+        if (not os.path.isfile(outFile)) or overwrite:
+            f = open(outFile, 'w')
+            [f.write(s) for s in str(list(final_idlist))]
+            f.close()
+            
+    return(final_idlist)
 
 
 # ~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~
