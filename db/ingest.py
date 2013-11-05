@@ -40,16 +40,9 @@ import sami
 """ 
 For commit message: 
 
-Updating import_table() to add tables to 'SAMI/<version>/Tables'. 
+Quick bug fix in make_list(). 
 
-Code renamed to importMaster(), as it is specific to a GAMA-based SAMI target table. Tables will now live in a 'SAMI/<version>/Tables' group, so they can be version controlled. the 'h5dir' argument has been removed from the calling sequence, and the most recent version will be chosen by default (a manually inpu argument for now). Tables will have to be included manually, that is, with every data release there will be the manual addition of a MASTER table and any other updated HLSP/DMU tables. If the table has not changed, then it should be linked to the previous version, not duplicated. The name of any compound dataset holding a DMU should include the DMU version. That way we can support multiple versions of a single DMU in the same Data Release. 
-
-Additionally, due to a limitation of PyTables (inability to interpret attributes with empty value fields), I have restricted the inclusion of the temporary [comm] attributes to only those header items with comment fields in import_cube(). Blank header tickets themselves are replaced with '[blank]'. 
-
-Finally, I have introduced a little version-checker loop in importMaster(), as I was not able to easily adapt sami.db.export.getVersion() to interpret the contents of an h5 file with either h5py or PyTables. Incidentally, getVersion() should probably be moved to utils.py. 
-
-TODO: Need to introduce a version branding system for these tables, including in the name. That will be in the next commit though, enough updates here! 
-
+Discovered and fixed a bug in make_list() that assumed that the hidden file '.DS_Store' will always be present in a SAMI observing run directory. This had to be removed for the resulting list to work. Made this removel conditional on the file actually existing. 
 """
 
 # ~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~
@@ -566,7 +559,10 @@ def make_list(dataroot='./', tableout='SAMI_input.lis',
     
     # Scan the dataroot/cubed subdirectory. 
     nameList = os.listdir(dataroot+'/cubed')
-    nameList.remove('.DS_Store')
+
+    # Sometimes directories have a '.DS_Store' file, remove it. 
+    if '.DS_Store' in nameList:
+        nameList.remove('.DS_Store')
 
     # Create a file buffer, decide whether to overwrite or append: 
     if not append: f = open(tableout, 'w')
