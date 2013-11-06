@@ -1,1 +1,1 @@
-__all__=['display','cubing']
+__all__=['display','cubing','align_micron']

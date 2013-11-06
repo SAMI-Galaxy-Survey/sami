@@ -2,6 +2,7 @@ import numpy as np
 
 import os
 import subprocess
+import gzip as gz
 
 from collections import namedtuple
 
@@ -12,8 +13,6 @@ try:
 except:
     from scipy.stats import nanmedian
     print("Not Using bottleneck: Speed will be improved if you install bottleneck")
-
-from sami.utils.ifu import IFU
 
 from sami import update_csv
 
@@ -418,8 +417,7 @@ def get_probes_objects(infile, ifus='all'):
 
     else:
         ifus=ifus
-
-    
+ 
     print "Probe   Object"
     print "-----------------------------------"
     for ifu in ifus:
@@ -493,3 +491,44 @@ def find_fibre_table(hdulist):
     return extno
 
 
+def gzip(filename, leave_original=False):
+    """gzip a file, optionally leaving the original version in place."""
+    with open(filename, 'rb') as f_in:
+        with gz.open(filename + '.gz', 'wb') as f_out:
+            f_out.writelines(f_in)
+    if not leave_original:
+        os.remove(filename)
+    return
+
+def find_nearest(arr, val):
+    
+    # Finds the index of the array element in arr nearest to val
+    idx=(np.abs(arr-val)).argmin()
+    return idx
+
+
+def replace_xsym_link(path):
+    """Replace an XSym type link with a proper POSIX symlink."""
+    # This could be sped up if only the first few lines were read in, but I
+    # (JTA) can't be bothered.
+    with open(path) as f:
+        contents = f.readlines()
+    if len(contents) != 5 or contents[0] != 'XSym\n':
+        # This wasn't an XSym link
+        raise ValueError('Not an XSym file: ' + path)
+    source = contents[-2][:-1]
+    os.remove(path)
+    os.symlink(source, path)
+    return
+
+def replace_all_xsym_link(directory='.'):
+    """Replace all XSym links in directory and its subdirectories."""
+    for dirname, subdirname_list, filename_list in os.walk(directory):
+        for filename in filename_list:
+            try:
+                replace_xsym_link(os.path.join(dirname, filename))
+            except (ValueError, IOError):
+                # This generally just means it wasn't an XSym link in the 
+                # first place
+                pass
+    return
