@@ -40,9 +40,10 @@ import sami
 """ 
 For commit message: 
 
-Quick bug fix in make_list(). 
+Quick bug fix in import_cube(). 
 
-Discovered and fixed a bug in make_list() that assumed that the hidden file '.DS_Store' will always be present in a SAMI observing run directory. This had to be removed for the resulting list to work. Made this removel conditional on the file actually existing. 
+Caught a little bug that wouldn allow both the blue and red cube inputs be blank strings. Now closes and exits in such an eventuality. Also added a check for the nominated cube files. 
+
 """
 
 # ~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~
@@ -141,6 +142,13 @@ def import_cube(blue_cube, red_cube, h5file, version, safe_mode=False,
         raise SystemExit("Cannot find the nominated HDF5 file ('"+h5file+"'). "+
                          "Please create a file using the 'create' function")
         
+    # Also check if the nominated cubes exist. 
+    if (blue_cube != '') and (not os.path.isfile(blue_cube)):
+        raise SystemExit("Cannot find the nominated blue cube. Exiting. ")
+
+    if (red_cube != '') and (not os.path.isfile(red_cube)):
+        raise SystemExit("Cannot find the nominated red cube. Exiting. ")
+        
     # If file does exist, open (copy in safe_mode) and allow write privileges. 
     if safe_mode:
         import datetime
@@ -202,6 +210,11 @@ def import_cube(blue_cube, red_cube, h5file, version, safe_mode=False,
                          '"\n  > red cube:  "'+red_cube+'"')
 
     else:
+        if (blue_cube == '') & (red_cube == ''):
+            hdf.close()
+            raise SystemExit("Oops! It looks like both the 'blue_cube' and "+
+                             "'red_cube' are blank strings. ")
+            
         if blue_cube != '': 
             sami_name = hduBLUE[0].header['NAME']
             hduBLUE.close() 
