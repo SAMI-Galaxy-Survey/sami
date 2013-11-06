@@ -16,11 +16,21 @@ Table of Contents:
 .locate_rss     Queries a cube header, identifies parent RSS files, locates  
                 them on the machine running the code. Returns filename listing. 
 .make_list      Make a list for import_many from the contents of a directory. 
-.import_table   Imports a SAMI target table. 
+.importMaster   Imports a SAMI target table. 
+
+Known bugs and fixes: 
+
+2013.10.31 -- PyTables cannot read attributes with empty value fields. We need 
+              to get that dictionary going right away. This has been contained 
+              by not including any header items without values (which is good 
+              practise anyway) as [comm] attributes (the temporary measure), and
+              filling in blank header tickets with '[blank]'
+ 
 """
 
 import numpy as np
 import h5py as h5
+import tables
 import astropy.io.fits as pf
 import astropy.io.ascii as ascii
 import os
@@ -30,9 +40,10 @@ import sami
 """ 
 For commit message: 
 
-Updated import list creation tool make_list() 
+Quick bug fix in import_cube(). 
 
-Fully redesigned to comply with new data-flow model and directory structure. Thecode no longer checks the contents of cubes that share a directory within <obsrun>/cubed to speed up, as this check is performed in the import code. The new code is far simpler, owing to improvements in the directory structure. 
+Caught a little bug that wouldn allow both the blue and red cube inputs be blank strings. Now closes and exits in such an eventuality. Also added a check for the nominated cube files. 
+
 """
 
 # ~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~
@@ -131,6 +142,13 @@ def import_cube(blue_cube, red_cube, h5file, version, safe_mode=False,
         raise SystemExit("Cannot find the nominated HDF5 file ('"+h5file+"'). "+
                          "Please create a file using the 'create' function")
         
+    # Also check if the nominated cubes exist. 
+    if (blue_cube != '') and (not os.path.isfile(blue_cube)):
+        raise SystemExit("Cannot find the nominated blue cube. Exiting. ")
+
+    if (red_cube != '') and (not os.path.isfile(red_cube)):
+        raise SystemExit("Cannot find the nominated red cube. Exiting. ")
+        
     # If file does exist, open (copy in safe_mode) and allow write privileges. 
     if safe_mode:
         import datetime
@@ -192,6 +210,11 @@ def import_cube(blue_cube, red_cube, h5file, version, safe_mode=False,
                          '"\n  > red cube:  "'+red_cube+'"')
 
     else:
+        if (blue_cube == '') & (red_cube == ''):
+            hdf.close()
+            raise SystemExit("Oops! It looks like both the 'blue_cube' and "+
+                             "'red_cube' are blank strings. ")
+            
         if blue_cube != '': 
             sami_name = hduBLUE[0].header['NAME']
             hduBLUE.close() 
@@ -264,12 +287,7 @@ def import_cube(blue_cube, red_cube, h5file, version, safe_mode=False,
         # DEFINE DATA IMPORT FUNCTION
         # ---------------------------
         def eat_data(group, name, hdu, hdr='', importHdr=True, hdrItems=[]):
-            """ Import datasets and headers in a consistent manner. 
-            
-            Header input is a little different for RSS and cube, due to the 
-            naming of headers in the two situations: hdu.data/header for cubes,
-            but altogether different names on the IFU object. 
-            """
+            """ Import datasets and headers in a consistent manner """
 
             the_array = group.create_dataset(name, data=hdu, 
                                              chunks=True, compression='gzip')
@@ -287,11 +305,14 @@ def import_cube(blue_cube, red_cube, h5file, version, safe_mode=False,
                     hdr = pf.Header(cards=cardList)
                     
                 for n_hdr in range(len(hdr)):
-                    the_array.attrs\
-                        [hdr.keys()[n_hdr]] = hdr.values()[n_hdr]
+                    if hdr.values()[n_hdr] != '':
+                        the_array.attrs[hdr.keys()[n_hdr]] = hdr.values()[n_hdr]
+                    else:
+                        the_array.attrs[hdr.keys()[n_hdr]] = '[blank]'
                     # Save header comments as separate attributes (temp). 
-                    the_array.attrs\
-                        ["[comm]"+hdr.keys()[n_hdr]] = hdr.comments[n_hdr]
+                    if hdr.comments[n_hdr] != '':
+                        the_array.attrs\
+                            ["[comm]"+hdr.keys()[n_hdr]] = hdr.comments[n_hdr]
 
             return the_array
 
@@ -376,7 +397,7 @@ def import_many(tablein, h5file, version, safe_mode=False,
     
 
 # ~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~
-def import_table(h5file, tabin, cdf='', h5dir='/', verbose=False):
+def importMaster(h5file, tabin, cdf='', version='', verbose=False):
 # ~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~
     """ Import a SAMI target table to an h5 archive. 
 
@@ -386,6 +407,7 @@ def import_table(h5file, tabin, cdf='', h5dir='/', verbose=False):
     Note that 'name' is the IAU name and the SAMI identifier is 'CATID'. 
     """
     import tables
+    import sami.db.export as export
 
     # Define column definitions for a standard SAMI table. 
     if cdf != '':
@@ -428,21 +450,28 @@ def import_table(h5file, tabin, cdf='', h5dir='/', verbose=False):
         PRI_SAMI  = tables.UInt16Col(pos=19)
         BAD_CLASS = tables.UInt16Col(pos=20)
 
-    # Check if the nominated file exists
+    # Check if the nominated file exists. 
     if not os.path.isfile(h5file):
         print("The nominated HDF5 file ('"+h5file+"') does not exist. "+
               "Creating new file. ")
         
-    # Open the nominated h5 file. 
-    h5file = tables.openFile(h5file, mode = "a")
-    
-    # Check that the chosen directory exists. 
-    ### FILL IN! 
-    
-    # Create a target table in the root directory of the h5file. 
-    master = h5file.createTable(h5dir, 'SAMI_MASTER', sami_master)
+    # Get (latest) version. 
+    """ Doing this with h5py cause PyTables is retarded. Will then close and 
+    re-open with PyTables... """
+    hdf = h5.File(h5file, 'r')
+    version = export.getVersion(h5file, hdf, version)
+    hdf.close()
 
-    # Attributes can be tacked to the table here. 
+    # Open the nominated h5 file -- use PyTables. 
+    hdf = tables.openFile(h5file, 'r+')
+
+    # Require the Table group (do not create). 
+    g_table = hdf.createGroup("/SAMI/"+version, "Table", title='SAMI Tables')
+
+    # Create a target table in the Target directory of the h5file. 
+    master = hdf.createTable(g_table, 'SAMI_MASTER', sami_master)
+
+    """ An array of attributes could be tacked to the table here. """
 
     # Populate this master h5 table with 'tabin'. 
     galaxy = master.row
@@ -471,7 +500,7 @@ def import_table(h5file, tabin, cdf='', h5dir='/', verbose=False):
         galaxy.append()
 
     master.flush()
-    h5file.close()
+    hdf.close()
 
     
 # ~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~
@@ -543,7 +572,10 @@ def make_list(dataroot='./', tableout='SAMI_input.lis',
     
     # Scan the dataroot/cubed subdirectory. 
     nameList = os.listdir(dataroot+'/cubed')
-    nameList.remove('.DS_Store')
+
+    # Sometimes directories have a '.DS_Store' file, remove it. 
+    if '.DS_Store' in nameList:
+        nameList.remove('.DS_Store')
 
     # Create a file buffer, decide whether to overwrite or append: 
     if not append: f = open(tableout, 'w')
