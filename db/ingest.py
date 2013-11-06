@@ -40,10 +40,9 @@ import sami
 """ 
 For commit message: 
 
-Changed an index name in import_cube(). 
+Cross-platform bug fix on locate_rss(). 
 
-Have been using generic 'i' indices for some loops, changed to the specifically named index [thisHDU]. 
-
+Changed locate_rss() to print the latest RSS file found as a [-1:], rather than indexing the rss_path variable. 
 """
 
 # ~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~
@@ -538,7 +537,7 @@ def locate_rss(cubein, dataroot='./', verbose=True):
             for i in range(n_rss):
                 if name == rss_files[i]:
                     rss_path.append(os.path.abspath(os.path.join(root,name)))
-                    if verbose: print('   '+rss_path[i])
+                    if verbose: print('   '+str(rss_path[-1:]))
 
     # Check 
     if len(rss_files) == n_rss:
