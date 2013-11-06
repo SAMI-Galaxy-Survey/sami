@@ -299,6 +299,40 @@ class Manager:
     This function takes the same keywords as described above for fibre
     flats etc.
 
+    Flux calibration
+    ================
+
+    The flux calibration requires a series of steps. First, a transfer
+    function is derived for each observation of a standard star:
+
+    >>> mngr.derive_transfer_function()
+
+    Next, transfer functions from related observations are combined:
+
+    >>> mngr.combine_transfer_function()
+
+    The combined transfer functions can then be applied to the data to
+    flux calibrate it:
+
+    >>> mngr.flux_calibrate()
+
+    Finally, the telluric correction is derived and applied with a
+    single command:
+
+    >>> mngr.telluric_correct()
+
+    As before, keywords can be set to restrict which files are processed,
+    and overwrite=True can be set to force re-processing of files that
+    have already been done.
+    
+    Cubing
+    ======
+
+    The final step in the data reduction is to turn the individual
+    calibrated spectra into datacubes:
+
+    >>> mngr.cube()
+
     Checking outputs
     ================
 
