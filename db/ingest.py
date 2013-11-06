@@ -40,9 +40,9 @@ import sami
 """ 
 For commit message: 
 
-Quick bug fix in import_cube(). 
+Changed an index name in import_cube(). 
 
-Caught a little bug that wouldn allow both the blue and red cube inputs be blank strings. Now closes and exits in such an eventuality. Also added a check for the nominated cube files. 
+Have been using generic 'i' indices for some loops, changed to the specifically named index [thisHDU]. 
 
 """
 
@@ -253,8 +253,8 @@ def import_cube(blue_cube, red_cube, h5file, version, safe_mode=False,
         colour.append('R')
         hdulist.append(red_cube)
     
-    for i in range(len(hdulist)):
-        HDU = pf.open(hdulist[i])
+    for thisHDU in range(len(hdulist)):
+        HDU = pf.open(hdulist[thisHDU])
         if verbose: 
             print
             print(HDU.info())
@@ -263,13 +263,13 @@ def import_cube(blue_cube, red_cube, h5file, version, safe_mode=False,
         if (ingest_rss) or (rss_only):
 
             # First check if there are any already in here. 
-            if colour[i]+'_RSS_data_1' in g_target.keys(): 
+            if colour[thisHDU]+'_RSS_data_1' in g_target.keys(): 
                 raise SystemExit("The nominated HDF5 file ('"+h5file+"') "+
                         "already contains RSS strips for the nominated SAMI "+
                         "target ("+sami_name+"). Please check archive "+
                         "and cubes. ")
 
-            rss_list = locate_rss(hdulist[i], dataroot, verbose=verbose)
+            rss_list = locate_rss(hdulist[thisHDU], dataroot, verbose=verbose)
             n_rss = len(rss_list)
             
             if (n_rss != 0) and (verbose):
@@ -318,11 +318,11 @@ def import_cube(blue_cube, red_cube, h5file, version, safe_mode=False,
 
         # IMPORT CUBE
         # -----------
-        cube_data = eat_data(g_target, colour[i]+"_Cube_Data", 
+        cube_data = eat_data(g_target, colour[thisHDU]+"_Cube_Data", 
                              HDU[0].data, hdr=HDU[0].header)
-        cube_var  = eat_data(g_target, colour[i]+"_Cube_Variance", 
+        cube_var  = eat_data(g_target, colour[thisHDU]+"_Cube_Variance", 
                              HDU[1].data, hdr=HDU[1].header)
-        cube_wht  = eat_data(g_target, colour[i]+"_Cube_Weight", 
+        cube_wht  = eat_data(g_target, colour[thisHDU]+"_Cube_Weight", 
                              HDU[2].data, hdr=HDU[2].header)
 
         # IMPORT RSS
@@ -333,9 +333,10 @@ def import_cube(blue_cube, red_cube, h5file, version, safe_mode=False,
                 myIFU = sami.utils.IFU(rss_list[rss_loop], 
                                        sami_name, flag_name=True)
                 # RSS: Data, Variance. 
-                rss_data = eat_data(g_target, colour[i]+"_RSS_Data_"+rss_index,
+                rss_data = eat_data(g_target, 
+                                    colour[thisHDU]+"_RSS_Data_"+rss_index,
                                     myIFU.data, hdr=myIFU.primary_header)
-                rss_var = eat_data(g_target, colour[i]+"_RSS_Variance_"+\
+                rss_var = eat_data(g_target, colour[thisHDU]+"_RSS_Variance_"+\
                                    rss_index, myIFU.var, importHdr=False)
 
                 # RSS: Fibre Table. Only wish to import bits an pieces. 
@@ -344,7 +345,8 @@ def import_cube(blue_cube, red_cube, h5file, version, safe_mode=False,
                             myIFU.fibtab['FIB_ARA'], myIFU.fibtab['FIB_ADEC'] ]
                 fibComb = np.transpose(np.array(tempTab))
 
-                rss_fibtab = eat_data(g_target, colour[i]+'_RSS_FibreTable_'+\
+                rss_fibtab = eat_data(g_target, 
+                                      colour[thisHDU]+'_RSS_FibreTable_'+\
                         rss_index, fibComb, hdr=myIFU.fibre_table_header, \
                         hdrItems=['CENRA', 'CENDEC', 'APPRA', 'APPDEC'])
 
