@@ -1067,6 +1067,7 @@ class Manager:
                     if overwrite or not os.path.exists(path_copy):
                         print 'Copying combined file to', path_copy
                         shutil.copy2(path_out, path_copy)
+            self.set_check_recent('FLX', fits_list, False)
         return
 
     def flux_calibrate(self, overwrite=False, **kwargs):
@@ -1107,6 +1108,9 @@ class Manager:
             pair_list.append((fits_1, fits_2))
         # Now send this list to as many cores as we are using
         self.map(telluric_correct_pair, pair_list)
+        # Mark telluric corrections as not checked
+        for fits_pair in pair_list:
+            self.set_check_recent('TEL', fits_pair, False)
         return
 
     def cube(self, overwrite=False, **kwargs):
@@ -1133,6 +1137,13 @@ class Manager:
         with self.visit_dir(target_dir):
             # Send the cubing tasks off to multiple CPUs
             self.map(cube_group, groups)
+        # Mark all cubes as not checked. Ideally would only mark those that
+        # actually exist. Maybe set dithered_cubes_from_rss_list to return a 
+        # list of those it created?
+        for key in CHECK_DATA:
+            if re.match('C[0-9]{2}$', key):
+                for fits_list in [item[1] for item in groups.items()]:
+                    self.set_check_recent(key, fits_list[0], False)
         return
 
     def reduce_all(self, overwrite=False, **kwargs):
