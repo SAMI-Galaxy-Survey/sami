@@ -18,6 +18,7 @@ History:
 """
 
 import numpy
+from ..config import latitude
 
 def adr_n1(lam):
     #convert angstroms to microns
@@ -49,7 +50,7 @@ def adr_r(wavelength, zenith_distance, air_pres=700.0, temperature=0.0, water_pr
     
     Parameters
     ----------
-        wavelength: list of wavelengths to compute, units: microns (array-like)
+        wavelength: list of wavelengths to compute, units: angstroms (array-like)
         zenith_distance: secant of the zenith distance, or airmass (float)
         air_pres: air pressure (at ground level) at time of 
              observation (in units of mm of Hg)
@@ -62,32 +63,43 @@ def adr_r(wavelength, zenith_distance, air_pres=700.0, temperature=0.0, water_pr
         
     """
     
-    seczd = 1/numpy.cos(numpy.radians(zenith_distance))
+    seczd = 1.0/numpy.cos(numpy.radians(zenith_distance))
     
     nlam = adr_ntot(wavelength, air_pres, temperature, water_pres)
     tanz = (seczd**2 - 1.0)**0.5
     return 206265.0 * nlam * tanz
 
-def parallactic_angle(hour_angle, zenith_distance, latitude):
+def parallactic_angle(hour_angle, declination, latitude):
     """
     Return parallactic angle in degrees for a given observing condition.
     
     Inputs in degrees. Hour angle is positive if west of the meridian.
     
-    Written by Andy Green, based on Fillipenko (1982) Equation 9.
+    The parallactic angle returned is the direction to the zenith measured north
+    through east.
+    
+    Written by Andy Green, confirmed to give the same results as Fillipenko
+    (1982) Equation 9, but with correct sign/direction for all areas of the sky.
+    Actual formula from:
+    
+    https://github.com/brandon-rhodes/pyephem/issues/24
+    
+    "A treatise on spherical astronomy" By Sir Robert Stawell Ball
+    (p. 91, as viewed on Google Books)
     
     """
-    
-    # Define two convenience functions to simplify the following code.
-    sin_d = lambda x: numpy.sin(numpy.radians(x))
-    arcsin_d = lambda x: numpy.degrees(numpy.arcsin(x))
 
-    return arcsin_d(
-        sin_d(hour_angle) * 
-        sin_d(numpy.pi/2 - latitude) /
-        sin_d(zenith_distance) 
+    sin_dec = numpy.sin(numpy.radians(declination))
+    cos_dec = numpy.cos(numpy.radians(declination))
+    sin_lat = numpy.sin(numpy.radians(latitude))
+    cos_lat = numpy.cos(numpy.radians(latitude))
+    sin_ha =  numpy.sin(numpy.radians(hour_angle))
+    cos_ha =  numpy.cos(numpy.radians(hour_angle))
+
+    return numpy.degrees(
+        -numpy.arctan2( cos_lat * sin_ha, sin_lat * cos_dec - cos_lat * sin_dec * cos_ha)
         )
-
+    
 
 class DARCorrector:
     """
@@ -96,6 +108,7 @@ class DARCorrector:
     
     
     def __init__(self,method='none'):
+        self.method = method
         if (method == 'none'):
             self.correction = self.correction_none
         
@@ -105,17 +118,55 @@ class DARCorrector:
             self.water_pres = 10
             self.correction = self.correction_simple
             self.zenith_distance = 0
+            self.ref_wavelength = 5000.0
+
+        # Latitude of the observatory, default to AAT.
+        self.latitude = latitude.degrees
+        
+        # Private variables
+        self._pa = False
 
     def correction_none(self, wavelength):
         """Dummy function to return 0 (no correction) if DAR method is 'none'."""
         return 0
           
     def correction_simple(self,wavelength):
-        """DAR correction using simple theoretical model."""
-        return adr_r(wavelength, self.zenith_distance, self.air_pres, self.temperature, self.water_pres)
+        """DAR correction using simple theoretical model from wavelength in angstroms."""
+        
+        dar = adr_r(wavelength, self.zenith_distance, self.air_pres, self.temperature, self.water_pres)
+        dar_reference = adr_r(self.ref_wavelength, self.zenith_distance, self.air_pres, self.temperature, self.water_pres)
     
+        return dar - dar_reference
         
+    def print_setup(self):
+        print("Method: {}".format(self.method))
         
+        if (self.method != 'none'):
+            print("Air Pressure: {}, Water Pressure: {}, Temperature: {}".format(self.air_pres, self.water_pres, self.temperature))
+            print("Zenith Distance: {}, Reference Wavelength: {}".format(self.zenith_distance, self.ref_wavelength))
         
+    def parallactic_angle(self):
+        if self._pa is False:
+            self._pa = parallactic_angle(self.hour_angle, 
+                                         self.declination, 
+                                         self.latitude) 
+        return self._pa
         
+    def update_for_wavelength(self,wavelength):
+        """Update the valuse of dar_r, dar_east, and dar_north for the given wavelength.
+        
+        dar_r, dar_east, and dar_north are stored as instance attributes. They
+        give the scale of the refraction from the refraction at the reference
+        wavelength, e.g., a star observed at dec_obs would appear at dec_obs + dar_north 
+        if there were no atmosphere.
+        
+        """
+        
+        self.dar_r = self.correction(wavelength)
+
+        # Parallactic angle is direction to zenith measured north through east.
+        # Must move light away from the zenith to correct for DAR.
+        self.dar_east  = -self.dar_r * numpy.sin(numpy.radians(self.parallactic_angle()))
+        self.dar_north = -self.dar_r * numpy.cos(numpy.radians(self.parallactic_angle()))
+
         
