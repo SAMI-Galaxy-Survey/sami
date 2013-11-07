@@ -141,6 +141,20 @@ PILOT_FIELD_LIST = [
     {'plate_id': 'run_7_P4', 'field_no': 2, 
      'coords': '00h42m34.09s -09d12m08.1s'}]
 
+# Things that should be visually checked
+CHECK_DATA = {
+    'TLM': 'Tramline map',
+    'ARC': 'Arc reduction',
+    'FLT': 'Flat field',
+    'SKY': 'Twilight sky',
+    'OBJ': 'Object frame',
+    'FLX': 'Flux calibration',
+    'TEL': 'Telluric correction'
+    }
+for index in xrange(1, 14):
+    i_string = '{:02d}'.format(index)
+    CHECK_DATA['C' + i_string] = 'cube ' + i_string
+
 class Manager:
     """Object for organising and reducing SAMI data.
 
@@ -1955,6 +1969,7 @@ class FITSFile:
         self.set_lamp()
         self.set_do_not_use()
         self.set_coords_flags()
+        self.set_check_data()
         self.hdulist.close()
         del self.hdulist
 
@@ -2204,6 +2219,26 @@ class FITSFile:
             self.coord_rev = self.hdulist[0].header['COORDREV']
         except KeyError:
             self.coord_rev = None
+        return
+
+    def set_check_data(self):
+        """Set whether the relevant checks have been done."""
+        # This method of storing the check data is inefficient as all keys are
+        # stored, even though only some are required for any given ndf_class.
+        # On the other hand, it's simple.
+        self.check_ever = {}
+        self.check_recent = {}
+        for key in CHECK_DATA:
+            try:
+                check_done_ever = self.hdulist[0].header['MNCH' + key]
+            except KeyError:
+                check_done_ever = None
+            self.check_ever[key] = check_done_ever
+            try:
+                check_done_recent = self.hdulist[0].header['MNCH' + key + 'R']
+            except KeyError:
+                check_done_recent = None
+            self.check_recent[key] = check_done_recent
         return
 
     def make_reduced_link(self):
