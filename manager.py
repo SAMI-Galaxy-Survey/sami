@@ -1011,9 +1011,12 @@ class Manager:
         # groups. Wouldn't need name except that currently different stars
         # are on different units; remove the name matching when that's
         # sorted.
-        groups = self.group_files_by(('date', 'field_id', 'ccd', 'name'))
+        groups = self.group_files_by(('date', 'field_id', 'ccd', 'name'),
+            ndf_class='MFOBJECT', do_not_use=False,
+            spectrophotometric=True, **kwargs)
         # Now combine the files within each group
-        for path_list in groups.values():
+        for fits_list in groups.values():
+            path_list = [fits.reduced_path for fits in fits_list]
             path_out = os.path.join(os.path.dirname(path_list[0]),
                                     'TRANSFERcombined.fits')
             if overwrite or not os.path.exists(path_out):
