@@ -947,7 +947,7 @@ class Manager:
                                    **kwargs)
         self.reduce_file_iterable(file_iterable, overwrite=overwrite, 
                                   tlm=True, leave_reduced=leave_reduced)
-        self.set_check_recent('TLM', file_iterable, False)
+        self.update_check_recent('TLM', file_iterable, False)
         return
 
     def reduce_arc(self, overwrite=False, **kwargs):
@@ -955,7 +955,7 @@ class Manager:
         file_iterable = self.files(ndf_class='MFARC', do_not_use=False,
                                    **kwargs)
         self.reduce_file_iterable(file_iterable, overwrite=overwrite)
-        self.set_check_recent('ARC', file_iterable, False)
+        self.update_check_recent('ARC', file_iterable, False)
         return
 
     def reduce_fflat(self, overwrite=False, **kwargs):
@@ -963,7 +963,7 @@ class Manager:
         file_iterable = self.files(ndf_class='MFFFF', do_not_use=False,
                                    **kwargs)
         self.reduce_file_iterable(file_iterable, overwrite=overwrite)
-        self.set_check_recent('FLT', file_iterable, False)
+        self.update_check_recent('FLT', file_iterable, False)
         return
 
     def reduce_sky(self, overwrite=False, **kwargs):
@@ -971,7 +971,7 @@ class Manager:
         file_iterable = self.files(ndf_class='MFSKY', do_not_use=False,
                                    **kwargs)
         self.reduce_file_iterable(file_iterable, overwrite=overwrite)
-        self.set_check_recent('SKY', file_iterable, False)
+        self.update_check_recent('SKY', file_iterable, False)
         return
 
     def reduce_object(self, overwrite=False, **kwargs):
@@ -983,7 +983,7 @@ class Manager:
                                           do_not_use=False, **kwargs),
                                key=key, reverse=True)
         self.reduce_file_iterable(file_iterable, overwrite=overwrite)
-        self.set_check_recent('OBJ', file_iterable, False)
+        self.update_check_recent('OBJ', file_iterable, False)
         return
 
     def reduce_file_iterable(self, file_iterable, overwrite=False, tlm=False,
@@ -1067,7 +1067,7 @@ class Manager:
                     if overwrite or not os.path.exists(path_copy):
                         print 'Copying combined file to', path_copy
                         shutil.copy2(path_out, path_copy)
-            self.set_check_recent('FLX', fits_list, False)
+            self.update_check_recent('FLX', fits_list, False)
         return
 
     def flux_calibrate(self, overwrite=False, **kwargs):
@@ -1110,7 +1110,7 @@ class Manager:
         self.map(telluric_correct_pair, pair_list)
         # Mark telluric corrections as not checked
         for fits_pair in pair_list:
-            self.set_check_recent('TEL', fits_pair, False)
+            self.update_check_recent('TEL', fits_pair, False)
         return
 
     def cube(self, overwrite=False, **kwargs):
@@ -1143,7 +1143,7 @@ class Manager:
         for key in CHECK_DATA:
             if re.match('C[0-9]{2}$', key):
                 for fits_list in [item[1] for item in groups.items()]:
-                    self.set_check_recent(key, fits_list[0], False)
+                    self.update_check_recent(key, fits_list[0], False)
         return
 
     def reduce_all(self, overwrite=False, **kwargs):
@@ -1961,6 +1961,12 @@ class Manager:
         self.idx_files = IDX_FILES[self.speed]
         return
 
+    def update_check_recent(self, key, file_iterable, value):
+        """Set flags for whether the files have been manually checked."""
+        for fits in file_iterable:
+            fits.update_check_recent(key, value)
+        return
+
 
 class FITSFile:
     """Holds information about a FITS file to be copied."""
@@ -2328,6 +2334,16 @@ class FITSFile:
             else:
                 self.make_reduced_link()
         return
+
+    def update_check_recent(self, key, value):
+        """Change one of the check flags assigned to this file."""
+        if self.check_recent[key] != value:
+            # Update the FITS header
+            self.add_header_item('MNCH' + key + 'R', value,
+                                 CHECK_DATA[key]['name'] + 
+                                 ' checked since re-reduction')
+            # Update the object
+            self.check_recent[key] = value
 
     def add_header_item(self, key, value, comment=None, source=False):
         """Add a header item to the FITS file."""
