@@ -143,17 +143,33 @@ PILOT_FIELD_LIST = [
 
 # Things that should be visually checked
 CHECK_DATA = {
-    'TLM': 'Tramline map',
-    'ARC': 'Arc reduction',
-    'FLT': 'Flat field',
-    'SKY': 'Twilight sky',
-    'OBJ': 'Object frame',
-    'FLX': 'Flux calibration',
-    'TEL': 'Telluric correction'
+    'TLM': {'name': 'Tramline map',
+            'ndf_class': 'MFFFF',
+            'spectrophotometric': None},
+    'ARC': {'name': 'Arc reduction',
+            'ndf_class': 'MFARC',
+            'spectrophotometric': None},
+    'FLT': {'name': 'Flat field',
+            'ndf_class': 'MFFFF',
+            'spectrophotometric': None},
+    'SKY': {'name': 'Twilight sky',
+            'ndf_class': 'MFSKY',
+            'spectrophotometric': None},
+    'OBJ': {'name': 'Object frame',
+            'ndf_class': 'MFOBJECT',
+            'spectrophotometric': None},
+    'FLX': {'name': 'Flux calibration',
+            'ndf_class': 'MFOBJECT',
+            'spectrophotometric': True},
+    'TEL': {'name': 'Telluric correction',
+            'ndf_class': 'MFOBJECT',
+            'spectrophotometric': None}
     }
 for index in xrange(1, 14):
     i_string = '{:02d}'.format(index)
-    CHECK_DATA['C' + i_string] = 'cube ' + i_string
+    CHECK_DATA['C' + i_string] = {'name': 'cube ' + i_string,
+                                  'ndf_class': 'MFOBJECT',
+                                  'spectrophotometric': False}
 
 class Manager:
     """Object for organising and reducing SAMI data.
@@ -2221,14 +2237,17 @@ class FITSFile:
             self.coord_rev = None
         return
 
+    def relevant_check(self, check):
+        return (self.ndf_class == check['ndf_class'] and 
+                (check['spectrophotometric'] is None or
+                 check['spectrophotometric'] == self.spectrophotometric))
+
     def set_check_data(self):
         """Set whether the relevant checks have been done."""
-        # This method of storing the check data is inefficient as all keys are
-        # stored, even though only some are required for any given ndf_class.
-        # On the other hand, it's simple.
         self.check_ever = {}
         self.check_recent = {}
-        for key in CHECK_DATA:
+        for key in [key for key, check in CHECK_DATA.items() 
+                    if self.relevant_check(check)]:
             try:
                 check_done_ever = self.hdulist[0].header['MNCH' + key]
             except KeyError:
