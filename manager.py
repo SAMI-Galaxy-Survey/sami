@@ -559,6 +559,7 @@ class Manager:
         else:
             print 'Adding file: ', filename
         self.set_name(fits, trust_header=trust_header)
+        fits.set_check_data()
         self.set_reduced_path(fits)
         if not fits.do_not_use:
             fits.make_reduced_link()
@@ -1967,6 +1968,12 @@ class Manager:
             fits.update_check_recent(key, value)
         return
 
+    def update_check_ever(self, key, file_iterable, value):
+        """Set flags for whether the files have ever been manually checked."""
+        for fits in file_iterable:
+            fits.update_check_ever(key, value)
+        return
+
 
 class FITSFile:
     """Holds information about a FITS file to be copied."""
@@ -1981,6 +1988,7 @@ class FITSFile:
         except IOError:
             self.ndf_class = None
             return
+        self.header = self.hdulist[0].header
         self.set_ndf_class()
         self.set_reduced_filename()
         self.set_date()
@@ -2005,7 +2013,6 @@ class FITSFile:
         self.set_lamp()
         self.set_do_not_use()
         self.set_coords_flags()
-        self.set_check_data()
         self.hdulist.close()
         del self.hdulist
 
@@ -2034,7 +2041,7 @@ class FITSFile:
     def set_date(self):
         """Save the observation date as a 6-digit string yymmdd."""
         try:
-            file_orig = self.hdulist[0].header['FILEORIG']
+            file_orig = self.header['FILEORIG']
             finish = file_orig.rfind('/', 0, file_orig.rfind('/'))
             self.date = file_orig[finish-6:finish]
         except KeyError:
@@ -2049,7 +2056,7 @@ class FITSFile:
         """Save the plate ID."""
         try:
             # First look in the primary header
-            self.plate_id = self.hdulist[0].header['PLATEID']
+            self.plate_id = self.header['PLATEID']
         except KeyError:
             # Check in the fibre table instead
             header = self.hdulist[self.fibres_extno].header
@@ -2191,7 +2198,7 @@ class FITSFile:
     def set_ccd(self):
         """Set the CCD name."""
         if self.ndf_class:
-            spect_id = self.hdulist[0].header['SPECTID']
+            spect_id = self.header['SPECTID']
             if spect_id == 'BL':
                 self.ccd = 'ccd_1'
             elif spect_id == 'RD':
@@ -2205,7 +2212,7 @@ class FITSFile:
     def set_exposure(self):
         """Set the exposure time."""
         if self.ndf_class:
-            self.exposure = self.hdulist[0].header['EXPOSED']
+            self.exposure = self.header['EXPOSED']
             self.exposure_str = '{:d}'.format(int(np.round(self.exposure)))
         else:
             self.exposure = None
@@ -2215,7 +2222,7 @@ class FITSFile:
     def set_epoch(self):
         """Set the observation epoch."""
         if self.ndf_class:
-            self.epoch = self.hdulist[0].header['EPOCH']
+            self.epoch = self.header['EPOCH']
         else:
             self.epoch = None
         return
@@ -2224,7 +2231,7 @@ class FITSFile:
         """Set which lamp was on, if any."""
         if self.ndf_class == 'MFARC':
             # This isn't guaranteed to work, but it's ok for our normal lamp
-            _object = self.hdulist[0].header['OBJECT']
+            _object = self.header['OBJECT']
             self.lamp = _object[_object.rfind(' ')+1:]
         elif self.ndf_class == 'MFFFF':
             if self.exposure >= 17.5:
@@ -2239,20 +2246,20 @@ class FITSFile:
     def set_do_not_use(self):
         """Set whether or not to use this file."""
         try:
-            self.do_not_use = self.hdulist[0].header['DONOTUSE']
+            self.do_not_use = self.header['DONOTUSE']
         except KeyError:
             # By default, don't use fast readout files
-            self.do_not_use = (self.hdulist[0].header['SPEED'] != 'NORMAL')
+            self.do_not_use = (self.header['SPEED'] != 'NORMAL')
         return
 
     def set_coords_flags(self):
         """Set whether coordinate corrections have been done."""
         try:
-            self.coord_rot = self.hdulist[0].header['COORDROT']
+            self.coord_rot = self.header['COORDROT']
         except KeyError:
             self.coord_rot = None
         try:
-            self.coord_rev = self.hdulist[0].header['COORDREV']
+            self.coord_rev = self.header['COORDREV']
         except KeyError:
             self.coord_rev = None
         return
@@ -2270,12 +2277,12 @@ class FITSFile:
         for key in [key for key, check in CHECK_DATA.items() 
                     if self.relevant_check(check)]:
             try:
-                check_done_ever = self.hdulist[0].header['MNCH' + key]
+                check_done_ever = self.header['MNCH' + key]
             except KeyError:
                 check_done_ever = False
             self.check_ever[key] = check_done_ever
             try:
-                check_done_recent = self.hdulist[0].header['MNCH' + key + 'R']
+                check_done_recent = self.header['MNCH' + key + 'R']
             except KeyError:
                 check_done_recent = False
             self.check_recent[key] = check_done_recent
@@ -2344,6 +2351,18 @@ class FITSFile:
                                  ' checked since re-reduction')
             # Update the object
             self.check_recent[key] = value
+        return
+
+    def update_check_ever(self, key, value):
+        """Change one of the check flags assigned to this file."""
+        if self.check_ever[key] != value:
+            # Update the FITS header
+            self.add_header_item('MNCH' + key, value,
+                                 CHECK_DATA[key]['name'] + 
+                                 ' checked ever')
+            # Update the object
+            self.check_ever[key] = value
+        return
 
     def add_header_item(self, key, value, comment=None, source=False):
         """Add a header item to the FITS file."""
