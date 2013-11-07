@@ -18,6 +18,7 @@ History:
 """
 
 import numpy
+from ..config import latitude
 
 def adr_n1(lam):
     #convert angstroms to microns
@@ -107,6 +108,7 @@ class DARCorrector:
     
     
     def __init__(self,method='none'):
+        self.method = method
         if (method == 'none'):
             self.correction = self.correction_none
         
@@ -117,6 +119,12 @@ class DARCorrector:
             self.correction = self.correction_simple
             self.zenith_distance = 0
             self.ref_wavelength = 5000.0
+
+        # Latitude of the observatory, default to AAT.
+        self.latitude = latitude.degrees
+        
+        # Private variables
+        self._pa = False
 
     def correction_none(self, wavelength):
         """Dummy function to return 0 (no correction) if DAR method is 'none'."""
@@ -131,11 +139,34 @@ class DARCorrector:
         return dar - dar_reference
         
     def print_setup(self):
-        #print("Method: {}".format(self.method))
-        print("Air Pressure: {}, Water Pressure: {}, Temperature: {}".format(self.air_pres, self.water_pres, self.temperature))
-        print("Zenith Distance: {}, Reference Wavelength: {}".format(self.zenith_distance, self.ref_wavelength))
+        print("Method: {}".format(self.method))
         
+        if (self.method != 'none'):
+            print("Air Pressure: {}, Water Pressure: {}, Temperature: {}".format(self.air_pres, self.water_pres, self.temperature))
+            print("Zenith Distance: {}, Reference Wavelength: {}".format(self.zenith_distance, self.ref_wavelength))
         
+    def parallactic_angle(self):
+        if self._pa is False:
+            self._pa = compute_parallactic_angle(self.hour_angle, 
+                                         self.declination, 
+                                         self.latitude) 
+        return self._pa
         
+    def update_for_wavelength(self,wavelength):
+        """Update the valuse of dar_r, dar_east, and dar_north for the given wavelength.
         
+        dar_r, dar_east, and dar_north are stored as instance attributes. They
+        give the scale of the refraction from the refraction at the reference
+        wavelength, e.g., a star observed at dec_obs would appear at dec_obs + dar_north 
+        if there were no atmosphere.
+        
+        """
+        
+        self.dar_r = self.correction(wavelength)
+
+        # Parallactic angle is direction to zenith measured north through east.
+        # Must move light away from the zenith to correct for DAR.
+        self.dar_east  = -self.dar_r * numpy.sin(numpy.radians(self.parallactic_angle()))
+        self.dar_north = -self.dar_r * numpy.cos(numpy.radians(self.parallactic_angle()))
+
         

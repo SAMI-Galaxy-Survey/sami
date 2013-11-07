@@ -29,6 +29,7 @@ except:
 from .. import utils
 from .. import samifitting as fitting
 from ..utils.mc_adr import DARCorrector, compute_parallactic_angle
+from .. import diagnostics
 
 # importing everything defined in the config file
 from ..config import *
@@ -103,6 +104,72 @@ def get_probe(infile, object_name, verbose=True):
 
     # Return the probe number
     return ifu
+
+def dar_correct(ifu_list, xfibre_all, yfibre_all, method='simple',update_rss=False):
+    """Update the fiber positions as a function of wavelength to reflect DAR correction.
+    
+    """
+
+    n_obs, n_fibres, n_slices = xfibre_all.shape
+
+    # Set up the differential atmospheric refraction correction. Each frame
+    # requires it's own correction, so we create a list of DARCorrectors.
+    dar_correctors = []
+                      
+    for obs in ifu_list:
+        darcorr = DARCorrector(method=method)
+    
+        darcorr.temperature = obs.fibre_table_header['ATMTEMP'] 
+        darcorr.air_pres = obs.fibre_table_header['ATMPRES'] * millibar_to_mmHg
+        #                     (factor converts from millibars to mm of Hg)
+        darcorr.water_pres = \
+            utils.saturated_partial_pressure_water(darcorr.air_pres, darcorr.temperature) * \
+            obs.fibre_table_header['ATMRHUM']
+    
+        # TODO: This is the field ZD, not the target ZD. Also, the mean is probably
+        # not the best indicator of the time averaged ZD.
+        darcorr.zenith_distance = \
+            (obs.primary_header['ZDSTART'] + obs.primary_header['ZDEND']) / 2
+
+        # TODO: This is the field HA, not the target HA.
+        darcorr.hour_angle = \
+            (obs.primary_header['HASTART'] + obs.primary_header['HAEND']) / 2
+    
+        # @TODO: Note, the "meandec" used below is not the mean dec of the bundle,
+        # but the field (needs to be fixed in ifu.py)
+        darcorr.declination = obs.meandec
+        
+        dar_correctors.append(darcorr)
+        del darcorr, obs # Cleanup since this is meaningless outside the loop.
+
+    wavelength_array = ifu_list[0].lambda_range
+    
+    # Iterate over wavelength slices
+    for l in xrange(n_slices):
+        
+        # Iterate over observations
+        for i_obs in xrange(n_obs):
+            # Determine differential atmospheric refraction correction for this slice
+            dar_correctors[i_obs].update_for_wavelength(wavelength_array[l])
+            
+            # Parallactic angle is direction to zenith measured north through east.
+            # Must move light away from the zenith to correct for DAR.
+            dar_x = dar_correctors[i_obs].dar_east * 1000.0 / plate_scale 
+            dar_y = dar_correctors[i_obs].dar_north * 1000.0 / plate_scale 
+            # TODO: Need to change to arcsecs!
+    
+            xfibre_all[i_obs,:,l] = xfibre_all[i_obs,:,l] + dar_x
+            yfibre_all[i_obs,:,l] = yfibre_all[i_obs,:,l] + dar_y
+            
+            print("DAR lambda: {:5.0f} x: {:5.2f}, y: {:5.2f}, pa : {:5.0f}".format(wavelength_array[l],
+                                                                           dar_x * plate_scale/1000.0,
+                                                                           dar_y * plate_scale/1000.0,
+                                                                           dar_correctors[i_obs].parallactic_angle()))
+    if diagnostics.enabled:
+        diagnostics.DAR.xfib = xfibre_all
+        diagnostics.DAR.yfib = yfibre_all
+
+
 
 def dithered_cubes_from_rss_files(inlist, sample_size=0.5, drop_factor=0.5, objects='all', clip=True, plot=True, write=False):
     """A wrapper to make a cube from reduced RSS files. Only input files that go together - ie have the same objects."""
@@ -434,6 +501,12 @@ def dithered_cube_from_rss(ifu_list, sample_size=0.5, drop_factor=0.5, clip=True
 
     xfibre_all=np.asanyarray(xfibre_all)
     yfibre_all=np.asanyarray(yfibre_all)
+
+    # Scale these up to have a wavelength axis as well
+    xfibre_all = xfibre_all.reshape(n_obs, n_fibres, 1).repeat(n_slices,2)
+    yfibre_all = yfibre_all.reshape(n_obs, n_fibres, 1).repeat(n_slices,2)
+    
+    
     data_all=np.asanyarray(data_all)
     var_all=np.asanyarray(var_all)
 
@@ -446,6 +519,18 @@ def dithered_cube_from_rss(ifu_list, sample_size=0.5, drop_factor=0.5, clip=True
     #     difficulties.
 
 
+    # DAR Correction
+    #
+    #     The correction for differential atmospheric refraction as a function
+    #     of wavelength must be applied for each file/observation independently.
+    #     Therefore, it is applied to the positions of the fibres before the
+    #     individual fibres are considered as independent observations
+    #
+    #     DAR correction is handled by another function in this module, which
+    #     updates the fibre positions in place.
+    
+    dar_correct(ifu_list, xfibre_all, yfibre_all)
+
     # Reshape the arrays
     #
     #     What we are doing is combining the first two dimensions, which are
@@ -456,8 +541,8 @@ def dithered_cube_from_rss(ifu_list, sample_size=0.5, drop_factor=0.5, clip=True
     #     old.shape -> (n_obs,            n_fibres, n_slices)
     #     new.shape -> (n_obs * n_fibres, n_slices)
     #     NOTE: the fibre position arrays are simply (n_files * n_fibres), no n_slices dimension.
-    xfibre_all = np.reshape(xfibre_all, (n_obs * n_fibres)           )
-    yfibre_all = np.reshape(yfibre_all, (n_obs * n_fibres)           )
+    xfibre_all = np.reshape(xfibre_all, (n_obs * n_fibres, n_slices) )
+    yfibre_all = np.reshape(yfibre_all, (n_obs * n_fibres, n_slices) )
     data_all   = np.reshape(data_all,   (n_obs * n_fibres, n_slices) )
     var_all    = np.reshape(var_all,    (n_obs * n_fibres, n_slices) )
 
@@ -491,34 +576,7 @@ def dithered_cube_from_rss(ifu_list, sample_size=0.5, drop_factor=0.5, clip=True
 
         diagnostic_info['n_pixels_sigma_clipped'] = []
            
-    # Set up the differential atmospheric refraction correction:
-    dar_corrector = DARCorrector(method='simple')
-    
-    dar_corrector.temperature = ifu_list[0].fibre_table_header['ATMTEMP'] 
-    dar_corrector.air_pres = ifu_list[0].fibre_table_header['ATMPRES'] * millibar_to_mmHg
-    #                     (factor converts from millibars to mm of Hg)
-    dar_corrector.water_pres = \
-        utils.saturated_partial_pressure_water(dar_corrector.air_pres, dar_corrector.temperature) * \
-        ifu_list[0].fibre_table_header['ATMRHUM']
-    
-    # TODO: This is the field ZD, not the target ZD. Also, the mean is probably
-    # not the best indicator of the time averaged ZD.
-    dar_corrector.zenith_distance = \
-        (ifu_list[0].primary_header['ZDSTART'] + ifu_list[0].primary_header['ZDEND']) / 2
-
-    # TODO: This is the field HA, not the target HA.
-    dar_corrector.hour_angle = \
-        (ifu_list[0].primary_header['HASTART'] + ifu_list[0].primary_header['HAEND']) / 2
-    
-    # @TODO: Note, the "meandec" used below is not the mean dec of the bundle,
-    # but the field (needs to be fixed in ifu.py)
-    parallactic_angle = compute_parallactic_angle(dar_corrector.hour_angle, 
-                                          ifu_list[0].meandec, 
-                                          latitude.degrees)
-    
-    dar_corrector.print_setup()
-    print("Parallactic Angle: {}".format(parallactic_angle))
-    
+            
     # Load the wavelength solution for the datacubes. 
     #
     # TODO: This should change when the header keyword propagation is improved
@@ -560,22 +618,9 @@ def dithered_cube_from_rss(ifu_list, sample_size=0.5, drop_factor=0.5, clip=True
         data_rss_slice = data_all[:,l]
         var_rss_slice = var_all[:,l]
 
-        # Determine differential atmospheric refraction correction for this slice
-        dar_r = dar_corrector.correction(wavelength_array[l]) * 1000.0 / plate_scale 
-        # TODO: Need to change to arcsecs!
-        
-        # Parallactic angle is direction to zenith measured north through east.
-        # Must move light away from the zenith to correct for DAR.
-        dar_x = dar_r * np.sin(np.radians(parallactic_angle))
-        dar_y = -dar_r * np.cos(np.radians(parallactic_angle))
 
-        print( "DAR lambda: {:5.0f} r: {:5.2f}, x: {:5.2f}, y: {:5.2f}".format(wavelength_array[l],
-                                                                       dar_r * plate_scale/1000.0, 
-                                                                       dar_x * plate_scale/1000.0,
-                                                                       dar_y * plate_scale/1000.0))
-
-        # Compute drizzle map for this wavelength slice.
-        overlap_array, weight_grid_slice = overlap_maps.drizzle(xfibre_all + dar_x, yfibre_all + dar_y)
+        # Compute drizzle maps for this wavelength slice.
+        overlap_array, weight_grid_slice = overlap_maps.drizzle(xfibre_all[:,l], yfibre_all[:,l])
         
         # Map RSS slices onto gridded slices
         norm_grid_slice_fibres=overlap_array*norm_rss_slice        
