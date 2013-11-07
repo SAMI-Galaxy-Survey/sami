@@ -506,6 +506,24 @@ def find_nearest(arr, val):
     idx=(np.abs(arr-val)).argmin()
     return idx
 
+def saturated_partial_pressure_water(air_pressure, air_temperature):
+    """Return saturated partial pressure of water given the air pressure and temperature.
+    
+    Units are "mm of Hg" for pressures, and "degree C" for temperatures.
+    
+    Formula is from Wikipedia:
+    http://en.wikipedia.org/wiki/Relative_humidity
+    
+    """
+
+    # Convert pressure units to hPa/millibar 
+    air_pressure *= 1/(millibar_to_mmHg)
+    
+    term1 = 1.0007 + 3.46e-6 * air_pressure
+    term2 = 6.1121 * np.exp(17.502 * air_temperature / (240.97 + air_temperature))
+
+    return term1 * term2 * millibar_to_mmHg
+
 
 def replace_xsym_link(path):
     """Replace an XSym type link with a proper POSIX symlink."""
