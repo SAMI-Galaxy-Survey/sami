@@ -947,6 +947,7 @@ class Manager:
                                    **kwargs)
         self.reduce_file_iterable(file_iterable, overwrite=overwrite, 
                                   tlm=True, leave_reduced=leave_reduced)
+        self.set_check_recent('TLM', file_iterable, False)
         return
 
     def reduce_arc(self, overwrite=False, **kwargs):
@@ -954,6 +955,7 @@ class Manager:
         file_iterable = self.files(ndf_class='MFARC', do_not_use=False,
                                    **kwargs)
         self.reduce_file_iterable(file_iterable, overwrite=overwrite)
+        self.set_check_recent('ARC', file_iterable, False)
         return
 
     def reduce_fflat(self, overwrite=False, **kwargs):
@@ -961,6 +963,7 @@ class Manager:
         file_iterable = self.files(ndf_class='MFFFF', do_not_use=False,
                                    **kwargs)
         self.reduce_file_iterable(file_iterable, overwrite=overwrite)
+        self.set_check_recent('FLT', file_iterable, False)
         return
 
     def reduce_sky(self, overwrite=False, **kwargs):
@@ -968,6 +971,7 @@ class Manager:
         file_iterable = self.files(ndf_class='MFSKY', do_not_use=False,
                                    **kwargs)
         self.reduce_file_iterable(file_iterable, overwrite=overwrite)
+        self.set_check_recent('SKY', file_iterable, False)
         return
 
     def reduce_object(self, overwrite=False, **kwargs):
@@ -979,6 +983,7 @@ class Manager:
                                           do_not_use=False, **kwargs),
                                key=key, reverse=True)
         self.reduce_file_iterable(file_iterable, overwrite=overwrite)
+        self.set_check_recent('OBJ', file_iterable, False)
         return
 
     def reduce_file_iterable(self, file_iterable, overwrite=False, tlm=False,
@@ -2238,6 +2243,7 @@ class FITSFile:
         return
 
     def relevant_check(self, check):
+        """Return True if a visual check is relevant for this file."""
         return (self.ndf_class == check['ndf_class'] and 
                 (check['spectrophotometric'] is None or
                  check['spectrophotometric'] == self.spectrophotometric))
@@ -2251,12 +2257,12 @@ class FITSFile:
             try:
                 check_done_ever = self.hdulist[0].header['MNCH' + key]
             except KeyError:
-                check_done_ever = None
+                check_done_ever = False
             self.check_ever[key] = check_done_ever
             try:
                 check_done_recent = self.hdulist[0].header['MNCH' + key + 'R']
             except KeyError:
-                check_done_recent = None
+                check_done_recent = False
             self.check_recent[key] = check_done_recent
         return
 
