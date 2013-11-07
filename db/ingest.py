@@ -40,9 +40,9 @@ import sami
 """ 
 For commit message: 
 
-Cross-platform bug fix on locate_rss(). 
+Minor bug fixes in make_list(). 
 
-Changed locate_rss() to print the latest RSS file found as a [-1:], rather than indexing the rss_path variable. 
+Got rid of an extra '/' that was written in the path (inconsequential, but ugly). Found out that a previous bug-fix relating to exluding '.DS_Store' was not working properly, fixed that. 
 """
 
 # ~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~
@@ -574,18 +574,19 @@ def make_list(dataroot='./', tableout='SAMI_input.lis',
     # Scan the dataroot/cubed subdirectory. 
     nameList = os.listdir(dataroot+'/cubed')
 
-    # Sometimes directories have a '.DS_Store' file, remove it. 
-    if '.DS_Store' in nameList:
-        nameList.remove('.DS_Store')
-
     # Create a file buffer, decide whether to overwrite or append: 
     if not append: f = open(tableout, 'w')
     if append: f = open(tableout, 'a')
 
     # Little function to compose a single list line. 
     def writeLine(name):
-        base = dataroot+'/cubed/'+name+'/'
-        fnames = os.listdir(base)
+        base = dataroot+'cubed/'+name+'/'
+        fnames = os.listdir(base) 
+
+        # Sometimes directories have a '.DS_Store' file, remove it. 
+        if '.DS_Store' in fnames:
+            fnames.remove('.DS_Store')
+
         f.write(base+fnames[0]+" "+base+fnames[1]+"\n")
 
     writeAll = [writeLine(str_in) for str_in in nameList]
