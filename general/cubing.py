@@ -173,10 +173,10 @@ def dar_correct(ifu_list, xfibre_all, yfibre_all, method='simple',update_rss=Fal
             xfibre_all[i_obs,:,l] = xfibre_all[i_obs,:,l] + dar_x
             yfibre_all[i_obs,:,l] = yfibre_all[i_obs,:,l] + dar_y
             
-            print("DAR lambda: {:5.0f} x: {:5.2f}, y: {:5.2f}, pa : {:5.0f}".format(wavelength_array[l],
-                                                                           dar_x * plate_scale/1000.0,
-                                                                           dar_y * plate_scale/1000.0,
-                                                                           dar_correctors[i_obs].parallactic_angle()))
+#             print("DAR lambda: {:5.0f} x: {:5.2f}, y: {:5.2f}, pa : {:5.0f}".format(wavelength_array[l],
+#                                                                            dar_x * plate_scale/1000.0,
+#                                                                            dar_y * plate_scale/1000.0,
+#                                                                            dar_correctors[i_obs].parallactic_angle()))
     if diagnostics.enabled:
         diagnostics.DAR.xfib = xfibre_all
         diagnostics.DAR.yfib = yfibre_all
@@ -795,6 +795,10 @@ def dithered_cube_from_rss(ifu_list, sample_size=0.5, drop_factor=0.5, clip=True
         var_cube[:,:,l]=var_grid_slice_final
         weight_cube[:,:,l]=weight_grid_slice_final
 
+    print("Total calls to drizzle: {}, recomputes: {}, ({}%)".format(
+                overlap_maps.n_drizzle, overlap_maps.n_drizzle_recompute,
+                float(overlap_maps.n_drizzle_recompute)/overlap_maps.n_drizzle_recompute))
+
     # I have now got: flux cube, variance cube, weight cube. These have been made assuming no drop-size reduction factor.
     # Apply the drop size reduction factor to all three cubes.
     flux_cube=flux_cube/(drop_factor**2)
@@ -856,6 +860,8 @@ class SAMIDrizzler:
         # Work out stuff for the resampling 
         self.oversample=self.fib_diam_arcsec/self.sample_size_arcsec
         self.dx=1000*self.fib_diam_arcsec/(self.oversample*self.plate_scale) # in microns
+        
+        self.drizzle_update_tol = 0.1 * self.dx
 
         # Fibre area in pixels
         self.fib_area_pix=np.pi*(self.oversample/2.0)**2
@@ -871,8 +877,15 @@ class SAMIDrizzler:
         self.drop_to_pixel=np.empty((self.size_of_grid, self.size_of_grid, n_fibres))
         self.pixel_coverage=np.empty((self.size_of_grid, self.size_of_grid, n_fibres))
         
-        self._last_drizzle = np.empty(1)
-        # This is used to cache the arguments for the last drizzle.
+        # These are used to cache the arguments for the last drizzle.
+        self._last_drizzle_x = np.zeros(1)
+        self._last_drizzle_y = np.zeros(1)        
+
+        # Number of times drizzle has been called in this instance
+        self.n_drizzle = 0
+        
+        # Number of times drizzle has been recomputed in this instance
+        self.n_drizzle_recompute = 0
 
     def single_overlap_map(self, fibrex, fibrey):
         """Compute the mapping from a single input drop to output pixel grid.
@@ -917,9 +930,15 @@ class SAMIDrizzler:
     def drizzle(self, xfibre_all, yfibre_all):
         """Compute a mapping from fibre drops to output pixels for all given fibre locations."""
             
-        if (np.array_equal(self._last_drizzle,np.asarray([xfibre_all,yfibre_all]))):
-            # We've been asked to recompute the same answer as last time, so don't recompute.
+        # Increment the drizzle counter
+        self.n_drizzle = self.n_drizzle + 1
+
+        if (np.allclose(xfibre_all,self._last_drizzle_x, rtol=0,atol=self.drizzle_update_tol) and
+            np.allclose(yfibre_all,self._last_drizzle_y, rtol=0,atol=self.drizzle_update_tol)):
+            # We've been asked to recompute an asnwer that is less than the tolerance to recompute
             return self.drop_to_pixel, self.pixel_coverage
+        else:
+            self.n_drizzle_recompute = self.n_drizzle_recompute + 1
         
         for i_fibre, xfib, yfib in itertools.izip(itertools.count(), xfibre_all, yfibre_all):
     
@@ -937,7 +956,8 @@ class SAMIDrizzler:
             self.drop_to_pixel[:,:,i_fibre]=drop_to_pixel_fibre
             self.pixel_coverage[:,:,i_fibre]=pixel_coverage_fibre
     
-        self._last_drizzle = np.asarray([xfibre_all, yfibre_all])
+        self._last_drizzle_x = xfibre_all
+        self._last_drizzle_y = yfibre_all
     
         return self.drop_to_pixel, self.pixel_coverage
 
