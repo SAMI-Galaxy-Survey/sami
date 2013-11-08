@@ -1,26 +1,30 @@
 """
-This module covers functions required to create cubes from a dithered set of RSS frames.
+This module covers functions required to create cubes from a dithered set of RSS
+frames.
 
-USAGE:
-The relevant function is dithered_cube_from_rss. It has the following inputs:
+The most likely command a user will want to run is one of:
 
-inlist: A text file with a list of RSS frames (one per line, typically a dither set) for which to make cubes.
-sample_size: Size of the output pixel (defaults to 0.5 arcseconds).
-objects: Which objects to make cubes for. Default is all objects, or provide a list of strings.
-plot: Make plots? Defaults to True.
-write: Write FITS files of the resulting data cubes? Defaults to False.
+   dithered_cubes_from_rss_files
+   dithered_cubes_from_rss_list
 
-Example call 1:
+(these differ only very slightly)
 
-dithered_cube_from_rss('all_rss_files.list', write=True)
+These functions are merely wrappers for file input/output, with the actual work
+being done in "dithered_cube_from_rss"
 
-will make cubes for all objects with the default output pixel size and writes the files to disk.
+Drop size and output pixel grid size and dimensions are set with the following
+module variables:
 
-Example call 2:
+    output_pix_size_arcsec (Default: 0.5) - Size of output spaxel in arcsec
+    drop_factor (Default: 0.5) - Size of drop size as a fraction of the fibre 
+        size
+    size_of_grid (Default: 50) - Number of pixels along each dimension of the 
+        output grid   
 
-dithered_cube_from_rss('all_rss_files.list', sample_size=0.8, write=True)
-
-Varies the sample size from above.
+To change the output, these variables can be changed after the module has been
+loaded, but before calling any of the module functions. In particular, any pre-
+existing SAMIDrizzler instances will have strange behaviour if these variables
+are changed.
 
 """
 
@@ -72,8 +76,8 @@ HG_CHANGESET = utils.hg_changeset(__file__)
 epsilon = np.finfo(np.float).eps
 # Store the value of epsilon for quick access.
 
-sample_size = 0.5    # Size of output spaxel in arcsec
-drop_factor = 0.5    # Size of drop size as a factor of the fibre size
+output_pix_size_arcsec = 0.5    # Size of output spaxel in arcsec
+drop_factor = 0.5    # Size of drop size as a fraction of the fibre size
 size_of_grid = 50    # Size of a side of the cube such that the cube has 50x50 spaxels
 # @TODO: Compute the size of the grid instead of hard code it!??!
 
@@ -118,7 +122,7 @@ def get_probe(infile, object_name, verbose=True):
     # Return the probe number
     return ifu
 
-def dithered_cubes_from_rss_files(inlist, sample_size=0.5, drop_factor=0.5, 
+def dithered_cubes_from_rss_files(inlist, 
                                   objects='all', clip=True, plot=True, 
                                   write=False, suffix='', root='',
                                   overwrite=False):
@@ -132,13 +136,13 @@ def dithered_cubes_from_rss_files(inlist, sample_size=0.5, drop_factor=0.5,
 
         files.append(np.str(cols[0]))
 
-    dithered_cubes_from_rss_list(files, sample_size=sample_size, 
-                                 drop_factor=drop_factor, objects=objects, 
+    dithered_cubes_from_rss_list(files,
+                                 objects=objects, 
                                  clip=clip, plot=plot, write=write, 
                                  root=root, suffix=suffix, overwrite=overwrite)
     return
 
-def dithered_cubes_from_rss_list(files, sample_size=0.5, drop_factor=0.5, 
+def dithered_cubes_from_rss_list(files, 
                                  objects='all', clip=True, plot=True, 
                                  write=False, suffix='', nominal=False, root='',
                                  overwrite=False):
@@ -212,8 +216,8 @@ def dithered_cubes_from_rss_list(files, sample_size=0.5, drop_factor=0.5,
         
         # For now, putting in a try/except block to skip over any errors
         try:
-            flux_cube, var_cube, weight_cube, diagnostics = dithered_cube_from_rss(ifu_list, sample_size=sample_size,
-                                          drop_factor=drop_factor, clip=clip, plot=plot)
+            flux_cube, var_cube, weight_cube, diagnostics = \
+                dithered_cube_from_rss(ifu_list, clip=clip, plot=plot)
         except Exception:
             print 'Cubing failed! Skipping to next galaxy.'
             print 'Object:', name, 'files:', files
@@ -425,7 +429,7 @@ def create_metadata_table(ifu_list):
    
     return pf.new_table(columns)
 
-def dithered_cube_from_rss(ifu_list, sample_size=0.5, drop_factor=0.5, clip=True, plot=True, offsets='file'):
+def dithered_cube_from_rss(ifu_list, clip=True, plot=True, offsets='file'):
         
     diagnostic_info = {}
 
@@ -440,7 +444,7 @@ def dithered_cube_from_rss(ifu_list, sample_size=0.5, drop_factor=0.5, clip=True
 
     # Create an instance of SAMIDrizzler for use later to create individual overlap maps for each fibre.
     # The attributes of this instance don't change from ifu to ifu.
-    overlap_maps=SAMIDrizzler(sample_size, size_of_grid, n_obs * n_fibres)
+    overlap_maps=SAMIDrizzler(size_of_grid, n_obs * n_fibres)
 
     # Empty lists for positions and data. Could be arrays, might be faster? Should test...
     xfibre_all=[]
@@ -756,12 +760,11 @@ class SAMIDrizzler:
 
     
 
-    def __init__(self, sample_size_arcsec, size_of_grid, n_fibres):
+    def __init__(self, size_of_grid, n_fibres):
         """Construct a new SAMIDrizzler isntance with the necessary information.
         
         Parameters
         ----------
-        sample_sie_arcsec: the size of each output pixel in arcseconds
         size_of_grid: the number of pixels along each dimension of the 
             square output pixel grid
         n_fibres: the total number of unique fibres which will be 
@@ -770,25 +773,24 @@ class SAMIDrizzler:
         """
 
         # The input values
-        self.pix_size_arcsec = sample_size_arcsec
+        self.pix_size_arcsec = output_pix_size_arcsec
         # Set the size of the output grid - should probably be calculated somehow.
         self.output_dimension = size_of_grid
 
-        # Some unchanging SAMI stuff
         self.plate_scale = plate_scale    # (in arcseconds per mm)
-        self.drop_diameter_arcsec = 1.6    # (in arcseconds)
-
+        self.drop_diameter_arcsec = fibre_diameter_arcsec * drop_factor
+        
         # Work out stuff for the resampling
         self.oversample = self.drop_diameter_arcsec / self.pix_size_arcsec
-        self.pix_size_micron = 1000 * self.drop_diameter_arcsec / (self.oversample * self.plate_scale)
+        #self.pix_size_micron = 1000 * self.drop_diameter_arcsec / (self.oversample * self.plate_scale)
+        self.pix_size_micron = output_pix_size_arcsec * (1000.0 / plate_scale)
+        
 
-        # Fibre area in pixels
-        self.drop_area_pix = np.pi * (self.oversample / 2.0) ** 2
+        # Drop dimensions in units of output pixels
+        self.drop_diameter_pix = self.drop_diameter_arcsec / self.pix_size_arcsec
+        self.drop_area_pix = np.pi * (self.drop_diameter_pix / 2.0) ** 2
 
-        # Fibre diameter in pixels
-        self.drop_diameter_pix = (1000 * self.drop_diameter_arcsec) / (self.plate_scale * self.pix_size_micron)
-
-        # Output grid in microns
+        # Output grid abscissa in microns
         self.grid_coordinates_x = (np.arange(self.output_dimension) - self.output_dimension / 2) * self.pix_size_micron
         self.grid_coordinates_y = (np.arange(self.output_dimension) - self.output_dimension / 2) * self.pix_size_micron
 
@@ -825,11 +827,15 @@ class SAMIDrizzler:
         yfib = (fibre_position_y - self.grid_coordinates_y[0]) / self.pix_size_micron
 
         # Create the overlap map from the circ.py code
-        overlap_map = utils.circ.resample_circle(self.output_dimension, self.output_dimension, xfib, yfib, \
-                                         self.oversample / 2.0)
+        overlap_map = utils.circ.resample_circle(
+            self.output_dimension, self.output_dimension, 
+            xfib, yfib,
+            self.drop_diameter_pix / 2.0)
 
-        input_frac_map = overlap_map / self.drop_area_pix    # Fraction of input fibre/drop in each output pixel
-        output_frac_map = overlap_map / 1.0    # divided by area of ind. sq. (output) pixel.
+        # Fraction of input drop in each output pixel
+        input_frac_map = overlap_map / self.drop_area_pix
+        # Fraction of each output pixel covered by drop
+        output_frac_map = overlap_map / 1.0
 
         return input_frac_map, output_frac_map
 
@@ -896,8 +902,8 @@ def WCS_position_coords(object_RA, object_DEC, wave, object_flux_cube, object_na
         img_crval2 = object_DEC
         xcube = size_of_grid
         ycube = size_of_grid
-        img_cdelt1 = -1.0 * sample_size / 3600.0
-        img_cdelt2 = sample_size / 3600.0
+        img_cdelt1 = -1.0 * output_pix_size_arcsec / 3600.0
+        img_cdelt2 = output_pix_size_arcsec / 3600.0
     else:
 
         # Get SDSS g-band throughput curve
@@ -938,7 +944,7 @@ def WCS_position_coords(object_RA, object_DEC, wave, object_flux_cube, object_na
 
     ##########
         
-        cube_size = np.around((size_of_grid*sample_size)/3600, decimals=6)
+        cube_size = np.around((size_of_grid*output_pix_size_arcsec)/3600, decimals=6)
         
         # Get SDSS Image
         if not os.path.isfile(str(object_name)+"_SDSS_"+str(band)+".fits"):
@@ -1005,8 +1011,8 @@ def WCS_position_coords(object_RA, object_DEC, wave, object_flux_cube, object_na
         y_shape = len(crosscorr_image[1])
         x_offset_pix = GF2d_xpos - x_shape/2
         y_offset_pix = GF2d_ypos - y_shape/2
-        x_offset_arcsec = -x_offset_pix * sample_size/5
-        y_offset_arcsec = y_offset_pix * sample_size/5
+        x_offset_arcsec = -x_offset_pix * output_pix_size_arcsec/5
+        y_offset_arcsec = y_offset_pix * output_pix_size_arcsec/5
         x_offset_degree = ((x_offset_arcsec/3600)/24)*360
         y_offset_degree = (y_offset_arcsec/3600)
     

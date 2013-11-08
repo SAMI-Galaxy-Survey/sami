@@ -1,11 +1,17 @@
 import astropy.units as u
 import astropy.coordinates as coords
+import os.path
 
 # This script contains constants that are used in other SAMI packages.
 
 # ----------------------------------------------------------------------------------------
-# rough plate scale
+
+# Approximate plate scale
 plate_scale=15.22
+
+# Diameter of individual SAMI fibres in arcseconds
+fibre_diameter_arcsec = 1.6
+
 # ----------------------------------------------------------------------------------------
 
 # ----------------------------------------------------------------------------------------
