@@ -1,3 +1,29 @@
+"""
+This module covers functions required to create cubes from a dithered set of RSS frames.
+
+USAGE:
+The relevant function is dithered_cube_from_rss. It has the following inputs:
+
+inlist: A text file with a list of RSS frames (one per line, typically a dither set) for which to make cubes.
+sample_size: Size of the output pixel (defaults to 0.5 arcseconds).
+objects: Which objects to make cubes for. Default is all objects, or provide a list of strings.
+plot: Make plots? Defaults to True.
+write: Write FITS files of the resulting data cubes? Defaults to False.
+
+Example call 1:
+
+dithered_cube_from_rss('all_rss_files.list', write=True)
+
+will make cubes for all objects with the default output pixel size and writes the files to disk.
+
+Example call 2:
+
+dithered_cube_from_rss('all_rss_files.list', sample_size=0.8, write=True)
+
+Varies the sample size from above.
+
+"""
+
 import pylab as py
 import numpy as np
 import scipy as sp
@@ -38,41 +64,17 @@ import astropy.io.ascii as ascii
 from scipy.interpolate import griddata
 import urllib
 
-"""
-This module covers functions required to create cubes from a dithered set of RSS frames.
 
-USAGE:
-The relevant function is dithered_cube_from_rss. It has the following inputs:
-
-inlist: A text file with a list of RSS frames (one per line, typically a dither set) for which to make cubes.
-sample_size: Size of the output pixel (defaults to 0.5 arcseconds).
-objects: Which objects to make cubes for. Default is all objects, or provide a list of strings.
-plot: Make plots? Defaults to True.
-write: Write FITS files of the resulting data cubes? Defaults to False.
-
-Example call 1:
-
-dithered_cube_from_rss('all_rss_files.list', write=True)
-
-will make cubes for all objects with the default output pixel size and writes the files to disk.
-
-Example call 2:
-
-dithered_cube_from_rss('all_rss_files.list', sample_size=0.8, write=True)
-
-Varies the sample size from above.
-
-"""
+# Some global constants:
 
 HG_CHANGESET = utils.hg_changeset(__file__)
 
 epsilon = np.finfo(np.float).eps
 # Store the value of epsilon for quick access.
 
-# Some global constants:
-sample_size=0.5     #Size of output spaxel in arcsec
-drop_factor=0.5     #Size of drop size as a factor of the fibre size
-size_of_grid=50     #Size of a side of the cube such that the cube has 50x50 spaxels
+sample_size = 0.5    # Size of output spaxel in arcsec
+drop_factor = 0.5    # Size of drop size as a factor of the fibre size
+size_of_grid = 50    # Size of a side of the cube such that the cube has 50x50 spaxels
 # @TODO: Compute the size of the grid instead of hard code it!??!
 
 def get_object_names(infile):
@@ -768,44 +770,44 @@ class SAMIDrizzler:
         """
 
         # The input values
-        self.sample_size_arcsec=sample_size_arcsec
+        self.pix_size_arcsec = sample_size_arcsec
         # Set the size of the output grid - should probably be calculated somehow.
-        self.size_of_grid=size_of_grid
+        self.output_dimension = size_of_grid
 
         # Some unchanging SAMI stuff
-        self.plate_scale=plate_scale # (in arcseconds per mm)
-        self.fib_diam_arcsec=1.6 # (in arcseconds)
+        self.plate_scale = plate_scale    # (in arcseconds per mm)
+        self.drop_diameter_arcsec = 1.6    # (in arcseconds)
 
-        # Work out stuff for the resampling 
-        self.oversample=self.fib_diam_arcsec/self.sample_size_arcsec
-        self.dx=1000*self.fib_diam_arcsec/(self.oversample*self.plate_scale) # in microns
+        # Work out stuff for the resampling
+        self.oversample = self.drop_diameter_arcsec / self.pix_size_arcsec
+        self.pix_size_micron = 1000 * self.drop_diameter_arcsec / (self.oversample * self.plate_scale)
 
         # Fibre area in pixels
-        self.fib_area_pix=np.pi*(self.oversample/2.0)**2
+        self.drop_area_pix = np.pi * (self.oversample / 2.0) ** 2
 
         # Fibre diameter in pixels
-        self.fib_diam_pix=(1000*self.fib_diam_arcsec)/(self.plate_scale*self.dx)
+        self.drop_diameter_pix = (1000 * self.drop_diameter_arcsec) / (self.plate_scale * self.pix_size_micron)
 
         # Output grid in microns
-        self.x=(np.arange(self.size_of_grid)-self.size_of_grid/2)*self.dx
-        self.y=(np.arange(self.size_of_grid)-self.size_of_grid/2)*self.dx
-        
+        self.grid_coordinates_x = (np.arange(self.output_dimension) - self.output_dimension / 2) * self.pix_size_micron
+        self.grid_coordinates_y = (np.arange(self.output_dimension) - self.output_dimension / 2) * self.pix_size_micron
+
         # Empty array for all overlap maps - i.e. need one for each fibre!
-        self.drop_to_pixel=np.empty((self.size_of_grid, self.size_of_grid, n_fibres))
-        self.pixel_coverage=np.empty((self.size_of_grid, self.size_of_grid, n_fibres))
-        
+        self.drop_to_pixel = np.empty((self.output_dimension, self.output_dimension, n_fibres))
+        self.pixel_coverage = np.empty((self.output_dimension, self.output_dimension, n_fibres))
+
         self._last_drizzle = np.empty(1)
         # This is used to cache the arguments for the last drizzle.
 
-    def single_overlap_map(self, fibrex, fibrey):
+    def single_overlap_map(self, fibre_position_x, fibre_position_y):
         """Compute the mapping from a single input drop to output pixel grid.
         
-        (drop_fraction, pixel_fraction) = single_overlap_map(fibrex, fibrey)
+        (drop_fraction, pixel_fraction) = single_overlap_map(fibre_position_x, fibre_position_y)
         
         Parameters
         ----------
-        fibrex: (float) The x-coordinate of the fibre.
-        fibery: (float) The y-coordinate of the fibre.
+        fibre_position_x: (float) The grid_coordinates_x-coordinate of the fibre.
+        fibre_position_y: (float) The grid_coordinates_y-coordinate of the fibre.
         
         Returns
         -------
@@ -819,18 +821,18 @@ class SAMIDrizzler:
         """
 
         # Map fibre positions onto pixel positions in the output grid.
-        xfib=(fibrex-self.x[0])/self.dx
-        yfib=(fibrey-self.y[0])/self.dx
-        
+        xfib = (fibre_position_x - self.grid_coordinates_x[0]) / self.pix_size_micron
+        yfib = (fibre_position_y - self.grid_coordinates_y[0]) / self.pix_size_micron
+
         # Create the overlap map from the circ.py code
-        overlap_map=utils.circ.resample_circle(self.size_of_grid, self.size_of_grid, xfib, yfib, \
-                                         self.oversample/2.0)
-        
-        input_frac_map=overlap_map/self.fib_area_pix # Fraction of input fibre/drop in each output pixel
-        output_frac_map=overlap_map/1.0 # divided by area of ind. sq. (output) pixel.
+        overlap_map = utils.circ.resample_circle(self.output_dimension, self.output_dimension, xfib, yfib, \
+                                         self.oversample / 2.0)
+
+        input_frac_map = overlap_map / self.drop_area_pix    # Fraction of input fibre/drop in each output pixel
+        output_frac_map = overlap_map / 1.0    # divided by area of ind. sq. (output) pixel.
 
         return input_frac_map, output_frac_map
-    
+
     def drizzle(self, xfibre_all, yfibre_all):
         """Compute a mapping from fibre drops to output pixels for all given fibre locations."""
             
@@ -840,12 +842,8 @@ class SAMIDrizzler:
         
         for i_fibre, xfib, yfib in itertools.izip(itertools.count(), xfibre_all, yfibre_all):
     
-            # Feed the x and y fibre positions to the overlap_maps instance.
+            # Feed the grid_coordinates_x and grid_coordinates_y fibre positions to the overlap_maps instance.
             drop_to_pixel_fibre, pixel_coverage_fibre=self.single_overlap_map(xfib, yfib)
-    
-            # These lines are ONLY for debugging. The plotting and overwriting is very slow! 
-            #py.imshow(drop_to_pixel_fibre, origin='lower', interpolation='nearest')
-            #py.draw()
     
             # Padding with NaNs instead of zeros (do I really need to do this? Probably not...)
             drop_to_pixel_fibre[np.where(drop_to_pixel_fibre < epsilon)]=np.nan
@@ -858,18 +856,14 @@ class SAMIDrizzler:
     
         return self.drop_to_pixel, self.pixel_coverage
 
-#########################################################################################
-#
-# "WCS_position"
-#
-#   This function cross-correlates a g-band convolved SAMI cube with its respective
-#   SDSS g-band image and pins down the positional WCS for the central spaxel of the
-#   cube.
-#
-
 def WCS_position(myIFU,object_flux_cube,object_name,band,plot=False,write=False,nominal=False,
                  remove_thput_file=True):
-    """Wrapper for WCS_position_coords, extracting coords from IFU."""
+    """Wrapper for WCS_position_coords, extracting coords from IFU.
+    
+    This function cross-correlates a g-band convolved SAMI cube with its
+    respective SDSS g-band image and pins down the positional WCS for the
+    central spaxel of the cube.
+    """
 
     # Get Object RA + DEC from fibre table (this is the input catalogues RA+DEC in deg)
     object_RA = np.around(myIFU.obj_ra[myIFU.n == 1][0], decimals=6)
@@ -959,8 +953,8 @@ def WCS_position_coords(object_RA, object_DEC, wave, object_flux_cube, object_na
         image_header = image_file['Primary'].header
         img_crval1 = float(image_header['CRVAL1']) #RA
         img_crval2 = float(image_header['CRVAL2']) #DEC
-        img_crpix1 = float(image_header['CRPIX1']) #Reference x-pixel
-        img_crpix2 = float(image_header['CRPIX2']) #Reference y-pixel
+        img_crpix1 = float(image_header['CRPIX1']) #Reference grid_coordinates_x-pixel
+        img_crpix2 = float(image_header['CRPIX2']) #Reference grid_coordinates_y-pixel
         img_cdelt1 = float(image_header['CDELT1']) #Delta RA
         img_cdelt2 = float(image_header['CDELT2']) #Delta DEC
 
@@ -977,7 +971,7 @@ def WCS_position_coords(object_RA, object_DEC, wave, object_flux_cube, object_na
 
         # 2D Gauss Fit the cross-correlated cropped image
         crosscorr_image_1d = np.ravel(crosscorr_image)
-        #use for loops to recover indicies in x and y positions of flux values
+        #use for loops to recover indicies in grid_coordinates_x and grid_coordinates_y positions of flux values
         x_pos = []
         y_pos = []
         for i in xrange(np.shape(crosscorr_image)[0]):
@@ -1077,30 +1071,27 @@ def update_WCS_coords(filename, nominal=False, remove_thput_file=True):
     hdulist.close()
     return
 
-
-#########################################################################################
-#
-# "getSDSSimage"
-#
-#   This function queries the SDSS surver at skyview.gsfc.nasa.gov and returns an image
-#   with a user supplied set of parameters. A full description of the input parameters is
-#   given at - http://skyview.gsfc.nasa.gov/docs/batchpage.html
-#
-#   The parameters that can be set here are:
-#
-#   name - object name to include in file name for reference
-#   RA - in degrees
-#   DEC - in degrees
-#   band - u,g,r,i,z filters
-#   size - size of side of image in degrees
-#   number_of_pixels - number of pixels of side of image (i.e 50 will return 50x50)
-#   projection - 2D mapping of onsky projection. Tan is standard.
-#   url_show - this is a function variable if the user wants the url printed to terminal
-#
-
 def getSDSSimage(object_name="unknown", RA=0, DEC=0, band="g", size=0.006944, 
                  number_of_pixels=50, projection="Tan", url_show="False"):
-        
+    """This function queries the SDSS surver at skyview.gsfc.nasa.gov and returns an image
+    with a user supplied set of parameters. 
+
+    A full description of the input parameters is given at -
+    http://skyview.gsfc.nasa.gov/docs/batchpage.html
+
+    The parameters that can be set here are:
+
+        name - object name to include in file name for reference
+        RA - in degrees
+        DEC - in degrees
+        band - u,g,r,i,z filters
+        size - size of side of image in degrees
+        number_of_pixels - number of pixels of side of image (i.e 50 will return 50x50)
+        projection - 2D mapping of onsky projection. Tan is standard.
+        url_show - this is a function variable if the user wants the url printed to terminal
+
+    """
+    
     # Construct URL
     RA = str(RA).split(".")
     DEC = str(DEC).split(".")
@@ -1117,11 +1108,3 @@ def getSDSSimage(object_name="unknown", RA=0, DEC=0, band="g", size=0.006944,
                +str(object_name)+"_SDSS_"+str(band)+".fits")
         
         print "The URL for this object is: ", URL
-
-
-#########################################################################################
-###                                                                                   ###
-#################################--- END OF FILE ---#####################################
-###                                                                                   ###
-#########################################################################################
-
