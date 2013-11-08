@@ -965,6 +965,7 @@ class Manager:
         """Make TLMs from all files matching given criteria."""
         file_iterable = self.files(ndf_class='MFFFF', do_not_use=False,
                                    **kwargs)
+        file_iterable = [fits for fits in file_iterable]
         self.reduce_file_iterable(file_iterable, overwrite=overwrite, 
                                   tlm=True, leave_reduced=leave_reduced)
         self.update_checks('TLM', file_iterable, False)
@@ -974,6 +975,7 @@ class Manager:
         """Reduce all arc frames matching given criteria."""
         file_iterable = self.files(ndf_class='MFARC', do_not_use=False,
                                    **kwargs)
+        file_iterable = [fits for fits in file_iterable]
         self.reduce_file_iterable(file_iterable, overwrite=overwrite)
         self.update_checks('ARC', file_iterable, False)
         return
@@ -982,6 +984,7 @@ class Manager:
         """Reduce all fibre flat frames matching given criteria."""
         file_iterable = self.files(ndf_class='MFFFF', do_not_use=False,
                                    **kwargs)
+        file_iterable = [fits for fits in file_iterable]
         self.reduce_file_iterable(file_iterable, overwrite=overwrite)
         self.update_checks('FLT', file_iterable, False)
         return
@@ -990,6 +993,7 @@ class Manager:
         """Reduce all offset sky frames matching given criteria."""
         file_iterable = self.files(ndf_class='MFSKY', do_not_use=False,
                                    **kwargs)
+        file_iterable = [fits for fits in file_iterable]
         self.reduce_file_iterable(file_iterable, overwrite=overwrite)
         self.update_checks('SKY', file_iterable, False)
         return
@@ -1002,6 +1006,7 @@ class Manager:
         file_iterable = sorted(self.files(ndf_class='MFOBJECT',
                                           do_not_use=False, **kwargs),
                                key=key, reverse=True)
+        file_iterable = [fits for fits in file_iterable]
         self.reduce_file_iterable(file_iterable, overwrite=overwrite)
         self.update_checks('OBJ', file_iterable, False)
         return
@@ -2022,6 +2027,60 @@ class Manager:
         check_list = sorted(check_dict.items(), key=key_func)
         return check_list
 
+    def next_check(self):
+        """Perform the next visual check."""
+        self.check(0)
+        return
+
+    def check(self, index):
+        """Perform the check specified by the index."""
+        check_list = self.list_checks()
+        check_details = check_list[index]
+        check_type = check_details[0][0]
+        fits_list = check_details[1]
+        if check_type in ['TLM', 'ARC', 'FLT', 'SKY', 'OBJ']:
+            self.perform_check_2dfdr(check_type, fits_list)
+        elif (check_type in ['FLX', 'TEL'] or 
+              re.match('C[0-9]{2}$', check_type)):
+            self.perform_check_matplotlib(check_type, fits_list)
+        print ('If there were any problems, you must either disable the ' +
+               'relevant files or find and fix the source of the problem.')
+        yn = raw_input('Have you finished checking all the files? '
+                       'They will be removed from the checklist. '
+                       '(y/n)\n > ')
+        remove = (yn.lower()[0] == 'y')
+        if remove:
+            print 'Removing these files from the checklist.'
+            self.update_checks(check_type, fits_list, True)
+        else:
+            print 'Leaving these files in the checklist.'
+        print ('If any files need to be disabled, you can do so using commands'
+               ' like:')
+        print ">>> mngr.disable_files(['" + fits_list[0].filename_root + "'])"
+        return
+
+    def perform_check_2dfdr(self, check_type, fits_list):
+        """Perform a visual check in 2dfdr."""
+        reduced_dir = fits_list[0].reduced_dir
+        if check_type == 'TLM':
+            append = 'tlm'
+        else:
+            append = 'red'
+        filename_list = [fits.filename_root + append + '.fits' 
+                         for fits in fits_list]
+        print 'Loading 2dfdr in directory:'
+        print reduced_dir
+        print 'Use 2dfdr to plot and check the following files.'
+        print '(Click on the triangles to see reduced files)'
+        for filename in filename_list:
+            print ' - ' + filename
+        print 'Make a note of any issues you see.'
+        idx_file = self.idx_files[fits_list[0].ccd]
+        command = ['drcontrol', idx_file]
+        with self.visit_dir(reduced_dir):
+            with open(os.devnull, 'w') as f:
+                subprocess.call(command, stdout=f)
+        return
 
 
 class FITSFile:
