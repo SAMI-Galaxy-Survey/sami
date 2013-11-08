@@ -967,7 +967,7 @@ class Manager:
                                    **kwargs)
         self.reduce_file_iterable(file_iterable, overwrite=overwrite, 
                                   tlm=True, leave_reduced=leave_reduced)
-        self.update_check_recent('TLM', file_iterable, False)
+        self.update_checks('TLM', file_iterable, False)
         return
 
     def reduce_arc(self, overwrite=False, **kwargs):
@@ -975,7 +975,7 @@ class Manager:
         file_iterable = self.files(ndf_class='MFARC', do_not_use=False,
                                    **kwargs)
         self.reduce_file_iterable(file_iterable, overwrite=overwrite)
-        self.update_check_recent('ARC', file_iterable, False)
+        self.update_checks('ARC', file_iterable, False)
         return
 
     def reduce_fflat(self, overwrite=False, **kwargs):
@@ -983,7 +983,7 @@ class Manager:
         file_iterable = self.files(ndf_class='MFFFF', do_not_use=False,
                                    **kwargs)
         self.reduce_file_iterable(file_iterable, overwrite=overwrite)
-        self.update_check_recent('FLT', file_iterable, False)
+        self.update_checks('FLT', file_iterable, False)
         return
 
     def reduce_sky(self, overwrite=False, **kwargs):
@@ -991,7 +991,7 @@ class Manager:
         file_iterable = self.files(ndf_class='MFSKY', do_not_use=False,
                                    **kwargs)
         self.reduce_file_iterable(file_iterable, overwrite=overwrite)
-        self.update_check_recent('SKY', file_iterable, False)
+        self.update_checks('SKY', file_iterable, False)
         return
 
     def reduce_object(self, overwrite=False, **kwargs):
@@ -1003,7 +1003,7 @@ class Manager:
                                           do_not_use=False, **kwargs),
                                key=key, reverse=True)
         self.reduce_file_iterable(file_iterable, overwrite=overwrite)
-        self.update_check_recent('OBJ', file_iterable, False)
+        self.update_checks('OBJ', file_iterable, False)
         return
 
     def reduce_file_iterable(self, file_iterable, overwrite=False, tlm=False,
@@ -1087,7 +1087,7 @@ class Manager:
                     if overwrite or not os.path.exists(path_copy):
                         print 'Copying combined file to', path_copy
                         shutil.copy2(path_out, path_copy)
-            self.update_check_recent('FLX', fits_list, False)
+            self.update_checks('FLX', fits_list, False)
         return
 
     def flux_calibrate(self, overwrite=False, **kwargs):
@@ -1130,7 +1130,7 @@ class Manager:
         self.map(telluric_correct_pair, pair_list)
         # Mark telluric corrections as not checked
         for fits_pair in pair_list:
-            self.update_check_recent('TEL', fits_pair, False)
+            self.update_checks('TEL', fits_pair, False)
         return
 
     def cube(self, overwrite=False, **kwargs):
@@ -1163,7 +1163,7 @@ class Manager:
         for key in CHECK_DATA:
             if re.match('C[0-9]{2}$', key):
                 for fits_list in [item[1] for item in groups.items()]:
-                    self.update_check_recent(key, fits_list[0], False)
+                    self.update_checks(key, fits_list[0], False)
         return
 
     def reduce_all(self, overwrite=False, **kwargs):
@@ -1981,16 +1981,10 @@ class Manager:
         self.idx_files = IDX_FILES[self.speed]
         return
 
-    def update_check_recent(self, key, file_iterable, value):
+    def update_checks(self, key, file_iterable, value, force=False):
         """Set flags for whether the files have been manually checked."""
         for fits in file_iterable:
-            fits.update_check_recent(key, value)
-        return
-
-    def update_check_ever(self, key, file_iterable, value):
-        """Set flags for whether the files have ever been manually checked."""
-        for fits in file_iterable:
-            fits.update_check_ever(key, value)
+            fits.update_checks(key, value, force)
         return
 
     def list_checks(self, recent_ever='both', *args, **kwargs):
@@ -2001,6 +1995,7 @@ class Manager:
         if recent_ever == 'both':
             complete_list = []
             complete_list.extend(self.list_checks('ever'))
+            # Should ditch the duplicate checks, but will work anyway
             complete_list.extend(self.list_checks('recent'))
             return complete_list
         # The keys for the following defaultdict will be tuples, where
@@ -2016,7 +2011,7 @@ class Manager:
             else:
                 raise KeyError(
                     'recent_ever must be "both", "ever" or "recent"')
-            for key in [key for key, value in items if not value]:
+            for key in [key for key, value in items if value is False]:
                 check_dict_key = []
                 for group_by_key in CHECK_DATA[key]['group_by']:
                     check_dict_key.append(getattr(fits, group_by_key))
@@ -2333,12 +2328,12 @@ class FITSFile:
             try:
                 check_done_ever = self.header['MNCH' + key]
             except KeyError:
-                check_done_ever = False
+                check_done_ever = None
             self.check_ever[key] = check_done_ever
             try:
                 check_done_recent = self.header['MNCH' + key + 'R']
             except KeyError:
-                check_done_recent = False
+                check_done_recent = None
             self.check_recent[key] = check_done_recent
         return
 
@@ -2394,6 +2389,15 @@ class FITSFile:
                     os.remove(self.reduced_link)
             else:
                 self.make_reduced_link()
+        return
+
+    def update_checks(self, key, value, force=False):
+        """Update both check flags for this key for this file."""
+        self.update_check_recent(key, value)
+        # Don't set the "ever" check to False unless forced, or there
+        # is no value set yet
+        if value or force or self.check_ever[key] is None:
+            self.update_check_ever(key, value)
         return
 
     def update_check_recent(self, key, value):
