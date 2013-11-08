@@ -14,16 +14,28 @@ from random import randint
 import cProfile
 import timeit
 import datetime
+import os
+
+# Package imports
+import sami.samifitting as samifitting
 
 # Relative Imports
 from .. import utils
 from .cubing import *
+from .. import config
+from ..utils.other import *
 
+# Test data directory. Default assumes that it is in subdir "test_data" at the
+# same level as the sami package.
+#test_data_dir = os.path.dirname(__file__) + '/../../test_data/'
+#test_data_dir = '/Users/agreen/Research/sami_survey/data/april/sampling_test/10G1F2/'
+
+testing = True
 
 def dummy_ifu():
     """Returns a dummy IFU object which can have arbitrary data inserted."""
     
-    return utils.IFU('/Users/agreen/Research/sami_survey/data/april/sampling_test/10G1F2/12apr20037red.fits', '63027', flag_name=True)
+    return utils.IFU(test_data_dir +'12apr10036red.fits', '63027', flag_name=True)
     
 def speed_test():
     """Time the standard code on a cutdown cube."""
@@ -142,7 +154,95 @@ def hot_pixel_clipping(n_obs=7, n_hot=10,verbose=False):
             n_masked_expected,
             before - after))
         
+def dar_correction_test(verbose=False):
+    """DAR is working correctly
+    
+    This uses a few planes from real star images to ensure everything is working
+    in DAR without needing to do a whole 2048 slice cube.
+    
+    """
+    
+    
+    
+    # These must match the actual numbers used in the cubing code.
+    # @TODO: These should be passed to the cubing code to ensure consistency.
+    drop_size = 1.6
+    output_size = 0.5
+        
+    # Take every lambda_step slice from the observations to generate test data
+    lambda_step = 100
 
+    # First, we create a set of n_obs mock observations. 
+    ifu_list = [
+        utils.IFU(test_data_dir + "12apr10036red.fits", 3, flag_name=False),
+        utils.IFU(test_data_dir + "12apr10037red.fits", 3, flag_name=False),
+        utils.IFU(test_data_dir + "12apr10038red.fits", 3, flag_name=False),
+        utils.IFU(test_data_dir + "12apr10039red.fits", 3, flag_name=False),
+        utils.IFU(test_data_dir + "12apr10040red.fits", 3, flag_name=False),
+        utils.IFU(test_data_dir + "12apr10041red.fits", 3, flag_name=False),
+        utils.IFU(test_data_dir + "12apr10042red.fits", 3, flag_name=False),
+        ]
+ 
+    n_obs = len(ifu_list)
+ 
+    for i in xrange(n_obs):
+        ifu_list[i].data = ifu_list[i].data[:,100:2000:lambda_step]
+        ifu_list[i].var = ifu_list[i].var[:,100:2000:lambda_step]
+        ifu_list[i].lambda_range = ifu_list[i].lambda_range[100:2000:lambda_step]
+ 
+    # Run the test on the data
+    data_cube, var_cube, weight_cube, diagnostic_info = \
+        dithered_cube_from_rss(ifu_list,offsets=None)
+    
+    output_size = data_cube.shape
+    
+    tests_passed = True
+    
+    for i_obs in xrange(n_obs):
+    
+        print("\nTesting frame {}".format(i_obs))
+    
+        # Compute the output centroid plane by plane:
+        offsets = []
+        for i_slice in xrange(output_size[2]):
             
+            # Convert fibre positions to arcseconds (approx)
+            xpos = diagnostics.DAR.xfib[i_obs,:,i_slice] * 15.22/1000.0
+            ypos = diagnostics.DAR.yfib[i_obs,:,i_slice] * 15.22/1000.0
+    
             
+            com_distr=utils.comxyz(xpos,ypos,ifu_list[i_obs].data[:,i_slice])
+            
+            mask = np.isfinite(np.ravel(ifu_list[i_obs].data[:,i_slice]))
+    
+            gf = samifitting.TwoDGaussFitter(
+                                             [np.nansum(ifu_list[i_obs].data[:,i_slice])/len(mask),
+                                              com_distr[0], 
+                                              com_distr[1], 
+                                              5, 0.0],
+                                             (np.ravel(xpos))[mask],
+                                             (np.ravel(ypos))[mask],
+                                             (np.ravel(ifu_list[i_obs].data[:,i_slice]))[mask]
+                                             )
+            fitting.fibre_integrator(gf, 1.6)
+            try:
+                gf.fit()
+                print("Residual Offset: ({0:.4}, {1:.4}), norm: {2:.4}".format(gf.p[1],gf.p[2],np.linalg.norm(gf.p[1:3]) ) )
+                offsets.append( [gf.p[1], gf.p[2]] )
+            except:
+                print("Fit failed for slice {}".format(i_slice))
+    
+        offsets = np.asarray(offsets)
+        residual = mad(offsets,axis=0)
+        if not ((residual < 0.1).all):
+            print("Failed test: dar_correction")
+            print("    Residual N-S: {1:.3}, Residual E-W: {0:.3}".format(
+                residual[0], residual[1]))
+            tests_passed = False
+            
+ 
+    if tests_passed:
+        print("\nPassed test: dar_correction")
+   
+        
             
