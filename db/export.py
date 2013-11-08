@@ -26,7 +26,9 @@ import sami
 """ 
 Commit message: 
 
-Changes were made, but then reverted, not necessary. 
+Bug fix on use of getVersion(). 
+
+Calls to getVersion() included the wrong number of arguments (2, not 3). 
 """
 
 # ~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~
@@ -167,7 +169,7 @@ def fetch_cube(name, h5file, version='', colour='', outfile='',
 
     SAMIformatted = checkSAMIformat(hdf)         # Check for SAMI formatting
     if version == '':                            # Get the data version
-        version = getVersion(hdf, version)
+        version = getVersion(h5file, hdf, version)
     obstype = getObstype(hdf, name, version)     # Get observation type
     g_target = getTargetGroup(hdf, name,         # ID target group 
                               version, obstype)
@@ -233,7 +235,7 @@ def export(name, h5file, get_cube=False, get_rss=False,
 
     SAMIformatted = checkSAMIformat(hdf)         # Check for SAMI formatting
     if version == '':                            # Get the data version
-        version = getVersion(hdf, version)
+        version = getVersion(h5file, hdf, version)
     obstype = getObstype(hdf, name, version)     # Get observation type
     g_target = getTargetGroup(hdf, name,         # ID target group 
                               version, obstype)
