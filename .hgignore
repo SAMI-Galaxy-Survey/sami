@@ -2,5 +2,7 @@ syntax: glob
 
 *.pyc
 .DS_Store
+^.project
+^.pydevproject
 utils/libcCirc\.so
 utils/cCirc\.o

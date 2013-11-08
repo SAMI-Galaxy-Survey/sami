@@ -58,7 +58,8 @@ except:
 # Utils code.
 from .. import utils
 from .. import samifitting as fitting
-from ..utils.mc_adr import DARCorrector
+from ..utils.mc_adr import DARCorrector, parallactic_angle
+from .. import diagnostics
 
 # importing everything defined in the config file
 from ..config import *
@@ -121,6 +122,72 @@ def get_probe(infile, object_name, verbose=True):
 
     # Return the probe number
     return ifu
+
+def dar_correct(ifu_list, xfibre_all, yfibre_all, method='simple',update_rss=False):
+    """Update the fiber positions as a function of wavelength to reflect DAR correction.
+    
+    """
+
+    n_obs, n_fibres, n_slices = xfibre_all.shape
+
+    # Set up the differential atmospheric refraction correction. Each frame
+    # requires it's own correction, so we create a list of DARCorrectors.
+    dar_correctors = []
+                      
+    for obs in ifu_list:
+        darcorr = DARCorrector(method=method)
+    
+        darcorr.temperature = obs.fibre_table_header['ATMTEMP'] 
+        darcorr.air_pres = obs.fibre_table_header['ATMPRES'] * millibar_to_mmHg
+        #                     (factor converts from millibars to mm of Hg)
+        darcorr.water_pres = \
+            utils.saturated_partial_pressure_water(darcorr.air_pres, darcorr.temperature) * \
+            obs.fibre_table_header['ATMRHUM']
+    
+        # TODO: This is the field ZD, not the target ZD. Also, the mean is probably
+        # not the best indicator of the time averaged ZD.
+        darcorr.zenith_distance = \
+            (obs.primary_header['ZDSTART'] + obs.primary_header['ZDEND']) / 2
+
+        # TODO: This is the field HA, not the target HA.
+        darcorr.hour_angle = \
+            (obs.primary_header['HASTART'] + obs.primary_header['HAEND']) / 2
+    
+        # @TODO: Note, the "meandec" used below is not the mean dec of the bundle,
+        # but the field (needs to be fixed in ifu.py)
+        darcorr.declination = obs.meandec
+        
+        dar_correctors.append(darcorr)
+        del darcorr, obs # Cleanup since this is meaningless outside the loop.
+
+    wavelength_array = ifu_list[0].lambda_range
+    
+    # Iterate over wavelength slices
+    for l in xrange(n_slices):
+        
+        # Iterate over observations
+        for i_obs in xrange(n_obs):
+            # Determine differential atmospheric refraction correction for this slice
+            dar_correctors[i_obs].update_for_wavelength(wavelength_array[l])
+            
+            # Parallactic angle is direction to zenith measured north through east.
+            # Must move light away from the zenith to correct for DAR.
+            dar_x = dar_correctors[i_obs].dar_east * 1000.0 / plate_scale 
+            dar_y = dar_correctors[i_obs].dar_north * 1000.0 / plate_scale 
+            # TODO: Need to change to arcsecs!
+    
+            xfibre_all[i_obs,:,l] = xfibre_all[i_obs,:,l] + dar_x
+            yfibre_all[i_obs,:,l] = yfibre_all[i_obs,:,l] + dar_y
+            
+#             print("DAR lambda: {:5.0f} x: {:5.2f}, y: {:5.2f}, pa : {:5.0f}".format(wavelength_array[l],
+#                                                                            dar_x * plate_scale/1000.0,
+#                                                                            dar_y * plate_scale/1000.0,
+#                                                                            dar_correctors[i_obs].parallactic_angle()))
+    if diagnostics.enabled:
+        diagnostics.DAR.xfib = xfibre_all
+        diagnostics.DAR.yfib = yfibre_all
+
+
 
 def dithered_cubes_from_rss_files(inlist, 
                                   objects='all', clip=True, plot=True, 
@@ -244,11 +311,14 @@ def dithered_cubes_from_rss_list(files,
             hdr_new = create_primary_header(ifu_list,name,files,WCS_pos,WCS_flag)
 
             # Create HDUs for each cube - note headers generated automatically for now.
-            # Note - there is a 90-degree rotation in the cube, which I can't track down. I'm rolling the axes before
-            # writing the FITS files to compensate.
-            hdu1=pf.PrimaryHDU(np.transpose(flux_cube, (2,0,1)), hdr_new)
-            hdu2=pf.ImageHDU(np.transpose(var_cube, (2,0,1)), name='VARIANCE')
-            hdu3=pf.ImageHDU(np.transpose(weight_cube, (2,0,1)), name='WEIGHT')
+            #
+            # @NOTE: PyFITS writes axes to FITS files in the reverse of the sense
+            # of the axes in Numpy/Python. So a numpy array with dimensions
+            # (5,10,20) will produce a FITS cube with x-dimension 20,
+            # y-dimension 10, and the cube (wavelength) dimension 5.  --AGreen
+            hdu1=pf.PrimaryHDU(np.transpose(flux_cube, (2,1,0)), hdr_new)
+            hdu2=pf.ImageHDU(np.transpose(var_cube, (2,1,0)), name='VARIANCE')
+            hdu3=pf.ImageHDU(np.transpose(weight_cube, (2,1,0)), name='WEIGHT')
 
             # Create HDUs for meta-data
             #metadata_table = create_metadata_table(ifu_list)
@@ -477,6 +547,9 @@ def dithered_cube_from_rss(ifu_list, clip=True, plot=True, offsets='file'):
         data_med=nanmedian(data_smoothed[:,300:1800], axis=1)
 
         # Pick out only good fibres (i.e. those allocated as P)
+        #
+        # @TODO: This will break the subsequent code when we actually break a
+        # fibre, as subsequent code assumes 61 fibres. This needs to be fixed.
         goodfibres=np.where(galaxy_data.fib_type=='P')
         x_good=galaxy_data.x_microns[goodfibres]
         y_good=galaxy_data.y_microns[goodfibres]
@@ -487,7 +560,8 @@ def dithered_cube_from_rss(ifu_list, clip=True, plot=True, offsets='file'):
         if data_bias<0.0:
             data_good=data_good-data_bias
             
-        # Mask out any "cold" spaxels - defined as negative, due to poor throughtput calibration from CR taking out 5577.
+        # Mask out any "cold" spaxels - defined as negative, due to poor
+        # throughtput calibration from CR taking out 5577.
         msk_notcold=np.where(data_good>0.0)
     
         # Apply the mask to x,y,data
@@ -548,6 +622,12 @@ def dithered_cube_from_rss(ifu_list, clip=True, plot=True, offsets='file'):
 
     xfibre_all=np.asanyarray(xfibre_all)
     yfibre_all=np.asanyarray(yfibre_all)
+
+    # Scale these up to have a wavelength axis as well
+    xfibre_all = xfibre_all.reshape(n_obs, n_fibres, 1).repeat(n_slices,2)
+    yfibre_all = yfibre_all.reshape(n_obs, n_fibres, 1).repeat(n_slices,2)
+    
+    
     data_all=np.asanyarray(data_all)
     var_all=np.asanyarray(var_all)
 
@@ -560,6 +640,18 @@ def dithered_cube_from_rss(ifu_list, clip=True, plot=True, offsets='file'):
     #     difficulties.
 
 
+    # DAR Correction
+    #
+    #     The correction for differential atmospheric refraction as a function
+    #     of wavelength must be applied for each file/observation independently.
+    #     Therefore, it is applied to the positions of the fibres before the
+    #     individual fibres are considered as independent observations
+    #
+    #     DAR correction is handled by another function in this module, which
+    #     updates the fibre positions in place.
+    
+    dar_correct(ifu_list, xfibre_all, yfibre_all)
+
     # Reshape the arrays
     #
     #     What we are doing is combining the first two dimensions, which are
@@ -567,13 +659,13 @@ def dithered_cube_from_rss(ifu_list, clip=True, plot=True, offsets='file'):
     #     each file as a completely independent observation for the purposes of
     #     building grided data cube.
     #
-    #     old.shape -> (n_files,            n_fibres, n_slices)
-    #     new.shape -> (n_files * n_fibres, n_slices)
+    #     old.shape -> (n_obs,            n_fibres, n_slices)
+    #     new.shape -> (n_obs * n_fibres, n_slices)
     #     NOTE: the fibre position arrays are simply (n_files * n_fibres), no n_slices dimension.
-    xfibre_all=np.reshape(xfibre_all,(np.shape(xfibre_all)[0]*np.shape(xfibre_all)[1]))
-    yfibre_all=np.reshape(yfibre_all,(np.shape(yfibre_all)[0]*np.shape(yfibre_all)[1]))
-    data_all=np.reshape(data_all,(np.shape(data_all)[0]*np.shape(data_all)[1], np.shape(data_all)[2]))
-    var_all=np.reshape(var_all,(np.shape(var_all)[0]*np.shape(var_all)[1], np.shape(var_all)[2]))
+    xfibre_all = np.reshape(xfibre_all, (n_obs * n_fibres, n_slices) )
+    yfibre_all = np.reshape(yfibre_all, (n_obs * n_fibres, n_slices) )
+    data_all   = np.reshape(data_all,   (n_obs * n_fibres, n_slices) )
+    var_all    = np.reshape(var_all,    (n_obs * n_fibres, n_slices) )
 
     
     
@@ -598,9 +690,6 @@ def dithered_cube_from_rss(ifu_list, clip=True, plot=True, offsets='file'):
     
     print("data_all.shape: ", np.shape(data_all))
 
-    # Below is a diagnostic print out.
-    #print("data_all.shape: ", np.shape(data_all))
-
     if clip:
         # Set up some diagostics if you have the clip flag set.
         diagnostic_info['unmasked_pixels_after_sigma_clip'] = 0
@@ -608,16 +697,7 @@ def dithered_cube_from_rss(ifu_list, clip=True, plot=True, offsets='file'):
 
         diagnostic_info['n_pixels_sigma_clipped'] = []
            
-    # Set up the differential atmospheric refraction correction:
-    dar_corrector = DARCorrector(method='none')
-    
-    #dar_corrector.temperature = temperature
-    #dar_corrector.air_pres = air_pressure
-    #dar_corrector.water_pres = water_pressure
-    #dar_corrector.zenith_distance = zenith_distance
-    #dar_corrector.hour_angle = hour_angle
-    parallactic_angle = 0
-    
+            
     # Load the wavelength solution for the datacubes. 
     #
     # TODO: This should change when the header keyword propagation is improved
@@ -659,13 +739,9 @@ def dithered_cube_from_rss(ifu_list, clip=True, plot=True, offsets='file'):
         data_rss_slice = data_all[:,l]
         var_rss_slice = var_all[:,l]
 
-        # Determine differential atmospheric refraction correction for this slice
-        dar_r = dar_corrector.correction(wavelength_array[l])
-        dar_x = dar_r * np.cos(np.radians(parallactic_angle))
-        dar_y = dar_r * np.sin(np.radians(parallactic_angle))
 
-        # Compute drizzle map for this wavelength slice.
-        overlap_array, weight_grid_slice = overlap_maps.drizzle(xfibre_all + dar_x, yfibre_all + dar_y)
+        # Compute drizzle maps for this wavelength slice.
+        overlap_array, weight_grid_slice = overlap_maps.drizzle(xfibre_all[:,l], yfibre_all[:,l])
         
         # Map RSS slices onto gridded slices
         norm_grid_slice_fibres=overlap_array*norm_rss_slice        
@@ -724,6 +800,10 @@ def dithered_cube_from_rss(ifu_list, clip=True, plot=True, offsets='file'):
         var_cube[:,:,l]=var_grid_slice_final
         weight_cube[:,:,l]=weight_grid_slice_final
 
+    print("Total calls to drizzle: {}, recomputes: {}, ({}%)".format(
+                overlap_maps.n_drizzle, overlap_maps.n_drizzle_recompute,
+                float(overlap_maps.n_drizzle_recompute)/overlap_maps.n_drizzle_recompute))
+
     # I have now got: flux cube, variance cube, weight cube. These have been made assuming no drop-size reduction factor.
     # Apply the drop size reduction factor to all three cubes.
     flux_cube=flux_cube/(drop_factor**2)
@@ -774,21 +854,19 @@ class SAMIDrizzler:
 
         # The input values
         self.pix_size_arcsec = output_pix_size_arcsec
+        self.pix_size_micron = output_pix_size_arcsec * (1000.0 / plate_scale)
         # Set the size of the output grid - should probably be calculated somehow.
         self.output_dimension = size_of_grid
 
         self.plate_scale = plate_scale    # (in arcseconds per mm)
         self.drop_diameter_arcsec = fibre_diameter_arcsec * drop_factor
         
-        # Work out stuff for the resampling
-        self.oversample = self.drop_diameter_arcsec / self.pix_size_arcsec
-        #self.pix_size_micron = 1000 * self.drop_diameter_arcsec / (self.oversample * self.plate_scale)
-        self.pix_size_micron = output_pix_size_arcsec * (1000.0 / plate_scale)
-        
-
         # Drop dimensions in units of output pixels
         self.drop_diameter_pix = self.drop_diameter_arcsec / self.pix_size_arcsec
         self.drop_area_pix = np.pi * (self.drop_diameter_pix / 2.0) ** 2
+
+        
+        self.drizzle_update_tol = 0.1 * self.pix_size_micron
 
         # Output grid abscissa in microns
         self.grid_coordinates_x = (np.arange(self.output_dimension) - self.output_dimension / 2) * self.pix_size_micron
@@ -798,8 +876,18 @@ class SAMIDrizzler:
         self.drop_to_pixel = np.empty((self.output_dimension, self.output_dimension, n_fibres))
         self.pixel_coverage = np.empty((self.output_dimension, self.output_dimension, n_fibres))
 
-        self._last_drizzle = np.empty(1)
-        # This is used to cache the arguments for the last drizzle.
+        self.drop_to_pixel=np.empty((self.output_dimension, self.output_dimension, n_fibres))
+        self.pixel_coverage=np.empty((self.output_dimension, self.output_dimension, n_fibres))
+        
+        # These are used to cache the arguments for the last drizzle.
+        self._last_drizzle_x = np.zeros(1)
+        self._last_drizzle_y = np.zeros(1)        
+
+        # Number of times drizzle has been called in this instance
+        self.n_drizzle = 0
+        
+        # Number of times drizzle has been recomputed in this instance
+        self.n_drizzle_recompute = 0
 
     def single_overlap_map(self, fibre_position_x, fibre_position_y):
         """Compute the mapping from a single input drop to output pixel grid.
@@ -827,6 +915,12 @@ class SAMIDrizzler:
         yfib = (fibre_position_y - self.grid_coordinates_y[0]) / self.pix_size_micron
 
         # Create the overlap map from the circ.py code
+        #
+        # @NOTE: The circ.py code returns an array which has the x-coodinate in
+        # the second index and the y-coordinate in the first index. Therefore,
+        # we transpose the result here so that the x-cooridnate (north positive)
+        # is in the first index, and y-coordinate (east positive) is in the
+        # second index.
         overlap_map = utils.circ.resample_circle(
             self.output_dimension, self.output_dimension, 
             xfib, yfib,
@@ -842,9 +936,15 @@ class SAMIDrizzler:
     def drizzle(self, xfibre_all, yfibre_all):
         """Compute a mapping from fibre drops to output pixels for all given fibre locations."""
             
-        if (np.array_equal(self._last_drizzle,np.asarray([xfibre_all,yfibre_all]))):
-            # We've been asked to recompute the same answer as last time, so don't recompute.
+        # Increment the drizzle counter
+        self.n_drizzle = self.n_drizzle + 1
+
+        if (np.allclose(xfibre_all,self._last_drizzle_x, rtol=0,atol=self.drizzle_update_tol) and
+            np.allclose(yfibre_all,self._last_drizzle_y, rtol=0,atol=self.drizzle_update_tol)):
+            # We've been asked to recompute an asnwer that is less than the tolerance to recompute
             return self.drop_to_pixel, self.pixel_coverage
+        else:
+            self.n_drizzle_recompute = self.n_drizzle_recompute + 1
         
         for i_fibre, xfib, yfib in itertools.izip(itertools.count(), xfibre_all, yfibre_all):
     
@@ -858,7 +958,8 @@ class SAMIDrizzler:
             self.drop_to_pixel[:,:,i_fibre]=drop_to_pixel_fibre
             self.pixel_coverage[:,:,i_fibre]=pixel_coverage_fibre
     
-        self._last_drizzle = np.asarray([xfibre_all, yfibre_all])
+        self._last_drizzle_x = xfibre_all
+        self._last_drizzle_y = yfibre_all
     
         return self.drop_to_pixel, self.pixel_coverage
 
@@ -959,8 +1060,8 @@ def WCS_position_coords(object_RA, object_DEC, wave, object_flux_cube, object_na
         image_header = image_file['Primary'].header
         img_crval1 = float(image_header['CRVAL1']) #RA
         img_crval2 = float(image_header['CRVAL2']) #DEC
-        img_crpix1 = float(image_header['CRPIX1']) #Reference grid_coordinates_x-pixel
-        img_crpix2 = float(image_header['CRPIX2']) #Reference grid_coordinates_y-pixel
+        img_crpix1 = float(image_header['CRPIX1']) #Reference x-pixel
+        img_crpix2 = float(image_header['CRPIX2']) #Reference y-pixel
         img_cdelt1 = float(image_header['CDELT1']) #Delta RA
         img_cdelt2 = float(image_header['CDELT2']) #Delta DEC
 
@@ -977,7 +1078,7 @@ def WCS_position_coords(object_RA, object_DEC, wave, object_flux_cube, object_na
 
         # 2D Gauss Fit the cross-correlated cropped image
         crosscorr_image_1d = np.ravel(crosscorr_image)
-        #use for loops to recover indicies in grid_coordinates_x and grid_coordinates_y positions of flux values
+        #use for loops to recover indicies in x and y positions of flux values
         x_pos = []
         y_pos = []
         for i in xrange(np.shape(crosscorr_image)[0]):
