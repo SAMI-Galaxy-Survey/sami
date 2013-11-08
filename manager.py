@@ -142,34 +142,53 @@ PILOT_FIELD_LIST = [
      'coords': '00h42m34.09s -09d12m08.1s'}]
 
 # Things that should be visually checked
+# Priorities: 0 should be done first
 CHECK_DATA = {
     'TLM': {'name': 'Tramline map',
             'ndf_class': 'MFFFF',
-            'spectrophotometric': None},
+            'spectrophotometric': None,
+            'priority': 0,
+            'group_by': ('date', 'ccd', 'field_id')},
     'ARC': {'name': 'Arc reduction',
             'ndf_class': 'MFARC',
-            'spectrophotometric': None},
+            'spectrophotometric': None,
+            'priority': 1,
+            'group_by': ('date', 'ccd', 'field_id')},
     'FLT': {'name': 'Flat field',
             'ndf_class': 'MFFFF',
-            'spectrophotometric': None},
+            'spectrophotometric': None,
+            'priority': 2,
+            'group_by': ('date', 'ccd', 'field_id')},
     'SKY': {'name': 'Twilight sky',
             'ndf_class': 'MFSKY',
-            'spectrophotometric': None},
+            'spectrophotometric': None,
+            'priority': 3,
+            'group_by': ('date', 'ccd', 'field_id')},
     'OBJ': {'name': 'Object frame',
             'ndf_class': 'MFOBJECT',
-            'spectrophotometric': None},
+            'spectrophotometric': None,
+            'priority': 4,
+            'group_by': ('date', 'ccd', 'field_id')},
     'FLX': {'name': 'Flux calibration',
             'ndf_class': 'MFOBJECT',
-            'spectrophotometric': True},
+            'spectrophotometric': True,
+            'priority': 5,
+            'group_by': ('date', 'ccd', 'field_id', 'name')},
     'TEL': {'name': 'Telluric correction',
             'ndf_class': 'MFOBJECT',
-            'spectrophotometric': None}
+            'spectrophotometric': None,
+            'priority': 6,
+            'group_by': ('date', 'ccd', 'field_id')}
     }
 for index in xrange(1, 14):
     i_string = '{:02d}'.format(index)
     CHECK_DATA['C' + i_string] = {'name': 'cube ' + i_string,
                                   'ndf_class': 'MFOBJECT',
-                                  'spectrophotometric': False}
+                                  'spectrophotometric': False,
+                                  'priority': 7,
+                                  'group_by': ('date', 'ccd', 'field_id')}
+# Extra priority for checking re-reductions
+PRIORITY_RECENT = 10
 
 class Manager:
     """Object for organising and reducing SAMI data.
@@ -1973,6 +1992,41 @@ class Manager:
         for fits in file_iterable:
             fits.update_check_ever(key, value)
         return
+
+    def list_checks(self, recent_ever='both', *args, **kwargs):
+        """Return a list of checks that need to be done."""
+        # Each element in the list will be a tuple, where
+        # element[0] = key from below
+        # element[1] = list of fits objects to be checked
+        if recent_ever == 'both':
+            complete_list = []
+            complete_list.extend(self.list_checks('ever'))
+            complete_list.extend(self.list_checks('recent'))
+            return complete_list
+        # The keys for the following defaultdict will be tuples, where
+        # key[0] = 'TLM' (or similar)
+        # key[1] = tuple according to CHECK_DATA group_by
+        # key[2] = 'recent' or 'ever'
+        check_dict = defaultdict(list)
+        for fits in self.files(*args, **kwargs):
+            if recent_ever == 'ever':
+                items = fits.check_ever.items()
+            elif recent_ever == 'recent':
+                items = fits.check_recent.items()
+            else:
+                raise KeyError(
+                    'recent_ever must be "both", "ever" or "recent"')
+            for key in [key for key, value in items if not value]:
+                check_dict_key = []
+                for group_by_key in CHECK_DATA[key]['group_by']:
+                    check_dict_key.append(getattr(fits, group_by_key))
+                check_dict_key = (key, tuple(check_dict_key), recent_ever)
+                check_dict[check_dict_key].append(fits)
+        # Now change the dictionary into a sorted list
+        key_func = lambda item: CHECK_DATA[item[0][0]]['priority']
+        check_list = sorted(check_dict.items(), key=key_func)
+        return check_list
+
 
 
 class FITSFile:
