@@ -967,8 +967,8 @@ class Manager:
                                    **kwargs)
         file_iterable = [fits for fits in file_iterable]
         self.reduce_file_iterable(file_iterable, overwrite=overwrite, 
-                                  tlm=True, leave_reduced=leave_reduced)
-        self.update_checks('TLM', file_iterable, False)
+                                  tlm=True, leave_reduced=leave_reduced,
+                                  check_type='TLM')
         return
 
     def reduce_arc(self, overwrite=False, **kwargs):
@@ -976,8 +976,8 @@ class Manager:
         file_iterable = self.files(ndf_class='MFARC', do_not_use=False,
                                    **kwargs)
         file_iterable = [fits for fits in file_iterable]
-        self.reduce_file_iterable(file_iterable, overwrite=overwrite)
-        self.update_checks('ARC', file_iterable, False)
+        self.reduce_file_iterable(file_iterable, overwrite=overwrite,
+                                  check_type='ARC')
         return
 
     def reduce_fflat(self, overwrite=False, **kwargs):
@@ -985,8 +985,8 @@ class Manager:
         file_iterable = self.files(ndf_class='MFFFF', do_not_use=False,
                                    **kwargs)
         file_iterable = [fits for fits in file_iterable]
-        self.reduce_file_iterable(file_iterable, overwrite=overwrite)
-        self.update_checks('FLT', file_iterable, False)
+        self.reduce_file_iterable(file_iterable, overwrite=overwrite,
+                                  check_type='FLT')
         return
 
     def reduce_sky(self, overwrite=False, **kwargs):
@@ -994,8 +994,8 @@ class Manager:
         file_iterable = self.files(ndf_class='MFSKY', do_not_use=False,
                                    **kwargs)
         file_iterable = [fits for fits in file_iterable]
-        self.reduce_file_iterable(file_iterable, overwrite=overwrite)
-        self.update_checks('SKY', file_iterable, False)
+        self.reduce_file_iterable(file_iterable, overwrite=overwrite,
+                                  check_type='SKY')
         return
 
     def reduce_object(self, overwrite=False, **kwargs):
@@ -1007,18 +1007,19 @@ class Manager:
                                           do_not_use=False, **kwargs),
                                key=key, reverse=True)
         file_iterable = [fits for fits in file_iterable]
-        self.reduce_file_iterable(file_iterable, overwrite=overwrite)
-        self.update_checks('OBJ', file_iterable, False)
+        self.reduce_file_iterable(file_iterable, overwrite=overwrite,
+                                  check_type='OBJ')
         return
 
     def reduce_file_iterable(self, file_iterable, overwrite=False, tlm=False,
-                             leave_reduced=True):
+                             leave_reduced=True, check_type=None):
         """Reduce all files in the iterable."""
         extra_check_dict = defaultdict(list)
         for fits in file_iterable:
             reduced = self.reduce_file(fits, overwrite=overwrite, tlm=tlm,
                                        leave_reduced=leave_reduced)
             if reduced:
+                fits.update_checks(check_type, False)
                 if tlm:
                     check_filename = fits.tlm_filename
                 else:
@@ -1082,7 +1083,9 @@ class Manager:
             if overwrite or not os.path.exists(path_out):
                 print 'Combining files to create', path_out
                 fluxcal2.combine_transfer_functions(path_list, path_out)
+                self.update_checks('FLX', fits_list, False)
             # Copy the file into all required directories
+            # Currently this never happens because of the grouping
             done = [os.path.dirname(path_list[0])]
             for path in path_list:
                 if os.path.dirname(path) not in done:
@@ -1092,7 +1095,6 @@ class Manager:
                     if overwrite or not os.path.exists(path_copy):
                         print 'Copying combined file to', path_copy
                         shutil.copy2(path_out, path_copy)
-            self.update_checks('FLX', fits_list, False)
         return
 
     def flux_calibrate(self, overwrite=False, **kwargs):
