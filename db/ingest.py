@@ -40,9 +40,12 @@ import sami
 """ 
 For commit message: 
 
-Minor bug fixes in make_list(). 
+Bug fixes in make_list() and create(). 
 
-Got rid of an extra '/' that was written in the path (inconsequential, but ugly). Found out that a previous bug-fix relating to exluding '.DS_Store' was not working properly, fixed that. 
+(1) Simple bug fix in create(), which disallowed re-initialising an hdf5 file. 
+(2) Changes in import_cube() and import_many(): 
+  + A new flag, 'version_confirm' was introduced that prompts the user if the version of the data that is about to be imported is earlier than the latest held in the Archive (e.g., the user wants to import v0.3 when the latest available is v0.4).
+  + This flag was included in import_many(), as was a catch for a bug in the implementation of 'Safe Mode'. Instead of backing up before the start of each cycle, it only does so at the very beginning of the loop, and then sets safe_mode=False. 
 """
 
 # ~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~
@@ -65,7 +68,7 @@ def create(h5file, overwrite=False, verbose=True):
     
     # Create an h5 file
     if (not os.path.isfile(h5file)) or (overwrite==True):
-        f = h5.File(h5file, 'w')
+        f = h5.File(h5file, 'a')
 
     # And require a SAMI root directory
     root = f.require_group("SAMI")
@@ -82,7 +85,8 @@ def create(h5file, overwrite=False, verbose=True):
 
 # ~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~
 def import_cube(blue_cube, red_cube, h5file, version, safe_mode=False, 
-                ingest_rss=True, rss_only=False, dataroot='./', verbose=True):
+                ingest_rss=True, rss_only=False, dataroot='./', verbose=True,
+                version_confirm=True):
 # ~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~
     """ Import a set of data-cubes and parents to the SAMI Archive. 
     
@@ -180,6 +184,16 @@ def import_cube(blue_cube, red_cube, h5file, version, safe_mode=False,
     if (verbose) and (version in hdf['SAMI'].keys()): 
         print
         print("NOTE: Some data may already be archived in this version. ")
+
+    # Confirm if version is not latest (cfoster, 8/11/2013)
+    if hdf['SAMI'].keys() != [] and version < max(hdf['SAMI'].keys()) and \
+        version_confirm:
+        print
+        usr_input=raw_input("The selected version is not the latest. Are you sure you want to continue? [Y/n]")
+        if (usr_input == 'n'): 
+            raise SystemExit("The wrong version number was entered. Please fix and rerun.")
+        else:
+            version_confirm=False
 
     g_version = hdf.require_group("SAMI/"+version)
     
@@ -379,17 +393,24 @@ def import_many(tablein, h5file, version, safe_mode=False,
         import time
         timer_zero = time.time()
         
-    tabdata = ascii.read(tablein, data_start=0, names=['blue', 'red'])
+    tabdata = ascii.read(tablein, data_start=0, names=['blue', 'red'])    
     
     for loop in range(len(tabdata)):
         if timing: timer_start = time.time()
         if verbose: print("Processing "+
                           os.path.basename(tabdata['blue'][loop])+", "+
                           os.path.basename(tabdata['red'][loop]))
-        
+        if loop>0:
+            version_confirm=False
+            safe_mode=True
+	else:
+	    version_confirm=True
+	    safe_mode=False
+            
         import_cube(tabdata['blue'][loop], tabdata['red'][loop], h5file, 
                     version, safe_mode=safe_mode, ingest_rss=ingest_rss, 
-                    rss_only=rss_only, dataroot=dataroot, verbose=verbose)
+                    rss_only=rss_only, dataroot=dataroot, verbose=verbose,
+                    version_confirm=version_confirm)
         if timing: 
             timer_end = time.time()
             print(loop,timer_end-timer_start)

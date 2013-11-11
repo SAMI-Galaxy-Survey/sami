@@ -100,6 +100,23 @@ def parallactic_angle(hour_angle, declination, latitude):
         -numpy.arctan2( cos_lat * sin_ha, sin_lat * cos_dec - cos_lat * sin_dec * cos_ha)
         )
     
+def zenith_distance(declination, hour_angle, latitude=latitude.degrees):
+    """Return the zenith distance in degrees of an object.
+    
+    All inputs are in degrees.
+    
+    This is based on "A treatise on spherical astronomy" By Sir Robert Stawell Ball, pg 91.
+    
+    """
+    
+    sin_lat = numpy.sin(numpy.radians(latitude))
+    sin_dec = numpy.sin(numpy.radians(declination))
+    cos_lat = numpy.cos(numpy.radians(latitude))
+    cos_dec = numpy.cos(numpy.radians(declination))
+    cos_ha =numpy.cos(numpy.radians(hour_angle))
+    
+    return numpy.degrees(
+        numpy.arccos(sin_lat * sin_dec + cos_lat * cos_dec * cos_ha))
 
 class DARCorrector:
     """
