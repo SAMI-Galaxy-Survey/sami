@@ -215,11 +215,13 @@ def dar_correction_test(verbose=False):
             
             mask = np.isfinite(np.ravel(ifu_list[i_obs].data[:,i_slice]))
     
+            start =[np.nansum(ifu_list[i_obs].data[:,i_slice])/len(mask),
+                    com_distr[0], 
+                    com_distr[1], 
+                    5, 0.0]
+    
             gf = samifitting.TwoDGaussFitter(
-                                             [np.nansum(ifu_list[i_obs].data[:,i_slice])/len(mask),
-                                              com_distr[0], 
-                                              com_distr[1], 
-                                              5, 0.0],
+                                             start,
                                              (np.ravel(xpos))[mask],
                                              (np.ravel(ypos))[mask],
                                              (np.ravel(ifu_list[i_obs].data[:,i_slice]))[mask]
@@ -227,8 +229,11 @@ def dar_correction_test(verbose=False):
             fitting.fibre_integrator(gf, 1.6)
             try:
                 gf.fit()
-                print("Residual Offset: ({0:.4}, {1:.4}), norm: {2:.4}".format(gf.p[1],gf.p[2],np.linalg.norm(gf.p[1:3]) ) )
-                offsets.append( [gf.p[1], gf.p[2]] )
+                if not np.allclose(gf.p,start):
+                    print("Residual Offset: ({0:.4}, {1:.4}), norm: {2:.4}".format(gf.p[1],gf.p[2],np.linalg.norm(gf.p[1:3]) ) )
+                    offsets.append( [gf.p[1], gf.p[2]] )
+                else:
+                    print("Fit failed for slice {}".format(i_slice))
             except:
                 print("Fit failed for slice {}".format(i_slice))
     
