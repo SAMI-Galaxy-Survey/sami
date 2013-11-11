@@ -78,7 +78,7 @@ epsilon = np.finfo(np.float).eps
 # Store the value of epsilon for quick access.
 
 output_pix_size_arcsec = 0.5    # Size of output spaxel in arcsec
-drop_factor = 0.5    # Size of drop size as a fraction of the fibre size
+drop_factor = 0.5    # Size of drop as a fraction of the fibre size
 size_of_grid = 50    # Size of a side of the cube such that the cube has 50x50 spaxels
 # @TODO: Compute the size of the grid instead of hard code it!??!
 
@@ -787,36 +787,40 @@ def dithered_cube_from_rss(ifu_list, clip=True, plot=True, offsets='file'):
         # the fibre weighting to get the final weighting.
         weight_grid_slice_fibres=weight_grid_slice*valid_grid_slice_fibres
 
-        # Collapse the slice arrays
-        data_grid_slice_final = nansum(data_grid_slice_fibres, axis=2)
-        var_grid_slice_final = nansum(var_grid_slice_fibres, axis=2)
-        weight_grid_slice_final = nansum(weight_grid_slice_fibres, axis=2)
+        # Combine (sum) the individual observations. See Section 6.1: "Simple
+        # summation" of the data reduction paper. Note that these arrays are
+        # "unweighted" cubes C' and V', not the weighted C and V given in the
+        # paper.
+        data_grid_slice_final = nansum(data_grid_slice_fibres, axis=2) / n_obs
+        var_grid_slice_final = nansum(var_grid_slice_fibres, axis=2) / (n_obs ** 2)
+        weight_grid_slice_final = nansum(weight_grid_slice_fibres, axis=2) / n_obs
         
         # Where the weight map is within epsilon of zero, set it to NaN to
         # prevent divide by zero errors later.
         weight_grid_slice_final[weight_grid_slice_final < epsilon] = np.NaN
         
-        flux_cube[:,:,l]=data_grid_slice_final
-        var_cube[:,:,l]=var_grid_slice_final
-        weight_cube[:,:,l]=weight_grid_slice_final
+        flux_cube[:, :, l] = data_grid_slice_final
+        var_cube[:, :, l] = var_grid_slice_final
+        weight_cube[:, :, l] = weight_grid_slice_final
 
     print("Total calls to drizzle: {}, recomputes: {}, ({}%)".format(
                 overlap_maps.n_drizzle, overlap_maps.n_drizzle_recompute,
                 float(overlap_maps.n_drizzle_recompute)/overlap_maps.n_drizzle_recompute))
 
-    # I have now got: flux cube, variance cube, weight cube. These have been made assuming no drop-size reduction factor.
-    # Apply the drop size reduction factor to all three cubes.
-    flux_cube=flux_cube/(drop_factor**2)
-    var_cube=var_cube/(drop_factor**4)
-    weight_cube=weight_cube/(drop_factor**2)
+    # The flux and variance cubes must be rescaled to account for the reduction
+    # in drop size. See Section 9.3: "Flux Scaling" of the data reduction paper.
+    # Note also, that this scaling is immediately nullified by the division by the
+    # weight cube below.
+    flux_cube_scaled = flux_cube / (drop_factor ** 2)
+    var_cube_scaled = var_cube / (drop_factor ** 4)
+    weight_cube_scaled = weight_cube / (drop_factor ** 2)
 
-    # Now need to scale the flux and variance cubes appropriately by the weight cube
-    flux_cube=flux_cube/weight_cube # flux cube scaling by weight map
-    image=nanmedian(flux_cube, axis=2)
+    # Finally, divide by the weight cube to remove variations in exposure time
+    # (and hence surface brightness sensitivity) from the output data cube.
+    flux_cube_unprimed = flux_cube_scaled / weight_cube_scaled 
+    var_cube_unprimed = var_cube_scaled / (weight_cube_scaled * weight_cube_scaled)
 
-    var_cube=var_cube/(weight_cube*weight_cube) # variance cube scaling by weight map
-
-    return flux_cube, var_cube, weight_cube, diagnostic_info
+    return flux_cube_unprimed, var_cube_unprimed, weight_cube_scaled, diagnostic_info
 
 def sigma_clip_mask_slice_fibres(grid_slice_fibres):
     """Return a mask with outliers removed."""
