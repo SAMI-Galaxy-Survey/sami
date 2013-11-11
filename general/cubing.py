@@ -2,6 +2,8 @@ import pylab as py
 import numpy as np
 import scipy as sp
 
+from scipy import integrate
+
 import astropy.io.fits as pf
 import astropy.wcs as pw
 
@@ -28,7 +30,7 @@ except:
 # Utils code.
 from .. import utils
 from .. import samifitting as fitting
-from ..utils.mc_adr import DARCorrector, parallactic_angle
+from ..utils.mc_adr import DARCorrector, parallactic_angle, zenith_distance
 from .. import diagnostics
 
 # importing everything defined in the config file
@@ -137,22 +139,24 @@ def dar_correct(ifu_list, xfibre_all, yfibre_all, method='simple',update_rss=Fal
         darcorr.water_pres = \
             utils.saturated_partial_pressure_water(darcorr.air_pres, darcorr.temperature) * \
             obs.fibre_table_header['ATMRHUM']
-    
-        # TODO: This is the field ZD, not the target ZD. Also, the mean is probably
-        # not the best indicator of the time averaged ZD.
-        darcorr.zenith_distance = \
-            (obs.primary_header['ZDSTART'] + obs.primary_header['ZDEND']) / 2
 
-        # TODO: This is the field HA, not the target HA.
-        darcorr.hour_angle = \
-            (obs.primary_header['HASTART'] + obs.primary_header['HAEND']) / 2
+        ha_offset = obs.ra - obs.meanra  # The offset from the HA of the field centre
     
-        # @TODO: Note, the "meandec" used below is not the mean dec of the bundle,
-        # but the field (needs to be fixed in ifu.py)
-        darcorr.declination = obs.meandec
-        
+        darcorr.zenith_distance = \
+            integrate.quad(lambda ha: zenith_distance(obs.dec, ha),
+                           obs.primary_header['HASTART'] + ha_offset,
+                           obs.primary_header['HAEND'] + ha_offset)[0] / (
+                              obs.primary_header['HAEND'] - obs.primary_header['HASTART'])
+
+        darcorr.hour_angle = \
+            (obs.primary_header['HASTART'] + obs.primary_header['HAEND']) / 2 + ha_offset
+    
+        darcorr.declination = obs.dec
+
         dar_correctors.append(darcorr)
-        del darcorr, obs # Cleanup since this is meaningless outside the loop.
+
+        del darcorr # Cleanup since this is meaningless outside the loop.
+
 
     wavelength_array = ifu_list[0].lambda_range
     
