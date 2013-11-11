@@ -26,7 +26,9 @@ import sami
 """ 
 Commit message: 
 
-Changes were made, but then reverted, not necessary. 
+Removed the option to define an output filename from fetch_cube().
+
+Due to a cyclical problem the functionality that allowed a user to input a filename for the file being output was removed. This should simplify book-keeping and it establishes a standard filename for SAMI data products. Change also applies to defOutfile(). 
 """
 
 # ~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~
@@ -110,12 +112,11 @@ def completeCube(hdf, colour, group):
     
 
 # ~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~
-def defOutfile(hdf, name, colour, outfile, overwrite):
+def defOutfile(hdf, name, colour, overwrite):
 # ~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~
     """ Define the output filename, if not set """
 
-    if outfile == '': 
-        outfile = 'SAMI_'+name+'_'+colour+'_cube.fits'
+    outfile = 'SAMI_'+name+'_'+colour+'_cube.fits'
         
     # Check if outfile already exists
     if os.path.isfile(outfile) and (not overwrite):
@@ -149,7 +150,7 @@ def fetchCube(name, h5file, colour=''):
 
 
 # ~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~
-def fetch_cube(name, h5file, version='', colour='', outfile='', 
+def fetch_cube(name, h5file, version='', colour='', 
                getCube=True, getRSS=False, getAll=False, overwrite=False):
 # ~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~
     """ A tool to fetch a datacube in FITS format. 
@@ -158,7 +159,6 @@ def fetch_cube(name, h5file, version='', colour='', outfile='',
     h5file    [str]  The SAMI archive file from which to export. 
     version   [str]  Data version sought. Latest is default. 
     colour    [str]  Colour-specific export. Set to 'B' or 'R'. 
-    outfile   [str]  The name of the file to be output. Default: "col_name".
     overwrite [boo]  Overwrite output file as default. 
     """
 
@@ -167,7 +167,7 @@ def fetch_cube(name, h5file, version='', colour='', outfile='',
 
     SAMIformatted = checkSAMIformat(hdf)         # Check for SAMI formatting
     if version == '':                            # Get the data version
-        version = getVersion(hdf, version)
+        version = getVersion(h5file, hdf, version)
     obstype = getObstype(hdf, name, version)     # Get observation type
     g_target = getTargetGroup(hdf, name,         # ID target group 
                               version, obstype)
@@ -180,8 +180,8 @@ def fetch_cube(name, h5file, version='', colour='', outfile='',
         cubeIsComplete = completeCube(hdf, colour[col], g_target)
 
         # Set name for output file (if not set): 
-        if outfile == '': 
-            outfile = defOutfile(hdf, name, colour[col], outfile, overwrite)
+        #if outfile == '': 
+        outfile = defOutfile(hdf, name, colour[col], overwrite)
 
         # Data is primary HDU, VAR and WHT are extra HDUs. 
         data = g_target[colour[col]+'_Cube_Data']
@@ -233,7 +233,7 @@ def export(name, h5file, get_cube=False, get_rss=False,
 
     SAMIformatted = checkSAMIformat(hdf)         # Check for SAMI formatting
     if version == '':                            # Get the data version
-        version = getVersion(hdf, version)
+        version = getVersion(h5file, hdf, version)
     obstype = getObstype(hdf, name, version)     # Get observation type
     g_target = getTargetGroup(hdf, name,         # ID target group 
                               version, obstype)
