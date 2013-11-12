@@ -20,6 +20,7 @@ from .. import samifitting as fitting
 
 # importing everything defined in the config file
 from ..config import *
+from ..log import logger
 
 """
 This file contains some functions used during SAMI observing. These revolve around fitting stars in the RSS data.
@@ -578,8 +579,10 @@ def centroid_fit(x,y,data,microns=True, circular=True):
     data_sum=np.nansum(data_smooth[:,200:1800],axis=1)
     data_med=stats.nanmedian(data_smooth[:,200:1800], axis=1)
 
+    mask = np.isfinite(data_sum)
+
     # Use the crude distributed centre-of-mass to get the rough centre of mass
-    com=utils.comxyz(x,y,data_sum)
+    com = utils.comxyz(x[mask], y[mask], data_sum[mask])
     
     # Peak height guess could be closest fibre to com position.
     dist=(x-com[0])**2+(y-com[1])**2 # distance between com and all fibres.
@@ -625,6 +628,9 @@ def centroid_fit(x,y,data,microns=True, circular=True):
         for jj in xrange(len(ylin)):
             yval=ylin[jj]
             model[ii,jj]=gf.fitfunc(gf.p, xval, yval)
+    
+    if (np.allclose(gf.p, p0, rtol=1e-3, atol=1e-5)):
+        logger.warning("Fitting may have returned starting guess")
     
     return gf.p, data_sum, xlin, ylin, model
 

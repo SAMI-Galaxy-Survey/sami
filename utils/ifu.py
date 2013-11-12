@@ -4,6 +4,8 @@ import numpy as np
 # astropy fits file io (replacement for pyfits)
 import astropy.io.fits as pf
 
+from ..log import logger
+
 class IFU:
 
     def __init__(self, rss_filename, probe_identifier, flag_name=True):
@@ -151,14 +153,19 @@ class IFU:
             # Haven't been measured yet; never mind
             pass
         else:
-            line_number = np.where(offsets_table['PROBENUM'] == self.ifu)[0][0]
-            offsets = offsets_table[line_number]
-            self.x_cen = -1 * offsets['X_CEN'] # Following sign convention for x_microns above
-            self.y_cen = offsets['Y_CEN']
-            self.x_refmed = -1 * offsets['X_REFMED']
-            self.y_refmed = offsets['Y_REFMED']
-            self.x_shift = -1 * offsets['X_SHIFT']
-            self.y_shift = offsets['Y_SHIFT']
+            try:
+                line_number = np.where(offsets_table['PROBENUM'] == self.ifu)[0][0]
+            except IndexError:
+                logger.warning("Alignment data expected for ifu {} in file {}, but not found.".format(
+                    self.ifu, rss_filename ))
+            else:
+                offsets = offsets_table[line_number]
+                self.x_cen = -1 * offsets['X_CEN'] # Following sign convention for x_microns above
+                self.y_cen = offsets['Y_CEN']
+                self.x_refmed = -1 * offsets['X_REFMED']
+                self.y_refmed = offsets['Y_REFMED']
+                self.x_shift = -1 * offsets['X_SHIFT']
+                self.y_shift = offsets['Y_SHIFT']
 
         # Object RA & DEC
         self.obj_ra=table_new.field('GRP_MRA')

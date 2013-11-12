@@ -221,6 +221,10 @@ def plate2sky(x, y, linear=False):
 def comxyz(x,y,z):
     """Centre of mass given x, y and z vectors (all same size). x,y give position which has value z."""
 
+    assert np.alltrue(np.isfinite(x))
+    assert np.alltrue(np.isfinite(y))
+    assert np.alltrue(np.isfinite(z))
+
     Mx=0
     My=0
     mass=0

@@ -12,6 +12,7 @@ import matplotlib.pyplot as plt
 from matplotlib import cm
 import astropy.io.fits as pf
 
+from ..log import logger
 
 """
 This file contains some functions used for recovering the dither pattern of a set of SAMI observations. 
@@ -386,30 +387,45 @@ def get_centroid(infile):
     
     ## Run centroid fit on each IFU
     
+    logger.debug("Getting centroids for file {}".format(infile))
+    
     for i, ifu in enumerate(ifus):
+
+            logger.debug("Fitting IFU number {}".format(ifu))
 
             try:
                 ifu_data=utils.IFU(infile, ifu, flag_name=False)
             except IndexError:
+                logger.error("Problem loading IFU {} from input file {}".format(ifu, infile))
                 # Probably a broken hexabundle
                 continue
-                
-            p_mic, data_mic, xlin_mic, ylin_mic, model_mic=sami.observing.centroid.centroid_fit(ifu_data.x_microns, ifu_data.y_microns,
-                                                                                    ifu_data.data, circular=True)
-            amplitude_mic, xout_mic, yout_mic, sig_mic, bias_mic=p_mic
             
-            ##Get coordinates in micron. 
-            ##Since centroid_fit currently inverts the x coordinates to have 'on-sky' coordinates, here 
-            ##I need to re-multiply x coordinates by -1 to have them in the focal plane reference 
-             
-            x_out= -1*xout_mic
-            y_out= yout_mic
-            
-            # the data to write to file
-            s=ifu_data.name+' '+str(ifu_data.ifu)+' '+str(x_out)+' '+str(y_out)+'\n'
+            try:
+                p_mic, data_mic, xlin_mic, ylin_mic, model_mic = \
+                    sami.observing.centroid.centroid_fit(ifu_data.x_microns, ifu_data.y_microns,
+                                                         ifu_data.data, circular=True)
+            except Exception as e:
+                # The fit failed for some reason. Simply exclude this from the
+                # list. @BUG: This breaks the code later on, as this IFU will
+                # not be recorded in the "ALIGNMENTS" extension.
+                logger.debug("Fit failed for IFU {}: {}".format(ifu, ifu_data.name))
+                raise e
+            else:
+                amplitude_mic, xout_mic, yout_mic, sig_mic, bias_mic=p_mic
                     
-            f.write(s)
-            
+                ##Get coordinates in micron. 
+                ##Since centroid_fit currently inverts the x coordinates to have 'on-sky' coordinates, here 
+                ##I need to re-multiply x coordinates by -1 to have them in the focal plane reference 
+                 
+                x_out= -1*xout_mic
+                y_out= yout_mic
+                
+                # the data to write to file
+                s=ifu_data.name+' '+str(ifu_data.ifu)+' '+str(x_out)+' '+str(y_out)+'\n'
+                        
+                f.write(s)
+                
+
     f.close() # close the output file
 
 
