@@ -1,7 +1,8 @@
-from scipy.optimize import leastsq
+from scipy.optimize import leastsq, basinhopping, brute, anneal
 import scipy as sp
 import numpy as np
-
+from . import utils
+from .log import logging
 """
 This file contains various fitting functions for general use with SAMI codes.
 
@@ -310,7 +311,7 @@ def fibre_integrator(fitter, diameter, pixel=False):
     fitter.diameter = diameter
 
     # Define the subsampling points to use
-    n_pix = 5       # Number of sampling points across the fibre
+    n_pix = 51       # Number of sampling points across the fibre
     # First make a 1d array of subsample points
     delta_x = np.linspace(-0.5 * (diameter * (1 - 1.0/n_pix)),
                           0.5 * (diameter * (1 - 1.0/n_pix)),
@@ -345,3 +346,111 @@ def fibre_integrator(fitter, diameter, pixel=False):
 
     return
 
+def robust_bundle_centroid(x_pos_array, y_pos_array, data_array, circular=True):
+    """Find a Guassian centroid for a bundle.
+    
+    Returns a 
+    
+    First element of return is identical to observing.centroid_fit.
+    
+    """
+
+    # Check sanity of inputs:
+    assert len(data_array.shape) in [1,2]
+    assert len(x_pos_array.shape) == 1
+    assert len(y_pos_array.shape) == 1
+    assert data_array.shape[0] == len(x_pos_array) 
+    assert data_array.shape[0] == len(y_pos_array)
+    
+    n_points = len(x_pos_array)
+
+    if (len(data_array.shape) == 2):
+        # We have been given an uncollapsed array of data values (e.g. a whole
+        # RSS spectrum), so we collapse it using a filtered sum
+        data_length = data_array.shape[1]
+        data_smooth = np.empty_like(data_array)
+        for i in xrange(n_points):
+            data_smooth[i, :] = utils.smooth(data_array[i, :], 11)    # default hanning smooth
+        
+        # Now sum the data over a large range to get broad band "image". We trim
+        # off the first and last 10% of the data to avoid edge effects.
+        trim = np.floor(0.1 * data_length)
+        data_sum = np.nansum(data_smooth[:, trim:-trim], axis=1)
+        
+        data_array = data_sum
+        del data_smooth, data_sum
+
+    # Mask out NaNs and infs (as fitting will fail if they are included...)
+    mask = np.all([np.isfinite(data_array),np.isfinite(x_pos_array),np.isfinite(y_pos_array)],axis=0)
+
+    # Define sensible limits for the problem (these will be used to determine
+    # the scale of the problem below)
+    x_domain = [np.min(x_pos_array), np.max(x_pos_array)]
+    y_domain = [np.min(y_pos_array), np.max(y_pos_array)]
+    spatial_scale = ((x_domain[1] - x_domain[0]) + (y_domain[1] - y_domain[0])) / 2.0
+    fwhm_domain = [1.0/50.0 * spatial_scale, spatial_scale]
+    height_domain = [0, np.max(data_array[mask])]
+        
+    # Rescale the problem:
+    x_pos_scaled = (x_pos_array - x_domain[0]) / spatial_scale
+    y_pos_scaled = (y_pos_array - y_domain[0]) / spatial_scale
+    data_scaled = (data_array - height_domain[0]) / (height_domain[1] - height_domain[0])
+    
+    # Define a Gaussian residual function to minimise.
+    if circular:
+        def gauss(x,y, parameters):
+            h, x_off, y_off, w, bias = parameters
+            return bias + h * np.power(2.0, -4.0/(w ** 2) * ((x - x_off) ** 2 + 
+                                                             (y - y_off) ** 2))
+        def gauss_resid(parameters):
+            h, x_off, y_off, w, bias = parameters
+            model = gauss(x_pos_scaled[mask], y_pos_scaled[mask], parameters)
+            return np.sum(np.abs(data_scaled[mask] - model))
+    
+    # [height, mean_x, mean_y, sigma, offset]
+    initial_guess = np.array([1, 0.5, 0.5, 0.1, 0])
+
+    def print_fun(x, f, accepted):
+        print("minima {} at ({:0.2}, {:0.2}) accepted {}".format(f, x[1], x[2], int(accepted)))
+
+    # Define a step check function to ensure that the bounds are respected
+    def bounds(**kwargs):
+        h, x_off, y_off, w, bias = kwargs["x_new"]
+        return (0 < h < 3) and (-0.1 < x_off < 1.1) and (-0.1 < y_off < 1.1) and (1/50 < w < 1)
+
+#     result = basinhopping(gauss_resid, initial_guess, niter=20, niter_success=4, stepsize=0.1, T=0.1, callback=print_fun)
+#     bestfit = result.x
+#     print gauss_resid(result.x)
+
+    ranges = (slice(0.8,1.2,0.2), slice(0,1,0.1), slice(0,1,0.1), slice(0.1,0.5,0.1), slice(-0.2,0.2,0.2))
+    result = brute(gauss_resid, ranges)
+    bestfit = result
+    print gauss_resid(result)
+
+#     result = anneal(gauss_resid, initial_guess, lower=0, upper= 1.1, full_output=True)
+#     bestfit = result[0]
+#     print gauss_resid(result[0])
+    
+    #logging.debug("Basinhopping message: {}".format(result.message))
+    #logging.debug("Basinhopping n_iterations: {}")
+
+    # Rescale result back to original scale
+    h, x_off, y_off, w, bias = bestfit
+    h = h * (height_domain[1] - height_domain[0]) + height_domain[0]
+    x_off = x_off * spatial_scale + x_domain[0]
+    y_off = y_off * spatial_scale + y_domain[0]
+    w = w * (x_domain[1] - x_domain[0]) 
+    bias = bias * (height_domain[1] - height_domain[0]) + height_domain[0]
+
+
+    # Reconstruct the model on a linear grid (image)
+    xlin=np.linspace(np.min(x_pos_array), np.max(x_pos_array), 50)
+    ylin=np.linspace(np.min(y_pos_array), np.max(y_pos_array), 50)
+    xx, yy = np.meshgrid(xlin, ylin)
+    fitmodel = gauss(xx, yy, [h, x_off, y_off, w, bias])
+
+                
+    #return [h,x_off, y_off, w, bias], result, gauss_resid
+
+
+    return [h,x_off, y_off, w, bias], (xlin, ylin, fitmodel), data_array
