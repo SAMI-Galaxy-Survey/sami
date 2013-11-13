@@ -40,12 +40,10 @@ import sami
 """ 
 For commit message: 
 
-Bug fixes in make_list() and create(). 
+Minor updates to import_many(). 
 
-(1) Simple bug fix in create(), which disallowed re-initialising an hdf5 file. 
-(2) Changes in import_cube() and import_many(): 
-  + A new flag, 'version_confirm' was introduced that prompts the user if the version of the data that is about to be imported is earlier than the latest held in the Archive (e.g., the user wants to import v0.3 when the latest available is v0.4).
-  + This flag was included in import_many(), as was a catch for a bug in the implementation of 'Safe Mode'. Instead of backing up before the start of each cycle, it only does so at the very beginning of the loop, and then sets safe_mode=False. 
+[Caro Foster] Edited a loop that (re)defines input parameters 'version_confirm'
+and 'safe_mode' when running import_many(). This supresses safe_mode for every cube ingestion past the first one of a series (and therefore the creation of as many backup files as cubes imported). 
 """
 
 # ~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~
@@ -189,9 +187,11 @@ def import_cube(blue_cube, red_cube, h5file, version, safe_mode=False,
     if hdf['SAMI'].keys() != [] and version < max(hdf['SAMI'].keys()) and \
         version_confirm:
         print
-        usr_input=raw_input("The selected version is not the latest. Are you sure you want to continue? [Y/n]")
+        usr_input=raw_input("The selected version is not the latest. Are "+
+                            "you sure you want to continue? [Y/n]")
         if (usr_input == 'n'): 
-            raise SystemExit("The wrong version number was entered. Please fix and rerun.")
+            raise SystemExit("The wrong version number was entered. Please "+
+                             "fix and rerun.")
         else:
             version_confirm=False
 
