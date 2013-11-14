@@ -929,10 +929,11 @@ class SAMIDrizzler:
         # we transpose the result here so that the x-cooridnate (north positive)
         # is in the first index, and y-coordinate (east positive) is in the
         # second index.
-        overlap_map = utils.circ.resample_circle(
-            self.output_dimension, self.output_dimension, 
-            xfib, yfib,
-            self.drop_diameter_pix / 2.0)
+        overlap_map = np.transpose(
+            utils.circ.resample_circle(
+                self.output_dimension, self.output_dimension, 
+                xfib, yfib,
+                self.drop_diameter_pix / 2.0))
 
         # Fraction of input drop in each output pixel
         input_frac_map = overlap_map / self.drop_area_pix
