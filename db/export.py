@@ -26,9 +26,16 @@ import sami
 """ 
 Commit message: 
 
-Removed the option to define an output filename from fetch_cube().
+Introduced functions that copy h5 groups/objects through Python. 
 
-Due to a cyclical problem the functionality that allowed a user to input a filename for the file being output was removed. This should simplify book-keeping and it establishes a standard filename for SAMI data products. Change also applies to defOutfile(). 
+Working toward an export() code that will quickly create a 'baby' HDF5 block wither to export, or as an intermediate file for FITS packaging. The code is copyH5() and it is output format specific. In FITS mode it creates a temporary file (named after a random string, which contains not hard, but linked data. This makes it very fast and very small, so gentle on the staging drive. In HDF5 mode it creates a named file that is to be staged. 
+
+Other changes: 
+-- Edited getTargetGroup() to return both g_target and obstype. There is no need for the duplication there. 
+-- Now need to phase out getObstype() in fetch_cube() and export(). 
+-- export() can now be modified to evoke copyH5() and then unpack fits files. 
+-- Obviously the fits unpacker script needs to be written.
+
 """
 
 # ~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~
@@ -83,6 +90,14 @@ def getTargetGroup(hdf, name, version, obstype):
 # ~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~
     """ Determine target group of requested SAMI galaxy/star. """
 
+    # First determine the observation type. 
+    if (('Target' in hdf['SAMI/'+version].keys()) and 
+        (name in hdf['SAMI/'+version+'/Target'].keys())):
+        obstype = 'Target'
+    if (('Calibrator' in hdf['SAMI/'+version].keys()) and 
+        name in hdf['SAMI/'+version+'/Calibrator'].keys()):
+        obstype = 'Calibrator'
+
     # If it isn't there, throw a fit. 
     if (name not in hdf['SAMI/'+version+'/Target']) and\
        (name not in hdf['SAMI/'+version+'/Calibrator']):
@@ -90,7 +105,7 @@ def getTargetGroup(hdf, name, version, obstype):
                          'contain a target block for SAMI '+name)
     else:
         g_target = hdf['SAMI/'+version+'/'+obstype+'/'+name]
-        return g_target
+        return (g_target, obstype)
 
 
 # ~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~
@@ -150,6 +165,93 @@ def fetchCube(name, h5file, colour=''):
 
 
 # ~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~
+def copyH5(name, h5archive, version, obstype, colour='', 
+           outFile='SAMI_archive_file.h5', outType='fits', 
+           getCube=True, getRSS=False):
+# ~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~
+    """ Copy or link datasets from the SAMI archive to a new h5 file """
+
+    from sami.db.ingest import create
+    import string
+    import random
+    import itertools
+
+    def id_generator(size=6, chars=string.ascii_uppercase + string.digits):
+        return ''.join(random.choice(chars) for x in range(size))
+        
+    # Interpert input. 
+    if name is not isinstance(list, basestring):
+        name = [name]
+    if any(name) is not str:
+        name = [str(s) for s in name]
+    
+    if colour == '':
+        colour = ['B','R']
+
+    # Generate an h5 file, open hdf, copy/link dsets.
+    if outType == 'fits':
+        fname = id_generator()+'.h5'
+    if outType == 'h5':
+        fname = outFile
+    
+    """There is a slight, but intended inefficiency in the follwoing open-close
+    -open process, written to take advantage of the i/o catch in create()."""
+    create(fname)
+    hdfOUT = h5.File(fname, 'a')
+
+    # Commence name loop. 
+    for thisTarg in range(len(name)):
+
+        # Populate the list of dset to copy/link. 
+        dsets = []
+        dsetRSS = []
+        extCube = ['Data', 'Variance', 'Weight']
+        extRSS  = ['Data', 'Variance', 'FibreTable']
+        
+        if getCube:
+            if 'B' in colour:
+                dsets.append(['B_'+s for s in ['Cube_'+s for s in extCube]])
+            if 'R' in colour:
+                dsets.append(['R_'+s for s in ['Cube_'+s for s in extCube]])
+                
+        if getRSS:
+            # Diagnose number of RSS parents, append all permutations to list. 
+            myKeys = h5.File(h5archive, 'r')['/SAMI/'+version+'/'+obstype+'/'+\
+                                             name[thisTarg]].keys()
+            if 'B' in colour:
+                nRSS = sum(['B_RSS_Data' in s for s in myKeys])
+                lRSS = ["{:01d}".format(s) for s in 1+np.arange(nRSS)]
+                #dsets.append(['B_'+s for s in ['Cube_'+s for s in extRSS]])
+                dsetB_RSS = map('_'.join, itertools.chain(\
+                                            itertools.product(extRSS, lRSS)))
+                dsets.append('B_RSS_'+s for s in dsetB_RSS)
+            if 'R' in colour:
+                nRSS = sum(['R_RSS_Data' in s for s in myKeys])
+                lRSS = ["{:01d}".format(s) for s in 1+np.arange(nRSS)]
+                #dsets.append(['R_'+s for s in ['Cube_'+s for s in extRSS]])
+                dsetR_RSS = map('_'.join, itertools.chain(\
+                                            itertools.product(extRSS, lRSS)))
+                dsets.append('R_RSS_'+s for s in dsetR_RSS)
+        
+        # Flatten dsets into a single list (not a list of lists)
+        dsets = [item for sublist in dsets for item in sublist]
+
+        # Commence dset loop. 
+        for allDsets in range(len(dsets)):
+            thisDset = '/SAMI/'+version+'/'+obstype+'/'+\
+                     name[thisTarg]+'/'+dsets[allDsets]
+            
+            if outType == 'fits':
+                hdfOUT[thisDset] = h5.ExternalLink(h5archive, thisDset)
+                
+            if outType == 'h5':
+                hdfOUT.copy(h5.File(h5archive, 'r')[thisDset], thisDset)
+                
+    hdfOUT.close()
+
+
+
+# ~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~
 def fetch_cube(name, h5file, version='', colour='', 
                getCube=True, getRSS=False, getAll=False, overwrite=False):
 # ~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~
@@ -165,13 +267,13 @@ def fetch_cube(name, h5file, version='', colour='',
     # Open HDF5 file and run a series of tests and diagnostics. 
     hdf = h5.File(h5file, 'r')
 
-    SAMIformatted = checkSAMIformat(hdf)         # Check for SAMI formatting
-    if version == '':                            # Get the data version
+    SAMIformatted = checkSAMIformat(hdf)          # Check for SAMI formatting
+    if version == '':                             # Get the data version
         version = getVersion(h5file, hdf, version)
-    obstype = getObstype(hdf, name, version)     # Get observation type
-    g_target = getTargetGroup(hdf, name,         # ID target group 
-                              version, obstype)
-    if colour == '':                             # Check for monochrome output
+    #obstype = getObstype(hdf, name, version)     # Get observation type
+    g_target, obstype = getTargetGroup(hdf, name, # ID target group 
+                                version, obstype)
+    if colour == '':                              # Check for monochrome output
         colour = ['B','R']
     
     for col in range(len(colour)):
