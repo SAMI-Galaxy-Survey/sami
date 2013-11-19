@@ -26,27 +26,11 @@ import sami
 """ 
 Commit message: 
 
-Added a fits unpacking code, unpackFITS(). 
+Now writing master table row as primary HDU in exported FITS files. 
 
-The data export method I am currently testing relies on sinmply and quickly packaging all the datasets requested by a user into 'baby' HDF5 blocks. These can either be staged and delivered to the user in this format, or expanded into multi-extension FITS files (one per target). In the latter case, the baby block contains symbolic links to the SAMI Archive block, rather than actual datasets. The new function packageFITS() accepts such a baby block as input and packages the contents of each target block into a multi-extension FITS file. 
+Replaced the dummy placeholder with a single row from the SAMI target table, pertaining to the target at hand. NOTE that this is edited to exclude strings, as the FITS standard does not allow for a biunary table of mixed datatypes as the primary HDU. I therefore had to trim all strings, which omits the IAU name for the target. While this is acceptable, the header does not know about this omission and writes the original set of attributes, which lists the string field among all those that were actually written. 
 
-This is built with a server in mind, which could make data available by running a wrapper script that takes the following steps: 
-
-(1) Receive input from html in a format legible by query_multiple(). 
-(2) Run query_multiple(). 
-(3) Receive output ID list from query_multiple(). 
-(4) Run copyH5() with the above ID list as input. 
-(-) If the user requested FITS files, run unpackFITS() on the h5 'baby'.  
-(5) Stage data in the user's AAT data home directory. 
-
-Limitations: 
-- The code does not, at present, output Calibrators, only bona-fide Targets. 
-- The primary HDU is currently a placeholder for a single row from the SAMI Target table that pertains to the target at hand. 
-
-Other changes: 
-- copyH5() now includes the Target table to the 'baby' HDF5 block. 
-- fixed a bug in getTargetGroup() that called obstype before it was defined.
-
+Additionally, I discovered a major bug with symbolic-lnked HDF5 babies: they cannot be read the same way. I need to look into the parameters of the ExternalLink() process and see if this can be fixed. Having to write an h5 baby would still be preferable for FITS output, as the intermediate step hugely simplifies the process, but it will cost us in terms of staging space required.
 """
 
 # ~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~
@@ -271,11 +255,14 @@ def copyH5(name, h5archive, version, obstype, colour='',
 
 
 # ~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~
-def unpackFITS(h5IN, overwrite=True):
+def unpackFITS(h5IN, h5archive, overwrite=True):
 # ~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~
     """ Package contents of an h5 block to multi-extention FITS files """
 
     """ 
+    MAJOR BUG: This does not like the ExtendLinked HDF5 files one bit... Only 
+    real blocks. No idea why. 
+    
     (1) Read h5 baby block of symbolic links. 
     (2) Count number of target blocks. 
     (3) Begin loop over packaging function. 
@@ -314,6 +301,18 @@ def unpackFITS(h5IN, overwrite=True):
     print("Identified "+str(nGroups)+" Target Block"+plural(nGroups)+\
           " in '"+h5IN+"'.")
 
+    def stripTable(name, version, h5archive):
+        #master = hdf['/SAMI/'+version+'/Table/SAMI_MASTER']
+        h5archive = h5.File(h5archive, 'r')
+        master = h5archive['/SAMI/'+version+'/Table/SAMI_MASTER']
+        tabline = master[master["CATID"] == int(name)][0]
+        # For now excluding all strings to make FITS-compatible
+        # *** BUT HEADER will not know that.
+        hdu = [v for v in tabline if not isinstance(v, str)]
+        hdr = makeHead(master)
+        h5archive.close()
+        return(hdu, hdr)
+
     # Begin loop over all SAMI targets requested. 
     # *** CURRENTLY ONLY Targets, not Calibrators. Combine groups in a list?
     for thisG in range(nTarget):
@@ -334,11 +333,9 @@ def unpackFITS(h5IN, overwrite=True):
         fname = 'SAMI_'+name+'_'+sContents+'.fits'
 
         # Primary HDU is a single row of the Master table. 
-        # *** For now a dummy ***. 
-        hdr0cards = [pf.Card(keyword='Blah', value='Bloo')]
-        hdr = pf.Header(cards=hdr0cards)
-        hdulist = pf.HDUList([pf.PrimaryHDU(np.arange(10), header=hdr)])
-
+        hdu0, hdr0 = stripTable(name, version, h5archive)
+        hdulist = pf.HDUList([pf.PrimaryHDU(hdu0, header=hdr0)])
+        
         # Cycle through all dsets, make HDUs and headers with native names. 
 
         # Get number of datasets. 
