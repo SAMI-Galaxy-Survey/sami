@@ -26,15 +26,26 @@ import sami
 """ 
 Commit message: 
 
-Introduced functions that copy h5 groups/objects through Python. 
+Added a fits unpacking code, unpackFITS(). 
 
-Working toward an export() code that will quickly create a 'baby' HDF5 block wither to export, or as an intermediate file for FITS packaging. The code is copyH5() and it is output format specific. In FITS mode it creates a temporary file (named after a random string, which contains not hard, but linked data. This makes it very fast and very small, so gentle on the staging drive. In HDF5 mode it creates a named file that is to be staged. 
+The data export method I am currently testing relies on sinmply and quickly packaging all the datasets requested by a user into 'baby' HDF5 blocks. These can either be staged and delivered to the user in this format, or expanded into multi-extension FITS files (one per target). In the latter case, the baby block contains symbolic links to the SAMI Archive block, rather than actual datasets. The new function packageFITS() accepts such a baby block as input and packages the contents of each target block into a multi-extension FITS file. 
+
+This is built with a server in mind, which could make data available by running a wrapper script that takes the following steps: 
+
+(1) Receive input from html in a format legible by query_multiple(). 
+(2) Run query_multiple(). 
+(3) Receive output ID list from query_multiple(). 
+(4) Run copyH5() with the above ID list as input. 
+(-) If the user requested FITS files, run unpackFITS() on the h5 'baby'.  
+(5) Stage data in the user's AAT data home directory. 
+
+Limitations: 
+- The code does not, at present, output Calibrators, only bona-fide Targets. 
+- The primary HDU is currently a placeholder for a single row from the SAMI Target table that pertains to the target at hand. 
 
 Other changes: 
--- Edited getTargetGroup() to return both g_target and obstype. There is no need for the duplication there. 
--- Now need to phase out getObstype() in fetch_cube() and export(). 
--- export() can now be modified to evoke copyH5() and then unpack fits files. 
--- Obviously the fits unpacker script needs to be written.
+- copyH5() now includes the Target table to the 'baby' HDF5 block. 
+- fixed a bug in getTargetGroup() that called obstype before it was defined.
 
 """
 
@@ -86,7 +97,7 @@ def getObstype(hdf, name, version):
 
 
 # ~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~
-def getTargetGroup(hdf, name, version, obstype):
+def getTargetGroup(hdf, name, version):
 # ~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~
     """ Determine target group of requested SAMI galaxy/star. """
 
@@ -199,6 +210,14 @@ def copyH5(name, h5archive, version, obstype, colour='',
     create(fname)
     hdfOUT = h5.File(fname, 'a')
 
+    # Copy the SAMI Target Table. 
+    tMaster = '/SAMI/'+version+'/Table/SAMI_MASTER'
+    if outType == 'fits':
+        hdfOUT[tMaster] = h5.ExternalLink(h5archive, tMaster)
+        
+    if outType == 'h5':
+        hdfOUT.copy(h5.File(h5archive, 'r')[tMaster], tMaster)
+
     # Commence name loop. 
     for thisTarg in range(len(name)):
 
@@ -248,6 +267,106 @@ def copyH5(name, h5archive, version, obstype, colour='',
                 hdfOUT.copy(h5.File(h5archive, 'r')[thisDset], thisDset)
                 
     hdfOUT.close()
+    return(fname)
+
+
+# ~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~
+def unpackFITS(h5IN, overwrite=True):
+# ~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~
+    """ Package contents of an h5 block to multi-extention FITS files """
+
+    """ 
+    (1) Read h5 baby block of symbolic links. 
+    (2) Count number of target blocks. 
+    (3) Begin loop over packaging function. 
+      -- Write a single row of the SAMI Master as a primary HDU. 
+      -- Write each dataset as a FITS extension with corresponding header. 
+    (4) Inform user of FITS file screated, exit successfully. 
+    """
+    
+    # Open h5 file. 
+    hdf = h5.File(h5IN, 'r')
+
+    # Count number of target blocks. 
+    version = hdf['/SAMI'].keys()[0] # = getVersion(h5IN, hdf, '')
+    # *** Assuming only one version of data available.  
+    g_version = hdf['/SAMI/'+version]
+    
+    nTarget = 0
+    nCalibrator = 0
+    
+    if 'Target' in g_version.keys():
+        nTarget = len(g_version['Target'].keys())
+        gTarget = g_version['Target']
+        thereAreTargets = True
+    if 'Calibrator' in g_version.keys():
+        nCalibrator = len(g_version['Calibrator'].keys())
+        gCalibrator = g_version['Calibrator']
+        thereAreCalibrators = True
+    
+    nGroups = nTarget + nCalibrator
+
+    def plural(nGroups):
+        plural = '' 
+        if nGroups > 1: plural == 's'
+        return(plural)
+
+    print("Identified "+str(nGroups)+" Target Block"+plural(nGroups)+\
+          " in '"+h5IN+"'.")
+
+    # Begin loop over all SAMI targets requested. 
+    # *** CURRENTLY ONLY Targets, not Calibrators. Combine groups in a list?
+    for thisG in range(nTarget):
+
+        # What is the SAMI name of this target?
+        name = gTarget.keys()[thisG]
+
+        # Search for 'Cube' and 'RSS' among Dsets to define output filename
+        areThereCubes = ['Cube' in s for s in gTarget[name].keys()]
+        areThereRSS   = ['RSS'  in s for s in gTarget[name].keys()]
+        sContents = []
+        if sum(areThereCubes) > 0: sContents.append('cubes')
+        if sum(areThereRSS)   > 0: sContents.append('RSS')
+        if len(sContents) > 1: sContents = '_'.join(sContents)
+        else: sContents = sContents[0]
+    
+        # Define output filename
+        fname = 'SAMI_'+name+'_'+sContents+'.fits'
+
+        # Primary HDU is a single row of the Master table. 
+        # *** For now a dummy ***. 
+        hdr0cards = [pf.Card(keyword='Blah', value='Bloo')]
+        hdr = pf.Header(cards=hdr0cards)
+        hdulist = pf.HDUList([pf.PrimaryHDU(np.arange(10), header=hdr)])
+
+        # Cycle through all dsets, make HDUs and headers with native names. 
+
+        # Get number of datasets. 
+        thisTarget = gTarget[name]
+        nDsets = len(thisTarget.keys())
+
+        # Begin loop through all datasets. 
+        for thisDset in range(nDsets):
+        #for thisDset in range(5):
+            
+            # Determine dataset. 
+            dsetName = thisTarget.keys()[thisDset]
+            print("Processing dataset '"+dsetName+"'...")
+
+            # Create dataset and populate header. 
+            data = thisTarget[dsetName]
+            hdr = makeHead(data)
+
+            # Add all this to an HDU.
+            hdulist.append(
+                pf.ImageHDU(np.array(thisTarget[dsetName]), 
+                            name=dsetName, 
+                            header=makeHead(data) ) )
+
+        # Write to a new FITS file.
+        hdulist.writeto(fname, clobber=overwrite)
+
+    hdf.close()
 
 
 
@@ -267,13 +386,22 @@ def fetch_cube(name, h5file, version='', colour='',
     # Open HDF5 file and run a series of tests and diagnostics. 
     hdf = h5.File(h5file, 'r')
 
-    SAMIformatted = checkSAMIformat(hdf)          # Check for SAMI formatting
-    if version == '':                             # Get the data version
+    # Check for SAMI formatting. 
+    SAMIformatted = checkSAMIformat(hdf)
+
+    # Convert SAMI ID to string
+    if name is not str:
+        name = str(name)
+
+    # Get the data version. 
+    if version == '': 
         version = getVersion(h5file, hdf, version)
-    #obstype = getObstype(hdf, name, version)     # Get observation type
-    g_target, obstype = getTargetGroup(hdf, name, # ID target group 
-                                version, obstype)
-    if colour == '':                              # Check for monochrome output
+    
+    # Get target group and observation type. 
+    g_target, obstype = getTargetGroup(hdf, name, version)
+
+    # Check for monochrome output
+    if colour == '':                              
         colour = ['B','R']
     
     for col in range(len(colour)):
