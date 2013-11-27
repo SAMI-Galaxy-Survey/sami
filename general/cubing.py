@@ -945,7 +945,7 @@ class SAMIDrizzler:
         if (np.allclose(xfibre_all,self._last_drizzle_x, rtol=0,atol=self.drizzle_update_tol) and
             np.allclose(yfibre_all,self._last_drizzle_y, rtol=0,atol=self.drizzle_update_tol)):
             # We've been asked to recompute an asnwer that is less than the tolerance to recompute
-            return self.drop_to_pixel, self.pixel_coverage
+            return self.drop_to_pixel
         else:
             self.n_drizzle_recompute = self.n_drizzle_recompute + 1
         
