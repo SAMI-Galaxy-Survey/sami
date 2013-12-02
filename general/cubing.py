@@ -314,6 +314,10 @@ def dithered_cubes_from_rss_list(files,
     
             hdr_new = create_primary_header(ifu_list,name,files,WCS_pos,WCS_flag)
 
+            # Define the units for the datacube
+            hdr_new['BUNIT'] = ('10**(-16) erg /s /cm**2 /angstrom /pixel', 
+                                'Units')
+
             # Create HDUs for each cube - note headers generated automatically for now.
             #
             # @NOTE: PyFITS writes axes to FITS files in the reverse of the sense
