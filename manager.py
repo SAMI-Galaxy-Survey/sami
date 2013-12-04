@@ -143,6 +143,8 @@ PILOT_FIELD_LIST = [
 
 # Things that should be visually checked
 # Priorities: 0 should be done first
+# Each key ('TLM', 'ARC',...) matches to a check method named 
+# check_tlm, check_arc,...
 CHECK_DATA = {
     'TLM': {'name': 'Tramline map',
             'ndf_class': 'MFFFF',
@@ -187,6 +189,8 @@ for index in xrange(1, 14):
                                   'spectrophotometric': False,
                                   'priority': 7,
                                   'group_by': ('date', 'ccd', 'field_id')}
+del index
+del i_string
 # Extra priority for checking re-reductions
 PRIORITY_RECENT = 10
 
@@ -1981,6 +1985,28 @@ class Manager:
         self.idx_files = IDX_FILES[self.speed]
         return
 
+    def load_2dfdr_gui(self, fits_or_dirname):
+        """Load the 2dfdr GUI in the required directory."""
+        if isinstance(fits_or_dirname, FITSFile):
+            # A FITS file has been provided, so go to its directory
+            dirname = fits_or_dirname.reduced_dir
+            ccd = fits_or_dirname.ccd
+        else:
+            # A directory name has been provided
+            dirname = fits_or_dirname
+            if 'ccd_1' in dirname:
+                ccd = 'ccd_1'
+            elif 'ccd_2' in dirname:
+                ccd = 'ccd_2'
+            else:
+                # Can't work out the CCD, but it probably doesn't matter
+                ccd = 'ccd_1'
+        idx_file = self.idx_files[ccd]
+        with self.visit_dir(dirname):
+            with open(os.devnull, 'w') as f:
+                subprocess.call(('drcontrol', idx_file), stdout=f)
+        return
+
     def update_checks(self, key, file_iterable, value, force=False):
         """Set flags for whether the files have been manually checked."""
         for fits in file_iterable:
@@ -2021,6 +2047,89 @@ class Manager:
         key_func = lambda item: CHECK_DATA[item[0][0]]['priority']
         check_list = sorted(check_dict.items(), key=key_func)
         return check_list
+
+    def print_checks(self, *args, **kwargs):
+        """Print the list of checks to be done."""
+        check_list = self.list_checks(*args, **kwargs)
+        for index, (key, fits_list) in enumerate(check_list):
+            check_data = CHECK_DATA[key[0]]
+            print '{}: {}'.format(index, check_data['name'])
+            if key[2] == 'ever':
+                print 'Never been checked'
+            else:
+                print 'Not checked since last re-reduction'
+            for group_by_key, group_by_value in zip(
+                check_data['group_by'], key[1]):
+                print '   {}: {}'.format(group_by_key, group_by_value)
+            for fits in fits_list:
+                print '      {}'.format(fits.filename)
+        return
+
+    def check_next_group(self, *args, **kwargs):
+        """Perform required checks on the highest priority group."""
+        self.check_group(0, *args, **kwargs)
+
+    def check_group(self, index, *args, **kwargs):
+        """Perform required checks on the specified group."""
+        key, fits_list = self.list_checks(*args, **kwargs)[index]
+        check_method = getattr(self, 'check_' + key[0].lower())
+        check_method(fits_list)
+        print 'Have you finished checking all the files? (y/n)'
+        print 'If yes, the check will be removed from the list.'
+        y_n = raw_input(' > ')
+        finished = (y_n.lower()[0] == 'y')
+        if finished:
+            print 'Removing this test from the list.'
+            for fits in fits_list:
+                fits.update_checks(key[0], True)
+        else:
+            print 'Leaving this test in the list.'
+        print 'If any files need to be disabled, use commands like:'
+        print ">>> mngr.disable_files(['" + fits_list[0].filename + "'])"
+        return
+
+    def check_2dfdr(self, fits_list, message, filename_type='reduced_filename'):
+        """Use 2dfdr to perform a check of some sort."""
+        print 'Use 2dfdr to plot the following files'
+        print '(You may need to click on the triangles to see reduced files.)'
+        for fits in fits_list:
+            print '   ' + getattr(fits, filename_type)
+        print message
+        self.load_2dfdr_gui(fits_list[0])
+        return
+
+    def check_tlm(self, fits_list):
+        """Check a set of tramline maps."""
+        message = 'Zoom in to check that the red fitted tramlines go through the data.'
+        filename_type = 'tlm_filename'
+        self.check_2dfdr(fits_list, message, filename_type)
+        return
+
+    def check_arc(self, fits_list):
+        """Check a set of arc frames."""
+        message = 'Zoom in to check that the arc lines are vertically aligned.'
+        self.check_2dfdr(fits_list, message)
+        return
+
+    def check_flt(self, fits_list):
+        """Check a set of flat field frames."""
+        message = 'Check that the output varies smoothly with wavelength.'
+        self.check_2dfdr(fits_list, message)
+        return
+
+    def check_sky(self, fits_list):
+        """Check a set of offset sky (twilight) frames."""
+        message = 'Check that the spectra are mostly smooth, and any features are aligned.'
+        self.check_2dfdr(fits_list, message)
+        return
+
+    def check_obj(self, fits_list):
+        """Check a set of reduced object frames."""
+        message = 'Check that there is flux in each hexabundle, with no bad artefacts.'
+        self.check_2dfdr(fits_list, message)
+        return
+
+
 
 
 
