@@ -81,10 +81,22 @@ nomalisation is ok."""
     print "When you're ready to move on..."
     return
 
-
 def check_tel(fits_list):
     """Plot the results of telluric correction."""
-    pass
+    message = """Check that each plotted absorption spectrum has the correct
+shape for telluric absorption."""
+    print message
+    for fits in fits_list:
+        plt.figure(fits.filename)
+        header = pf.getheader(fits.fluxcal_path)
+        wavelength = header['CRVAL1'] + header['CDELT1'] * (
+            1 + np.arange(header['NAXIS1']) - header['CRPIX1'])
+        spectrum = (
+            1.0 / pf.getdata(fits.fluxcal_path, 'FLUX_CALIBRATION')[2, :])
+        plt.plot(wavelength, spectrum)
+        plt.ylim((0, 1.1))
+    print "When you're ready to move on..."
+    return
 
 def check_cube(filename_list):
     """Plot the results of cubing."""

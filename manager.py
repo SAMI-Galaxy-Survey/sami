@@ -2134,6 +2134,11 @@ class Manager:
         check_plots.check_flx(fits_list)
         return
 
+    def check_tel(self, fits_list):
+        """Check a set of telluric corrections."""
+        check_plots.check_tel(fits_list)
+        return
+
 
 
 
