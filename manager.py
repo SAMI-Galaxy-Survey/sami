@@ -1134,7 +1134,7 @@ class Manager:
         self.map(telluric_correct_pair, pair_list)
         # Mark telluric corrections as not checked
         for fits_pair in pair_list:
-            self.update_checks('TEL', fits_pair, False)
+            self.update_checks('TEL', [fits_pair[1]], False)
         return
 
     def cube(self, overwrite=False, **kwargs):
