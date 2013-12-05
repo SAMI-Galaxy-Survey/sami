@@ -1800,11 +1800,14 @@ class Manager:
             # This works a bit differently. Return the filename of the
             # combined dark frame with the closest exposure time.
             best_fom = np.inf
+            exposure_str_match = None
             for exposure_str in self.dark_exposure_strs(ccd=fits.ccd):
                 test_fom = abs(float(exposure_str) - fits.exposure)
                 if test_fom < best_fom:
                     exposure_str_match = exposure_str
                     best_fom = test_fom
+            if exposure_str_match is None:
+                return None
             filename = self.dark_combined_filename(exposure_str_match)
             if os.path.exists(os.path.join(fits.reduced_dir, filename)):
                 return filename
