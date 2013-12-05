@@ -180,17 +180,12 @@ CHECK_DATA = {
             'ndf_class': 'MFOBJECT',
             'spectrophotometric': None,
             'priority': 6,
-            'group_by': ('date', 'ccd', 'field_id')}
-    }
-for index in xrange(1, 14):
-    i_string = '{:02d}'.format(index)
-    CHECK_DATA['C' + i_string] = {'name': 'Cube ' + i_string,
-                                  'ndf_class': 'MFOBJECT',
-                                  'spectrophotometric': False,
-                                  'priority': 7,
-                                  'group_by': ('date', 'field_id')}
-del index
-del i_string
+            'group_by': ('date', 'ccd', 'field_id')},
+    'CUB': {'name': 'Cubes',
+            'ndf_class': 'MFOBJECT',
+            'spectrophotometric': False,
+            'priority': 7,
+            'group_by': ('date', 'field_id')}}
 # Extra priority for checking re-reductions
 PRIORITY_RECENT = 10
 
@@ -1164,10 +1159,8 @@ class Manager:
         # Mark all cubes as not checked. Ideally would only mark those that
         # actually exist. Maybe set dithered_cubes_from_rss_list to return a 
         # list of those it created?
-        for key in CHECK_DATA:
-            if re.match('C[0-9]{2}$', key):
-                for fits_list in [item[1] for item in groups.items()]:
-                    self.update_checks(key, fits_list[0], False)
+        for fits_list in [item[1] for item in groups]:
+            self.update_checks('CUB', [fits_list[0]], False)
         return
 
     def reduce_all(self, overwrite=False, **kwargs):
@@ -2137,6 +2130,11 @@ class Manager:
     def check_tel(self, fits_list):
         """Check a set of telluric corrections."""
         check_plots.check_tel(fits_list)
+        return
+
+    def check_cub(self, fits_list):
+        """Check a set of final datacubes."""
+        check_plots.check_cub(fits_list)
         return
 
 
