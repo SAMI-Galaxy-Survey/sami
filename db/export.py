@@ -18,19 +18,19 @@ Table of Contents:
 import numpy as np
 import h5py as h5
 import astropy.io.fits as pf
-import astropy.io.ascii as ascii
 import os
 import sys
-import sami
 
 """ 
 Commit message: 
 
-Now writing master table row as primary HDU in exported FITS files. 
+For commit message:
 
-Replaced the dummy placeholder with a single row from the SAMI target table, pertaining to the target at hand. NOTE that this is edited to exclude strings, as the FITS standard does not allow for a biunary table of mixed datatypes as the primary HDU. I therefore had to trim all strings, which omits the IAU name for the target. While this is acceptable, the header does not know about this omission and writes the original set of attributes, which lists the string field among all those that were actually written. 
+Getting rid of unnecessary module imports: 
+ sami
+ astropy.io.fits
+ astropy.io.ascii
 
-Additionally, I discovered a major bug with symbolic-lnked HDF5 babies: they cannot be read the same way. I need to look into the parameters of the ExternalLink() process and see if this can be fixed. Having to write an h5 baby would still be preferable for FITS output, as the intermediate step hugely simplifies the process, but it will cost us in terms of staging space required.
 """
 
 # ~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~
