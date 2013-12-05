@@ -79,7 +79,7 @@ import numpy as np
 from .utils.other import find_fibre_table
 from .general.cubing import dithered_cubes_from_rss_list
 from .general.align_micron import find_dither
-from .dr import fluxcal2, telluric
+from .dr import fluxcal2, telluric, check_plots
 
 
 IDX_FILES_SLOW = {'1': 'sami580V_v1_2.idx',
@@ -175,7 +175,7 @@ CHECK_DATA = {
             'ndf_class': 'MFOBJECT',
             'spectrophotometric': True,
             'priority': 5,
-            'group_by': ('date', 'ccd', 'field_id', 'name')},
+            'group_by': ('date', 'field_id', 'name')},
     'TEL': {'name': 'Telluric correction',
             'ndf_class': 'MFOBJECT',
             'spectrophotometric': None,
@@ -184,11 +184,11 @@ CHECK_DATA = {
     }
 for index in xrange(1, 14):
     i_string = '{:02d}'.format(index)
-    CHECK_DATA['C' + i_string] = {'name': 'cube ' + i_string,
+    CHECK_DATA['C' + i_string] = {'name': 'Cube ' + i_string,
                                   'ndf_class': 'MFOBJECT',
                                   'spectrophotometric': False,
                                   'priority': 7,
-                                  'group_by': ('date', 'ccd', 'field_id')}
+                                  'group_by': ('date', 'field_id')}
 del index
 del i_string
 # Extra priority for checking re-reductions
@@ -2129,6 +2129,10 @@ class Manager:
         self.check_2dfdr(fits_list, message)
         return
 
+    def check_flx(self, fits_list):
+        """Check a set of spectrophotometric frames."""
+        check_plots.check_flx(fits_list)
+        return
 
 
 
