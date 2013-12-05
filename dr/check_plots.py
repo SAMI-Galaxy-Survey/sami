@@ -6,6 +6,7 @@ import numpy as np
 
 import os
 import itertools
+from glob import glob
 
 def check_flx(fits_list):
     """Plot the results of flux calibration."""
@@ -98,9 +99,74 @@ shape for telluric absorption."""
     print "When you're ready to move on..."
     return
 
-def check_cube(filename_list):
+def check_cub(fits_list):
     """Plot the results of cubing."""
-    pass
+    message = """Check that the galaxies appear in the centre in each arm, that
+they look galaxy-like, and the spectra have no obvious artefacts."""
+    print message
+    # The positions of points to plot
+    position_dict = {'Centre': (24.5, 24.5),
+                     'North': (24.5, 34.5),
+                     'East': (14.5, 24.5),
+                     'South': (24.5, 14.5),
+                     'West': (34.5, 24.5)}
+    # Construct the list of object names
+    # We're assuming that a single field was sent
+    fibre_table = pf.getdata(fits_list[0].reduced_path, 'FIBRES_IFU')
+    object_name_list = np.unique(
+        fibre_table[fibre_table['TYPE'] == 'P']['NAME'])
+    field_id = fits_list[0].field_id
+    root = os.path.join(fits_list[0].raw_dir, '../../../cubed')
+    for object_name in object_name_list:
+        # Find the datacubes
+        path_blue = glob(root+'/'+object_name+'/*blue*'+field_id+'*.fits')[0]
+        path_red = glob(root+'/'+object_name+'/*red*'+field_id+'*.fits')[0]
+        # Load the data
+        hdulist_blue = pf.open(path_blue)
+        data_blue = hdulist_blue[0].data
+        header_blue = hdulist_blue[0].header
+        hdulist_blue.close()
+        hdulist_red = pf.open(path_red)
+        data_red = hdulist_red[0].data
+        header_red = hdulist_red[0].header
+        hdulist_red.close()
+        # Set up the figure
+        fig = plt.figure(object_name, figsize=(16., 12.))
+        # Show collapsed images of the object
+        trim = 100
+        ax_blue = fig.add_subplot(221)
+        plt.imshow(np.nansum(data_blue[trim:-1*trim, :, :], axis=0), 
+                   origin='lower', interpolation='nearest', cmap='GnBu')
+        ax_blue.set_title('Blue arm')
+        ax_red = fig.add_subplot(222)
+        plt.imshow(np.nansum(data_red[trim:-1*trim, :, :], axis=0), 
+                   origin='lower', interpolation='nearest', cmap='GnBu')
+        ax_red.set_title('Red arm')
+        # Show the central spectrum and a few others
+        color_cycle = itertools.cycle(['r', 'g', 'b', 'c', 'm', 'y', 'k'])
+        wavelength_blue = header_blue['CRVAL3'] + header_blue['CDELT3'] * (
+            1 + np.arange(header_blue['NAXIS3']) - header_blue['CRPIX3'])
+        wavelength_red = header_red['CRVAL3'] + header_red['CDELT3'] * (
+            1 + np.arange(header_red['NAXIS3']) - header_red['CRPIX3'])
+        ax_spec = fig.add_subplot(212)
+        for name, coords in position_dict.items():
+            flux_blue = np.nansum(np.nansum(
+                data_blue[:, int(coords[0]):int(coords[0])+2, 
+                          int(coords[1]):int(coords[1])+2], 
+                axis=2), axis=1) / 4.0
+            flux_red = np.nansum(np.nansum(
+                data_red[:, int(coords[0]):int(coords[0])+2, 
+                         int(coords[1]):int(coords[1])+2], 
+                axis=2), axis=1) / 4.0
+            color = next(color_cycle)
+            plt.plot(wavelength_blue, flux_blue, c=color, label=name)
+            plt.plot(wavelength_red, flux_red, c=color)
+            plt.legend()
+            # Also add location markers to the images
+            ax_blue.scatter(coords[0], coords[1], marker='x', c=color)
+            ax_red.scatter(coords[0], coords[1], marker='x', c=color)
+    print "When you're ready to move on..."
+    return
 
 
 
