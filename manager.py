@@ -384,40 +384,43 @@ class Manager:
     Checking outputs
     ================
 
-    As the reductions are done, the manager keeps an internal list of reduced
-    files that need to be plotted to check that the outputs are ok. These are
-    saved on a directory-by-directory basis. To print the contents of the
+    As the reductions are done, the manager keeps a record of reduced
+    files that need to be plotted to check that the outputs are ok. These 
+    are grouped in sets of related files. To print the checks that need to 
+    be done:
+
+    >>> mngr.print_checks()
+
+    Separate lists are returned for checks that have never been done, and
+    those that haven't been done since the last re-reduction. You can
+    specify one or the other by passing 'ever' or 'recent' as an argument
+    to print_checks().
+
+    To perform the next check:
+
+    >>> mngr.check_next_group()
+
+    The manager will either load the 2dfdr GUI and give you a list of
+    files to check, or will make some plots in python. Check the things it
+    tells you to, keeping a note of any files that need to be disabled or
+    examined further (if you don't know what to do about a file, ask a
+    friendly member of the data reduction working group).
+
+    If 2dfdr was loaded, no more commands can be entered until you close it. 
+    When you do so, or immediately for python-based plots, you will be asked
+    whether the files can be removed from the checklist. Enter 'y'
+    if you have checked all the files, 'n' otherwise.
+
+    You can also perform a particular check by specifying its index in the
     list:
 
-    >>> mngr.print_check_list()
+    >>> mngr.check_group(3)
 
-    It will print the directories that need to be visited, and the files to
-    check within each directory. The manager can't plot the files directly but
-    can open up the 2dfdr GUI in the required directory, making it easy to use
-    the 2dfdr plotting tools to do the checks. To open 2dfdr in the next
-    directory in the list:
+    The index numbers are given when mngr.print_checks() is called.
 
-    >>> mngr.plot_next_dir()
-
-    No more commands can be entered until you close 2dfdr. When you do so, you
-    will be asked whether the directory can be removed from the list; enter 'y'
-    if you have checked all the files, 'n' otherwise. You can also load a
-    particular directory by specifying [part of] its path or its index in the
-    list:
-
-    >>> mngr.plot_dir('Y13SAR1_P002_09T004/main/ccd_1')
-    >>> mngr.plot_dir_by_index(3)
-
-    Note index numbers start at 0, and the directories are in the order listed
-    when mngr.print_check_list() is called.
-
-    If you want to remove a directory from the list without loading 2dfdr:
-
-    >>> mngr.remove_dir_from_checklist('Y13SAR1_P002_09T004/main/ccd_1')
-    >>> mngr.remove_dir_from_checklist_by_index(3)
-
-    Only do this with good reason! Checking the outputs is a crucial part of
-    data reduction.
+    Checking the outputs is a crucial part of data reduction, so please
+    make sure you do it thoroughly, and ask for assistance if you're not
+    sure about anything.
 
     Disabling files
     ===============
@@ -530,7 +533,6 @@ class Manager:
         self.extra_list = []
         self.dark_exposure_str_list = []
         self.dark_exposure_list = []
-        self.check_list = deque()
         self.inspect_root(copy_files, move_files)
         self.cwd = os.getcwd()
 
@@ -881,7 +883,6 @@ class Manager:
                                reduced=True, do_not_use=False),
                     path)
                 dirname = os.path.dirname(path)
-                self.check_list.append((dirname, [filename]))
         self.link_calibrator(calibrator_type, overwrite)
         return
 
@@ -964,33 +965,37 @@ class Manager:
         """Make TLMs from all files matching given criteria."""
         file_iterable = self.files(ndf_class='MFFFF', do_not_use=False,
                                    **kwargs)
-        self.reduce_file_iterable(file_iterable, overwrite=overwrite, 
-                                  tlm=True, leave_reduced=leave_reduced)
-        self.update_checks('TLM', file_iterable, False)
+        reduced_files = self.reduce_file_iterable(
+            file_iterable, overwrite=overwrite, tlm=True, 
+            leave_reduced=leave_reduced)
+        self.update_checks('TLM', reduced_files, False)
         return
 
     def reduce_arc(self, overwrite=False, **kwargs):
         """Reduce all arc frames matching given criteria."""
         file_iterable = self.files(ndf_class='MFARC', do_not_use=False,
                                    **kwargs)
-        self.reduce_file_iterable(file_iterable, overwrite=overwrite)
-        self.update_checks('ARC', file_iterable, False)
+        reduced_files = self.reduce_file_iterable(
+            file_iterable, overwrite=overwrite)
+        self.update_checks('ARC', reduced_files, False)
         return
 
     def reduce_fflat(self, overwrite=False, **kwargs):
         """Reduce all fibre flat frames matching given criteria."""
         file_iterable = self.files(ndf_class='MFFFF', do_not_use=False,
                                    **kwargs)
-        self.reduce_file_iterable(file_iterable, overwrite=overwrite)
-        self.update_checks('FLT', file_iterable, False)
+        reduced_files = self.reduce_file_iterable(
+            file_iterable, overwrite=overwrite)
+        self.update_checks('FLT', reduced_files, False)
         return
 
     def reduce_sky(self, overwrite=False, **kwargs):
         """Reduce all offset sky frames matching given criteria."""
         file_iterable = self.files(ndf_class='MFSKY', do_not_use=False,
                                    **kwargs)
-        self.reduce_file_iterable(file_iterable, overwrite=overwrite)
-        self.update_checks('SKY', file_iterable, False)
+        reduced_files = self.reduce_file_iterable(
+            file_iterable, overwrite=overwrite)
+        self.update_checks('SKY', reduced_files, False)
         return
 
     def reduce_object(self, overwrite=False, **kwargs):
@@ -1008,18 +1013,13 @@ class Manager:
     def reduce_file_iterable(self, file_iterable, overwrite=False, tlm=False,
                              leave_reduced=True):
         """Reduce all files in the iterable."""
-        extra_check_dict = defaultdict(list)
+        reduced_files = []
         for fits in file_iterable:
             reduced = self.reduce_file(fits, overwrite=overwrite, tlm=tlm,
                                        leave_reduced=leave_reduced)
             if reduced:
-                if tlm:
-                    check_filename = fits.tlm_filename
-                else:
-                    check_filename = fits.reduced_filename
-                extra_check_dict[fits.reduced_dir].append(check_filename)
-        self.check_list.extend(extra_check_dict.items())
-        return
+                reduced_files.append(fits)
+        return reduced_files
 
     def derive_transfer_function(self, overwrite=False, **kwargs):
         """Derive flux calibration transfer functions and save them."""
@@ -1883,87 +1883,6 @@ class Manager:
                 os.symlink(os.path.relpath(raw_source_path, fits.reduced_dir),
                            raw_link_path)
         return filename
-
-    def print_check_list(self):
-        """Print the reduced files that need to be checked."""
-        for reduced_dir, filename_list in self.check_list:
-            print reduced_dir
-            for filename in filename_list:
-                print ' - ' + filename
-        return
-
-    def plot_dir(self, dirname):
-        """Load 2dfdr to plot a set of files from the checklist.
-
-        The first match to dirname - which may be incomplete - will be selected
-        from the checklist, and 2dfdr will be loaded in that directory."""
-        for index, check_tuple in enumerate(self.check_list):
-            if dirname in check_tuple[0]:
-                self.plot_dir_by_index(index)
-                break
-        else:
-            print 'No match found in checklist.'
-        return
-
-    def plot_next_dir(self):
-        """Load 2dfdr to plot the next set of reduced files to check."""
-        if len(self.check_list) == 0:
-            print 'No directories are in the checklist.'
-            return
-        self.plot_dir_by_index(0)
-        return
-
-    def plot_dir_by_index(self, index):
-        """Load 2dfdr to plot a specified set of files from the checklist."""
-        reduced_dir, filename_list = self.check_list[index]
-        print 'Loading 2dfdr in directory:'
-        print reduced_dir
-        print 'Use 2dfdr to plot and check the following files.'
-        print '(Click on the triangles to see reduced files)'
-        for filename in filename_list:
-            print ' - ' + filename
-        print 'Make a note of any that need to be disabled or re-run.'
-        try:
-            idx_file = self.idx_files[os.path.basename(reduced_dir)]
-        except KeyError:
-            try:
-                idx_file = self.idx_files[filename_list[0][5]]
-            except KeyError:
-                # Can't work out which idx file to use; just grab the first one
-                idx_file = self.idx_files.values()[0]
-        command = ['drcontrol',
-                   idx_file]
-        with self.visit_dir(reduced_dir):
-            with open(os.devnull, 'w') as f:
-                subprocess.call(command, stdout=f)
-        yn = raw_input('Have you finished checking all the files? '
-                       'The directory will be removed from the checklist. '
-                       '(y/n)\n > ')
-        remove = (yn.lower()[0] == 'y')
-        if remove:
-            print 'Removing this directory from the checklist.'
-            del self.check_list[index]
-        else:
-            print 'Leaving this directory in the checklist.'
-        print ('If any files need to be disabled, you can do so using commands'
-               ' like:')
-        print ">>> mngr.disable_files(['" + filename_list[0] + "'])"
-        return
-
-    def remove_dir_from_checklist(self, dirname):
-        """Remove the first instance of a directory from the checklist."""
-        for index, check_tuple in enumerate(self.check_list):
-            if dirname in check_tuple[0]:
-                del self.check_list[index]
-                break
-        else:
-            print 'No match found in checklist'
-        return
-
-    def remove_dir_from_checklist_by_index(self, index):
-        """Remove the specified directory from the plotting checklist."""
-        del self.check_list[index]
-        return
 
     def change_speed(self, speed=None):
         """Switch between fast and slow reductions."""
