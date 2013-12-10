@@ -18,7 +18,10 @@ History:
 """
 
 import numpy
-from ..config import latitude
+from scipy import integrate
+
+from ..config import latitude, millibar_to_mmHg
+from other import saturated_partial_pressure_water
 
 def adr_n1(lam):
     #convert angstroms to microns
@@ -118,7 +121,7 @@ def zenith_distance(declination, hour_angle, latitude=latitude.degrees):
     return numpy.degrees(
         numpy.arccos(sin_lat * sin_dec + cos_lat * cos_dec * cos_ha))
 
-class DARCorrector:
+class DARCorrector(object):
     """
     Tool to compute atmospheric refraction corrections via one of several methods
     """
@@ -154,7 +157,36 @@ class DARCorrector:
         dar_reference = adr_r(self.ref_wavelength, self.zenith_distance, self.air_pres, self.temperature, self.water_pres)
     
         return dar - dar_reference
-        
+    
+    def setup_for_ifu(self, ifu):
+        """Set all instance properties for the IFU class observation provided."""
+
+
+        if (self.method == 'none'):
+            pass
+        elif (self.method == 'simple'):
+            self.temperature = ifu.fibre_table_header['ATMTEMP']
+            self.air_pres = ifu.fibre_table_header['ATMPRES'] * millibar_to_mmHg
+            #                     (factor converts from millibars to mm of Hg)
+            self.water_pres = \
+                saturated_partial_pressure_water(self.air_pres, self.temperature) * \
+                ifu.fibre_table_header['ATMRHUM']
+
+            ha_offset = ifu.ra - ifu.meanra    # The offset from the HA of the field centre
+
+            self.zenith_distance = \
+                integrate.quad(lambda ha: zenith_distance(ifu.dec, ha),
+                               ifu.primary_header['HASTART'] + ha_offset,
+                               ifu.primary_header['HAEND'] + ha_offset)[0] / (
+                                  ifu.primary_header['HAEND'] - ifu.primary_header['HASTART'])
+
+            self.hour_angle = \
+                (ifu.primary_header['HASTART'] + ifu.primary_header['HAEND']) / 2 + ha_offset
+
+            self.declination = ifu.dec
+
+
+
     def print_setup(self):
         print("Method: {}".format(self.method))
         
@@ -185,5 +217,22 @@ class DARCorrector:
         # Must move light away from the zenith to correct for DAR.
         self.dar_east  = -self.dar_r * numpy.sin(numpy.radians(self.parallactic_angle()))
         self.dar_north = -self.dar_r * numpy.cos(numpy.radians(self.parallactic_angle()))
+        
+    @property
+    def wavelength(self):
+        """The wavelength of the current DAR correction."""
+        return self._wavelength
+         
+    @wavelength.setter
+    def wavelength(self,value):
+        self._wavelength = value
 
+        # Update the dar correction values because the wavelength has changed.
+        self.dar_r = self.correction(value)
+        # Parallactic angle is direction to zenith measured north through east.
+        # Must move light away from the zenith to correct for DAR.
+        self.dar_east  = -self.dar_r * numpy.sin(numpy.radians(self.parallactic_angle()))
+        self.dar_north = -self.dar_r * numpy.cos(numpy.radians(self.parallactic_angle()))
+        
+        
         
