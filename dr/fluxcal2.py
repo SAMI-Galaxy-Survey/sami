@@ -1125,6 +1125,8 @@ def primary_flux_calibrate(path_in, path_out, path_transfer_function):
                                      'Flux calibration file')
     hdulist[0].header['HGFLXCAL'] = (HG_CHANGESET, 
                                      'Hg changeset ID for fluxcal code')
+    hdulist[0].header['BUNIT'] = ('10**(-16) erg /s /cm**2 /angstrom',
+                                  'Units')
     hdulist.writeto(path_out)
     return
 

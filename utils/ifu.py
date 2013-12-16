@@ -37,8 +37,10 @@ class IFU:
         self.crpix1 = self.primary_header['CRPIX1']
         self.naxis1 = self.primary_header['NAXIS1']
 
+        # Field centre values (not bundle values!)
         self.meanra = self.primary_header['MEANRA']
         self.meandec = self.primary_header['MEANDEC']
+
 
         # Determine and store which spectrograph ARM this is from (red/blue)
 
@@ -89,6 +91,12 @@ class IFU:
             
         mask=np.logical_and(fibre_table.field('PROBENUM')==self.ifu, fibre_table.field('NAME')==self.name)
         table_new=fibre_table[mask]
+
+        # Mean RA of probe centre, degrees
+        self.ra = table_new.field('GRP_MRA')[0]
+        # Mean Dec of probe centre, degrees
+        self.dec = table_new.field('GRP_MDEC')[0]
+
 
         #X and Y positions of fibres in absolute degrees.
         self.xpos=table_new.field('FIB_MRA') #RA add -1*
