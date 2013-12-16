@@ -1,11 +1,17 @@
 import astropy.units as u
 import astropy.coordinates as coords
+import os.path
 
 # This script contains constants that are used in other SAMI packages.
 
 # ----------------------------------------------------------------------------------------
-# rough plate scale
+
+# Approximate plate scale
 plate_scale=15.22
+
+# Diameter of individual SAMI fibres in arcseconds
+fibre_diameter_arcsec = 1.6
+
 # ----------------------------------------------------------------------------------------
 
 # ----------------------------------------------------------------------------------------
@@ -20,3 +26,9 @@ declination_dome_dist=0.0982  # dome radii
 latitude=coords.Angle(-31.3275, unit=u.degree)
 latitude_radians=latitude.radians
 # ----------------------------------------------------------------------------------------
+
+# Pressure conversion factor from millibars to mm of Hg 
+millibar_to_mmHg = 0.750061683
+
+# Set the test data directory, assumed to be at the same level as the sami package.
+test_data_dir = os.path.dirname(os.path.realpath(__file__)) + '/../test_data/'

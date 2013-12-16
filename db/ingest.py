@@ -1,31 +1,167 @@
 """
-'ingest.py', module within 'sami.db'
+ingest.py
+  Module within sami.db
 
-Description: Import codes for the SAMI Galaxy Survey data archive. 
+Description: 
+  Import codes for the SAMI Galaxy Survey data archive. 
 
-Written: 08.10.2013, Iraklis Konstantopoulos. Based on 'db.database'.
+Written: 
+  08.10.2013, Iraklis Konstantopoulos. Based on 'db.database'.
 
-Contact: iraklis@aao.gov.au
+Contact: 
+  iraklis@aao.gov.au
+
+Dependencies:
+  os, sys, numpy, astropy, h5py, tables, sami, 
+  datetime, shutil [import_cube], 
+  time [import_many], 
+  fnmatch [locate_rss].
 
 Table of Contents: 
 
-.create         Creates an HDF5 file, not SAMI-specific. 
-.format         Sets up the SAMI root and base (target-based) filestructure. 
-.import_cube    Digests a SAMI datacube. Envokes 'import_rss' and 'fetch_SDSS' 
-                from the SAMI_sdss module. 
-.locate_rss     Queries a cube header, identifies parent RSS files, locates  
-                them on the machine running the code. Returns filename listing. 
-.make_list      Make a list for import_many from the contents of a directory. 
-.importMaster   Imports a SAMI target table. 
+  [create] --- Create a SAMI-formatted  HDF5 file. 
 
-Known bugs and fixes: 
+    <args>
+    h5file     [str]  The name of the HDF5 file to be created. 
+    overwrite  [boo]  Re-initialises a file. 
+    verbose    [boo]  Toggles diagnostic and declarative verbosity. 
+                  
+    Start an HDF5 file in 'a' mode, that is, read/write if it exists, and create
+    otherwise. Writes only the root HDF5 group "SAMI". The overwrite flag will 
+    re-initialise an existing file, that is delete and create a "SAMI" group. 
 
-2013.10.31 -- PyTables cannot read attributes with empty value fields. We need 
-              to get that dictionary going right away. This has been contained 
-              by not including any header items without values (which is good 
-              practise anyway) as [comm] attributes (the temporary measure), and
-              filling in blank header tickets with '[blank]'
+
+  [import_cube] --- Import a set of data-cubes and parents to the SAMI Archive.
+
+    <args> 
+    blue_cube   [str]  FITS filename of blue SAMI cube ("" for none). 
+    red_cube    [str]  FITS filename of red SAMI cube ("" for none). 
+    h5file      [str]  The name of the SAMI archive file onto which to save. 
+    version     [str]  Version number (eventually a header item). 
+    safe_mode   [boo]  Automatically creates a time-stamped backup archive. 
+    ingest_rss  [boo]  Locate and import RSS parents as 'strips'. 
+    rss_only    [boo]  Only import RSS parents, no cubes. 
+    dataroot    [boo]  The root directory to scan for RSS parents. 
+    verbose     [boo]  Toggles diagnostic and declarative verbosity. 
+
+    The main SAMI import code. It works only in one mode and is therefore not 
+    modularised. There is the option to 'strip' RSS files, identify the arrays
+    and segments pertaining to the cube being imported (there is a complex 
+    relationship between the multiple dithers of RSS parents and the resultant
+    cubes) and add them as datasets. 
+
+    The code goes through a series of safety and quality control checks before
+    writing any data to the nominated HDF5 file: 
+      
+      (1) Checks if the nominated h5 file (h5file) exists.
+
+      (2) Requires a group for the nominated (/header-supplied) data version. 
+
+      (3) Checks h5file for the SAMI cubes in the data version to be imported*:
+        <> Do any data exist in this data version? EXIT with error. 
+        <> No? Create target group. 
+
+      (4) Checks observation type by identifier: 
+        <> Star CATIDs in range [1e7, 2e7), 
+        <> Galaxies in (0, 1e7) and (9e9, 1e10).
+        <> Require "Calibrator" or "Target" group. 
+        <> CATID not found? EXIT cleanly with error. 
+
+    At that point data can be imported, a function is defined for this purpose,
+    eat_data(). All header card comments are recorded and saved as attributes
+    on the respective dataset. Some final QC checks are performed and the code
+    exits successfully. 
  
+    Note that step (2) will eventually rely on reading the data version as a 
+    header ticket. At the moment it is passed manually as a required argument.
+
+    Envokes locate_rss(). 
+
+
+  [import_many] --- @list wrapper for import_cube. 
+
+    <args>
+    tablein  [str]  An input file listing blue/red cube filenames (+path).  
+    * All other arguments inform import_cube(), see above for details. 
+
+    This code is designed to receive output from make_list(), which lists pairs
+    of blue/red SAMI cube filenamees (full path must precede, space-separated). 
+    These are fed to import_cube() one line at a time, so the remainder of the 
+    arguments for this function are fed directly to import_cube(), where the 
+    user should look up their meanings. 
+
+    A loop suppresses safe_mode to False for every one but the first iteration 
+    of import_cube() the code envokes. The same goes for the version_confirm
+    boolean. This is a temporary measure, as the check should be performed every
+    time. Once the cubes contain the data release version as a header ticker 
+    this can be abandoned. 
+
+
+  [importMaster] --- Import a SAMI target table to an HDF5 archive. 
+
+    <args>
+    h5file   [str]  The name of the HDF archive into which to import the table.
+    tabin    [str]  The ascii file containing the SAMI target table. 
+    cdf      [str]  Column definitions, not yet supported. 
+    version  [str]  Data version. Leave blank for latest. 
+    verbose  [boo]  Toggles diagnostic and declarative verbosity. 
+
+    This function reads in a SAMI target table as a compound dataset. The code 
+    will check the data version to decide where the table should be inserted. 
+    The names of the columns are supplied manually assuming that there will only
+    ever be one format for SAMI target tables. 
+
+
+  [locate_rss] --- Read in a SAMI cube, identify and locate its parent RSS files
+
+    <args>
+    cubein    [str]  The cube whose parents the code will seek. 
+    dataroot  [str]  Path to data directory (relative or absolute).
+    verbose   [boo]  Toggles diagnostic and declarative verbosity. 
+
+    SAMI spectra are imprinted onto the AAOmega detector as 'row-stack spectra',
+    commonly referred to as RSS files. Since one SAMI frame conveys information
+    gathered by thirteen IFUs, we do not have a one-to-one relation between RSS
+    and cubes. What's more, there are typically seven dithers, making this a 13-
+    to-seven correspondence. 
+
+    Since the SAMI archive is oriented along cubes, rather than observation 
+    frames, the full complement of RSS parents needs to be found for each cube, 
+    but not stored multiple times. 
+
+    This code queries a cube header, identifies all parent RSS files (filenames
+    stored as header tickets), and locates them on the local filesystem. The 
+    dataroot argument allows the user to supply a base directory which the code
+    can search recursively for the RSS frames, thus saving the time it would 
+    take python to perform a 'locate' task. 
+    
+    Returns filename listing, including full paths. 
+
+
+  [make_list] --- Make an .import_many import list based on contents of basedir.
+
+    <args>
+    dataroot   [str]  Path to data directory (relative or absolute).
+    tableout   [str]  Filename of output table, default is 'SAMI_input.lis'.
+    overwrite  [boo]  Delete and overwrite a list. 
+    append     [boo]  Append results to end of existing buffer. 
+
+    Simple function that populates a variable width, two-column table listing 
+    pairs of filenames of blue/red SAMI cubes to be imported into an archive. 
+
+    This is best used by being tasked with scanning a directory that pertains to
+    a single SAMI observing run, listing the contents and combining the 
+    filenames within eack sami-named folder into an import_many() input table.
+    That way 'dataroot' can be set to the observing run path. 
+
+
+Known bugs, issues, and fixes: 
+
+  2013.10.31 -- PyTables cannot read attributes with empty value fields. We need
+                to get that dictionary going right away. This has been contained
+                by not including any header items without values (which is good 
+                practise anyway) as [comm] attributes (the temporary measure), 
+                and filling in blank header tickets with '[blank]'
 """
 
 import numpy as np
@@ -40,10 +176,11 @@ import sami
 """ 
 For commit message: 
 
-Quick bug fix in import_cube(). 
+Improved documentation. Deleted deprecated code make_list_old(). 
 
-Caught a little bug that wouldn allow both the blue and red cube inputs be blank strings. Now closes and exits in such an eventuality. Also added a check for the nominated cube files. 
-
+- Updated and extended the descriptions of the individual functions. 
+- Removed importation of tables within importMaster (already global). 
+- Got rid of 'debug' argument in make_list(). 
 """
 
 # ~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~
@@ -66,7 +203,7 @@ def create(h5file, overwrite=False, verbose=True):
     
     # Create an h5 file
     if (not os.path.isfile(h5file)) or (overwrite==True):
-        f = h5.File(h5file, 'w')
+        f = h5.File(h5file, 'a')
 
     # And require a SAMI root directory
     root = f.require_group("SAMI")
@@ -83,59 +220,10 @@ def create(h5file, overwrite=False, verbose=True):
 
 # ~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~
 def import_cube(blue_cube, red_cube, h5file, version, safe_mode=False, 
-                ingest_rss=True, rss_only=False, dataroot='./', verbose=True):
+                ingest_rss=True, rss_only=False, dataroot='./', verbose=True,
+                version_confirm=True):
 # ~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~
-    """ Import a set of data-cubes and parents to the SAMI Archive. 
-    
-    Overhaul of original import code. The main change is the treatment of 
-    versioning, which now comes from the DR pipeline (instead of being 
-    automatically determined within import_cube). 
-    
-    The new rationale gives rise to the following blueprint: 
-    
-    (1) Check if the nominated h5 file (h5file) exists. 
-    
-    (2) Require a group for the nominated (/header-supplied) data version. 
-    
-    (3) Check h5file for the SAMI cubes in the data version to be imported*: 
-      <> Do any data exist in this data version? EXIT with error. 
-      <> No? Create target group. 
-    
-    (4) Check observation type by cross-ID on target/star catalogues*: 
-      <> Found on star list? Add to "Calibrator" group (require group). 
-      <> Found on target list? Add to "Target" group (require group). 
-      <> Not found? EXIT with error. 
-    
-    (5) Start data import, deal with digest_rss in same way as before. 
-      <> Record all header card comments, insert into table (version-specific).
-
-    (6) Perform any QC tests and cleaning, EXIT successfully. 
-    
-    * Steps (2) and (3) will eventually rely on reading header tickets.
-
-    [TODO] Every SAMI h5 file should contain the Target and Star catalogues as 
-    tables, so that QC checks can be performed (many other reasons exist). This
-    could be problematic when it comes to cluster fields. Do they all live in 
-    the same archive? What is stopping us? Different Target tables... 
-    
-    [TODO] Set the default 'dataroot' to a header ticket stored by the DR 
-    manager code. This ticket is not yet there. 
-    
-    [TODO] In export code, give the user the option to package the PSF star that
-    corresponds to any Target cube being downloaded. 
-     
-    Arguments: 
-    
-    blue_cube   [str]  FITS filename of blue SAMI cube ("" for none). 
-    red_cube    [str]  FITS filename of red SAMI cube ("" for none). 
-    h5file      [str]  The name of the SAMI archive file onto which to save. 
-    version     [str]  Version number (eventually a header item). 
-    safe_mode   [boo]  Automatically creates a time-stamped backup archive. 
-    ingest_rss  [boo]  Locate and import RSS parents as 'strips'. 
-    rss_only    [boo]  Only import RSS parents, no cubes. 
-    dataroot    [boo]  The root directory to scan for RSS parents. 
-    verbose     [boo]  Toggles diagnostic and declarative verbosity. 
-    """ 
+    """ Import a set of data-cubes and parents to the SAMI Archive. """
     
     # Check if the nominated h5 file exists; prompt for creation if not, exit. 
     if not os.path.isfile(h5file):
@@ -181,6 +269,18 @@ def import_cube(blue_cube, red_cube, h5file, version, safe_mode=False,
     if (verbose) and (version in hdf['SAMI'].keys()): 
         print
         print("NOTE: Some data may already be archived in this version. ")
+
+    # Confirm if version is not latest (cfoster, 8/11/2013)
+    if hdf['SAMI'].keys() != [] and version < max(hdf['SAMI'].keys()) and \
+        version_confirm:
+        print
+        usr_input=raw_input("The selected version is not the latest. Are "+
+                            "you sure you want to continue? [Y/n]")
+        if (usr_input == 'n'): 
+            raise SystemExit("The wrong version number was entered. Please "+
+                             "fix and rerun.")
+        else:
+            version_confirm=False
 
     g_version = hdf.require_group("SAMI/"+version)
     
@@ -253,8 +353,8 @@ def import_cube(blue_cube, red_cube, h5file, version, safe_mode=False,
         colour.append('R')
         hdulist.append(red_cube)
     
-    for i in range(len(hdulist)):
-        HDU = pf.open(hdulist[i])
+    for thisHDU in range(len(hdulist)):
+        HDU = pf.open(hdulist[thisHDU])
         if verbose: 
             print
             print(HDU.info())
@@ -263,13 +363,13 @@ def import_cube(blue_cube, red_cube, h5file, version, safe_mode=False,
         if (ingest_rss) or (rss_only):
 
             # First check if there are any already in here. 
-            if colour[i]+'_RSS_data_1' in g_target.keys(): 
+            if colour[thisHDU]+'_RSS_data_1' in g_target.keys(): 
                 raise SystemExit("The nominated HDF5 file ('"+h5file+"') "+
                         "already contains RSS strips for the nominated SAMI "+
                         "target ("+sami_name+"). Please check archive "+
                         "and cubes. ")
 
-            rss_list = locate_rss(hdulist[i], dataroot, verbose=verbose)
+            rss_list = locate_rss(hdulist[thisHDU], dataroot, verbose=verbose)
             n_rss = len(rss_list)
             
             if (n_rss != 0) and (verbose):
@@ -318,11 +418,11 @@ def import_cube(blue_cube, red_cube, h5file, version, safe_mode=False,
 
         # IMPORT CUBE
         # -----------
-        cube_data = eat_data(g_target, colour[i]+"_Cube_Data", 
+        cube_data = eat_data(g_target, colour[thisHDU]+"_Cube_Data", 
                              HDU[0].data, hdr=HDU[0].header)
-        cube_var  = eat_data(g_target, colour[i]+"_Cube_Variance", 
+        cube_var  = eat_data(g_target, colour[thisHDU]+"_Cube_Variance", 
                              HDU[1].data, hdr=HDU[1].header)
-        cube_wht  = eat_data(g_target, colour[i]+"_Cube_Weight", 
+        cube_wht  = eat_data(g_target, colour[thisHDU]+"_Cube_Weight", 
                              HDU[2].data, hdr=HDU[2].header)
 
         # IMPORT RSS
@@ -333,9 +433,10 @@ def import_cube(blue_cube, red_cube, h5file, version, safe_mode=False,
                 myIFU = sami.utils.IFU(rss_list[rss_loop], 
                                        sami_name, flag_name=True)
                 # RSS: Data, Variance. 
-                rss_data = eat_data(g_target, colour[i]+"_RSS_Data_"+rss_index,
+                rss_data = eat_data(g_target, 
+                                    colour[thisHDU]+"_RSS_Data_"+rss_index,
                                     myIFU.data, hdr=myIFU.primary_header)
-                rss_var = eat_data(g_target, colour[i]+"_RSS_Variance_"+\
+                rss_var = eat_data(g_target, colour[thisHDU]+"_RSS_Variance_"+\
                                    rss_index, myIFU.var, importHdr=False)
 
                 # RSS: Fibre Table. Only wish to import bits an pieces. 
@@ -344,7 +445,8 @@ def import_cube(blue_cube, red_cube, h5file, version, safe_mode=False,
                             myIFU.fibtab['FIB_ARA'], myIFU.fibtab['FIB_ADEC'] ]
                 fibComb = np.transpose(np.array(tempTab))
 
-                rss_fibtab = eat_data(g_target, colour[i]+'_RSS_FibreTable_'+\
+                rss_fibtab = eat_data(g_target, 
+                                      colour[thisHDU]+'_RSS_FibreTable_'+\
                         rss_index, fibComb, hdr=myIFU.fibre_table_header, \
                         hdrItems=['CENRA', 'CENDEC', 'APPRA', 'APPDEC'])
 
@@ -363,32 +465,30 @@ def import_many(tablein, h5file, version, safe_mode=False,
                 ingest_rss=True, rss_only=False, dataroot='./', 
                 verbose=True, timing=True):
 # ~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~
-    """ Wrapper for import_cube to digest any number of cubes. 
-    
-    'tablein' needs to list the blue and red cubes in each space-separated row. 
-    All other arguments refer to the 'import_cube' args. 
-
-    Safe Mode is tricky. It will produce an intermediate file for every cube it
-    adds, rather than a single backup file. Problem. 
-    """
-    
-    ### OBSTYPE NEEDS TO BE DEFINED
+    """ @list wrapper for import_cube. """
     
     if timing: 
         import time
         timer_zero = time.time()
         
-    tabdata = ascii.read(tablein, data_start=0, names=['blue', 'red'])
+    tabdata = ascii.read(tablein, data_start=0, names=['blue', 'red'])    
     
     for loop in range(len(tabdata)):
         if timing: timer_start = time.time()
         if verbose: print("Processing "+
                           os.path.basename(tabdata['blue'][loop])+", "+
                           os.path.basename(tabdata['red'][loop]))
-        
+        if loop>0:
+            version_confirm=False
+            safe_mode=True
+	else:
+	    version_confirm=True
+	    safe_mode=False
+            
         import_cube(tabdata['blue'][loop], tabdata['red'][loop], h5file, 
                     version, safe_mode=safe_mode, ingest_rss=ingest_rss, 
-                    rss_only=rss_only, dataroot=dataroot, verbose=verbose)
+                    rss_only=rss_only, dataroot=dataroot, verbose=verbose,
+                    version_confirm=version_confirm)
         if timing: 
             timer_end = time.time()
             print(loop,timer_end-timer_start)
@@ -399,14 +499,8 @@ def import_many(tablein, h5file, version, safe_mode=False,
 # ~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~
 def importMaster(h5file, tabin, cdf='', version='', verbose=False):
 # ~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~
-    """ Import a SAMI target table to an h5 archive. 
+    """ Import a SAMI target table to an HDF5 archive. """
 
-    1) Read in the table (all numeric), given preset columns (supply). 
-    2) Attach as h5 table in the root directory. 
-
-    Note that 'name' is the IAU name and the SAMI identifier is 'CATID'. 
-    """
-    import tables
     import sami.db.export as export
 
     # Define column definitions for a standard SAMI table. 
@@ -456,8 +550,7 @@ def importMaster(h5file, tabin, cdf='', version='', verbose=False):
               "Creating new file. ")
         
     # Get (latest) version. 
-    """ Doing this with h5py cause PyTables is retarded. Will then close and 
-    re-open with PyTables... """
+    """ It is difficult to do this with tables, so using h5py. """
     hdf = h5.File(h5file, 'r')
     version = export.getVersion(h5file, hdf, version)
     hdf.close()
@@ -536,7 +629,7 @@ def locate_rss(cubein, dataroot='./', verbose=True):
             for i in range(n_rss):
                 if name == rss_files[i]:
                     rss_path.append(os.path.abspath(os.path.join(root,name)))
-                    if verbose: print('   '+rss_path[i])
+                    if verbose: print('   '+str(rss_path[-1:]))
 
     # Check 
     if len(rss_files) == n_rss:
@@ -549,20 +642,9 @@ def locate_rss(cubein, dataroot='./', verbose=True):
 
 # ~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~
 def make_list(dataroot='./', tableout='SAMI_input.lis', 
-                  overwrite=False, append=False, debug=True):
+                  overwrite=False, append=False):
 # ~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~
-    """ Make an .import_many import list based on contents of basedir. 
-
-    There has been radical change in the structure of the data reduction 
-    directory substructure. Data now organised in a <version>/<dates>/cubed/ 
-    fashion, which makes the old make_list() code defunct. 
-
-    The code should now scan a directory that pertains to a single observing
-    run, list the contents and combine the filenames within eack sami-named 
-    folder into an import_many() command. 
-
-    The dataroot is now an observing run folder. 
-    """
+    """ Make an .import_many import list based on contents of basedir. """
 
     # Check if both the overwrite and append flags are up, exit of so.
     if (overwrite) and (append):
@@ -573,106 +655,23 @@ def make_list(dataroot='./', tableout='SAMI_input.lis',
     # Scan the dataroot/cubed subdirectory. 
     nameList = os.listdir(dataroot+'/cubed')
 
-    # Sometimes directories have a '.DS_Store' file, remove it. 
-    if '.DS_Store' in nameList:
-        nameList.remove('.DS_Store')
-
     # Create a file buffer, decide whether to overwrite or append: 
     if not append: f = open(tableout, 'w')
     if append: f = open(tableout, 'a')
 
     # Little function to compose a single list line. 
     def writeLine(name):
-        base = dataroot+'/cubed/'+name+'/'
-        fnames = os.listdir(base)
+        base = dataroot+'cubed/'+name+'/'
+        fnames = os.listdir(base) 
+
+        # Sometimes directories have a '.DS_Store' file, remove it. 
+        if '.DS_Store' in fnames:
+            fnames.remove('.DS_Store')
+
         f.write(base+fnames[0]+" "+base+fnames[1]+"\n")
 
     writeAll = [writeLine(str_in) for str_in in nameList]
 
-    f.close()
-
-
-
-# ~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~
-def make_list_old(basedir='', tableout='SAMI_input.lis', 
-                  overwrite=False, append=False, debug=True):
-# ~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~
-    """ Make an .import_many digestion list based on contents of basedir. 
- 
-    This code relies on the existence of the standard ccd_1 and ccd_2 subdirs, 
-    as delivered by the good people in the Data Reduction Working Group. This 
-    should not change (ever!). Major revision will be required if it does. 
-
-    The code also relies on the naming convention for SAMI cubes as: 
-      <SAMI_ID>_<ccd>_<N(dithers)>.fits
-    """
-
-    # Check if both the overwrite and append flags are up, exit of so.
-    if (overwrite) and (append):
-        raise SystemExit("Both the 'overwrite' and 'append' flags have " +
-                         "been raised. That won't work, you have to choose " +
-                         "just one! Exiting. ")
-
-    # Check if basedir has been defined. If not, then it is the WD. 
-    if basedir == '': basedir = os.getcwd()
-    
-    # Check for the ccd_1 and ccd_2 directories. 
-    base_contents = os.listdir(basedir)
-    
-    if ('ccd_1' not in base_contents) or ('ccd_2' not in base_contents):
-        raise SystemExit("The chosen basedir does not contain 'ccd_1' " +
-                         "or/and 'ccd_2' directories. Exiting. ")
-        
-    # If those exist figure out their contents, isolate .fits files, and 
-    #  then extract their SAMI IDs. Check that ccd_1 and ccd_2 contents match.
-    contents_ccd1 = np.array(os.listdir(basedir+'/ccd_1/'))
-    contents_ccd2 = np.array(os.listdir(basedir+'/ccd_2/'))
-
-    # A little process that can recursively return filename extensions
-    def isolator(str_in): 
-        return os.path.splitext(str_in)[1]
-
-    ext1 = np.array([isolator(str_in) for str_in in contents_ccd1])
-    ext2 = np.array([isolator(str_in) for str_in in contents_ccd2])
-
-    # Keep only .fits files
-    contents_ccd1 = contents_ccd1[np.where(ext1 == '.fits')]
-    contents_ccd2 = contents_ccd2[np.where(ext2 == '.fits')]
-
-    # A little process to strip sami name as text preceding underscore: 
-    def strip_name(str_in):
-        uscore = str_in.index('_')
-        return str_in[:uscore]
-
-    sami_names1 = [strip_name(str_in) for str_in in contents_ccd1]
-    sami_names2 = [strip_name(str_in) for str_in in contents_ccd2]
-
-    if sami_names1 != sami_names2:
-        raise SystemExit("The 'ccd_1' and 'ccd_2' lists are mismatched. "+
-                         "Exiting. ")
-        
-    else: print("\nFound "+str(len(sami_names1))+
-                " matched blue/red SAMI RSS files in 'basedir'.")
-    
-    # Now write the list file for digestion by import_many
-    # First check if file exists and if overwrite flag is up: 
-    if (os.path.isfile(tableout)) and (not overwrite) and (not append):
-        raise SystemExit("The nominated list file already exists. Please "+
-                         "use a different filename, or raise the "+
-                         "'overwrite' flag.")
-        
-    if (os.path.isfile(tableout)) and (overwrite):
-        print("Overwriting file '"+tableout+"'.")
-
-    # Then create the file buffer, decide whether to overwrite or append: 
-    if not append: f = open(tableout, 'w')
-    if append: f = open(tableout, 'a')
-
-    # Now write those tables. 
-    for i in range(len(sami_names1)):
-        f.write(basedir+'ccd_1/'+contents_ccd1[i]+' '+
-                basedir+'ccd_2/'+contents_ccd2[i]+'\n')
-        
     f.close()
 
 

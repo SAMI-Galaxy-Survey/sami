@@ -310,7 +310,7 @@ def fibre_integrator(fitter, diameter, pixel=False):
     fitter.diameter = diameter
 
     # Define the subsampling points to use
-    n_pix = 51       # Number of sampling points across the fibre
+    n_pix = 5       # Number of sampling points across the fibre
     # First make a 1d array of subsample points
     delta_x = np.linspace(-0.5 * (diameter * (1 - 1.0/n_pix)),
                           0.5 * (diameter * (1 - 1.0/n_pix)),
