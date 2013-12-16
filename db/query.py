@@ -18,28 +18,21 @@ Table of Contents:
 
 For commit message:
 
-Adapted query.py to new filesystem. 
-
-query_multiple is now queryMultiple(). 
-
--- Added getVersion() loop.
--- Updated location of Tables within version loop. 
--- Changed the way it looks for tables, now as PyTables 'nodes'. 
--- Function now writes query results to an overwrite=protected file. 
--- Moved print_sami(), now printQuery(), outside codes so it can be a grown-up function. 
-
-Also updated queryMaster() to use the external function. Also now returns the set of values researched. 
+Getting rid of unnecessary module imports: 
+ sami
+ astropy.io.fits
+ astropy.io.ascii
 
 """
 
 import numpy as np
 import h5py as h5
 import tables
-import astropy.io.fits as pf
-import astropy.io.ascii as ascii
+#import astropy.io.fits as pf
+#import astropy.io.ascii as ascii
 import os
 import sys
-import sami
+#import sami
 
 
 # ~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~
