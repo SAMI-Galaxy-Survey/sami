@@ -405,6 +405,13 @@ def get_centroid(infile):
             x_out= -1*xout_mic
             y_out= yout_mic
             
+            # Adjust for DAR, which means that "true" galaxy position is offset from observed position
+            dar_calc = DARCorrector(method='simple')
+            dar_calc.setup_for_ifu(ifu_data)
+            dar_calc.wavelength = np.mean(ifu_data.lambda_range)
+            x_out -= dar_calc.dar_east
+            y_out += dar_calc.dar_north
+
             # the data to write to file
             s=ifu_data.name+' '+str(ifu_data.ifu)+' '+str(x_out)+' '+str(y_out)+'\n'
                     
