@@ -18,11 +18,7 @@ Table of Contents:
 
 For commit message:
 
-Getting rid of unnecessary module imports: 
- sami
- astropy.io.fits
- astropy.io.ascii
-
+Now catching an exception that occurs when misspelling a column (variable) name in queryMaster(), or any mistakes in table/variable name in queryMultiple(). 
 """
 
 import numpy as np
@@ -110,9 +106,14 @@ def queryMaster(h5file, queryIn, version='', idfile='sami_query.lis',
     g_table = hdf.getNode('/SAMI/'+version+'/Table/')
     master = g_table.SAMI_MASTER
 
-    # Run the row iterator. 
-    idlist = print_sami(master.where(queryText), idfile, 
-                         queryText, outFile=returnID, verbose=True)
+    # Run the row iterator -- try! 
+    try: 
+        idlist = print_sami(master.where(queryText), idfile, 
+                            queryText, outFile=returnID, verbose=True)
+    except:
+        hdf.close()
+        raise SystemExit("Oops! Your query was not understood. Please "+
+                         "check the spelling of the chosen variable.")
 
     # Close h5 file and return query results. 
     hdf.close()
@@ -175,19 +176,29 @@ def queryMultiple(h5file, qfile, writeFile=True, outFile='multipleQuery.lis',
     # Read all tables, append to list
     h5tabs = []
     for i in range(counter/2):
-        h5tabs.append(hdf.getNode('/SAMI/'+version+'/Table/', tabs[i]))
+        try:
+            h5tabs.append(hdf.getNode('/SAMI/'+version+'/Table/', tabs[i]))
+        except:
+            hdf.close()
+            raise SystemExit("Oops! Your query was not understood. Please "+
+                             "check the spelling of table '"+tabs[i]+"'.")
 
     # OK, have the tables defined as variables, now need to query them. 
 
     # Run each query: 
     all_lists = []
     for i in range(counter/2):
-        idlist = print_sami(h5tabs[i].where(queries[i]), outFile, 
-                            queries[i], outFile=False, verbose=False)
-        if verbose: 
-            print("Query "+str(i+1)+": Found "+str(len(idlist))+
-                  " galaxies satisfying "+queries[i])
-        all_lists.append(idlist)
+        try:
+            idlist = print_sami(h5tabs[i].where(queries[i]), outFile, 
+                                queries[i], outFile=False, verbose=False)
+            if verbose: 
+                print("Query "+str(i+1)+": Found "+str(len(idlist))+
+                      " galaxies satisfying "+queries[i])
+            all_lists.append(idlist)
+        except:
+            hdf.close()
+            raise SystemExit("Oops! Your query was not understood. Please "+
+                             "check the spelling of query '"+queries[i]+"'.")
 
     # This seems like a good place to close the h5 file.
     hdf.close()
