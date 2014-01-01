@@ -68,6 +68,7 @@ import os
 import re
 import subprocess
 import multiprocessing
+import tempfile
 from contextlib import contextmanager
 from collections import defaultdict, deque
 
@@ -535,6 +536,8 @@ class Manager:
         self.dark_exposure_list = []
         self.inspect_root(copy_files, move_files)
         self.cwd = os.getcwd()
+        self.imp_scratch = os.environ['IMP_SCRATCH']
+        self.scratch_dir = os.path.join(self.abs_root, 'imp_scratch')
 
     def inspect_root(self, copy_files, move_files, trust_header=True):
         """Add details of existing files to internal lists."""
@@ -1607,6 +1610,35 @@ class Manager:
             os.chdir(self.cwd)
             if cleanup_2dfdr:
                 self.cleanup()
+
+    @contextmanager
+    def temp_imp_scratch(self, do_not_delete=False):
+        """
+        Create a temporary directory for 2dfdr IMP_SCRATCH,
+        allowing multiple instances of 2dfdr to be run simultaneously.
+        """
+        # Make a temporary directory with a unique name
+        if not os.path.exists(self.scratch_dir):
+            os.mkdir(self.scratch_dir)
+        imp_scratch = tempfile.mkdtemp(dir=self.scratch_dir)
+        # Set the IMP_SCRATCH environment variable to that directory, so that
+        # 2dfdr will use it
+        os.environ['IMP_SCRATCH'] = imp_scratch
+        try:
+            yield
+        finally:
+            # Change the IMP_SCRATCH environment variable back to what it was
+            os.environ['IMP_SCRATCH'] = self.imp_scratch
+            if not do_not_delete:
+                # Remove the temporary directory and all its contents
+                shutil.rmtree(imp_scratch)
+                # Remove any parent directories that are empty
+                try:
+                    os.removedirs(os.path.dirname(imp_scratch))
+                except OSError:
+                    # It wasn't empty; never mind
+                    pass
+        return
 
     def cleanup(self):
         """Clean up 2dfdr rubbish."""
