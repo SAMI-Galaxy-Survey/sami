@@ -1619,7 +1619,7 @@ class Manager:
         """
         # Make a temporary directory with a unique name
         if not os.path.exists(self.scratch_dir):
-            os.mkdir(self.scratch_dir)
+            os.makedirs(self.scratch_dir)
         imp_scratch = tempfile.mkdtemp(dir=self.scratch_dir)
         # Set the IMP_SCRATCH environment variable to that directory, so that
         # 2dfdr will use it
