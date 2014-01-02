@@ -1,6 +1,38 @@
+"""
+This module covers functions required to create cubes from a dithered set of RSS
+frames.
+
+The most likely command a user will want to run is one of:
+
+   dithered_cubes_from_rss_files
+   dithered_cubes_from_rss_list
+
+(these differ only very slightly)
+
+These functions are merely wrappers for file input/output, with the actual work
+being done in "dithered_cube_from_rss"
+
+Drop size and output pixel grid size and dimensions are set with the following
+module variables:
+
+    output_pix_size_arcsec (Default: 0.5) - Size of output spaxel in arcsec
+    drop_factor (Default: 0.5) - Size of drop size as a fraction of the fibre 
+        size
+    size_of_grid (Default: 50) - Number of pixels along each dimension of the 
+        output grid   
+
+To change the output, these variables can be changed after the module has been
+loaded, but before calling any of the module functions. In particular, any pre-
+existing SAMIDrizzler instances will have strange behaviour if these variables
+are changed.
+
+"""
+
 import pylab as py
 import numpy as np
 import scipy as sp
+
+from scipy import integrate
 
 import astropy.io.fits as pf
 import astropy.wcs as pw
@@ -28,7 +60,8 @@ except:
 # Utils code.
 from .. import utils
 from .. import samifitting as fitting
-from ..utils.mc_adr import DARCorrector
+from ..utils.mc_adr import DARCorrector, parallactic_angle, zenith_distance
+from .. import diagnostics
 
 # importing everything defined in the config file
 from ..config import *
@@ -38,41 +71,17 @@ import astropy.io.ascii as ascii
 from scipy.interpolate import griddata
 import urllib
 
-"""
-This module covers functions required to create cubes from a dithered set of RSS frames.
 
-USAGE:
-The relevant function is dithered_cube_from_rss. It has the following inputs:
-
-inlist: A text file with a list of RSS frames (one per line, typically a dither set) for which to make cubes.
-sample_size: Size of the output pixel (defaults to 0.5 arcseconds).
-objects: Which objects to make cubes for. Default is all objects, or provide a list of strings.
-plot: Make plots? Defaults to True.
-write: Write FITS files of the resulting data cubes? Defaults to False.
-
-Example call 1:
-
-dithered_cube_from_rss('all_rss_files.list', write=True)
-
-will make cubes for all objects with the default output pixel size and writes the files to disk.
-
-Example call 2:
-
-dithered_cube_from_rss('all_rss_files.list', sample_size=0.8, write=True)
-
-Varies the sample size from above.
-
-"""
+# Some global constants:
 
 HG_CHANGESET = utils.hg_changeset(__file__)
 
 epsilon = np.finfo(np.float).eps
 # Store the value of epsilon for quick access.
 
-# Some global constants:
-sample_size=0.5     #Size of output spaxel in arcsec
-drop_factor=0.5     #Size of drop size as a factor of the fibre size
-size_of_grid=50     #Size of a side of the cube such that the cube has 50x50 spaxels
+output_pix_size_arcsec = 0.5    # Size of output spaxel in arcsec
+drop_factor = 0.5    # Size of drop as a fraction of the fibre size
+size_of_grid = 50    # Size of a side of the cube such that the cube has 50x50 spaxels
 # @TODO: Compute the size of the grid instead of hard code it!??!
 
 def get_object_names(infile):
@@ -116,7 +125,75 @@ def get_probe(infile, object_name, verbose=True):
     # Return the probe number
     return ifu
 
-def dithered_cubes_from_rss_files(inlist, sample_size=0.5, drop_factor=0.5, 
+def dar_correct(ifu_list, xfibre_all, yfibre_all, method='simple',update_rss=False):
+    """Update the fiber positions as a function of wavelength to reflect DAR correction.
+    
+    """
+
+    n_obs, n_fibres, n_slices = xfibre_all.shape
+
+    # Set up the differential atmospheric refraction correction. Each frame
+    # requires it's own correction, so we create a list of DARCorrectors.
+    dar_correctors = []
+                      
+    for obs in ifu_list:
+        darcorr = DARCorrector(method=method)
+    
+        darcorr.temperature = obs.fibre_table_header['ATMTEMP'] 
+        darcorr.air_pres = obs.fibre_table_header['ATMPRES'] * millibar_to_mmHg
+        #                     (factor converts from millibars to mm of Hg)
+        darcorr.water_pres = \
+            utils.saturated_partial_pressure_water(darcorr.air_pres, darcorr.temperature) * \
+            obs.fibre_table_header['ATMRHUM']
+
+        ha_offset = obs.ra - obs.meanra  # The offset from the HA of the field centre
+    
+        darcorr.zenith_distance = \
+            integrate.quad(lambda ha: zenith_distance(obs.dec, ha),
+                           obs.primary_header['HASTART'] + ha_offset,
+                           obs.primary_header['HAEND'] + ha_offset)[0] / (
+                              obs.primary_header['HAEND'] - obs.primary_header['HASTART'])
+
+        darcorr.hour_angle = \
+            (obs.primary_header['HASTART'] + obs.primary_header['HAEND']) / 2 + ha_offset
+    
+        darcorr.declination = obs.dec
+
+        dar_correctors.append(darcorr)
+
+        del darcorr # Cleanup since this is meaningless outside the loop.
+
+
+    wavelength_array = ifu_list[0].lambda_range
+    
+    # Iterate over wavelength slices
+    for l in xrange(n_slices):
+        
+        # Iterate over observations
+        for i_obs in xrange(n_obs):
+            # Determine differential atmospheric refraction correction for this slice
+            dar_correctors[i_obs].update_for_wavelength(wavelength_array[l])
+            
+            # Parallactic angle is direction to zenith measured north through east.
+            # Must move light away from the zenith to correct for DAR.
+            dar_x = dar_correctors[i_obs].dar_east * 1000.0 / plate_scale 
+            dar_y = dar_correctors[i_obs].dar_north * 1000.0 / plate_scale 
+            # TODO: Need to change to arcsecs!
+    
+            xfibre_all[i_obs,:,l] = xfibre_all[i_obs,:,l] + dar_x
+            yfibre_all[i_obs,:,l] = yfibre_all[i_obs,:,l] + dar_y
+            
+#             print("DAR lambda: {:5.0f} x: {:5.2f}, y: {:5.2f}, pa : {:5.0f}".format(wavelength_array[l],
+#                                                                            dar_x * plate_scale/1000.0,
+#                                                                            dar_y * plate_scale/1000.0,
+#                                                                            dar_correctors[i_obs].parallactic_angle()))
+    if diagnostics.enabled:
+        diagnostics.DAR.xfib = xfibre_all
+        diagnostics.DAR.yfib = yfibre_all
+
+
+
+def dithered_cubes_from_rss_files(inlist, 
                                   objects='all', clip=True, plot=True, 
                                   write=False, suffix='', root='',
                                   overwrite=False):
@@ -130,13 +207,13 @@ def dithered_cubes_from_rss_files(inlist, sample_size=0.5, drop_factor=0.5,
 
         files.append(np.str(cols[0]))
 
-    dithered_cubes_from_rss_list(files, sample_size=sample_size, 
-                                 drop_factor=drop_factor, objects=objects, 
+    dithered_cubes_from_rss_list(files,
+                                 objects=objects, 
                                  clip=clip, plot=plot, write=write, 
                                  root=root, suffix=suffix, overwrite=overwrite)
     return
 
-def dithered_cubes_from_rss_list(files, sample_size=0.5, drop_factor=0.5, 
+def dithered_cubes_from_rss_list(files, 
                                  objects='all', clip=True, plot=True, 
                                  write=False, suffix='', nominal=False, root='',
                                  overwrite=False):
@@ -210,8 +287,8 @@ def dithered_cubes_from_rss_list(files, sample_size=0.5, drop_factor=0.5,
         
         # For now, putting in a try/except block to skip over any errors
         try:
-            flux_cube, var_cube, weight_cube, diagnostics = dithered_cube_from_rss(ifu_list, sample_size=sample_size,
-                                          drop_factor=drop_factor, clip=clip, plot=plot)
+            flux_cube, var_cube, weight_cube, diagnostics = \
+                dithered_cube_from_rss(ifu_list, clip=clip, plot=plot)
         except Exception:
             print 'Cubing failed! Skipping to next galaxy.'
             print 'Object:', name, 'files:', files
@@ -237,12 +314,19 @@ def dithered_cubes_from_rss_list(files, sample_size=0.5, drop_factor=0.5,
     
             hdr_new = create_primary_header(ifu_list,name,files,WCS_pos,WCS_flag)
 
+            # Define the units for the datacube
+            hdr_new['BUNIT'] = ('10**(-16) erg /s /cm**2 /angstrom /pixel', 
+                                'Units')
+
             # Create HDUs for each cube - note headers generated automatically for now.
-            # Note - there is a 90-degree rotation in the cube, which I can't track down. I'm rolling the axes before
-            # writing the FITS files to compensate.
-            hdu1=pf.PrimaryHDU(np.transpose(flux_cube, (2,0,1)), hdr_new)
-            hdu2=pf.ImageHDU(np.transpose(var_cube, (2,0,1)), name='VARIANCE')
-            hdu3=pf.ImageHDU(np.transpose(weight_cube, (2,0,1)), name='WEIGHT')
+            #
+            # @NOTE: PyFITS writes axes to FITS files in the reverse of the sense
+            # of the axes in Numpy/Python. So a numpy array with dimensions
+            # (5,10,20) will produce a FITS cube with x-dimension 20,
+            # y-dimension 10, and the cube (wavelength) dimension 5.  --AGreen
+            hdu1=pf.PrimaryHDU(np.transpose(flux_cube, (2,1,0)), hdr_new)
+            hdu2=pf.ImageHDU(np.transpose(var_cube, (2,1,0)), name='VARIANCE')
+            hdu3=pf.ImageHDU(np.transpose(weight_cube, (2,1,0)), name='WEIGHT')
 
             # Create HDUs for meta-data
             #metadata_table = create_metadata_table(ifu_list)
@@ -423,7 +507,7 @@ def create_metadata_table(ifu_list):
    
     return pf.new_table(columns)
 
-def dithered_cube_from_rss(ifu_list, sample_size=0.5, drop_factor=0.5, clip=True, plot=True, offsets='file'):
+def dithered_cube_from_rss(ifu_list, clip=True, plot=True, offsets='file'):
         
     diagnostic_info = {}
 
@@ -438,7 +522,7 @@ def dithered_cube_from_rss(ifu_list, sample_size=0.5, drop_factor=0.5, clip=True
 
     # Create an instance of SAMIDrizzler for use later to create individual overlap maps for each fibre.
     # The attributes of this instance don't change from ifu to ifu.
-    overlap_maps=SAMIDrizzler(sample_size, size_of_grid, n_obs * n_fibres)
+    overlap_maps=SAMIDrizzler(size_of_grid, n_obs * n_fibres)
 
     # Empty lists for positions and data. Could be arrays, might be faster? Should test...
     xfibre_all=[]
@@ -471,6 +555,9 @@ def dithered_cube_from_rss(ifu_list, sample_size=0.5, drop_factor=0.5, clip=True
         data_med=nanmedian(data_smoothed[:,300:1800], axis=1)
 
         # Pick out only good fibres (i.e. those allocated as P)
+        #
+        # @TODO: This will break the subsequent code when we actually break a
+        # fibre, as subsequent code assumes 61 fibres. This needs to be fixed.
         goodfibres=np.where(galaxy_data.fib_type=='P')
         x_good=galaxy_data.x_microns[goodfibres]
         y_good=galaxy_data.y_microns[goodfibres]
@@ -481,7 +568,8 @@ def dithered_cube_from_rss(ifu_list, sample_size=0.5, drop_factor=0.5, clip=True
         if data_bias<0.0:
             data_good=data_good-data_bias
             
-        # Mask out any "cold" spaxels - defined as negative, due to poor throughtput calibration from CR taking out 5577.
+        # Mask out any "cold" spaxels - defined as negative, due to poor
+        # throughtput calibration from CR taking out 5577.
         msk_notcold=np.where(data_good>0.0)
     
         # Apply the mask to x,y,data
@@ -542,6 +630,12 @@ def dithered_cube_from_rss(ifu_list, sample_size=0.5, drop_factor=0.5, clip=True
 
     xfibre_all=np.asanyarray(xfibre_all)
     yfibre_all=np.asanyarray(yfibre_all)
+
+    # Scale these up to have a wavelength axis as well
+    xfibre_all = xfibre_all.reshape(n_obs, n_fibres, 1).repeat(n_slices,2)
+    yfibre_all = yfibre_all.reshape(n_obs, n_fibres, 1).repeat(n_slices,2)
+    
+    
     data_all=np.asanyarray(data_all)
     var_all=np.asanyarray(var_all)
 
@@ -554,6 +648,18 @@ def dithered_cube_from_rss(ifu_list, sample_size=0.5, drop_factor=0.5, clip=True
     #     difficulties.
 
 
+    # DAR Correction
+    #
+    #     The correction for differential atmospheric refraction as a function
+    #     of wavelength must be applied for each file/observation independently.
+    #     Therefore, it is applied to the positions of the fibres before the
+    #     individual fibres are considered as independent observations
+    #
+    #     DAR correction is handled by another function in this module, which
+    #     updates the fibre positions in place.
+    
+    dar_correct(ifu_list, xfibre_all, yfibre_all)
+
     # Reshape the arrays
     #
     #     What we are doing is combining the first two dimensions, which are
@@ -561,13 +667,13 @@ def dithered_cube_from_rss(ifu_list, sample_size=0.5, drop_factor=0.5, clip=True
     #     each file as a completely independent observation for the purposes of
     #     building grided data cube.
     #
-    #     old.shape -> (n_files,            n_fibres, n_slices)
-    #     new.shape -> (n_files * n_fibres, n_slices)
+    #     old.shape -> (n_obs,            n_fibres, n_slices)
+    #     new.shape -> (n_obs * n_fibres, n_slices)
     #     NOTE: the fibre position arrays are simply (n_files * n_fibres), no n_slices dimension.
-    xfibre_all=np.reshape(xfibre_all,(np.shape(xfibre_all)[0]*np.shape(xfibre_all)[1]))
-    yfibre_all=np.reshape(yfibre_all,(np.shape(yfibre_all)[0]*np.shape(yfibre_all)[1]))
-    data_all=np.reshape(data_all,(np.shape(data_all)[0]*np.shape(data_all)[1], np.shape(data_all)[2]))
-    var_all=np.reshape(var_all,(np.shape(var_all)[0]*np.shape(var_all)[1], np.shape(var_all)[2]))
+    xfibre_all = np.reshape(xfibre_all, (n_obs * n_fibres, n_slices) )
+    yfibre_all = np.reshape(yfibre_all, (n_obs * n_fibres, n_slices) )
+    data_all   = np.reshape(data_all,   (n_obs * n_fibres, n_slices) )
+    var_all    = np.reshape(var_all,    (n_obs * n_fibres, n_slices) )
 
     
     
@@ -592,9 +698,6 @@ def dithered_cube_from_rss(ifu_list, sample_size=0.5, drop_factor=0.5, clip=True
     
     print("data_all.shape: ", np.shape(data_all))
 
-    # Below is a diagnostic print out.
-    #print("data_all.shape: ", np.shape(data_all))
-
     if clip:
         # Set up some diagostics if you have the clip flag set.
         diagnostic_info['unmasked_pixels_after_sigma_clip'] = 0
@@ -602,16 +705,7 @@ def dithered_cube_from_rss(ifu_list, sample_size=0.5, drop_factor=0.5, clip=True
 
         diagnostic_info['n_pixels_sigma_clipped'] = []
            
-    # Set up the differential atmospheric refraction correction:
-    dar_corrector = DARCorrector(method='none')
-    
-    #dar_corrector.temperature = temperature
-    #dar_corrector.air_pres = air_pressure
-    #dar_corrector.water_pres = water_pressure
-    #dar_corrector.zenith_distance = zenith_distance
-    #dar_corrector.hour_angle = hour_angle
-    parallactic_angle = 0
-    
+            
     # Load the wavelength solution for the datacubes. 
     #
     # TODO: This should change when the header keyword propagation is improved
@@ -653,13 +747,9 @@ def dithered_cube_from_rss(ifu_list, sample_size=0.5, drop_factor=0.5, clip=True
         data_rss_slice = data_all[:,l]
         var_rss_slice = var_all[:,l]
 
-        # Determine differential atmospheric refraction correction for this slice
-        dar_r = dar_corrector.correction(wavelength_array[l])
-        dar_x = dar_r * np.cos(np.radians(parallactic_angle))
-        dar_y = dar_r * np.sin(np.radians(parallactic_angle))
 
-        # Compute drizzle map for this wavelength slice.
-        overlap_array, weight_grid_slice = overlap_maps.drizzle(xfibre_all + dar_x, yfibre_all + dar_y)
+        # Compute drizzle maps for this wavelength slice.
+        overlap_array, weight_grid_slice = overlap_maps.drizzle(xfibre_all[:,l], yfibre_all[:,l])
         
         # Map RSS slices onto gridded slices
         norm_grid_slice_fibres=overlap_array*norm_rss_slice        
@@ -705,32 +795,40 @@ def dithered_cube_from_rss(ifu_list, sample_size=0.5, drop_factor=0.5, clip=True
         # the fibre weighting to get the final weighting.
         weight_grid_slice_fibres=weight_grid_slice*valid_grid_slice_fibres
 
-        # Collapse the slice arrays
-        data_grid_slice_final = nansum(data_grid_slice_fibres, axis=2)
-        var_grid_slice_final = nansum(var_grid_slice_fibres, axis=2)
-        weight_grid_slice_final = nansum(weight_grid_slice_fibres, axis=2)
+        # Combine (sum) the individual observations. See Section 6.1: "Simple
+        # summation" of the data reduction paper. Note that these arrays are
+        # "unweighted" cubes C' and V', not the weighted C and V given in the
+        # paper.
+        data_grid_slice_final = nansum(data_grid_slice_fibres, axis=2) / n_obs
+        var_grid_slice_final = nansum(var_grid_slice_fibres, axis=2) / (n_obs ** 2)
+        weight_grid_slice_final = nansum(weight_grid_slice_fibres, axis=2) / n_obs
         
         # Where the weight map is within epsilon of zero, set it to NaN to
         # prevent divide by zero errors later.
         weight_grid_slice_final[weight_grid_slice_final < epsilon] = np.NaN
         
-        flux_cube[:,:,l]=data_grid_slice_final
-        var_cube[:,:,l]=var_grid_slice_final
-        weight_cube[:,:,l]=weight_grid_slice_final
+        flux_cube[:, :, l] = data_grid_slice_final
+        var_cube[:, :, l] = var_grid_slice_final
+        weight_cube[:, :, l] = weight_grid_slice_final
 
-    # I have now got: flux cube, variance cube, weight cube. These have been made assuming no drop-size reduction factor.
-    # Apply the drop size reduction factor to all three cubes.
-    flux_cube=flux_cube/(drop_factor**2)
-    var_cube=var_cube/(drop_factor**4)
-    weight_cube=weight_cube/(drop_factor**2)
+    print("Total calls to drizzle: {}, recomputes: {}, ({}%)".format(
+                overlap_maps.n_drizzle, overlap_maps.n_drizzle_recompute,
+                float(overlap_maps.n_drizzle_recompute)/overlap_maps.n_drizzle_recompute))
 
-    # Now need to scale the flux and variance cubes appropriately by the weight cube
-    flux_cube=flux_cube/weight_cube # flux cube scaling by weight map
-    image=nanmedian(flux_cube, axis=2)
+    # The flux and variance cubes must be rescaled to account for the reduction
+    # in drop size. See Section 9.3: "Flux Scaling" of the data reduction paper.
+    # Note also, that this scaling is immediately nullified by the division by the
+    # weight cube below.
+    flux_cube_scaled = flux_cube / (drop_factor ** 2)
+    var_cube_scaled = var_cube / (drop_factor ** 4)
+    weight_cube_scaled = weight_cube / (drop_factor ** 2)
 
-    var_cube=var_cube/(weight_cube*weight_cube) # variance cube scaling by weight map
+    # Finally, divide by the weight cube to remove variations in exposure time
+    # (and hence surface brightness sensitivity) from the output data cube.
+    flux_cube_unprimed = flux_cube_scaled / weight_cube_scaled 
+    var_cube_unprimed = var_cube_scaled / (weight_cube_scaled * weight_cube_scaled)
 
-    return flux_cube, var_cube, weight_cube, diagnostic_info
+    return flux_cube_unprimed, var_cube_unprimed, weight_cube_scaled, diagnostic_info
 
 def sigma_clip_mask_slice_fibres(grid_slice_fibres):
     """Return a mask with outliers removed."""
@@ -754,12 +852,11 @@ class SAMIDrizzler:
 
     
 
-    def __init__(self, sample_size_arcsec, size_of_grid, n_fibres):
+    def __init__(self, size_of_grid, n_fibres):
         """Construct a new SAMIDrizzler isntance with the necessary information.
         
         Parameters
         ----------
-        sample_sie_arcsec: the size of each output pixel in arcseconds
         size_of_grid: the number of pixels along each dimension of the 
             square output pixel grid
         n_fibres: the total number of unique fibres which will be 
@@ -768,44 +865,51 @@ class SAMIDrizzler:
         """
 
         # The input values
-        self.sample_size_arcsec=sample_size_arcsec
+        self.pix_size_arcsec = output_pix_size_arcsec
+        self.pix_size_micron = output_pix_size_arcsec * (1000.0 / plate_scale)
         # Set the size of the output grid - should probably be calculated somehow.
-        self.size_of_grid=size_of_grid
+        self.output_dimension = size_of_grid
 
-        # Some unchanging SAMI stuff
-        self.plate_scale=plate_scale # (in arcseconds per mm)
-        self.fib_diam_arcsec=1.6 # (in arcseconds)
-
-        # Work out stuff for the resampling 
-        self.oversample=self.fib_diam_arcsec/self.sample_size_arcsec
-        self.dx=1000*self.fib_diam_arcsec/(self.oversample*self.plate_scale) # in microns
-
-        # Fibre area in pixels
-        self.fib_area_pix=np.pi*(self.oversample/2.0)**2
-
-        # Fibre diameter in pixels
-        self.fib_diam_pix=(1000*self.fib_diam_arcsec)/(self.plate_scale*self.dx)
-
-        # Output grid in microns
-        self.x=(np.arange(self.size_of_grid)-self.size_of_grid/2)*self.dx
-        self.y=(np.arange(self.size_of_grid)-self.size_of_grid/2)*self.dx
+        self.plate_scale = plate_scale    # (in arcseconds per mm)
+        self.drop_diameter_arcsec = fibre_diameter_arcsec * drop_factor
         
+        # Drop dimensions in units of output pixels
+        self.drop_diameter_pix = self.drop_diameter_arcsec / self.pix_size_arcsec
+        self.drop_area_pix = np.pi * (self.drop_diameter_pix / 2.0) ** 2
+
+        
+        self.drizzle_update_tol = 0.1 * self.pix_size_micron
+
+        # Output grid abscissa in microns
+        self.grid_coordinates_x = (np.arange(self.output_dimension) - self.output_dimension / 2) * self.pix_size_micron
+        self.grid_coordinates_y = (np.arange(self.output_dimension) - self.output_dimension / 2) * self.pix_size_micron
+
         # Empty array for all overlap maps - i.e. need one for each fibre!
-        self.drop_to_pixel=np.empty((self.size_of_grid, self.size_of_grid, n_fibres))
-        self.pixel_coverage=np.empty((self.size_of_grid, self.size_of_grid, n_fibres))
-        
-        self._last_drizzle = np.empty(1)
-        # This is used to cache the arguments for the last drizzle.
+        self.drop_to_pixel = np.empty((self.output_dimension, self.output_dimension, n_fibres))
+        self.pixel_coverage = np.empty((self.output_dimension, self.output_dimension, n_fibres))
 
-    def single_overlap_map(self, fibrex, fibrey):
+        self.drop_to_pixel=np.empty((self.output_dimension, self.output_dimension, n_fibres))
+        self.pixel_coverage=np.empty((self.output_dimension, self.output_dimension, n_fibres))
+        
+        # These are used to cache the arguments for the last drizzle.
+        self._last_drizzle_x = np.zeros(1)
+        self._last_drizzle_y = np.zeros(1)        
+
+        # Number of times drizzle has been called in this instance
+        self.n_drizzle = 0
+        
+        # Number of times drizzle has been recomputed in this instance
+        self.n_drizzle_recompute = 0
+
+    def single_overlap_map(self, fibre_position_x, fibre_position_y):
         """Compute the mapping from a single input drop to output pixel grid.
         
-        (drop_fraction, pixel_fraction) = single_overlap_map(fibrex, fibrey)
+        (drop_fraction, pixel_fraction) = single_overlap_map(fibre_position_x, fibre_position_y)
         
         Parameters
         ----------
-        fibrex: (float) The x-coordinate of the fibre.
-        fibery: (float) The y-coordinate of the fibre.
+        fibre_position_x: (float) The grid_coordinates_x-coordinate of the fibre.
+        fibre_position_y: (float) The grid_coordinates_y-coordinate of the fibre.
         
         Returns
         -------
@@ -819,33 +923,46 @@ class SAMIDrizzler:
         """
 
         # Map fibre positions onto pixel positions in the output grid.
-        xfib=(fibrex-self.x[0])/self.dx
-        yfib=(fibrey-self.y[0])/self.dx
-        
+        xfib = (fibre_position_x - self.grid_coordinates_x[0]) / self.pix_size_micron
+        yfib = (fibre_position_y - self.grid_coordinates_y[0]) / self.pix_size_micron
+
         # Create the overlap map from the circ.py code
-        overlap_map=utils.circ.resample_circle(self.size_of_grid, self.size_of_grid, xfib, yfib, \
-                                         self.oversample/2.0)
-        
-        input_frac_map=overlap_map/self.fib_area_pix # Fraction of input fibre/drop in each output pixel
-        output_frac_map=overlap_map/1.0 # divided by area of ind. sq. (output) pixel.
+        #
+        # @NOTE: The circ.py code returns an array which has the x-coodinate in
+        # the second index and the y-coordinate in the first index. Therefore,
+        # we transpose the result here so that the x-cooridnate (north positive)
+        # is in the first index, and y-coordinate (east positive) is in the
+        # second index.
+        overlap_map = np.transpose(
+            utils.circ.resample_circle(
+                self.output_dimension, self.output_dimension, 
+                xfib, yfib,
+                self.drop_diameter_pix / 2.0))
+
+        # Fraction of input drop in each output pixel
+        input_frac_map = overlap_map / self.drop_area_pix
+        # Fraction of each output pixel covered by drop
+        output_frac_map = overlap_map / 1.0
 
         return input_frac_map, output_frac_map
-    
+
     def drizzle(self, xfibre_all, yfibre_all):
         """Compute a mapping from fibre drops to output pixels for all given fibre locations."""
             
-        if (np.array_equal(self._last_drizzle,np.asarray([xfibre_all,yfibre_all]))):
-            # We've been asked to recompute the same answer as last time, so don't recompute.
+        # Increment the drizzle counter
+        self.n_drizzle = self.n_drizzle + 1
+
+        if (np.allclose(xfibre_all,self._last_drizzle_x, rtol=0,atol=self.drizzle_update_tol) and
+            np.allclose(yfibre_all,self._last_drizzle_y, rtol=0,atol=self.drizzle_update_tol)):
+            # We've been asked to recompute an asnwer that is less than the tolerance to recompute
             return self.drop_to_pixel, self.pixel_coverage
+        else:
+            self.n_drizzle_recompute = self.n_drizzle_recompute + 1
         
         for i_fibre, xfib, yfib in itertools.izip(itertools.count(), xfibre_all, yfibre_all):
     
-            # Feed the x and y fibre positions to the overlap_maps instance.
+            # Feed the grid_coordinates_x and grid_coordinates_y fibre positions to the overlap_maps instance.
             drop_to_pixel_fibre, pixel_coverage_fibre=self.single_overlap_map(xfib, yfib)
-    
-            # These lines are ONLY for debugging. The plotting and overwriting is very slow! 
-            #py.imshow(drop_to_pixel_fibre, origin='lower', interpolation='nearest')
-            #py.draw()
     
             # Padding with NaNs instead of zeros (do I really need to do this? Probably not...)
             drop_to_pixel_fibre[np.where(drop_to_pixel_fibre < epsilon)]=np.nan
@@ -854,22 +971,19 @@ class SAMIDrizzler:
             self.drop_to_pixel[:,:,i_fibre]=drop_to_pixel_fibre
             self.pixel_coverage[:,:,i_fibre]=pixel_coverage_fibre
     
-        self._last_drizzle = np.asarray([xfibre_all, yfibre_all])
+        self._last_drizzle_x = xfibre_all
+        self._last_drizzle_y = yfibre_all
     
         return self.drop_to_pixel, self.pixel_coverage
 
-#########################################################################################
-#
-# "WCS_position"
-#
-#   This function cross-correlates a g-band convolved SAMI cube with its respective
-#   SDSS g-band image and pins down the positional WCS for the central spaxel of the
-#   cube.
-#
-
 def WCS_position(myIFU,object_flux_cube,object_name,band,plot=False,write=False,nominal=False,
                  remove_thput_file=True):
-    """Wrapper for WCS_position_coords, extracting coords from IFU."""
+    """Wrapper for WCS_position_coords, extracting coords from IFU.
+    
+    This function cross-correlates a g-band convolved SAMI cube with its
+    respective SDSS g-band image and pins down the positional WCS for the
+    central spaxel of the cube.
+    """
 
     # Get Object RA + DEC from fibre table (this is the input catalogues RA+DEC in deg)
     object_RA = np.around(myIFU.obj_ra[myIFU.n == 1][0], decimals=6)
@@ -902,8 +1016,8 @@ def WCS_position_coords(object_RA, object_DEC, wave, object_flux_cube, object_na
         img_crval2 = object_DEC
         xcube = size_of_grid
         ycube = size_of_grid
-        img_cdelt1 = -1.0 * sample_size / 3600.0
-        img_cdelt2 = sample_size / 3600.0
+        img_cdelt1 = -1.0 * output_pix_size_arcsec / 3600.0
+        img_cdelt2 = output_pix_size_arcsec / 3600.0
     else:
 
         # Get SDSS g-band throughput curve
@@ -944,7 +1058,7 @@ def WCS_position_coords(object_RA, object_DEC, wave, object_flux_cube, object_na
 
     ##########
         
-        cube_size = np.around((size_of_grid*sample_size)/3600, decimals=6)
+        cube_size = np.around((size_of_grid*output_pix_size_arcsec)/3600, decimals=6)
         
         # Get SDSS Image
         if not os.path.isfile(str(object_name)+"_SDSS_"+str(band)+".fits"):
@@ -1011,8 +1125,8 @@ def WCS_position_coords(object_RA, object_DEC, wave, object_flux_cube, object_na
         y_shape = len(crosscorr_image[1])
         x_offset_pix = GF2d_xpos - x_shape/2
         y_offset_pix = GF2d_ypos - y_shape/2
-        x_offset_arcsec = -x_offset_pix * sample_size/5
-        y_offset_arcsec = y_offset_pix * sample_size/5
+        x_offset_arcsec = -x_offset_pix * output_pix_size_arcsec/5
+        y_offset_arcsec = y_offset_pix * output_pix_size_arcsec/5
         x_offset_degree = ((x_offset_arcsec/3600)/24)*360
         y_offset_degree = (y_offset_arcsec/3600)
     
@@ -1077,30 +1191,27 @@ def update_WCS_coords(filename, nominal=False, remove_thput_file=True):
     hdulist.close()
     return
 
-
-#########################################################################################
-#
-# "getSDSSimage"
-#
-#   This function queries the SDSS surver at skyview.gsfc.nasa.gov and returns an image
-#   with a user supplied set of parameters. A full description of the input parameters is
-#   given at - http://skyview.gsfc.nasa.gov/docs/batchpage.html
-#
-#   The parameters that can be set here are:
-#
-#   name - object name to include in file name for reference
-#   RA - in degrees
-#   DEC - in degrees
-#   band - u,g,r,i,z filters
-#   size - size of side of image in degrees
-#   number_of_pixels - number of pixels of side of image (i.e 50 will return 50x50)
-#   projection - 2D mapping of onsky projection. Tan is standard.
-#   url_show - this is a function variable if the user wants the url printed to terminal
-#
-
 def getSDSSimage(object_name="unknown", RA=0, DEC=0, band="g", size=0.006944, 
                  number_of_pixels=50, projection="Tan", url_show="False"):
-        
+    """This function queries the SDSS surver at skyview.gsfc.nasa.gov and returns an image
+    with a user supplied set of parameters. 
+
+    A full description of the input parameters is given at -
+    http://skyview.gsfc.nasa.gov/docs/batchpage.html
+
+    The parameters that can be set here are:
+
+        name - object name to include in file name for reference
+        RA - in degrees
+        DEC - in degrees
+        band - u,g,r,i,z filters
+        size - size of side of image in degrees
+        number_of_pixels - number of pixels of side of image (i.e 50 will return 50x50)
+        projection - 2D mapping of onsky projection. Tan is standard.
+        url_show - this is a function variable if the user wants the url printed to terminal
+
+    """
+    
     # Construct URL
     RA = str(RA).split(".")
     DEC = str(DEC).split(".")
@@ -1117,11 +1228,3 @@ def getSDSSimage(object_name="unknown", RA=0, DEC=0, band="g", size=0.006944,
                +str(object_name)+"_SDSS_"+str(band)+".fits")
         
         print "The URL for this object is: ", URL
-
-
-#########################################################################################
-###                                                                                   ###
-#################################--- END OF FILE ---#####################################
-###                                                                                   ###
-#########################################################################################
-
