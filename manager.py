@@ -41,9 +41,7 @@ which calibration files should be used, and makes symbolic links to
 them in the target file's directory.
 
 Manager.run_2dfdr_auto calls 2dfdr in AutoScript mode and tells it to
-auto-reduce everything in a specified directory. This is used for
-reducing bias, dark and long-slit flat frames, which do not need
-individual calibrators specified.
+auto-reduce everything in a specified directory. This is no longer used.
 
 Manager.run_2dfdr_combine also uses AutoScript mode, this time to
 combine a given list of files. This is used for making combined bias,
@@ -860,16 +858,15 @@ class Manager:
         return os.path.join(self.abs_root, 'reduced', 'lflat', ccd,
                             self.lflat_combined_filename())
 
-    def reduce_calibrator(self, calibrator_type, overwrite=False):
+    def reduce_calibrator(self, calibrator_type, overwrite=False, **kwargs):
         """Reduce all biases, darks of lflats."""
         self.check_calibrator_type(calibrator_type)
-        if overwrite:
-            # Delete all the old reduced files
-            for fits in self.files(ndf_class=calibrator_type.upper(),
-                                   reduced=True):
-                os.remove(fits.reduced_path)
-        for dir_path in self.reduced_dirs(calibrator_type.lower()):
-            self.run_2dfdr_auto(dir_path)
+        file_iterable = self.files(ndf_class=calibrator_type.upper(), 
+                                   do_not_use=False, **kwargs)
+        reduced_files = self.reduce_file_iterable(
+            file_iterable, overwrite=overwrite)
+        # Calibrator checks not yet implemented
+        # self.update_checks(calibrator_type[:3].upper(), reduced_files, False)
         return
 
     def combine_calibrator(self, calibrator_type, overwrite=False):
@@ -919,9 +916,9 @@ class Manager:
                 'calibrator type must be "bias", "dark" or "lflat"')
         return
 
-    def reduce_bias(self, overwrite=False):
+    def reduce_bias(self, overwrite=False, **kwargs):
         """Reduce all bias frames."""
-        self.reduce_calibrator('bias', overwrite=overwrite)
+        self.reduce_calibrator('bias', overwrite=overwrite, **kwargs)
         return
 
     def combine_bias(self, overwrite=False):
@@ -934,9 +931,9 @@ class Manager:
         self.link_calibrator('bias', overwrite=overwrite)
         return
 
-    def reduce_dark(self, overwrite=False):
+    def reduce_dark(self, overwrite=False, **kwargs):
         """Reduce all dark frames."""
-        self.reduce_calibrator('dark', overwrite=overwrite)
+        self.reduce_calibrator('dark', overwrite=overwrite, **kwargs)
         return
         
     def combine_dark(self, overwrite=False):
@@ -949,9 +946,9 @@ class Manager:
         self.link_calibrator('dark', overwrite=overwrite)
         return
 
-    def reduce_lflat(self, overwrite=False):
+    def reduce_lflat(self, overwrite=False, **kwargs):
         """Reduce all lflat frames."""
-        self.reduce_calibrator('lflat', overwrite=overwrite)
+        self.reduce_calibrator('lflat', overwrite=overwrite, **kwargs)
         return
 
     def combine_lflat(self, overwrite=False):
@@ -1206,7 +1203,13 @@ class Manager:
         options = []
         # For now, setting all files to use GAUSS extraction
         options.extend(['-EXTR_OPERATION', 'GAUSS'])
-        if fits.ndf_class == 'MFFFF' and tlm:
+        if fits.ndf_class == 'BIAS':
+            files_to_match = []
+        elif fits.ndf_class == 'DARK':
+            files_to_match = ['bias']
+        elif fits.ndf_class == 'LFLAT':
+            files_to_match = ['bias', 'dark']
+        elif fits.ndf_class == 'MFFFF' and tlm:
             files_to_match = ['bias', 'dark', 'lflat']
         elif fits.ndf_class == 'MFARC':
             files_to_match = ['bias', 'dark', 'lflat', 'tlmap']
@@ -1225,6 +1228,14 @@ class Manager:
                                   'fflat']
         else:
             raise ValueError('Unrecognised NDF_CLASS: '+fits.ndf_class)
+        # Disable bias/dark/lflat if they're not being used
+        # If you don't, 2dfdr might barf
+        if 'bias' not in files_to_match:
+            options.extend(['-USEBIASIM', '0'])
+        if 'dark' not in files_to_match:
+            options.extend(['-USEDARKIM', '0'])
+        if 'lflat' not in files_to_match:
+            options.extend(['-USEFLATIM', '0'])
         for match_class in files_to_match:
             filename_match = self.match_link(fits, match_class)
             if filename_match is None:
