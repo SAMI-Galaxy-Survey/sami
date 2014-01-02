@@ -78,7 +78,7 @@ import numpy as np
 from .utils.other import find_fibre_table
 from .general.cubing import dithered_cubes_from_rss_list
 from .general.align_micron import find_dither
-from .dr import fluxcal2, telluric, check_plots
+from .dr import fluxcal2, telluric, check_plots, tdfdr
 
 
 IDX_FILES_SLOW = {'1': 'sami580V_v1_2.idx',
@@ -1200,6 +1200,17 @@ class Manager:
         if os.path.exists(target) and not overwrite:
             # File to be created already exists, abandon this.
             return False
+        options = self.tdfdr_options(fits, tlm=tlm)
+        # All options have been set, so run 2dfdr
+        tdfdr.run_2dfdr_single(fits, self.idx_files[fits.ccd], 
+                               options=options, cwd=self.cwd)
+        if (fits.ndf_class == 'MFFFF' and tlm and not leave_reduced and
+            os.path.exists(fits.reduced_path)):
+            os.remove(fits.reduced_path)
+        return True
+
+    def tdfdr_options(self, fits, tlm=False):
+        """Set the 2dfdr reduction options for this file."""
         options = []
         # For now, setting all files to use GAUSS extraction
         options.extend(['-EXTR_OPERATION', 'GAUSS'])
@@ -1340,49 +1351,7 @@ class Manager:
                 # filename_match might have changed
                 options.extend(['-'+match_class.upper()+'_FILENAME',
                                 filename_match])
-        # All options have been set, so run 2dfdr
-        self.run_2dfdr_single(fits, options)
-        if (fits.ndf_class == 'MFFFF' and tlm and not leave_reduced and
-            os.path.exists(fits.reduced_path)):
-            os.remove(fits.reduced_path)
-        return True
-
-    def extra_options(self, fits):
-        """Return a list of extra reduction options suitable for the file."""
-        options = []
-        if fits.ndf_class == 'MFOBJECT' and fits.exposure <= 899.0:
-            # Use offsky throughput values for short exposures
-            options.extend(['-TPMETH', 'OFFSKY'])
-        return options
-
-    def run_2dfdr_single(self, fits, options=None):
-        """Run 2dfdr on a single FITS file."""
-        print 'Reducing file:', fits.filename
-        if fits.ndf_class == 'BIAS':
-            task = 'reduce_bias'
-        elif fits.ndf_class == 'DARK':
-            task = 'reduce_dark'
-        elif fits.ndf_class == 'LFLAT':
-            task = 'reduce_lflat'
-        elif fits.ndf_class == 'MFFFF':
-            task = 'reduce_fflat'
-        elif fits.ndf_class == 'MFARC':
-            task = 'reduce_arc'
-        elif fits.ndf_class == 'MFSKY':
-            task = 'reduce_sky'
-        elif fits.ndf_class == 'MFOBJECT':
-            task = 'reduce_object'
-        else:
-            raise ValueError('Unrecognised NDF_CLASS')
-        command = ['drcontrol', task, fits.filename,
-                   '-idxfile', self.idx_files[fits.ccd]]
-        if options is not None:
-            command.extend(options)
-        with self.visit_dir(fits.reduced_dir):
-            with open(os.devnull, 'w') as f:
-                subprocess.call(command, stdout=f)
-        self.cleanup()
-        return
+        return options        
 
     def run_2dfdr_auto(self, dirname):
         """Run 2dfdr in auto mode in the specified directory."""
