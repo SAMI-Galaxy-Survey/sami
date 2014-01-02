@@ -808,6 +808,8 @@ def read_standard_data(star):
 def take_ratio(standard_flux, standard_wavelength, observed_flux, 
                observed_wavelength, smooth=True):
     """Return the ratio of two spectra, after rebinning."""
+    # First some very minor smoothing to take out some spurions
+    observed_flux = median_filter(observed_flux, 5)
     # Rebin the observed spectrum onto the (coarser) scale of the standard
     observed_flux_rebinned = rebin_flux(
         standard_wavelength, observed_wavelength, observed_flux)

@@ -434,7 +434,11 @@ class Manager:
         self.idx_files = IDX_FILES[self.speed]
         self.gratlpmm = gratlpmm
         self.n_cpu = n_cpu
-        self.pool = multiprocessing.Pool(n_cpu)
+        if n_cpu > 1:
+            self.pool = multiprocessing.Pool(n_cpu)
+            self.map = self.pool.map
+        else:
+            self.map = map
         self.root = root
         self.abs_root = os.path.abspath(root)
         # Match objects within 1'
@@ -1035,7 +1039,7 @@ class Manager:
             fits_1 = self.other_arm(fits_2)
             pair_list.append((fits_1, fits_2))
         # Now send this list to as many cores as we are using
-        self.pool.map(telluric_correct_pair, pair_list)
+        self.map(telluric_correct_pair, pair_list)
         return
 
     def cube(self, overwrite=False, **kwargs):
@@ -1061,12 +1065,7 @@ class Manager:
                   for item in groups.items()]
         with self.visit_dir(target_dir):
             # Send the cubing tasks off to multiple CPUs
-            # This actually puts the output in the wrong place, it seems
-            # the visit_dir isn't inherited.
-            # Also everything dies when they try to do the WCS (I think)
-            # So for now, disabling the multiprocessing bit
-            self.pool.map(cube_group, groups)
-            #map(cube_group, groups.items())
+            self.map(cube_group, groups)
         return
 
     def reduce_all(self, overwrite=False, **kwargs):
