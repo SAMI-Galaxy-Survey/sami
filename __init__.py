@@ -6,6 +6,8 @@ import update_csv
 import manager
 import dr
 
+from log import logger
+
 # the config file which contains some constants and stuff
 import config
 

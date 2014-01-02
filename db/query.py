@@ -1,7 +1,7 @@
 """
 'query.py', module within 'sami.db'
 
-Description: Import codes for the SAMI Galaxy Survey data archive. 
+Description: Query codes for the SAMI Galaxy Survey data archive. 
 
 Written: 08.10.2013, Iraklis Konstantopoulos. Based on 'db.database'.
 
@@ -9,44 +9,87 @@ Contact: iraklis@aao.gov.au
 
 Updates: .-
 
-Table of Contents (* to-be, **: under construction): 
+Table of Contents: 
 
-.query_master**   Query a SAMI target table. 
-.query_multiple** Perform any number of queries on any number of SAMI tables. 
-.search**         The query prototype.
-.test_contents**  ??
+.queryMaster    Query a SAMI target table. 
+.query_multiple  Perform any number of queries on any number of SAMI tables. 
+.search          The query prototype.
+.test_contents   ??
+
+For commit message:
+
+Now catching an exception that occurs when misspelling a column (variable) name in queryMaster(), or any mistakes in table/variable name in queryMultiple(). 
 """
 
 import numpy as np
 import h5py as h5
-import astropy.io.fits as pf
-import astropy.io.ascii as ascii
+import tables
+#import astropy.io.fits as pf
+#import astropy.io.ascii as ascii
 import os
 import sys
-import sami
+#import sami
 
 
-def query_master(h5in, query, idfile='sami_query.lis', 
+# ~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~
+def print_sami(s, idfile, queryText, outFile=True, verbose=True):
+# ~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~
+    """ Define a Row Iterator for screen output """ 
+
+    # Prepare some variables. 
+    counter = 0
+    idlist = []
+
+    # Iterate over all supplied rows. 
+    for tables.row in s:
+        name, z = tables.row['CATID'], tables.row['z_spec']
+        if verbose:
+            print("  Found SAMI galaxy %s at redshift z=%g" % (name, z))
+        counter += 1
+        idlist.append(name)
+        if outFile: 
+            f = open(idfile, 'w')
+            f.write(str(name)+'\n')
+    if verbose:
+        print("\n  Found "+str(counter)+" galaxies satisfying query:\n  "+
+              queryText)
+
+    if outFile: 
+        f.close()
+    
+    return(idlist)
+
+
+# ~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~
+def queryMaster(h5file, queryIn, version='', idfile='sami_query.lis', 
                 verbose=True, returnID=True, overwrite=True):
-    """ 
-    ~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~- 
-    Read a SAMI master table and perform a query
+# ~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~
+    """ Read a SAMI master table and perform a query """
+
+    import sami.db.export as export
+
+    """
+    NOTES: 
 
     The query should be passed either as a string argument or as an ascii file 
     containing such a string. Adding '@list' functionality will facilitate 
     browser-generated queries farther down the track. 
-    ~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~- 
     """
-   
-    import tables
 
     # Interpret the 'query' argument (look for a filename). 
-    if os.path.isfile(query):
-        fq = open(query, 'r')
-        query = fq.readlines()[0]
+    if os.path.isfile(queryIn):
+        fq = open(queryIn, 'r')
+        queryText = fq.readlines()[0]
+    else:
+        queryText = queryIn
+
+    # Get latest data version, if not supplied
+    hdf0 = h5.File(h5file, 'r')
+    version = export.getVersion(h5file, hdf0, version)
+    hdf0.close()
 
     # Open-read h5file. 
-    h5file = tables.openFile(h5in, mode = "r")
+    hdf = tables.openFile(h5file, 'r')
 
     # Optionally open an ascii file to write IDs returned by the query. 
     if returnID:
@@ -56,46 +99,43 @@ def query_master(h5in, query, idfile='sami_query.lis',
                 raise SystemExit("The nominated output file ('"+idfile+"') "+
                                  "already exists. Please raise the 'overwrite'"+
                                  " flag or enter a different filename. ")
-        f = open(idfile, 'w')
-        idlist = []
+        #f = open(idfile, 'w')
+        #idlist = []
 
-    # Identify the SAMI master table -- assumed to live in the root directory
-    master = h5file.root.SAMI_MASTER
+    # Identify the SAMI master table, assumed to live in the Table directory
+    g_table = hdf.getNode('/SAMI/'+version+'/Table/')
+    master = g_table.SAMI_MASTER
 
-    # Define a Row Iterator for screen output. 
-    def print_sami(s):
-        counter = 0
-        for tables.row in s:
-            name, z = tables.row['CATID'], tables.row['z_spec']
-            if verbose:
-                print("  Found SAMI galaxy %s at redshift z=%g" % (name, z))
-            counter += 1
-            idlist.append(name)
-            if returnID: f.write(str(name)+'\n')
-        print("\n  Found "+str(counter)+" galaxies satisfying query:\n  "+query)
-        
-    print_sami(master.where(query))
+    # Run the row iterator -- try! 
+    try: 
+        idlist = print_sami(master.where(queryText), idfile, 
+                            queryText, outFile=returnID, verbose=True)
+    except:
+        hdf.close()
+        raise SystemExit("Oops! Your query was not understood. Please "+
+                         "check the spelling of the chosen variable.")
 
-    h5file.close()
-    if returnID: f.close()
+    # Close h5 file and return query results. 
+    hdf.close()
+    return(idlist)
 
 
-def query_multiple(h5in, qfile, verbose=True):
-    """ 
-    ~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~- 
-    Query multiple tables within an h5 archive and combine results 
-    ~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~- 
-    """
 
-    import tables
+# ~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~
+def queryMultiple(h5file, qfile, writeFile=True, outFile='multipleQuery.lis', 
+                  overwrite=False, verbose=True, version=''):
+# ~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~
+    """ Query multiple tables within an h5 archive and combine results """
 
+    import sami.db.export as export
+    
     """ 
     This is modelled after query_master. One main difference is the query 
     argument, which has to be a file in this case, rather than a string. 
-    
     """
+    
     # Check that the input files exist
-    if (not os.path.isfile(h5in)) or (not os.path.isfile(qfile)):
+    if (not os.path.isfile(h5file)) or (not os.path.isfile(qfile)):
         raise System.Exit("One of the nominated files does not exist. Exiting.")
 
     # Open and read the query file line-per-line (even=table,odd=query) 
@@ -123,52 +163,68 @@ def query_multiple(h5in, qfile, verbose=True):
 
     f.close()
 
+    # Get latest data version, if not supplied
+    hdf0 = h5.File(h5file, 'r')
+    version = export.getVersion(h5file, hdf0, version)
+    hdf0.close()
+
     # Now run all queries: 
+
     # Open h5 file with PyTabs: 
-    h5file = tables.openFile(h5in, mode = "r")
+    hdf = tables.openFile(h5file, 'r')
 
-    # Cannot provide any table name. They have to be defined here.
-    # Need to write an 'identify table' function. 
-    def id_tab(s):
-        if s == 'SAMI_MASTER': return h5file.root.SAMI_MASTER
-        if s == 'SAMI_MASTER_2': return h5file.root.SAMI_MASTER_2
-
-    # and run that function on all tabs: 
+    # Read all tables, append to list
     h5tabs = []
     for i in range(counter/2):
-        h5tabs.append(id_tab(tabs[i]))
+        try:
+            h5tabs.append(hdf.getNode('/SAMI/'+version+'/Table/', tabs[i]))
+        except:
+            hdf.close()
+            raise SystemExit("Oops! Your query was not understood. Please "+
+                             "check the spelling of table '"+tabs[i]+"'.")
 
-    h5file.close()
-    
     # OK, have the tables defined as variables, now need to query them. 
-    # I will copy-paste the print_sami code here, but need to do better.
-    
-    # Define a Row Iterator for screen output. 
-    idlist = []
-    def print_sami(s):
-        count = 0
-        for tables.row in s:
-            name, z = tables.row['CATID'], tables.row['z_spec']
-            #if verbose:
-            #    print("  Found SAMI galaxy %s at redshift z=%g" % (name, z))
-            count += 1
-            idlist.append(name)
-        return idlist
-        
+
     # Run each query: 
     all_lists = []
     for i in range(counter/2):
-        print_sami(h5tabs[i].where(queries[i]))
-        print("Query "+str(i+1)+": Found "+str(len(idlist))+
-              " galaxies satisfying "+queries[i])
-        all_lists.append(idlist)
+        try:
+            idlist = print_sami(h5tabs[i].where(queries[i]), outFile, 
+                                queries[i], outFile=False, verbose=False)
+            if verbose: 
+                print("Query "+str(i+1)+": Found "+str(len(idlist))+
+                      " galaxies satisfying "+queries[i])
+            all_lists.append(idlist)
+        except:
+            hdf.close()
+            raise SystemExit("Oops! Your query was not understood. Please "+
+                             "check the spelling of query '"+queries[i]+"'.")
 
-    # And now intersect all idlists within all_lists container
+    # This seems like a good place to close the h5 file.
+    hdf.close()
+
+    # Finally, intersect all idlists within all_lists container return, exit.
     final_idlist = set(all_lists[0]).intersection(*all_lists)
-    print(final_idlist)
+    if verbose: 
+            print(" ------- Found "+str(len(final_idlist))+
+                  " galaxies satisfying all queries.")
+    if writeFile:
+        # Check if the file exists. 
+        if (os.path.isfile(outFile)) and (not overwrite):
+                print("\nFile already exists, please choose other filename or "+
+                      "raise 'overwrite' flag.")
+
+        if (not os.path.isfile(outFile)) or overwrite:
+            f = open(outFile, 'w')
+            [f.write(s) for s in str(list(final_idlist))]
+            f.close()
+            
+    return(final_idlist)
 
 
+# ~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~
 def test_contents(h5file):
+# ~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~
     """ Check if h5file contains cubes and RSS datasets. """
 
     ### UNDER CONSTRUCTION ###
@@ -201,7 +257,9 @@ def test_contents(h5file):
 
 
 
+# ~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~
 def search(h5file, query_item, query_value, verbose=True):
+# ~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~
     """ A prototype query tool """
     
     # Need to search each group recursively

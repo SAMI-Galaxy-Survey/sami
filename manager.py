@@ -79,7 +79,7 @@ import numpy as np
 from .utils.other import find_fibre_table
 from .general.cubing import dithered_cubes_from_rss_list
 from .general.align_micron import find_dither
-from .dr import fluxcal2, telluric
+from .dr import fluxcal2, telluric, check_plots
 
 
 IDX_FILES_SLOW = {'1': 'sami580V_v1_2.idx',
@@ -140,6 +140,54 @@ PILOT_FIELD_LIST = [
      'coords': '21h57m48.55s -07d23m40.6s'},
     {'plate_id': 'run_7_P4', 'field_no': 2, 
      'coords': '00h42m34.09s -09d12m08.1s'}]
+
+# Things that should be visually checked
+# Priorities: 0 should be done first
+# Each key ('TLM', 'ARC',...) matches to a check method named 
+# check_tlm, check_arc,...
+CHECK_DATA = {
+    'TLM': {'name': 'Tramline map',
+            'ndf_class': 'MFFFF',
+            'spectrophotometric': None,
+            'priority': 0,
+            'group_by': ('date', 'ccd', 'field_id')},
+    'ARC': {'name': 'Arc reduction',
+            'ndf_class': 'MFARC',
+            'spectrophotometric': None,
+            'priority': 1,
+            'group_by': ('date', 'ccd', 'field_id')},
+    'FLT': {'name': 'Flat field',
+            'ndf_class': 'MFFFF',
+            'spectrophotometric': None,
+            'priority': 2,
+            'group_by': ('date', 'ccd', 'field_id')},
+    'SKY': {'name': 'Twilight sky',
+            'ndf_class': 'MFSKY',
+            'spectrophotometric': None,
+            'priority': 3,
+            'group_by': ('date', 'ccd', 'field_id')},
+    'OBJ': {'name': 'Object frame',
+            'ndf_class': 'MFOBJECT',
+            'spectrophotometric': None,
+            'priority': 4,
+            'group_by': ('date', 'ccd', 'field_id')},
+    'FLX': {'name': 'Flux calibration',
+            'ndf_class': 'MFOBJECT',
+            'spectrophotometric': True,
+            'priority': 5,
+            'group_by': ('date', 'field_id', 'name')},
+    'TEL': {'name': 'Telluric correction',
+            'ndf_class': 'MFOBJECT',
+            'spectrophotometric': None,
+            'priority': 6,
+            'group_by': ('date', 'ccd', 'field_id')},
+    'CUB': {'name': 'Cubes',
+            'ndf_class': 'MFOBJECT',
+            'spectrophotometric': False,
+            'priority': 7,
+            'group_by': ('date', 'field_id')}}
+# Extra priority for checking re-reductions
+PRIORITY_RECENT = 10
 
 class Manager:
     """Object for organising and reducing SAMI data.
@@ -299,43 +347,80 @@ class Manager:
     This function takes the same keywords as described above for fibre
     flats etc.
 
+    Flux calibration
+    ================
+
+    The flux calibration requires a series of steps. First, a transfer
+    function is derived for each observation of a standard star:
+
+    >>> mngr.derive_transfer_function()
+
+    Next, transfer functions from related observations are combined:
+
+    >>> mngr.combine_transfer_function()
+
+    The combined transfer functions can then be applied to the data to
+    flux calibrate it:
+
+    >>> mngr.flux_calibrate()
+
+    Finally, the telluric correction is derived and applied with a
+    single command:
+
+    >>> mngr.telluric_correct()
+
+    As before, keywords can be set to restrict which files are processed,
+    and overwrite=True can be set to force re-processing of files that
+    have already been done.
+    
+    Cubing
+    ======
+
+    The final step in the data reduction is to turn the individual
+    calibrated spectra into datacubes:
+
+    >>> mngr.cube()
+
     Checking outputs
     ================
 
-    As the reductions are done, the manager keeps an internal list of reduced
-    files that need to be plotted to check that the outputs are ok. These are
-    saved on a directory-by-directory basis. To print the contents of the
+    As the reductions are done, the manager keeps a record of reduced
+    files that need to be plotted to check that the outputs are ok. These 
+    are grouped in sets of related files. To print the checks that need to 
+    be done:
+
+    >>> mngr.print_checks()
+
+    Separate lists are returned for checks that have never been done, and
+    those that haven't been done since the last re-reduction. You can
+    specify one or the other by passing 'ever' or 'recent' as an argument
+    to print_checks().
+
+    To perform the next check:
+
+    >>> mngr.check_next_group()
+
+    The manager will either load the 2dfdr GUI and give you a list of
+    files to check, or will make some plots in python. Check the things it
+    tells you to, keeping a note of any files that need to be disabled or
+    examined further (if you don't know what to do about a file, ask a
+    friendly member of the data reduction working group).
+
+    If 2dfdr was loaded, no more commands can be entered until you close it. 
+    When you do so, or immediately for python-based plots, you will be asked
+    whether the files can be removed from the checklist. Enter 'y'
+    if you have checked all the files, 'n' otherwise.
+
+    You can also perform a particular check by specifying its index in the
     list:
 
-    >>> mngr.print_check_list()
+    >>> mngr.check_group(3)
 
-    It will print the directories that need to be visited, and the files to
-    check within each directory. The manager can't plot the files directly but
-    can open up the 2dfdr GUI in the required directory, making it easy to use
-    the 2dfdr plotting tools to do the checks. To open 2dfdr in the next
-    directory in the list:
+    The index numbers are given when mngr.print_checks() is called.
 
-    >>> mngr.plot_next_dir()
-
-    No more commands can be entered until you close 2dfdr. When you do so, you
-    will be asked whether the directory can be removed from the list; enter 'y'
-    if you have checked all the files, 'n' otherwise. You can also load a
-    particular directory by specifying [part of] its path or its index in the
-    list:
-
-    >>> mngr.plot_dir('Y13SAR1_P002_09T004/main/ccd_1')
-    >>> mngr.plot_dir_by_index(3)
-
-    Note index numbers start at 0, and the directories are in the order listed
-    when mngr.print_check_list() is called.
-
-    If you want to remove a directory from the list without loading 2dfdr:
-
-    >>> mngr.remove_dir_from_checklist('Y13SAR1_P002_09T004/main/ccd_1')
-    >>> mngr.remove_dir_from_checklist_by_index(3)
-
-    Only do this with good reason! Checking the outputs is a crucial part of
-    data reduction.
+    Checking the outputs is a crucial part of data reduction, so please
+    make sure you do it thoroughly, and ask for assistance if you're not
+    sure about anything.
 
     Disabling files
     ===============
@@ -448,7 +533,6 @@ class Manager:
         self.extra_list = []
         self.dark_exposure_str_list = []
         self.dark_exposure_list = []
-        self.check_list = deque()
         self.inspect_root(copy_files, move_files)
         self.cwd = os.getcwd()
 
@@ -495,6 +579,7 @@ class Manager:
         else:
             print 'Adding file: ', filename
         self.set_name(fits, trust_header=trust_header)
+        fits.set_check_data()
         self.set_reduced_path(fits)
         if not fits.do_not_use:
             fits.make_reduced_link()
@@ -798,7 +883,6 @@ class Manager:
                                reduced=True, do_not_use=False),
                     path)
                 dirname = os.path.dirname(path)
-                self.check_list.append((dirname, [filename]))
         self.link_calibrator(calibrator_type, overwrite)
         return
 
@@ -881,29 +965,37 @@ class Manager:
         """Make TLMs from all files matching given criteria."""
         file_iterable = self.files(ndf_class='MFFFF', do_not_use=False,
                                    **kwargs)
-        self.reduce_file_iterable(file_iterable, overwrite=overwrite, 
-                                  tlm=True, leave_reduced=leave_reduced)
+        reduced_files = self.reduce_file_iterable(
+            file_iterable, overwrite=overwrite, tlm=True, 
+            leave_reduced=leave_reduced)
+        self.update_checks('TLM', reduced_files, False)
         return
 
     def reduce_arc(self, overwrite=False, **kwargs):
         """Reduce all arc frames matching given criteria."""
         file_iterable = self.files(ndf_class='MFARC', do_not_use=False,
                                    **kwargs)
-        self.reduce_file_iterable(file_iterable, overwrite=overwrite)
+        reduced_files = self.reduce_file_iterable(
+            file_iterable, overwrite=overwrite)
+        self.update_checks('ARC', reduced_files, False)
         return
 
     def reduce_fflat(self, overwrite=False, **kwargs):
         """Reduce all fibre flat frames matching given criteria."""
         file_iterable = self.files(ndf_class='MFFFF', do_not_use=False,
                                    **kwargs)
-        self.reduce_file_iterable(file_iterable, overwrite=overwrite)
+        reduced_files = self.reduce_file_iterable(
+            file_iterable, overwrite=overwrite)
+        self.update_checks('FLT', reduced_files, False)
         return
 
     def reduce_sky(self, overwrite=False, **kwargs):
         """Reduce all offset sky frames matching given criteria."""
         file_iterable = self.files(ndf_class='MFSKY', do_not_use=False,
                                    **kwargs)
-        self.reduce_file_iterable(file_iterable, overwrite=overwrite)
+        reduced_files = self.reduce_file_iterable(
+            file_iterable, overwrite=overwrite)
+        self.update_checks('SKY', reduced_files, False)
         return
 
     def reduce_object(self, overwrite=False, **kwargs):
@@ -915,23 +1007,19 @@ class Manager:
                                           do_not_use=False, **kwargs),
                                key=key, reverse=True)
         self.reduce_file_iterable(file_iterable, overwrite=overwrite)
+        self.update_checks('OBJ', file_iterable, False)
         return
 
     def reduce_file_iterable(self, file_iterable, overwrite=False, tlm=False,
                              leave_reduced=True):
         """Reduce all files in the iterable."""
-        extra_check_dict = defaultdict(list)
+        reduced_files = []
         for fits in file_iterable:
             reduced = self.reduce_file(fits, overwrite=overwrite, tlm=tlm,
                                        leave_reduced=leave_reduced)
             if reduced:
-                if tlm:
-                    check_filename = fits.tlm_filename
-                else:
-                    check_filename = fits.reduced_filename
-                extra_check_dict[fits.reduced_dir].append(check_filename)
-        self.check_list.extend(extra_check_dict.items())
-        return
+                reduced_files.append(fits)
+        return reduced_files
 
     def derive_transfer_function(self, overwrite=False, **kwargs):
         """Derive flux calibration transfer functions and save them."""
@@ -977,14 +1065,12 @@ class Manager:
         # groups. Wouldn't need name except that currently different stars
         # are on different units; remove the name matching when that's
         # sorted.
-        date_field_ccd_name_dict = defaultdict(list)
-        for fits in self.files(ndf_class='MFOBJECT', do_not_use=False,
-                               spectrophotometric=True, **kwargs):
-            path = fits.reduced_path
-            key = fits.date + fits.field_id + fits.ccd + fits.name
-            date_field_ccd_name_dict[key].append(path)
+        groups = self.group_files_by(('date', 'field_id', 'ccd', 'name'),
+            ndf_class='MFOBJECT', do_not_use=False,
+            spectrophotometric=True, **kwargs)
         # Now combine the files within each group
-        for path_list in date_field_ccd_name_dict.values():
+        for fits_list in groups.values():
+            path_list = [fits.reduced_path for fits in fits_list]
             path_out = os.path.join(os.path.dirname(path_list[0]),
                                     'TRANSFERcombined.fits')
             if overwrite or not os.path.exists(path_out):
@@ -1000,6 +1086,7 @@ class Manager:
                     if overwrite or not os.path.exists(path_copy):
                         print 'Copying combined file to', path_copy
                         shutil.copy2(path_out, path_copy)
+            self.update_checks('FLX', fits_list, False)
         return
 
     def flux_calibrate(self, overwrite=False, **kwargs):
@@ -1040,6 +1127,9 @@ class Manager:
             pair_list.append((fits_1, fits_2))
         # Now send this list to as many cores as we are using
         self.map(telluric_correct_pair, pair_list)
+        # Mark telluric corrections as not checked
+        for fits_pair in pair_list:
+            self.update_checks('TEL', [fits_pair[1]], False)
         return
 
     def cube(self, overwrite=False, **kwargs):
@@ -1066,6 +1156,11 @@ class Manager:
         with self.visit_dir(target_dir):
             # Send the cubing tasks off to multiple CPUs
             self.map(cube_group, groups)
+        # Mark all cubes as not checked. Ideally would only mark those that
+        # actually exist. Maybe set dithered_cubes_from_rss_list to return a 
+        # list of those it created?
+        for fits_list in [item[1] for item in groups]:
+            self.update_checks('CUB', [fits_list[0]], False)
         return
 
     def reduce_all(self, overwrite=False, **kwargs):
@@ -1705,11 +1800,14 @@ class Manager:
             # This works a bit differently. Return the filename of the
             # combined dark frame with the closest exposure time.
             best_fom = np.inf
+            exposure_str_match = None
             for exposure_str in self.dark_exposure_strs(ccd=fits.ccd):
                 test_fom = abs(float(exposure_str) - fits.exposure)
                 if test_fom < best_fom:
                     exposure_str_match = exposure_str
                     best_fom = test_fom
+            if exposure_str_match is None:
+                return None
             filename = self.dark_combined_filename(exposure_str_match)
             if os.path.exists(os.path.join(fits.reduced_dir, filename)):
                 return filename
@@ -1789,87 +1887,6 @@ class Manager:
                            raw_link_path)
         return filename
 
-    def print_check_list(self):
-        """Print the reduced files that need to be checked."""
-        for reduced_dir, filename_list in self.check_list:
-            print reduced_dir
-            for filename in filename_list:
-                print ' - ' + filename
-        return
-
-    def plot_dir(self, dirname):
-        """Load 2dfdr to plot a set of files from the checklist.
-
-        The first match to dirname - which may be incomplete - will be selected
-        from the checklist, and 2dfdr will be loaded in that directory."""
-        for index, check_tuple in enumerate(self.check_list):
-            if dirname in check_tuple[0]:
-                self.plot_dir_by_index(index)
-                break
-        else:
-            print 'No match found in checklist.'
-        return
-
-    def plot_next_dir(self):
-        """Load 2dfdr to plot the next set of reduced files to check."""
-        if len(self.check_list) == 0:
-            print 'No directories are in the checklist.'
-            return
-        self.plot_dir_by_index(0)
-        return
-
-    def plot_dir_by_index(self, index):
-        """Load 2dfdr to plot a specified set of files from the checklist."""
-        reduced_dir, filename_list = self.check_list[index]
-        print 'Loading 2dfdr in directory:'
-        print reduced_dir
-        print 'Use 2dfdr to plot and check the following files.'
-        print '(Click on the triangles to see reduced files)'
-        for filename in filename_list:
-            print ' - ' + filename
-        print 'Make a note of any that need to be disabled or re-run.'
-        try:
-            idx_file = self.idx_files[os.path.basename(reduced_dir)]
-        except KeyError:
-            try:
-                idx_file = self.idx_files[filename_list[0][5]]
-            except KeyError:
-                # Can't work out which idx file to use; just grab the first one
-                idx_file = self.idx_files.values()[0]
-        command = ['drcontrol',
-                   idx_file]
-        with self.visit_dir(reduced_dir):
-            with open(os.devnull, 'w') as f:
-                subprocess.call(command, stdout=f)
-        yn = raw_input('Have you finished checking all the files? '
-                       'The directory will be removed from the checklist. '
-                       '(y/n)\n > ')
-        remove = (yn.lower()[0] == 'y')
-        if remove:
-            print 'Removing this directory from the checklist.'
-            del self.check_list[index]
-        else:
-            print 'Leaving this directory in the checklist.'
-        print ('If any files need to be disabled, you can do so using commands'
-               ' like:')
-        print ">>> mngr.disable_files(['" + filename_list[0] + "'])"
-        return
-
-    def remove_dir_from_checklist(self, dirname):
-        """Remove the first instance of a directory from the checklist."""
-        for index, check_tuple in enumerate(self.check_list):
-            if dirname in check_tuple[0]:
-                del self.check_list[index]
-                break
-        else:
-            print 'No match found in checklist'
-        return
-
-    def remove_dir_from_checklist_by_index(self, index):
-        """Remove the specified directory from the plotting checklist."""
-        del self.check_list[index]
-        return
-
     def change_speed(self, speed=None):
         """Switch between fast and slow reductions."""
         if speed is None:
@@ -1882,6 +1899,167 @@ class Manager:
         self.speed = speed
         self.idx_files = IDX_FILES[self.speed]
         return
+
+    def load_2dfdr_gui(self, fits_or_dirname):
+        """Load the 2dfdr GUI in the required directory."""
+        if isinstance(fits_or_dirname, FITSFile):
+            # A FITS file has been provided, so go to its directory
+            dirname = fits_or_dirname.reduced_dir
+            ccd = fits_or_dirname.ccd
+        else:
+            # A directory name has been provided
+            dirname = fits_or_dirname
+            if 'ccd_1' in dirname:
+                ccd = 'ccd_1'
+            elif 'ccd_2' in dirname:
+                ccd = 'ccd_2'
+            else:
+                # Can't work out the CCD, but it probably doesn't matter
+                ccd = 'ccd_1'
+        idx_file = self.idx_files[ccd]
+        with self.visit_dir(dirname):
+            with open(os.devnull, 'w') as f:
+                subprocess.call(('drcontrol', idx_file), stdout=f)
+        return
+
+    def update_checks(self, key, file_iterable, value, force=False):
+        """Set flags for whether the files have been manually checked."""
+        for fits in file_iterable:
+            fits.update_checks(key, value, force)
+        return
+
+    def list_checks(self, recent_ever='both', *args, **kwargs):
+        """Return a list of checks that need to be done."""
+        # Each element in the list will be a tuple, where
+        # element[0] = key from below
+        # element[1] = list of fits objects to be checked
+        if recent_ever == 'both':
+            complete_list = []
+            complete_list.extend(self.list_checks('ever'))
+            # Should ditch the duplicate checks, but will work anyway
+            complete_list.extend(self.list_checks('recent'))
+            return complete_list
+        # The keys for the following defaultdict will be tuples, where
+        # key[0] = 'TLM' (or similar)
+        # key[1] = tuple according to CHECK_DATA group_by
+        # key[2] = 'recent' or 'ever'
+        check_dict = defaultdict(list)
+        for fits in self.files(*args, **kwargs):
+            if recent_ever == 'ever':
+                items = fits.check_ever.items()
+            elif recent_ever == 'recent':
+                items = fits.check_recent.items()
+            else:
+                raise KeyError(
+                    'recent_ever must be "both", "ever" or "recent"')
+            for key in [key for key, value in items if value is False]:
+                check_dict_key = []
+                for group_by_key in CHECK_DATA[key]['group_by']:
+                    check_dict_key.append(getattr(fits, group_by_key))
+                check_dict_key = (key, tuple(check_dict_key), recent_ever)
+                check_dict[check_dict_key].append(fits)
+        # Now change the dictionary into a sorted list
+        key_func = lambda item: CHECK_DATA[item[0][0]]['priority']
+        check_list = sorted(check_dict.items(), key=key_func)
+        return check_list
+
+    def print_checks(self, *args, **kwargs):
+        """Print the list of checks to be done."""
+        check_list = self.list_checks(*args, **kwargs)
+        for index, (key, fits_list) in enumerate(check_list):
+            check_data = CHECK_DATA[key[0]]
+            print '{}: {}'.format(index, check_data['name'])
+            if key[2] == 'ever':
+                print 'Never been checked'
+            else:
+                print 'Not checked since last re-reduction'
+            for group_by_key, group_by_value in zip(
+                check_data['group_by'], key[1]):
+                print '   {}: {}'.format(group_by_key, group_by_value)
+            for fits in fits_list:
+                print '      {}'.format(fits.filename)
+        return
+
+    def check_next_group(self, *args, **kwargs):
+        """Perform required checks on the highest priority group."""
+        self.check_group(0, *args, **kwargs)
+
+    def check_group(self, index, *args, **kwargs):
+        """Perform required checks on the specified group."""
+        key, fits_list = self.list_checks(*args, **kwargs)[index]
+        check_method = getattr(self, 'check_' + key[0].lower())
+        check_method(fits_list)
+        print 'Have you finished checking all the files? (y/n)'
+        print 'If yes, the check will be removed from the list.'
+        y_n = raw_input(' > ')
+        finished = (y_n.lower()[0] == 'y')
+        if finished:
+            print 'Removing this test from the list.'
+            for fits in fits_list:
+                fits.update_checks(key[0], True)
+        else:
+            print 'Leaving this test in the list.'
+        print 'If any files need to be disabled, use commands like:'
+        print ">>> mngr.disable_files(['" + fits_list[0].filename + "'])"
+        return
+
+    def check_2dfdr(self, fits_list, message, filename_type='reduced_filename'):
+        """Use 2dfdr to perform a check of some sort."""
+        print 'Use 2dfdr to plot the following files'
+        print '(You may need to click on the triangles to see reduced files.)'
+        for fits in fits_list:
+            print '   ' + getattr(fits, filename_type)
+        print message
+        self.load_2dfdr_gui(fits_list[0])
+        return
+
+    def check_tlm(self, fits_list):
+        """Check a set of tramline maps."""
+        message = 'Zoom in to check that the red fitted tramlines go through the data.'
+        filename_type = 'tlm_filename'
+        self.check_2dfdr(fits_list, message, filename_type)
+        return
+
+    def check_arc(self, fits_list):
+        """Check a set of arc frames."""
+        message = 'Zoom in to check that the arc lines are vertically aligned.'
+        self.check_2dfdr(fits_list, message)
+        return
+
+    def check_flt(self, fits_list):
+        """Check a set of flat field frames."""
+        message = 'Check that the output varies smoothly with wavelength.'
+        self.check_2dfdr(fits_list, message)
+        return
+
+    def check_sky(self, fits_list):
+        """Check a set of offset sky (twilight) frames."""
+        message = 'Check that the spectra are mostly smooth, and any features are aligned.'
+        self.check_2dfdr(fits_list, message)
+        return
+
+    def check_obj(self, fits_list):
+        """Check a set of reduced object frames."""
+        message = 'Check that there is flux in each hexabundle, with no bad artefacts.'
+        self.check_2dfdr(fits_list, message)
+        return
+
+    def check_flx(self, fits_list):
+        """Check a set of spectrophotometric frames."""
+        check_plots.check_flx(fits_list)
+        return
+
+    def check_tel(self, fits_list):
+        """Check a set of telluric corrections."""
+        check_plots.check_tel(fits_list)
+        return
+
+    def check_cub(self, fits_list):
+        """Check a set of final datacubes."""
+        check_plots.check_cub(fits_list)
+        return
+
+
 
 
 class FITSFile:
@@ -1897,6 +2075,7 @@ class FITSFile:
         except IOError:
             self.ndf_class = None
             return
+        self.header = self.hdulist[0].header
         self.set_ndf_class()
         self.set_reduced_filename()
         self.set_date()
@@ -1949,7 +2128,7 @@ class FITSFile:
     def set_date(self):
         """Save the observation date as a 6-digit string yymmdd."""
         try:
-            file_orig = self.hdulist[0].header['FILEORIG']
+            file_orig = self.header['FILEORIG']
             finish = file_orig.rfind('/', 0, file_orig.rfind('/'))
             self.date = file_orig[finish-6:finish]
         except KeyError:
@@ -1964,7 +2143,7 @@ class FITSFile:
         """Save the plate ID."""
         try:
             # First look in the primary header
-            self.plate_id = self.hdulist[0].header['PLATEID']
+            self.plate_id = self.header['PLATEID']
         except KeyError:
             # Check in the fibre table instead
             header = self.hdulist[self.fibres_extno].header
@@ -2106,7 +2285,7 @@ class FITSFile:
     def set_ccd(self):
         """Set the CCD name."""
         if self.ndf_class:
-            spect_id = self.hdulist[0].header['SPECTID']
+            spect_id = self.header['SPECTID']
             if spect_id == 'BL':
                 self.ccd = 'ccd_1'
             elif spect_id == 'RD':
@@ -2120,7 +2299,7 @@ class FITSFile:
     def set_exposure(self):
         """Set the exposure time."""
         if self.ndf_class:
-            self.exposure = self.hdulist[0].header['EXPOSED']
+            self.exposure = self.header['EXPOSED']
             self.exposure_str = '{:d}'.format(int(np.round(self.exposure)))
         else:
             self.exposure = None
@@ -2130,7 +2309,7 @@ class FITSFile:
     def set_epoch(self):
         """Set the observation epoch."""
         if self.ndf_class:
-            self.epoch = self.hdulist[0].header['EPOCH']
+            self.epoch = self.header['EPOCH']
         else:
             self.epoch = None
         return
@@ -2139,7 +2318,7 @@ class FITSFile:
         """Set which lamp was on, if any."""
         if self.ndf_class == 'MFARC':
             # This isn't guaranteed to work, but it's ok for our normal lamp
-            _object = self.hdulist[0].header['OBJECT']
+            _object = self.header['OBJECT']
             self.lamp = _object[_object.rfind(' ')+1:]
         elif self.ndf_class == 'MFFFF':
             if self.exposure >= 17.5:
@@ -2154,22 +2333,46 @@ class FITSFile:
     def set_do_not_use(self):
         """Set whether or not to use this file."""
         try:
-            self.do_not_use = self.hdulist[0].header['DONOTUSE']
+            self.do_not_use = self.header['DONOTUSE']
         except KeyError:
             # By default, don't use fast readout files
-            self.do_not_use = (self.hdulist[0].header['SPEED'] != 'NORMAL')
+            self.do_not_use = (self.header['SPEED'] != 'NORMAL')
         return
 
     def set_coords_flags(self):
         """Set whether coordinate corrections have been done."""
         try:
-            self.coord_rot = self.hdulist[0].header['COORDROT']
+            self.coord_rot = self.header['COORDROT']
         except KeyError:
             self.coord_rot = None
         try:
-            self.coord_rev = self.hdulist[0].header['COORDREV']
+            self.coord_rev = self.header['COORDREV']
         except KeyError:
             self.coord_rev = None
+        return
+
+    def relevant_check(self, check):
+        """Return True if a visual check is relevant for this file."""
+        return (self.ndf_class == check['ndf_class'] and 
+                (check['spectrophotometric'] is None or
+                 check['spectrophotometric'] == self.spectrophotometric))
+
+    def set_check_data(self):
+        """Set whether the relevant checks have been done."""
+        self.check_ever = {}
+        self.check_recent = {}
+        for key in [key for key, check in CHECK_DATA.items() 
+                    if self.relevant_check(check)]:
+            try:
+                check_done_ever = self.header['MNCH' + key]
+            except KeyError:
+                check_done_ever = None
+            self.check_ever[key] = check_done_ever
+            try:
+                check_done_recent = self.header['MNCH' + key + 'R']
+            except KeyError:
+                check_done_recent = None
+            self.check_recent[key] = check_done_recent
         return
 
     def make_reduced_link(self):
@@ -2224,6 +2427,37 @@ class FITSFile:
                     os.remove(self.reduced_link)
             else:
                 self.make_reduced_link()
+        return
+
+    def update_checks(self, key, value, force=False):
+        """Update both check flags for this key for this file."""
+        self.update_check_recent(key, value)
+        # Don't set the "ever" check to False unless forced, or there
+        # is no value set yet
+        if value or force or self.check_ever[key] is None:
+            self.update_check_ever(key, value)
+        return
+
+    def update_check_recent(self, key, value):
+        """Change one of the check flags assigned to this file."""
+        if self.check_recent[key] != value:
+            # Update the FITS header
+            self.add_header_item('MNCH' + key + 'R', value,
+                                 CHECK_DATA[key]['name'] + 
+                                 ' checked since re-reduction')
+            # Update the object
+            self.check_recent[key] = value
+        return
+
+    def update_check_ever(self, key, value):
+        """Change one of the check flags assigned to this file."""
+        if self.check_ever[key] != value:
+            # Update the FITS header
+            self.add_header_item('MNCH' + key, value,
+                                 CHECK_DATA[key]['name'] + 
+                                 ' checked ever')
+            # Update the object
+            self.check_ever[key] = value
         return
 
     def add_header_item(self, key, value, comment=None, source=False):

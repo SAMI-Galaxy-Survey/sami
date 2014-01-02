@@ -256,6 +256,26 @@ def area_contribution(p1, p2, xc, yc, r):
     return i, j, area
 
 def resample_circle(xpix, ypix, xc, yc, r):
+    """Resample a circle/drop onto an output grid.
+    
+    Parameters
+    ----------
+    xpix: (int) Number of pixels in the x-dimension of the output grid
+    ypix: (int) Number of pixels in the y-dimension of the output grid
+    xc: (float) x-position of the centre of the circle.
+    yc: (float) y-position of the centre of the circle.
+    r: (float) radius of the circle
+    
+    Output
+    ------
+    2D array of floats. Note that the zeroth axis is for the y-dimension and the
+    first axis is for the x-dimension. i.e., out.shape -> (ypix, xpix)
+    This can be VERY CONFUSING, particularly when one remembers that imshow's
+    behaviour is to plot the zeroth axis as the vertical coordinate and the first
+    axis as the horizontal coordinate.
+    
+    """
+    
     # Create the output array
     out = np.zeros((ypix,xpix))
 
