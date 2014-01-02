@@ -1013,13 +1013,40 @@ class Manager:
     def reduce_file_iterable(self, file_iterable, overwrite=False, tlm=False,
                              leave_reduced=True):
         """Reduce all files in the iterable."""
-        reduced_files = []
-        for fits in file_iterable:
-            reduced = self.reduce_file(fits, overwrite=overwrite, tlm=tlm,
-                                       leave_reduced=leave_reduced)
-            if reduced:
-                reduced_files.append(fits)
+        # First establish the 2dfdr options for all files that need reducing
+        # Would be more memory-efficient to construct a generator
+        input_list = [(fits, 
+                       self.idx_files[fits.ccd],
+                       tuple(self.tdfdr_options(fits, tlm=tlm)),
+                       self.cwd)
+                      for fits in file_iterable
+                      if (overwrite or 
+                          not os.path.exists(self.target_path(fits, tlm=tlm)))]
+        # Send the items out for reducing
+        self.map(run_2dfdr_single_wrapper, input_list)
+        # Delete unwanted reduced files
+        reduced_files = [item[0] for item in input_list]
+        for fits in reduced_files:
+            if (fits.ndf_class == 'MFFFF' and tlm and not leave_reduced and
+                os.path.exists(fits.reduced_path)):
+                os.remove(fits.reduced_path)
+        # Return a list of fits objects that were reduced
         return reduced_files
+        # reduced_files = []
+        # for fits in file_iterable:
+        #     reduced = self.reduce_file(fits, overwrite=overwrite, tlm=tlm,
+        #                                leave_reduced=leave_reduced)
+        #     if reduced:
+        #         reduced_files.append(fits)
+        # return reduced_files
+
+    def target_path(self, fits, tlm=False):
+        """Return the path of the file we want 2dfdr to produce."""
+        if fits.ndf_class == 'MFFFF' and tlm:
+            target = fits.tlm_path
+        else:
+            target = fits.reduced_path
+        return target
 
     def derive_transfer_function(self, overwrite=False, **kwargs):
         """Derive flux calibration transfer functions and save them."""
@@ -1193,10 +1220,7 @@ class Manager:
         removed.
 
         Returns True if the file was reduced; False otherwise."""
-        if fits.ndf_class == 'MFFFF' and tlm:
-            target = fits.tlm_path
-        else:
-            target = fits.reduced_path
+        target = self.target_path(fits, tlm=tlm)
         if os.path.exists(target) and not overwrite:
             # File to be created already exists, abandon this.
             return False
@@ -1590,35 +1614,6 @@ class Manager:
             os.chdir(self.cwd)
             if cleanup_2dfdr:
                 self.cleanup()
-
-    @contextmanager
-    def temp_imp_scratch(self, do_not_delete=False):
-        """
-        Create a temporary directory for 2dfdr IMP_SCRATCH,
-        allowing multiple instances of 2dfdr to be run simultaneously.
-        """
-        # Make a temporary directory with a unique name
-        if not os.path.exists(self.scratch_dir):
-            os.makedirs(self.scratch_dir)
-        imp_scratch = tempfile.mkdtemp(dir=self.scratch_dir)
-        # Set the IMP_SCRATCH environment variable to that directory, so that
-        # 2dfdr will use it
-        os.environ['IMP_SCRATCH'] = imp_scratch
-        try:
-            yield
-        finally:
-            # Change the IMP_SCRATCH environment variable back to what it was
-            os.environ['IMP_SCRATCH'] = self.imp_scratch
-            if not do_not_delete:
-                # Remove the temporary directory and all its contents
-                shutil.rmtree(imp_scratch)
-                # Remove any parent directories that are empty
-                try:
-                    os.removedirs(os.path.dirname(imp_scratch))
-                except OSError:
-                    # It wasn't empty; never mind
-                    pass
-        return
 
     def cleanup(self):
         """Clean up 2dfdr rubbish."""
@@ -2543,6 +2538,10 @@ def cube_group(group):
                                  write=True, nominal=True, root=root,
                                  overwrite=overwrite)
     return
+
+def run_2dfdr_single_wrapper(fits, idx_file, options, cwd):
+    """Run 2dfdr on a single file."""
+    tdfdr.run_2dfdr_single(fits, idx_file, options=options, cwd=cwd)
 
 
 class MatchException(Exception):
