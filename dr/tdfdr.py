@@ -4,7 +4,8 @@ import tempfile
 import shutil
 from contextlib import contextmanager
 
-def run_2dfdr_single(fits, idx_file, options=None, cwd=None):
+def run_2dfdr_single(fits, idx_file, options=None, cwd=None, 
+                     unique_imp_scratch=False, **kwargs):
     """Run 2dfdr on a single FITS file."""
     print 'Reducing file:', fits.filename
     if fits.ndf_class == 'BIAS':
@@ -27,10 +28,18 @@ def run_2dfdr_single(fits, idx_file, options=None, cwd=None):
                '-idxfile', idx_file]
     if options is not None:
         command.extend(options)
-    with visit_dir(fits.reduced_dir, return_to=cwd, cleanup_2dfdr=True):
-        with open(os.devnull, 'w') as dump:
-            subprocess.call(command, stdout=dump)
-    return
+    if unique_imp_scratch:
+        with temp_imp_scratch(**kwargs):
+            with visit_dir(fits.reduced_dir, return_to=cwd, 
+                           cleanup_2dfdr=True):
+                with open(os.devnull, 'w') as dump:
+                    subprocess.call(command, stdout=dump)
+    else:
+        with visit_dir(fits.reduced_dir, return_to=cwd, 
+                       cleanup_2dfdr=True):
+            with open(os.devnull, 'w') as dump:
+                subprocess.call(command, stdout=dump)
+        return
 
 def cleanup():
     """Clean up 2dfdr crud."""
