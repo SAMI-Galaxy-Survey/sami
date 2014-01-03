@@ -4,8 +4,26 @@ import tempfile
 import shutil
 from contextlib import contextmanager
 
-def run_2dfdr_single(fits, idx_file, options=None, cwd=None, 
-                     unique_imp_scratch=False, **kwargs):
+def run_2dfdr(dirname, options=None, cwd=None, unique_imp_scratch=False, 
+              **kwargs):
+    """Run 2dfdr with a specified set of command-line options."""
+    command = ['drcontrol']
+    if options is not None:
+        command.extend(options)
+    if unique_imp_scratch:
+        with temp_imp_scratch(**kwargs):
+            with visit_dir(dirname, return_to=cwd, 
+                           cleanup_2dfdr=True):
+                with open(os.devnull, 'w') as dump:
+                    subprocess.call(command, stdout=dump)
+    else:
+        with visit_dir(dirname, return_to=cwd, 
+                       cleanup_2dfdr=True):
+            with open(os.devnull, 'w') as dump:
+                subprocess.call(command, stdout=dump)
+    return
+
+def run_2dfdr_single(fits, idx_file, options=None, **kwargs):
     """Run 2dfdr on a single FITS file."""
     print 'Reducing file:', fits.filename
     if fits.ndf_class == 'BIAS':
@@ -24,22 +42,11 @@ def run_2dfdr_single(fits, idx_file, options=None, cwd=None,
         task = 'reduce_object'
     else:
         raise ValueError('Unrecognised NDF_CLASS')
-    command = ['drcontrol', task, fits.filename,
-               '-idxfile', idx_file]
+    options_all = [task, fits.filename, '-idxfile', idx_file]
     if options is not None:
-        command.extend(options)
-    if unique_imp_scratch:
-        with temp_imp_scratch(**kwargs):
-            with visit_dir(fits.reduced_dir, return_to=cwd, 
-                           cleanup_2dfdr=True):
-                with open(os.devnull, 'w') as dump:
-                    subprocess.call(command, stdout=dump)
-    else:
-        with visit_dir(fits.reduced_dir, return_to=cwd, 
-                       cleanup_2dfdr=True):
-            with open(os.devnull, 'w') as dump:
-                subprocess.call(command, stdout=dump)
-        return
+        options_all.extend(options)
+    run_2dfdr(fits.reduced_dir, options=options_all, **kwargs)
+    return
 
 def cleanup():
     """Clean up 2dfdr crud."""
