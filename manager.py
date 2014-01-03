@@ -536,6 +536,7 @@ class Manager:
         self.cwd = os.getcwd()
         self.imp_scratch = os.environ['IMP_SCRATCH']
         self.scratch_dir = os.path.join(self.abs_root, 'imp_scratch')
+        self.min_exposure_for_throughput = 900.0
 
     def inspect_root(self, copy_files, move_files, trust_header=True):
         """Add details of existing files to internal lists."""
@@ -1000,14 +1001,24 @@ class Manager:
 
     def reduce_object(self, overwrite=False, **kwargs):
         """Reduce all object frames matching given criteria."""
-        # Reduce them in reverse order of exposure time, to ensure the best
-        # possible throughput measurements are always available
-        key = lambda fits: fits.exposure
-        file_iterable = sorted(self.files(ndf_class='MFOBJECT',
-                                          do_not_use=False, **kwargs),
-                               key=key, reverse=True)
-        self.reduce_file_iterable(file_iterable, overwrite=overwrite)
-        self.update_checks('OBJ', file_iterable, False)
+        # Reduce long exposures first, to make sure that any required
+        # throughput measurements are available
+        file_iterable_long = self.files(
+            ndf_class='MFOBJECT', do_not_use=False, 
+            min_exposure=self.min_exposure_for_throughput, **kwargs)
+        reduced_files = self.reduce_file_iterable(
+            file_iterable_long, overwrite=overwrite)
+        # Now reduce the short exposures, which might need the long
+        # exposure reduced above
+        upper_limit = (self.min_exposure_for_throughput - 
+                       np.finfo(self.min_exposure_for_throughput).epsneg)
+        file_iterable_short = self.files(
+            ndf_class='MFOBJECT', do_not_use=False,
+            max_exposure=upper_limit, **kwargs)
+        reduced_files.extend(self.reduce_file_iterable(
+            file_iterable_short, overwrite=overwrite))
+        # Mark these files as not checked
+        self.update_checks('OBJ', reduced_files, False)
         return
 
     def reduce_file_iterable(self, file_iterable, overwrite=False, tlm=False,
@@ -1256,7 +1267,7 @@ class Manager:
             files_to_match = ['bias', 'dark', 'lflat', 'tlmap', 'wavel',
                               'fflat']
         elif fits.ndf_class == 'MFOBJECT':
-            if fits.exposure <= 899.0:
+            if fits.exposure < self.min_exposure_for_throughput:
                 files_to_match = ['bias', 'dark', 'lflat', 'tlmap', 'wavel',
                                   'fflat', 'thput']
                 options.extend(['-TPMETH', 'OFFSKY'])
@@ -1780,7 +1791,8 @@ class Manager:
             field_id = fits.field_id
             ccd = fits.ccd
             reduced = True
-            fom = time_difference_min_exposure(899.0)
+            fom = time_difference_min_exposure(
+                self.min_exposure_for_throughput)
         elif match_class.lower() == 'fcal':
             # Find a spectrophotometric standard star
             ndf_class = 'MFOBJECT'
@@ -2544,9 +2556,9 @@ def cube_group(group):
 def run_2dfdr_single_wrapper(group):
     """Run 2dfdr on a single file."""
     fits, idx_file, options, cwd, imp_scratch, scratch_dir = group
-    with tdfdr.temp_imp_scratch(
-        restore_to=imp_scratch, scratch_dir=scratch_dir):
-        tdfdr.run_2dfdr_single(fits, idx_file, options=options, cwd=cwd)
+    tdfdr.run_2dfdr_single(
+        fits, idx_file, options=options, cwd=cwd, unique_imp_scratch=True,
+        restore_to=imp_scratch, scratch_dir=scratch_dir)
 
 
 class MatchException(Exception):
