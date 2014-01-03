@@ -59,6 +59,43 @@ def run_2dfdr_single(fits, idx_file, options=None, **kwargs):
     run_2dfdr(fits.reduced_dir, options=options_all, **kwargs)
     return
 
+def run_2dfdr_combine(input_path_list, output_path, return_to=None, **kwargs):
+    """Run 2dfdr to combine the specified FITS files."""
+    if len(input_path_list) < 2:
+        raise ValueError('Need at least 2 files to combine!')
+    output_dir, output_filename = os.path.split(output_path)
+    # Need to extend the default timeout value; set to 5 hours here
+    timeout = '300'
+    # Write the 2dfdr AutoScript
+    script = []
+    for input_path in input_path_list:
+        script.append('lappend glist ' +
+                      os.path.relpath(input_path, output_dir))
+    script.extend(['proc Quit {status} {',
+                   '    global Auto',
+                   '    set Auto(state) 0',
+                   '}',
+                   'set task DREXEC1',
+                   'global Auto',
+                   'set Auto(state) 1',
+                   ('ExecCombine $task $glist ' + output_filename +
+                    ' -success Quit')])
+    script_filename = '2dfdr_script.tcl'
+    with visit_dir(output_dir, return_to=return_to):
+        # Print the script to file
+        with open(script_filename, 'w') as f_script:
+            f_script.write('\n'.join(script))
+        # Run 2dfdr
+        options = ['-AutoScript',
+                   '-ScriptName',
+                   script_filename,
+                   '-Timeout',
+                   timeout]
+        run_2dfdr(output_dir, options, return_to=return_to, **kwargs)
+        # Clean up the script file
+        os.remove(script_filename)
+    return
+
 def cleanup():
     """Clean up 2dfdr crud."""
     with open(os.devnull, 'w') as dump:

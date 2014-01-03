@@ -1431,43 +1431,12 @@ class Manager:
 
     def run_2dfdr_combine(self, file_iterable, output_path):
         """Use 2dfdr to combine the specified FITS files."""
-        output_dir, output_filename = os.path.split(output_path)
-        # Need to extend the default timeout value; set to 5 hours here
-        timeout = '300'
-        # Write the 2dfdr AutoScript
-        script = []
-        for fits in file_iterable:
-            script.append('lappend glist ' +
-                          os.path.relpath(fits.reduced_path, output_dir))
-        if len(script) < 2:
-            raise ValueError('Need at least 2 files to combine!')
-        script.extend(['proc Quit {status} {',
-                       '    global Auto',
-                       '    set Auto(state) 0',
-                       '}',
-                       'set task DREXEC1',
-                       'global Auto',
-                       'set Auto(state) 1',
-                       ('ExecCombine $task $glist ' + output_filename +
-                        ' -success Quit')])
-        script_filename = '2dfdr_script.tcl'
-        with self.visit_dir(output_dir):
-            # Print the script to file
-            f_script = open(script_filename, 'w')
-            f_script.write('\n'.join(script))
-            f_script.close()
-            # Run 2dfdr
-            command = ['drcontrol',
-                       '-AutoScript',
-                       '-ScriptName',
-                       script_filename,
-                       '-Timeout',
-                       timeout]
-            print 'Combining files to create', output_path
-            with open(os.devnull, 'w') as f:
-                subprocess.call(command, stdout=f)
-            # Clean up
-            os.remove(script_filename)
+        input_path_list = [fits.reduced_path for fits in file_iterable]
+        print 'Combining files to create', output_path
+        tdfdr.run_2dfdr_combine(
+            input_path_list, output_path, unique_imp_scratch=True, 
+            return_to=self.cwd, restore_to=self.imp_scratch, 
+            scratch_dir=self.scratch_dir)
         return
 
     def files(self, ndf_class=None, date=None, plate_id=None,
