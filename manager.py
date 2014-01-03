@@ -2524,8 +2524,9 @@ def cube_group(group):
     for path in path_list:
         print '  ', os.path.basename(path)
     # First calculate the offsets
-    find_dither(path_list, path_list[0], centroid=True, 
-                remove_files=True)
+    if len(path_list) > 1:
+        find_dither(path_list, path_list[0], centroid=True, 
+                    remove_files=True)
     # Now do the actual cubing
     dithered_cubes_from_rss_list(path_list, suffix='_'+field[0], 
                                  write=True, nominal=True, root=root,
