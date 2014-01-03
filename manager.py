@@ -1018,7 +1018,9 @@ class Manager:
         input_list = [(fits, 
                        self.idx_files[fits.ccd],
                        tuple(self.tdfdr_options(fits, tlm=tlm)),
-                       self.cwd)
+                       self.cwd,
+                       self.imp_scratch,
+                       self.scratch_dir)
                       for fits in file_iterable
                       if (overwrite or 
                           not os.path.exists(self.target_path(fits, tlm=tlm)))]
@@ -2539,9 +2541,12 @@ def cube_group(group):
                                  overwrite=overwrite)
     return
 
-def run_2dfdr_single_wrapper(fits, idx_file, options, cwd):
+def run_2dfdr_single_wrapper(fits, idx_file, options, cwd, imp_scratch, 
+                             scratch_dir):
     """Run 2dfdr on a single file."""
-    tdfdr.run_2dfdr_single(fits, idx_file, options=options, cwd=cwd)
+    with tdfdr.temp_imp_scratch(
+        restore_to=imp_scratch, scratch_dir=scratch_dir):
+        tdfdr.run_2dfdr_single(fits, idx_file, options=options, cwd=cwd)
 
 
 class MatchException(Exception):
