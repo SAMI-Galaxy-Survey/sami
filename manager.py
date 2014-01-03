@@ -1134,7 +1134,6 @@ class Manager:
 
     def cube(self, overwrite=False, **kwargs):
         """Make datacubes from the given RSS files."""
-        target_dir = os.path.join(self.abs_root, 'cubed')
         if 'min_exposure' in kwargs:
             min_exposure = kwargs['min_exposure']
             del kwargs['min_exposure']
@@ -1153,9 +1152,8 @@ class Manager:
         cubed_root = os.path.join(self.root, 'cubed')
         groups = [(item[0], item[1], cubed_root, overwrite) 
                   for item in groups.items()]
-        with self.visit_dir(target_dir):
-            # Send the cubing tasks off to multiple CPUs
-            self.map(cube_group, groups)
+        # Send the cubing tasks off to multiple CPUs
+        self.map(cube_group, groups)
         # Mark all cubes as not checked. Ideally would only mark those that
         # actually exist. Maybe set dithered_cubes_from_rss_list to return a 
         # list of those it created?

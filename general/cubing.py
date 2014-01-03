@@ -260,12 +260,13 @@ def dithered_cubes_from_rss_list(files,
         if write:
             # First check if the object directory already exists or not.
             directory = os.path.join(root, name)
-            if os.path.isdir(directory):
+            try:
+                os.makedirs(directory)
+            except OSError:
                 print "Directory Exists", directory
                 print "Writing files to the existing directory"
             else:
                 print "Making directory", directory
-                os.mkdir(directory)
 
             # Filename to write to
             arm = ifu_list[0].spectrograph_arm            
