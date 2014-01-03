@@ -4,7 +4,7 @@ import tempfile
 import shutil
 from contextlib import contextmanager
 
-def run_2dfdr(dirname, options=None, cwd=None, unique_imp_scratch=False, 
+def run_2dfdr(dirname, options=None, return_to=None, unique_imp_scratch=False,
               **kwargs):
     """Run 2dfdr with a specified set of command-line options."""
     command = ['drcontrol']
@@ -12,15 +12,26 @@ def run_2dfdr(dirname, options=None, cwd=None, unique_imp_scratch=False,
         command.extend(options)
     if unique_imp_scratch:
         with temp_imp_scratch(**kwargs):
-            with visit_dir(dirname, return_to=cwd, 
+            with visit_dir(dirname, return_to=return_to, 
                            cleanup_2dfdr=True):
                 with open(os.devnull, 'w') as dump:
                     subprocess.call(command, stdout=dump)
     else:
-        with visit_dir(dirname, return_to=cwd, 
+        with visit_dir(dirname, return_to=return_to, 
                        cleanup_2dfdr=True):
             with open(os.devnull, 'w') as dump:
                 subprocess.call(command, stdout=dump)
+    return
+
+def load_gui(dirname=None, idx_file=None, **kwargs):
+    """Load the 2dfdr GUI in the specified directory."""
+    if dirname is None:
+        dirname = os.getcwd()
+    if idx_file is not None:
+        options = [idx_file]
+    else:
+        options = None
+    run_2dfdr(dirname, options, **kwargs)
     return
 
 def run_2dfdr_single(fits, idx_file, options=None, **kwargs):

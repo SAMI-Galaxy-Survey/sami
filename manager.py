@@ -1926,21 +1926,21 @@ class Manager:
         if isinstance(fits_or_dirname, FITSFile):
             # A FITS file has been provided, so go to its directory
             dirname = fits_or_dirname.reduced_dir
-            ccd = fits_or_dirname.ccd
+            idx_file = self.idx_files[fits_or_dirname.ccd]
         else:
             # A directory name has been provided
             dirname = fits_or_dirname
             if 'ccd_1' in dirname:
-                ccd = 'ccd_1'
+                idx_file = self.idx_files['ccd_1']
             elif 'ccd_2' in dirname:
-                ccd = 'ccd_2'
+                idx_file = self.idx_files['ccd_2']
             else:
-                # Can't work out the CCD, but it probably doesn't matter
-                ccd = 'ccd_1'
-        idx_file = self.idx_files[ccd]
-        with self.visit_dir(dirname):
-            with open(os.devnull, 'w') as f:
-                subprocess.call(('drcontrol', idx_file), stdout=f)
+                # Can't work out the CCD, let the GUI sort it out
+                idx_file = None
+        tdfdr.load_gui(dirname=dirname, idx_file=idx_file, 
+                       unique_imp_scratch=True, return_to=self.cwd, 
+                       restore_to=self.imp_scratch, 
+                       scratch_dir=self.scratch_dir)
         return
 
     def update_checks(self, key, file_iterable, value, force=False):
@@ -2557,8 +2557,10 @@ def run_2dfdr_single_wrapper(group):
     """Run 2dfdr on a single file."""
     fits, idx_file, options, cwd, imp_scratch, scratch_dir = group
     tdfdr.run_2dfdr_single(
-        fits, idx_file, options=options, cwd=cwd, unique_imp_scratch=True,
-        restore_to=imp_scratch, scratch_dir=scratch_dir)
+        fits, idx_file, options=options, return_to=cwd, 
+        unique_imp_scratch=True, restore_to=imp_scratch, 
+        scratch_dir=scratch_dir)
+    return
 
 
 class MatchException(Exception):
