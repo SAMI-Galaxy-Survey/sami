@@ -1,12 +1,14 @@
+from .. import utils
+from ..observing import centroid
+from ..utils.mc_adr import DARCorrector
+
+
 try:
     from pyraf import iraf
 except ImportError:
     print "pyraf not found! Can't do image alignment here."
-import sami
 import string
-import sami.utils as utils
 import numpy as np
-import sami.observing.centroid
 import os
 import matplotlib.pyplot as plt
 from matplotlib import cm
@@ -405,6 +407,13 @@ def get_centroid(infile):
             x_out= -1*xout_mic
             y_out= yout_mic
             
+            # Adjust for DAR, which means that "true" galaxy position is offset from observed position
+            dar_calc = DARCorrector(method='simple')
+            dar_calc.setup_for_ifu(ifu_data)
+            dar_calc.wavelength = np.mean(ifu_data.lambda_range)
+            x_out -= dar_calc.dar_east
+            y_out += dar_calc.dar_north
+
             # the data to write to file
             s=ifu_data.name+' '+str(ifu_data.ifu)+' '+str(x_out)+' '+str(y_out)+'\n'
                     
