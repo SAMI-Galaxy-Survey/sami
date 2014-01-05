@@ -1,12 +1,14 @@
+from .. import utils
+from ..observing import centroid
+from ..utils.mc_adr import DARCorrector
+
+
 try:
     from pyraf import iraf
 except ImportError:
     print "pyraf not found! Can't do image alignment here."
-import sami
 import string
-import sami.utils as utils
 import numpy as np
-import sami.observing.centroid
 import os
 import matplotlib.pyplot as plt
 from matplotlib import cm
