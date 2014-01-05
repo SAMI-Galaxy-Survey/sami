@@ -7,24 +7,64 @@ The most likely command a user will want to run is one of:
    dithered_cubes_from_rss_files
    dithered_cubes_from_rss_list
 
-(these differ only very slightly)
+These functions are wrappers for file input/output, with the actual work
+being done in dithered_cube_from_rss. These three functions are briefly
+described below.
 
-These functions are merely wrappers for file input/output, with the actual work
-being done in "dithered_cube_from_rss"
+**dithered_cubes_from_rss_files**
 
-Drop size and output pixel grid size and dimensions are set with the following
-module variables:
+INPUTS:
+inlist - a file containing the names of the RSS files to be cubed. These file
+namesare one per line in this file.
 
-    output_pix_size_arcsec (Default: 0.5) - Size of output spaxel in arcsec
-    drop_factor (Default: 0.5) - Size of drop size as a fraction of the fibre 
-        size
-    size_of_grid (Default: 50) - Number of pixels along each dimension of the 
-        output grid   
+objects - a python list containing the names of the galaxies to make cubes for.
+The default is the special value (string) 'all', which means all galaxies in the
+input RSS files will be cubed.
 
-To change the output, these variables can be changed after the module has been
-loaded, but before calling any of the module functions. In particular, any pre-
-existing SAMIDrizzler instances will have strange behaviour if these variables
-are changed.
+size_of_grid - The size of the square output grid in pixels. The default is 50 pixels.
+
+output_pix_size_arcsec - The size of the pixels within the square output grid in
+arcseconds. The default is 0.5 arcseconds.
+
+drop_factor - The size reduction factor for the input fibres when they are drizzled
+onto the output grid.
+
+clip - Clip the data when combining. This should provide cleaner output cubes. Default
+is True.
+
+plot - Make diagnostic plots when creating cubes. This seems to be defunct as no plots are
+made. Default is True.
+
+write - Write data cubes to file after creating them. The default is False. (Should change?)
+
+suffix - A suffix to add to the output file name. Should be a string. Default is a null string.
+
+nominal - Use the nominal tabulated object positions when determining WCS. Default is False and
+a full comparison with SDSS is done.
+
+root - Root directory for writing files to. Should be a string. Default is null string.
+
+overwrite - Overwrite existing files with the same output name. Default is False.
+
+OUTPUTS:
+If write is set to True two data cubes will be produced for each object cubed. These are
+written by default to a new directory, created within the working directory, with the name
+of the object.
+
+**dithered_cubes_from_rss_list**
+INPUTS:
+
+files: a python list of files to be cubed. 
+
+All other inputs as above!
+
+**dithered_cube_from_rss**
+INPUTS:
+
+ifu_list - A list of IFU objects. In most cases this is passed from
+dithered_cubes_from_rss_list.
+
+############################################################################################
 
 """
 
@@ -56,7 +96,6 @@ except:
     from scipy.stats import nanmedian, nanmean
     nansum = np.nansum
 
-
 # Utils code.
 from .. import utils
 from .. import samifitting as fitting
@@ -71,18 +110,11 @@ import astropy.io.ascii as ascii
 from scipy.interpolate import griddata
 import urllib
 
-
 # Some global constants:
-
 HG_CHANGESET = utils.hg_changeset(__file__)
 
 epsilon = np.finfo(np.float).eps
 # Store the value of epsilon for quick access.
-
-output_pix_size_arcsec = 0.5    # Size of output spaxel in arcsec
-drop_factor = 0.5    # Size of drop as a fraction of the fibre size
-size_of_grid = 50    # Size of a side of the cube such that the cube has 50x50 spaxels
-# @TODO: Compute the size of the grid instead of hard code it!??!
 
 def get_object_names(infile):
     """Get the object names observed in the file infile."""
@@ -193,10 +225,9 @@ def dar_correct(ifu_list, xfibre_all, yfibre_all, method='simple',update_rss=Fal
 
 
 
-def dithered_cubes_from_rss_files(inlist, 
-                                  objects='all', clip=True, plot=True, 
-                                  write=False, suffix='', root='',
-                                  overwrite=False):
+def dithered_cubes_from_rss_files(inlist, objects='all', size_of_grid=50, output_pix_size_arcsec=0.5,
+                                  drop_factor=0.5, clip=True, plot=True, write=False, suffix='',
+                                  nominal=False, root='', overwrite=False):
     """A wrapper to make a cube from reduced RSS files, passed as a filename containing a list of filenames. Only input files that go together - ie have the same objects."""
 
     # Read in the list of all the RSS files input by the user.
@@ -207,16 +238,14 @@ def dithered_cubes_from_rss_files(inlist,
 
         files.append(np.str(cols[0]))
 
-    dithered_cubes_from_rss_list(files,
-                                 objects=objects, 
-                                 clip=clip, plot=plot, write=write, 
-                                 root=root, suffix=suffix, overwrite=overwrite)
+    dithered_cubes_from_rss_list(files, objects=objects, size_of_grid=size_of_grid, 
+                                 output_pix_size_arcsec=output_pix_size_arcsec, clip=clip, plot=plot,
+                                 write=write, root=root, suffix=suffix, nominal=nominal, overwrite=overwrite)
     return
 
-def dithered_cubes_from_rss_list(files, 
-                                 objects='all', clip=True, plot=True, 
-                                 write=False, suffix='', nominal=False, root='',
-                                 overwrite=False):
+def dithered_cubes_from_rss_list(files, objects='all', size_of_grid=50, output_pix_size_arcsec=0.5,
+                                 drop_factor=0.5, clip=True, plot=True, write=False, suffix='',
+                                 nominal=False, root='', overwrite=False):
     """A wrapper to make a cube from reduced RSS files, passed as a list. Only input files that go together - ie have the same objects."""
         
     start_time = datetime.datetime.now()
@@ -233,8 +262,6 @@ def dithered_cubes_from_rss_list(files,
         object_names=get_object_names(files[0])
     else:
         object_names=objects
-        
-    
     
     print "--------------------------------------------------------------"
     print "The following objects will be cubed:"
@@ -282,16 +309,17 @@ def dithered_cubes_from_rss_list(files,
                     print 'Skipping this object'
                     continue
 
-
         # Call dithered_cube_from_rss to create the flux, variance and weight cubes for the object.
         
         # For now, putting in a try/except block to skip over any errors
         try:
             flux_cube, var_cube, weight_cube, diagnostics = \
-                dithered_cube_from_rss(ifu_list, clip=clip, plot=plot)
+                dithered_cube_from_rss(ifu_list, size_of_grid=size_of_grid,
+                                       output_pix_size_arcsec=output_pix_size_arcsec, clip=clip, plot=plot)
         except Exception:
             print 'Cubing failed! Skipping to next galaxy.'
-            print 'Object:', name, 'files:', files
+            print 'Object:', name
+            print 'Files:', files
             continue
             #raise
 
@@ -306,19 +334,19 @@ def dithered_cubes_from_rss_list(files,
                 raise ValueError('Could not identify band. Exiting')
 
             # Equate Positional WCS
-            WCS_pos,WCS_flag = WCS_position(ifu_list[0],flux_cube,name,band,plot,nominal=nominal)   
+            WCS_pos, WCS_flag=WCS_position(ifu_list[0], flux_cube, name, band, plot, nominal=nominal)   
             
             # First get some info from one of the headers.
             list1=pf.open(files[0])
             hdr=list1[0].header
     
-            hdr_new = create_primary_header(ifu_list,name,files,WCS_pos,WCS_flag)
+            hdr_new = create_primary_header(ifu_list, name, files, WCS_pos, WCS_flag)
 
             # Define the units for the datacube
             hdr_new['BUNIT'] = ('10**(-16) erg /s /cm**2 /angstrom /pixel', 
                                 'Units')
 
-            # Create HDUs for each cube - note headers generated automatically for now.
+            # Create HDUs for each cube.
             #
             # @NOTE: PyFITS writes axes to FITS files in the reverse of the sense
             # of the axes in Numpy/Python. So a numpy array with dimensions
@@ -332,7 +360,7 @@ def dithered_cubes_from_rss_list(files,
             #metadata_table = create_metadata_table(ifu_list)
             
             # Put individual HDUs into a HDU list
-            hdulist=pf.HDUList([hdu1,hdu2,hdu3]) #,metadata_table])
+            hdulist=pf.HDUList([hdu1, hdu2, hdu3]) #,metadata_table])
         
             # Write the file
             print "Writing", outfile_name_full
@@ -344,171 +372,9 @@ def dithered_cubes_from_rss_list(files,
             
     print("Time dithered_cubes_from_files wall time: {0}".format(datetime.datetime.now() - start_time))
 
-def create_primary_header(ifu_list,name,files,WCS_pos,WCS_flag):
-    """Create a primary header to attach to each cube from the RSS file headers"""
-
-    hdr = ifu_list[0].primary_header
-    fbr_hdr = ifu_list[0].fibre_table_header
-
-    # Get positional information from WCS_pos
-    #### Do something here!!!
-
-    # Create the wcs.
-    wcs_new=pw.WCS(naxis=3)
-    wcs_new.wcs.crpix = [WCS_pos["CRPIX1"], WCS_pos["CRPIX2"], hdr['CRPIX1']]
-    wcs_new.wcs.cdelt = np.array([WCS_pos["CDELT1"], WCS_pos["CDELT2"], hdr['CDELT1']])
-    wcs_new.wcs.crval = [WCS_pos["CRVAL1"], WCS_pos["CRVAL2"], hdr['CRVAL1']]
-    wcs_new.wcs.ctype = [WCS_pos["CTYPE1"], WCS_pos["CTYPE2"], hdr['CTYPE1']]
-    wcs_new.wcs.equinox = 2000
-            
-    # Create a header
-    hdr_new=wcs_new.to_header()
-    hdr_new.update('WCS_SRC',WCS_flag,'WCS Source')
-            
-    # Add the name to the header
-    hdr_new.update('NAME', name, 'Object ID')
-    # Need to implement a database specific-specific OBSTYPE keyword to indicate galaxies
-    # *NB* This is different to the OBSTYPE keyword already in the header below
-    
-    # Determine total exposure time and add to header
-    total_exptime = 0.
-    for ifu in ifu_list:
-        total_exptime+=ifu.primary_header['EXPOSED']
-    hdr_new.update('TOTALEXP',total_exptime,'Total exposure (seconds)')
-
-    # Add the mercurial changeset ID to the header
-    hdr_new.update('HGCUBING', HG_CHANGESET, 'Hg changeset ID for cubing code')
-    # Need to implement a global version number for the database
-    
-    # Put the RSS files into the header
-    for num in xrange(len(files)):
-        rss_key='HIERARCH RSS_FILE '+str(num+1)
-        rss_string='Input RSS file '+str(num+1)
-        hdr_new.update(rss_key, os.path.basename(files[num]), rss_string)
-
-    # Extract header keywords of interest from the metadata table, check for consistency
-    # then append to the main header
-
-    primary_header_keyword_list = ['DCT_DATE','DCT_VER','DETECXE','DETECXS','DETECYE','DETECYS',
-                                   'DETECTOR','XPIXSIZE','YPIXSIZE','METHOD','SPEED','READAMP','RO_GAIN',
-                                   'RO_NOISE','ORIGIN','TELESCOP','ALT_OBS','LAT_OBS','LONG_OBS',
-                                   'RCT_VER','RCT_DATE','RADECSYS','INSTRUME','SPECTID',
-                                   'GRATID','GRATTILT','GRATLPMM','ORDER','TDFCTVER','TDFCTDAT','DICHROIC',
-                                   'OBSTYPE','TOPEND','AXIS','AXIS_X','AXIS_Y','TRACKING','TDFDRVER']
-
-    primary_header_conditional_keyword_list = ['HGCOORDS','COORDROT','COORDREV']
-
-    for keyword in primary_header_keyword_list:
-        if keyword in ifu.primary_header.keys():
-            val = []
-            for ifu in ifu_list: val.append(ifu.primary_header[keyword])
-            if len(set(val)) == 1: 
-                hdr_new.append(hdr.cards[keyword])
-            else:
-                print 'Non-unique value for keyword:',keyword
-
-    # Extract the couple of relevant keywords from the fibre table header and again
-    # check for consistency of keyword values
-
-    fibre_header_keyword_list = ['PLATEID','LABEL']
-
-    for keyword in fibre_header_keyword_list:
-        val = []
-        for ifu in ifu_list: val.append(ifu.fibre_table_header[keyword])
-        if len(set(val)) == 1:
-            hdr_new.append(ifu_list[0].fibre_table_header.cards[keyword])
-        else:
-            print 'Non-unique valie for keyword:',keyword
-
-    # Append HISTORY from the initial RSS file header, assuming HISTORY is
-    # common for all RSS frames.
-
-    hdr_new.append(hdr.cards['SCRUNCH'])
-    hist_ind = np.where(np.array(hdr.keys()) == 'HISTORY')[0]
-    for i in hist_ind: 
-        hdr_new.append(hdr.cards[i])
-
-    return hdr_new
-
-def create_metadata_table(ifu_list):
-    """Build a FITS binary table HDU containing all the meta data from individual IFU objects."""
-    
-    # List of columns for the meta-data table
-    columns = []
-    
-    # Number of rows to appear in the table (equal to the number of files used to create the cube)
-    n_rows = len(ifu_list)
-    
-    # For now we assume that all files have the same set of keywords, and complain if they don't.
-    
-    first_header = ifu_list[0].primary_header
-    
-    primary_header_keywords = first_header.keys()
-    
-    # We must remove COMMENT and HISTORY keywords, as they must be treated separately.
-    for i in xrange(primary_header_keywords.count('HISTORY')):
-        primary_header_keywords.remove('HISTORY')
-    for i in xrange(primary_header_keywords.count('COMMENT')):
-        primary_header_keywords.remove('COMMENT')
-    for i in xrange(primary_header_keywords.count('SIMPLE')):
-        primary_header_keywords.remove('SIMPLE')
-    for i in xrange(primary_header_keywords.count('EXTEND')):
-        primary_header_keywords.remove('EXTEND')
-    for i in xrange(primary_header_keywords.count('SCRUNCH')):
-        primary_header_keywords.remove('SCRUNCH')
-    
-    # TODO: Test/check that all ifu's have the same keywords and error if not
-
-    # Determine the FITS binary table column types types for each header keyword
-    # and create the corresponding columns. See the documentation here:
-    # 
-    #     https://astropy.readthedocs.org/en/v0.1/io/fits/usage/table.html#creating-a-fits-table
-
-    def get_primary_header_values(keyword, dtype):
-        return np.asarray(map(lambda x: x.primary_header[keyword],ifu_list), dtype)
-
-    for keyword in primary_header_keywords:
-        if (isinstance(first_header[keyword],bool)):
-            # Output type is Logical (boolean)
-            columns.append(pf.Column(
-                name=keyword,
-                format='L',
-                array=get_primary_header_values(keyword,np.bool)
-                )) 
-        elif (isinstance(first_header[keyword],int)):
-            columns.append(pf.Column(
-                name=keyword,
-                format='K',
-                array=get_primary_header_values(keyword,np.int)
-                )) # 64-bit integer
-        elif (isinstance(first_header[keyword],str)):
-            columns.append(pf.Column(
-                name=keyword,
-                format='128A',
-                array=get_primary_header_values(keyword,'|S128')                
-                )) # 128 character string
-        elif (isinstance(first_header[keyword],float)):
-            columns.append(pf.Column(
-                name=keyword,
-                format='E',
-                array=get_primary_header_values(keyword,np.float)
-                )) # single-precision float
-
-    del get_primary_header_values
-    
-    # TODO: Add columns for comments and history information.
-    #
-    # The code below tries to put these in a variable size character array
-    # column in the binary table, but it is very messy. Better might be a
-    # separate ascii table.
-    #
-    #columns.append(pf.Column(name='COMMENTS', format='80PA(100)')) # Up to 100 80-character lines
-    #columns.append(pf.Column(name='HISTORY', format='80PA(100)')) # Up to 100 80-character lines
+def dithered_cube_from_rss(ifu_list, size_of_grid=50, output_pix_size_arcsec=0.5, drop_factor=0.5,
+                           clip=True, plot=True, offsets='file'):
    
-    return pf.new_table(columns)
-
-def dithered_cube_from_rss(ifu_list, clip=True, plot=True, offsets='file'):
-        
     diagnostic_info = {}
 
     n_obs = len(ifu_list)
@@ -522,7 +388,7 @@ def dithered_cube_from_rss(ifu_list, clip=True, plot=True, offsets='file'):
 
     # Create an instance of SAMIDrizzler for use later to create individual overlap maps for each fibre.
     # The attributes of this instance don't change from ifu to ifu.
-    overlap_maps=SAMIDrizzler(size_of_grid, n_obs * n_fibres)
+    overlap_maps=SAMIDrizzler(size_of_grid, output_pix_size_arcsec, drop_factor, n_obs * n_fibres)
 
     # Empty lists for positions and data. Could be arrays, might be faster? Should test...
     xfibre_all=[]
@@ -688,7 +554,7 @@ def dithered_cube_from_rss(ifu_list, clip=True, plot=True, offsets='file'):
     # data reduction paper for a full description of this reasoning.
     data_norm=np.empty_like(data_all)
     for ii in xrange(n_obs * n_fibres):
-        data_norm[ii,:] = data_all[ii,:] / nanmedian( data_all[ii,:])
+        data_norm[ii,:] = data_all[ii,:]/nanmedian( data_all[ii,:])
         
 
     # Now create a new array to hold the final data cube and build it slice by slice
@@ -743,9 +609,9 @@ def dithered_cube_from_rss(ifu_list, clip=True, plot=True, offsets='file'):
 
         # Create pointers to slices of the RSS data for convenience (these are
         # NOT copies)
-        norm_rss_slice = data_norm[:,l]
-        data_rss_slice = data_all[:,l]
-        var_rss_slice = var_all[:,l]
+        norm_rss_slice=data_norm[:,l]
+        data_rss_slice=data_all[:,l]
+        var_rss_slice=var_all[:,l]
 
 
         # Compute drizzle maps for this wavelength slice.
@@ -819,14 +685,14 @@ def dithered_cube_from_rss(ifu_list, clip=True, plot=True, offsets='file'):
     # in drop size. See Section 9.3: "Flux Scaling" of the data reduction paper.
     # Note also, that this scaling is immediately nullified by the division by the
     # weight cube below.
-    flux_cube_scaled = flux_cube / (drop_factor ** 2)
-    var_cube_scaled = var_cube / (drop_factor ** 4)
-    weight_cube_scaled = weight_cube / (drop_factor ** 2)
+    flux_cube_scaled=flux_cube/(drop_factor ** 2)
+    var_cube_scaled=var_cube/(drop_factor ** 4)
+    weight_cube_scaled=weight_cube/(drop_factor ** 2)
 
     # Finally, divide by the weight cube to remove variations in exposure time
     # (and hence surface brightness sensitivity) from the output data cube.
-    flux_cube_unprimed = flux_cube_scaled / weight_cube_scaled 
-    var_cube_unprimed = var_cube_scaled / (weight_cube_scaled * weight_cube_scaled)
+    flux_cube_unprimed=flux_cube_scaled/weight_cube_scaled 
+    var_cube_unprimed=var_cube_scaled/(weight_cube_scaled*weight_cube_scaled)
 
     return flux_cube_unprimed, var_cube_unprimed, weight_cube_scaled, diagnostic_info
 
@@ -848,11 +714,9 @@ def sigma_clip_mask_slice_fibres(grid_slice_fibres):
           
 class SAMIDrizzler:
     """Make an overlap map for a single fibre. This is the same at all lambda slices for that fibre (neglecting
-    DAR)""" 
+    DAR)"""  
 
-    
-
-    def __init__(self, size_of_grid, n_fibres):
+    def __init__(self, size_of_grid, output_pix_size_arcsec, drop_factor, n_fibres):
         """Construct a new SAMIDrizzler isntance with the necessary information.
         
         Parameters
@@ -876,7 +740,6 @@ class SAMIDrizzler:
         # Drop dimensions in units of output pixels
         self.drop_diameter_pix = self.drop_diameter_arcsec / self.pix_size_arcsec
         self.drop_area_pix = np.pi * (self.drop_diameter_pix / 2.0) ** 2
-
         
         self.drizzle_update_tol = 0.1 * self.pix_size_micron
 
@@ -976,7 +839,170 @@ class SAMIDrizzler:
     
         return self.drop_to_pixel, self.pixel_coverage
 
-def WCS_position(myIFU,object_flux_cube,object_name,band,plot=False,write=False,nominal=False,
+def create_primary_header(ifu_list,name,files,WCS_pos,WCS_flag):
+    """Create a primary header to attach to each cube from the RSS file headers"""
+
+    hdr = ifu_list[0].primary_header
+    fbr_hdr = ifu_list[0].fibre_table_header
+
+    # Get positional information from WCS_pos
+    #### Do something here!!!
+
+    # Create the wcs.
+    wcs_new=pw.WCS(naxis=3)
+    wcs_new.wcs.crpix = [WCS_pos["CRPIX1"], WCS_pos["CRPIX2"], hdr['CRPIX1']]
+    wcs_new.wcs.cdelt = np.array([WCS_pos["CDELT1"], WCS_pos["CDELT2"], hdr['CDELT1']])
+    wcs_new.wcs.crval = [WCS_pos["CRVAL1"], WCS_pos["CRVAL2"], hdr['CRVAL1']]
+    wcs_new.wcs.ctype = [WCS_pos["CTYPE1"], WCS_pos["CTYPE2"], hdr['CTYPE1']]
+    wcs_new.wcs.equinox = 2000
+            
+    # Create a header
+    hdr_new=wcs_new.to_header()
+    hdr_new.update('WCS_SRC',WCS_flag,'WCS Source')
+            
+    # Add the name to the header
+    hdr_new.update('NAME', name, 'Object ID')
+    # Need to implement a database specific-specific OBSTYPE keyword to indicate galaxies
+    # *NB* This is different to the OBSTYPE keyword already in the header below
+    
+    # Determine total exposure time and add to header
+    total_exptime = 0.
+    for ifu in ifu_list:
+        total_exptime+=ifu.primary_header['EXPOSED']
+    hdr_new.update('TOTALEXP',total_exptime,'Total exposure (seconds)')
+
+    # Add the mercurial changeset ID to the header
+    hdr_new.update('HGCUBING', HG_CHANGESET, 'Hg changeset ID for cubing code')
+    # Need to implement a global version number for the database
+    
+    # Put the RSS files into the header
+    for num in xrange(len(files)):
+        rss_key='HIERARCH RSS_FILE '+str(num+1)
+        rss_string='Input RSS file '+str(num+1)
+        hdr_new.update(rss_key, os.path.basename(files[num]), rss_string)
+
+    # Extract header keywords of interest from the metadata table, check for consistency
+    # then append to the main header
+
+    primary_header_keyword_list = ['DCT_DATE','DCT_VER','DETECXE','DETECXS','DETECYE','DETECYS',
+                                   'DETECTOR','XPIXSIZE','YPIXSIZE','METHOD','SPEED','READAMP','RO_GAIN',
+                                   'RO_NOISE','ORIGIN','TELESCOP','ALT_OBS','LAT_OBS','LONG_OBS',
+                                   'RCT_VER','RCT_DATE','RADECSYS','INSTRUME','SPECTID',
+                                   'GRATID','GRATTILT','GRATLPMM','ORDER','TDFCTVER','TDFCTDAT','DICHROIC',
+                                   'OBSTYPE','TOPEND','AXIS','AXIS_X','AXIS_Y','TRACKING','TDFDRVER']
+
+    primary_header_conditional_keyword_list = ['HGCOORDS','COORDROT','COORDREV']
+
+    for keyword in primary_header_keyword_list:
+        if keyword in ifu.primary_header.keys():
+            val = []
+            for ifu in ifu_list: val.append(ifu.primary_header[keyword])
+            if len(set(val)) == 1: 
+                hdr_new.append(hdr.cards[keyword])
+            else:
+                print 'Non-unique value for keyword:',keyword
+
+    # Extract the couple of relevant keywords from the fibre table header and again
+    # check for consistency of keyword values
+
+    fibre_header_keyword_list = ['PLATEID','LABEL']
+
+    for keyword in fibre_header_keyword_list:
+        val = []
+        for ifu in ifu_list: val.append(ifu.fibre_table_header[keyword])
+        if len(set(val)) == 1:
+            hdr_new.append(ifu_list[0].fibre_table_header.cards[keyword])
+        else:
+            print 'Non-unique value for keyword:', keyword
+
+    # Append HISTORY from the initial RSS file header, assuming HISTORY is
+    # common for all RSS frames.
+
+    hdr_new.append(hdr.cards['SCRUNCH'])
+    hist_ind = np.where(np.array(hdr.keys()) == 'HISTORY')[0]
+    for i in hist_ind: 
+        hdr_new.append(hdr.cards[i])
+
+    return hdr_new
+
+def create_metadata_table(ifu_list):
+    """Build a FITS binary table HDU containing all the meta data from individual IFU objects."""
+    
+    # List of columns for the meta-data table
+    columns = []
+    
+    # Number of rows to appear in the table (equal to the number of files used to create the cube)
+    n_rows = len(ifu_list)
+    
+    # For now we assume that all files have the same set of keywords, and complain if they don't.
+    
+    first_header = ifu_list[0].primary_header
+    
+    primary_header_keywords = first_header.keys()
+    
+    # We must remove COMMENT and HISTORY keywords, as they must be treated separately.
+    for i in xrange(primary_header_keywords.count('HISTORY')):
+        primary_header_keywords.remove('HISTORY')
+    for i in xrange(primary_header_keywords.count('COMMENT')):
+        primary_header_keywords.remove('COMMENT')
+    for i in xrange(primary_header_keywords.count('SIMPLE')):
+        primary_header_keywords.remove('SIMPLE')
+    for i in xrange(primary_header_keywords.count('EXTEND')):
+        primary_header_keywords.remove('EXTEND')
+    for i in xrange(primary_header_keywords.count('SCRUNCH')):
+        primary_header_keywords.remove('SCRUNCH')
+    
+    # TODO: Test/check that all ifu's have the same keywords and error if not
+
+    # Determine the FITS binary table column types types for each header keyword
+    # and create the corresponding columns. See the documentation here:
+    # 
+    #     https://astropy.readthedocs.org/en/v0.1/io/fits/usage/table.html#creating-a-fits-table
+
+    def get_primary_header_values(keyword, dtype):
+        return np.asarray(map(lambda x: x.primary_header[keyword],ifu_list), dtype)
+
+    for keyword in primary_header_keywords:
+        if (isinstance(first_header[keyword],bool)):
+            # Output type is Logical (boolean)
+            columns.append(pf.Column(
+                name=keyword,
+                format='L',
+                array=get_primary_header_values(keyword,np.bool)
+                )) 
+        elif (isinstance(first_header[keyword],int)):
+            columns.append(pf.Column(
+                name=keyword,
+                format='K',
+                array=get_primary_header_values(keyword,np.int)
+                )) # 64-bit integer
+        elif (isinstance(first_header[keyword],str)):
+            columns.append(pf.Column(
+                name=keyword,
+                format='128A',
+                array=get_primary_header_values(keyword,'|S128')                
+                )) # 128 character string
+        elif (isinstance(first_header[keyword],float)):
+            columns.append(pf.Column(
+                name=keyword,
+                format='E',
+                array=get_primary_header_values(keyword,np.float)
+                )) # single-precision float
+
+    del get_primary_header_values
+    
+    # TODO: Add columns for comments and history information.
+    #
+    # The code below tries to put these in a variable size character array
+    # column in the binary table, but it is very messy. Better might be a
+    # separate ascii table.
+    #
+    #columns.append(pf.Column(name='COMMENTS', format='80PA(100)')) # Up to 100 80-character lines
+    #columns.append(pf.Column(name='HISTORY', format='80PA(100)')) # Up to 100 80-character lines
+   
+    return pf.new_table(columns)
+
+def WCS_position(myIFU, object_flux_cube, object_name, band, plot=False, write=False, nominal=False,
                  remove_thput_file=True):
     """Wrapper for WCS_position_coords, extracting coords from IFU.
     
