@@ -676,7 +676,15 @@ def dithered_cube_from_rss(ifu_list, clip=True, plot=True, offsets='file'):
     data_all   = np.reshape(data_all,   (n_obs * n_fibres, n_slices) )
     var_all    = np.reshape(var_all,    (n_obs * n_fibres, n_slices) )
 
-    
+    # Change the units on the input data
+    #
+    # We assume here that the input data is in units of surface brightness,
+    # where the number in each input RSS pixel is the surface brightness in
+    # units of the fibre area (e.g., ergs/s/cm^2/fibre). We want the surface
+    # brightness in units of the output pixel area.
+    fibre_area_pix = np.pi * (fibre_diameter_arcsec/2.0)**2 / output_pix_size_arcsec**2
+    data_all = data_all / fibre_area_pix
+    var_all = var_all / (fibre_area_pix)**2
     
     # We must renormalise the spectra in order to sigma_clip the data.
     #
@@ -748,9 +756,8 @@ def dithered_cube_from_rss(ifu_list, clip=True, plot=True, offsets='file'):
         data_rss_slice = data_all[:,l]
         var_rss_slice = var_all[:,l]
 
-
         # Compute drizzle maps for this wavelength slice.
-        overlap_array, weight_grid_slice = overlap_maps.drizzle(xfibre_all[:,l], yfibre_all[:,l])
+        overlap_array = overlap_maps.drizzle(xfibre_all[:,l], yfibre_all[:,l])
         
         # Map RSS slices onto gridded slices
         norm_grid_slice_fibres=overlap_array*norm_rss_slice        
@@ -764,7 +771,7 @@ def dithered_cube_from_rss(ifu_list, clip=True, plot=True, offsets='file'):
         
             # Sigma clip it - pixel by pixel and make a master mask
             # array. Current clipping, sigma=5 and 1 iteration.        
-            mask_grid_slice_fibres = sigma_clip_mask_slice_fibres(norm_grid_slice_fibres/weight_grid_slice)
+            mask_grid_slice_fibres = sigma_clip_mask_slice_fibres(norm_grid_slice_fibres/overlap_array)
 
             # Below is without the normalised spectra for the clip.
             #mask_grid_slice_fibres = sigma_clip_mask_slice_fibres(data_grid_slice_fibres/weight_grid_slice)
@@ -794,15 +801,15 @@ def dithered_cube_from_rss(ifu_list, clip=True, plot=True, offsets='file'):
         # valid_grid_slice_fibres should now be an array of ones and zeros
         # reflecting where there is any valid input data. We multiply this by
         # the fibre weighting to get the final weighting.
-        weight_grid_slice_fibres=weight_grid_slice*valid_grid_slice_fibres
+        weight_grid_slice_fibres=overlap_array*valid_grid_slice_fibres
 
         # Combine (sum) the individual observations. See Section 6.1: "Simple
         # summation" of the data reduction paper. Note that these arrays are
         # "unweighted" cubes C' and V', not the weighted C and V given in the
         # paper.
-        data_grid_slice_final = nansum(data_grid_slice_fibres, axis=2) / n_obs
-        var_grid_slice_final = nansum(var_grid_slice_fibres, axis=2) / (n_obs ** 2)
-        weight_grid_slice_final = nansum(weight_grid_slice_fibres, axis=2) / n_obs
+        data_grid_slice_final = nansum(data_grid_slice_fibres, axis=2) 
+        var_grid_slice_final = nansum(var_grid_slice_fibres, axis=2)
+        weight_grid_slice_final = nansum(weight_grid_slice_fibres, axis=2)
         
         # Where the weight map is within epsilon of zero, set it to NaN to
         # prevent divide by zero errors later.
@@ -816,20 +823,13 @@ def dithered_cube_from_rss(ifu_list, clip=True, plot=True, offsets='file'):
                 overlap_maps.n_drizzle, overlap_maps.n_drizzle_recompute,
                 float(overlap_maps.n_drizzle_recompute)/overlap_maps.n_drizzle_recompute))
 
-    # The flux and variance cubes must be rescaled to account for the reduction
-    # in drop size. See Section 9.3: "Flux Scaling" of the data reduction paper.
-    # Note also, that this scaling is immediately nullified by the division by the
-    # weight cube below.
-    flux_cube_scaled = flux_cube / (drop_factor ** 2)
-    var_cube_scaled = var_cube / (drop_factor ** 4)
-    weight_cube_scaled = weight_cube / (drop_factor ** 2)
 
     # Finally, divide by the weight cube to remove variations in exposure time
     # (and hence surface brightness sensitivity) from the output data cube.
-    flux_cube_unprimed = flux_cube_scaled / weight_cube_scaled 
-    var_cube_unprimed = var_cube_scaled / (weight_cube_scaled * weight_cube_scaled)
+    flux_cube_unprimed = flux_cube / weight_cube 
+    var_cube_unprimed = var_cube / (weight_cube * weight_cube)
 
-    return flux_cube_unprimed, var_cube_unprimed, weight_cube_scaled, diagnostic_info
+    return flux_cube_unprimed, var_cube_unprimed, weight_cube, diagnostic_info
 
 def sigma_clip_mask_slice_fibres(grid_slice_fibres):
     """Return a mask with outliers removed."""
@@ -889,9 +889,6 @@ class SAMIDrizzler:
         self.drop_to_pixel = np.empty((self.output_dimension, self.output_dimension, n_fibres))
         self.pixel_coverage = np.empty((self.output_dimension, self.output_dimension, n_fibres))
 
-        self.drop_to_pixel=np.empty((self.output_dimension, self.output_dimension, n_fibres))
-        self.pixel_coverage=np.empty((self.output_dimension, self.output_dimension, n_fibres))
-        
         # These are used to cache the arguments for the last drizzle.
         self._last_drizzle_x = np.zeros(1)
         self._last_drizzle_y = np.zeros(1)        
@@ -927,25 +924,22 @@ class SAMIDrizzler:
         xfib = (fibre_position_x - self.grid_coordinates_x[0]) / self.pix_size_micron
         yfib = (fibre_position_y - self.grid_coordinates_y[0]) / self.pix_size_micron
 
-        # Create the overlap map from the circ.py code
+        # Create the overlap map from the circ.py code. This returns values in
+        # the range [0,1] that represent the amount by which each output pixel
+        # is covered by the input drop.
         #
         # @NOTE: The circ.py code returns an array which has the x-coodinate in
         # the second index and the y-coordinate in the first index. Therefore,
         # we transpose the result here so that the x-cooridnate (north positive)
         # is in the first index, and y-coordinate (east positive) is in the
         # second index.
-        overlap_map = np.transpose(
+        weight_map = np.transpose(
             utils.circ.resample_circle(
                 self.output_dimension, self.output_dimension, 
                 xfib, yfib,
                 self.drop_diameter_pix / 2.0))
 
-        # Fraction of input drop in each output pixel
-        input_frac_map = overlap_map / self.drop_area_pix
-        # Fraction of each output pixel covered by drop
-        output_frac_map = overlap_map / 1.0
-
-        return input_frac_map, output_frac_map
+        return weight_map
 
     def drizzle(self, xfibre_all, yfibre_all):
         """Compute a mapping from fibre drops to output pixels for all given fibre locations."""
@@ -956,26 +950,24 @@ class SAMIDrizzler:
         if (np.allclose(xfibre_all,self._last_drizzle_x, rtol=0,atol=self.drizzle_update_tol) and
             np.allclose(yfibre_all,self._last_drizzle_y, rtol=0,atol=self.drizzle_update_tol)):
             # We've been asked to recompute an asnwer that is less than the tolerance to recompute
-            return self.drop_to_pixel, self.pixel_coverage
+            return self.drop_to_pixel
         else:
             self.n_drizzle_recompute = self.n_drizzle_recompute + 1
         
         for i_fibre, xfib, yfib in itertools.izip(itertools.count(), xfibre_all, yfibre_all):
     
             # Feed the grid_coordinates_x and grid_coordinates_y fibre positions to the overlap_maps instance.
-            drop_to_pixel_fibre, pixel_coverage_fibre=self.single_overlap_map(xfib, yfib)
+            drop_to_pixel_fibre = self.single_overlap_map(xfib, yfib)
     
             # Padding with NaNs instead of zeros (do I really need to do this? Probably not...)
             drop_to_pixel_fibre[np.where(drop_to_pixel_fibre < epsilon)]=np.nan
-            pixel_coverage_fibre[np.where(pixel_coverage_fibre < epsilon)]=np.nan
     
             self.drop_to_pixel[:,:,i_fibre]=drop_to_pixel_fibre
-            self.pixel_coverage[:,:,i_fibre]=pixel_coverage_fibre
     
         self._last_drizzle_x = xfibre_all
         self._last_drizzle_y = yfibre_all
     
-        return self.drop_to_pixel, self.pixel_coverage
+        return self.drop_to_pixel
 
 def WCS_position(myIFU,object_flux_cube,object_name,band,plot=False,write=False,nominal=False,
                  remove_thput_file=True):
