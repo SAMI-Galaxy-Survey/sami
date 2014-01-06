@@ -105,6 +105,9 @@ You should not touch this one, as it is called automatically, in case needed.
 
 HG_CHANGESET = utils.hg_changeset(__file__)
 
+# Multiply by this value to convert arcseconds to microns
+ARCSEC_TO_MICRON = 1000.0 / 15.2
+
 ifus=[1,2,3,4,5,6,7,8,9,10,11,12,13]
 
 def find_dither(RSSname,reference,centroid=True,inter=False,plot=False,remove_files=True):
@@ -396,7 +399,7 @@ def get_centroid(infile):
                 # Probably a broken hexabundle
                 continue
                 
-            p_mic, data_mic, xlin_mic, ylin_mic, model_mic=sami.observing.centroid.centroid_fit(ifu_data.x_microns, ifu_data.y_microns,
+            p_mic, data_mic, xlin_mic, ylin_mic, model_mic=centroid.centroid_fit(ifu_data.x_microns, ifu_data.y_microns,
                                                                                     ifu_data.data, circular=True)
             amplitude_mic, xout_mic, yout_mic, sig_mic, bias_mic=p_mic
             
@@ -411,8 +414,8 @@ def get_centroid(infile):
             dar_calc = DARCorrector(method='simple')
             dar_calc.setup_for_ifu(ifu_data)
             dar_calc.wavelength = np.mean(ifu_data.lambda_range)
-            x_out -= dar_calc.dar_east
-            y_out += dar_calc.dar_north
+            x_out -= dar_calc.dar_east * ARCSEC_TO_MICRON
+            y_out += dar_calc.dar_north * ARCSEC_TO_MICRON
 
             # the data to write to file
             s=ifu_data.name+' '+str(ifu_data.ifu)+' '+str(x_out)+' '+str(y_out)+'\n'
