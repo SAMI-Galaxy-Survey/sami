@@ -40,7 +40,7 @@ from astropy import __version__ as astropy_version
 
 from .. import utils
 from ..utils.ifu import IFU
-from ..utils.mc_adr import parallactic_angle
+from ..utils.mc_adr import parallactic_angle, adr_r
 
 HG_CHANGESET = utils.hg_changeset(__file__)
 
@@ -465,36 +465,46 @@ def alpha(wavelength, alpha_ref):
     """Return alpha at the specified wavelength(s)."""
     return alpha_ref * ((wavelength / REFERENCE_WAVELENGTH)**(-0.2))
 
-def dar(wavelength, zenith_distance, temperature=None, pressure=None, 
+def dar(wavelength, zenith_distance, temperature=None, pressure=None,
         vapour_pressure=None):
     """Return the DAR offset in arcseconds at the specified wavelength(s)."""
-    # Analytic expectations from Fillipenko (1982)
-    n_observed = refractive_index(
-        wavelength, temperature, pressure, vapour_pressure)
-    n_reference = refractive_index(
-        REFERENCE_WAVELENGTH, temperature, pressure, vapour_pressure)
-    return 206265. * (n_observed - n_reference) * np.tan(zenith_distance)
+    return (adr_r(wavelength, np.rad2deg(zenith_distance), 
+                  air_pres=pressure, temperature=temperature, 
+                  water_pres=vapour_pressure) - 
+            adr_r(REFERENCE_WAVELENGTH, np.rad2deg(zenith_distance), 
+                  air_pres=pressure, temperature=temperature, 
+                  water_pres=vapour_pressure))
 
-def refractive_index(wavelength, temperature=None, pressure=None, 
-                     vapour_pressure=None):
-    """Return the refractive index at the specified wavelength(s)."""
-    # Analytic expectations from Fillipenko (1982)
-    if temperature is None:
-        temperature = 7.
-    if pressure is None:
-        pressure = 600.
-    if vapour_pressure is None:
-        vapour_pressure = 8.
-    # Convert wavelength from Angstroms to microns
-    wl = wavelength * 1e-4
-    seaLevelDry = ( 64.328 + ( 29498.1 / ( 146. - ( 1 / wl**2. ) ) )
-                    + 255.4 / ( 41. - ( 1. / wl**2. ) ) )
-    altitudeCorrection = ( 
-        ( pressure * ( 1. + (1.049 - 0.0157*temperature ) * 1e-6 * pressure ) )
-        / ( 720.883 * ( 1. + 0.003661 * temperature ) ) )
-    vapourCorrection = ( ( 0.0624 - 0.000680 / wl**2. )
-                         / ( 1. + 0.003661 * temperature ) ) * vapour_pressure
-    return 1e-6 * (seaLevelDry * altitudeCorrection - vapourCorrection) + 1
+# def dar(wavelength, zenith_distance, temperature=None, pressure=None, 
+#         vapour_pressure=None):
+#     """Return the DAR offset in arcseconds at the specified wavelength(s)."""
+#     # Analytic expectations from Fillipenko (1982)
+#     n_observed = refractive_index(
+#         wavelength, temperature, pressure, vapour_pressure)
+#     n_reference = refractive_index(
+#         REFERENCE_WAVELENGTH, temperature, pressure, vapour_pressure)
+#     return 206265. * (n_observed - n_reference) * np.tan(zenith_distance)
+
+# def refractive_index(wavelength, temperature=None, pressure=None, 
+#                      vapour_pressure=None):
+#     """Return the refractive index at the specified wavelength(s)."""
+#     # Analytic expectations from Fillipenko (1982)
+#     if temperature is None:
+#         temperature = 7.
+#     if pressure is None:
+#         pressure = 600.
+#     if vapour_pressure is None:
+#         vapour_pressure = 8.
+#     # Convert wavelength from Angstroms to microns
+#     wl = wavelength * 1e-4
+#     seaLevelDry = ( 64.328 + ( 29498.1 / ( 146. - ( 1 / wl**2. ) ) )
+#                     + 255.4 / ( 41. - ( 1. / wl**2. ) ) )
+#     altitudeCorrection = ( 
+#         ( pressure * ( 1. + (1.049 - 0.0157*temperature ) * 1e-6 * pressure ) )
+#         / ( 720.883 * ( 1. + 0.003661 * temperature ) ) )
+#     vapourCorrection = ( ( 0.0624 - 0.000680 / wl**2. )
+#                          / ( 1. + 0.003661 * temperature ) ) * vapour_pressure
+#     return 1e-6 * (seaLevelDry * altitudeCorrection - vapourCorrection) + 1
 
 def derive_transfer_function(path_list, max_sep_arcsec=60.0,
                              catalogues=STANDARD_CATALOGUES,
