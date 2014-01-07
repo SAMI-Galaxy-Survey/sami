@@ -41,6 +41,8 @@ from astropy import __version__ as astropy_version
 from .. import utils
 from ..utils.ifu import IFU
 from ..utils.mc_adr import parallactic_angle, adr_r
+from ..utils.other import saturated_partial_pressure_water
+from ..config import millibar_to_mmHg
 
 HG_CHANGESET = utils.hg_changeset(__file__)
 
@@ -261,7 +263,8 @@ def first_guess_parameters(datatube, vartube, xfibre, yfibre, wavelength,
         par_0['zenith_distance'] = np.pi / 8.0
         par_0['alpha_ref'] = 1.0
         par_0['beta'] = 4.0
-    elif model_name == 'ref_centre_alpha_dist_circ':
+    elif (model_name == 'ref_centre_alpha_dist_circ' or
+          model_name == 'ref_centre_alpha_dist_circ_hdratm'):
         par_0['flux'] = np.nansum(datatube, axis=0)
         par_0['background'] = np.zeros(len(par_0['flux']))
         par_0['xcen_ref'] = np.sum(xfibre * weighted_data)
@@ -309,7 +312,8 @@ def parameters_dict_to_vector(parameters_dict, model_name):
              parameters_dict['zenith_distance'],
              parameters_dict['alpha_ref'],
              parameters_dict['beta']))
-    elif model_name == 'ref_centre_alpha_dist_circ':
+    elif (model_name == 'ref_centre_alpha_dist_circ' or
+          model_name == 'ref_centre_alpha_dist_circ_hdratm'):
         parameters_vector = np.hstack(
             (parameters_dict['flux'],
              parameters_dict['background'],
@@ -360,7 +364,8 @@ def parameters_vector_to_dict(parameters_vector, model_name):
         parameters_dict['zenith_distance'] = parameters_vector[-3]
         parameters_dict['alpha_ref'] = parameters_vector[-2]
         parameters_dict['beta'] = parameters_vector[-1]
-    elif model_name == 'ref_centre_alpha_dist_circ':
+    elif (model_name == 'ref_centre_alpha_dist_circ' or
+          model_name == 'ref_centre_alpha_dist_circ_hdratm'):
         n_slice = (len(parameters_vector) - 5) / 2
         parameters_dict['flux'] = parameters_vector[0:n_slice]
         parameters_dict['background'] = parameters_vector[n_slice:2*n_slice]
@@ -395,11 +400,11 @@ def parameters_dict_to_array(parameters_dict, wavelength, model_name):
                                        'formats':formats})
     if model_name == 'ref_centre_alpha_angle':
         parameters_array['xcen'] = (
-            parameters_dict['xcen_ref'] -
+            parameters_dict['xcen_ref'] +
             np.sin(parameters_dict['zenith_direction']) * 
             dar(wavelength, parameters_dict['zenith_distance']))
         parameters_array['ycen'] = (
-            parameters_dict['ycen_ref'] -
+            parameters_dict['ycen_ref'] +
             np.cos(parameters_dict['zenith_direction']) * 
             dar(wavelength, parameters_dict['zenith_distance']))
         parameters_array['alphax'] = (
@@ -415,11 +420,11 @@ def parameters_dict_to_array(parameters_dict, wavelength, model_name):
     elif (model_name == 'ref_centre_alpha_angle_circ' or
           model_name == 'ref_centre_alpha_dist_circ'):
         parameters_array['xcen'] = (
-            parameters_dict['xcen_ref'] - 
+            parameters_dict['xcen_ref'] + 
             np.sin(parameters_dict['zenith_direction']) * 
             dar(wavelength, parameters_dict['zenith_distance']))
         parameters_array['ycen'] = (
-            parameters_dict['ycen_ref'] - 
+            parameters_dict['ycen_ref'] + 
             np.cos(parameters_dict['zenith_direction']) * 
             dar(wavelength, parameters_dict['zenith_distance']))
         parameters_array['alphax'] = (
@@ -432,16 +437,17 @@ def parameters_dict_to_array(parameters_dict, wavelength, model_name):
             parameters_array['flux'] = parameters_dict['flux']
         if len(parameters_dict['background']) == len(parameters_array):
             parameters_array['background'] = parameters_dict['background']
-    elif model_name == 'ref_centre_alpha_angle_circ_atm':
+    elif (model_name == 'ref_centre_alpha_angle_circ_atm' or
+          model_name == 'ref_centre_alpha_dist_circ_hdratm'):
         parameters_array['xcen'] = (
-            parameters_dict['xcen_ref'] -
+            parameters_dict['xcen_ref'] +
             np.sin(parameters_dict['zenith_direction']) * 
             dar(wavelength, parameters_dict['zenith_distance'],
                 temperature=parameters_dict['temperature'],
                 pressure=parameters_dict['pressure'],
                 vapour_pressure=parameters_dict['vapour_pressure']))
         parameters_array['ycen'] = (
-            parameters_dict['ycen_ref'] -
+            parameters_dict['ycen_ref'] +
             np.cos(parameters_dict['zenith_direction']) * 
             dar(wavelength, parameters_dict['zenith_distance'],
                 temperature=parameters_dict['temperature'],
@@ -508,7 +514,7 @@ def dar(wavelength, zenith_distance, temperature=None, pressure=None,
 
 def derive_transfer_function(path_list, max_sep_arcsec=60.0,
                              catalogues=STANDARD_CATALOGUES,
-                             model_name='ref_centre_alpha_dist_circ',
+                             model_name='ref_centre_alpha_dist_circ_hdratm',
                              n_trim=0):
     """Derive transfer function and save it in each FITS file."""
     # First work out which star we're looking at, and which hexabundle it's in
@@ -753,7 +759,10 @@ def header_translate(key):
                  'flux': 'FLUX',
                  'beta': 'BETA',
                  'background': 'BCKGRND',
-                 'alpha_ref': 'ALPHAREF'}
+                 'alpha_ref': 'ALPHAREF',
+                 'temperature': 'TEMP',
+                 'pressure': 'PRESSURE',
+                 'vapour_pressure': 'VAPPRESS'}
     try:
         header_name = name_dict[key]
     except KeyError:
@@ -769,7 +778,10 @@ def header_translate_inverse(header_name):
                  'FLUX': 'flux',
                  'BETA': 'beta',
                  'BCKGRND': 'background',
-                 'ALPHAREF': 'alpha_ref'}
+                 'ALPHAREF': 'alpha_ref',
+                 'TEMP': 'temperature',
+                 'PRESSURE': 'pressure',
+                 'VAPPRESS': 'vapour_pressure'}
     return name_dict[header_name]
 
 def save_transfer_function(path, transfer_function):
@@ -1108,6 +1120,21 @@ def set_fixed_parameters(path_list, model_name):
         zenith_direction = np.deg2rad(parallactic_angle(
             header['HASTART'], header['MEANDEC'], header['LAT_OBS']))
         fixed_parameters = {'zenith_direction': zenith_direction}
+    elif model_name == 'ref_centre_alpha_dist_circ_hdratm':
+        header = pf.getheader(path_list[0])
+        fibre_table_header = pf.getheader(path_list[0], 'FIBRES_IFU')
+        zenith_direction = np.deg2rad(parallactic_angle(
+            header['HASTART'], header['MEANDEC'], header['LAT_OBS']))
+        temperature = fibre_table_header['ATMTEMP']
+        pressure = fibre_table_header['ATMPRES'] * millibar_to_mmHg
+        vapour_pressure = (fibre_table_header['ATMRHUM'] * 
+            saturated_partial_pressure_water(pressure, temperature))
+        fixed_parameters = {
+            'zenith_direction': zenith_direction,
+            'temperature': temperature,
+            'pressure': pressure,
+            'vapour_pressure': vapour_pressure
+        }
     else:
         fixed_parameters = {}
     return fixed_parameters
