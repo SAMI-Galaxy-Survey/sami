@@ -24,7 +24,7 @@ declination_dome_dist=0.0982  # dome radii
 
 # Latitude of SSO (based on AAT Zenith Position, may not be most accurate)
 latitude=coords.Angle(-31.3275, unit=u.degree)
-latitude_radians=latitude.radians
+latitude_radians=latitude.radian
 # ----------------------------------------------------------------------------------------
 
 # Pressure conversion factor from millibars to mm of Hg 
