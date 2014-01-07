@@ -140,7 +140,8 @@ def extract_secondary_standard(path_list,
                                      sigma_clip=5)
     trim_chunked_data(chunked_data, n_trim)
     # Fit the PSF
-    fixed_parameters = set_fixed_parameters(path_list, model_name)
+    fixed_parameters = set_fixed_parameters(
+        path_list, model_name, probenum=star_match['probenum'])
     psf_parameters = fit_model_flux(
         chunked_data['data'], 
         chunked_data['variance'],
