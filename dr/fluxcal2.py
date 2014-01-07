@@ -1096,7 +1096,7 @@ def set_fixed_parameters(path_list, model_name):
     if model_name == 'ref_centre_alpha_dist_circ':
         header = pf.getheader(path_list[0])
         zenith_direction = np.deg2rad(parallactic_angle(
-            header['HASTART'], header['ZDSTART'], header['LAT_OBS']))
+            header['HASTART'], header['MEANDEC'], header['LAT_OBS']))
         fixed_parameters = {'zenith_direction': zenith_direction}
     else:
         fixed_parameters = {}
