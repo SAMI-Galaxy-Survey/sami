@@ -139,23 +139,34 @@ def dar_correct(ifu_list, xfibre_all, yfibre_all, method='simple',update_rss=Fal
     for obs in ifu_list:
         darcorr = DARCorrector(method=method)
     
-        darcorr.temperature = obs.fibre_table_header['ATMTEMP'] 
-        darcorr.air_pres = obs.fibre_table_header['ATMPRES'] * millibar_to_mmHg
-        #                     (factor converts from millibars to mm of Hg)
-        darcorr.water_pres = \
-            utils.saturated_partial_pressure_water(darcorr.air_pres, darcorr.temperature) * \
-            obs.fibre_table_header['ATMRHUM']
-
         ha_offset = obs.ra - obs.meanra  # The offset from the HA of the field centre
-    
-        darcorr.zenith_distance = \
-            integrate.quad(lambda ha: zenith_distance(obs.dec, ha),
-                           obs.primary_header['HASTART'] + ha_offset,
-                           obs.primary_header['HAEND'] + ha_offset)[0] / (
-                              obs.primary_header['HAEND'] - obs.primary_header['HASTART'])
 
-        darcorr.hour_angle = \
-            (obs.primary_header['HASTART'] + obs.primary_header['HAEND']) / 2 + ha_offset
+        ha_start = obs.primary_header['HASTART'] + ha_offset
+        # The header includes HAEND, but this goes very wrong if the telescope
+        # slews during readout. The equation below goes somewhat wrong if the
+        # observation was paused, but somewhat wrong is better than very wrong.
+        ha_end = ha_start + (obs.exptime / 3600.0) * 15.0
+    
+        if hasattr(obs, 'atmosphere'):
+            # Take the atmospheric parameters from the file, as measured
+            # during telluric correction
+            darcorr.temperature = obs.atmosphere['temperature']
+            darcorr.air_pres = obs.atmosphere['pressure']
+            darcorr.water_pres = obs.atmosphere['vapour_pressure']
+            darcorr.zenith_distance = obs.atmosphere['zenith_distance']
+        else:
+            # Get the atmospheric parameters from the fibre table header
+            darcorr.temperature = obs.fibre_table_header['ATMTEMP'] 
+            darcorr.air_pres = obs.fibre_table_header['ATMPRES'] * millibar_to_mmHg
+            #                     (factor converts from millibars to mm of Hg)
+            darcorr.water_pres = \
+                utils.saturated_partial_pressure_water(darcorr.air_pres, darcorr.temperature) * \
+                obs.fibre_table_header['ATMRHUM']
+            darcorr.zenith_distance = \
+                integrate.quad(lambda ha: zenith_distance(obs.dec, ha),
+                               ha_start, ha_end)[0] / (ha_end - ha_start)
+
+        darcorr.hour_angle = 0.5 * (ha_start + ha_end)
     
         darcorr.declination = obs.dec
 

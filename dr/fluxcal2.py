@@ -527,7 +527,8 @@ def derive_transfer_function(path_list, max_sep_arcsec=60.0,
     chunked_data = read_chunked_data(path_list, star_match['probenum'])
     trim_chunked_data(chunked_data, n_trim)
     # Fit the PSF
-    fixed_parameters = set_fixed_parameters(path_list, model_name)
+    fixed_parameters = set_fixed_parameters(
+        path_list, model_name, probenum=standard_data['probenum'])
     psf_parameters = fit_model_flux(
         chunked_data['data'], 
         chunked_data['variance'],
@@ -1113,30 +1114,32 @@ def insert_fixed_parameters(parameters_dict, fixed_parameters):
             parameters_dict[key] = value
     return parameters_dict
 
-def set_fixed_parameters(path_list, model_name):
+def set_fixed_parameters(path_list, model_name, probenum=None):
     """Return fixed values for certain parameters."""
-    if model_name == 'ref_centre_alpha_dist_circ':
+    fixed_parameters = {}
+    if (model_name == 'ref_centre_alpha_dist_circ' or
+        model_name == 'ref_centre_alpha_dist_circ_hdratm'):
         header = pf.getheader(path_list[0])
+        ifu = IFU(path_list[0], probenum, flag_name=False)
+        ha_offset = ifu.ra - ifu.meanra  # The offset from the HA of the field centre
+        ha_start = header['HASTART'] + ha_offset
+        # The header includes HAEND, but this goes very wrong if the telescope
+        # slews during readout. The equation below goes somewhat wrong if the
+        # observation was paused, but somewhat wrong is better than very wrong.
+        ha_end = ha_start + (ifu.exptime / 3600.0) * 15.0
+        ha = 0.5 * (ha_start + ha_end)
         zenith_direction = np.deg2rad(parallactic_angle(
-            header['HASTART'], header['MEANDEC'], header['LAT_OBS']))
-        fixed_parameters = {'zenith_direction': zenith_direction}
-    elif model_name == 'ref_centre_alpha_dist_circ_hdratm':
-        header = pf.getheader(path_list[0])
+            ha, header['MEANDEC'], header['LAT_OBS']))
+        fixed_parameters['zenith_direction'] = zenith_direction
+    if model_name == 'ref_centre_alpha_dist_circ_hdratm':
         fibre_table_header = pf.getheader(path_list[0], 'FIBRES_IFU')
-        zenith_direction = np.deg2rad(parallactic_angle(
-            header['HASTART'], header['MEANDEC'], header['LAT_OBS']))
         temperature = fibre_table_header['ATMTEMP']
         pressure = fibre_table_header['ATMPRES'] * millibar_to_mmHg
         vapour_pressure = (fibre_table_header['ATMRHUM'] * 
             saturated_partial_pressure_water(pressure, temperature))
-        fixed_parameters = {
-            'zenith_direction': zenith_direction,
-            'temperature': temperature,
-            'pressure': pressure,
-            'vapour_pressure': vapour_pressure
-        }
-    else:
-        fixed_parameters = {}
+        fixed_parameters['temperature'] = temperature
+        fixed_parameters['pressure'] = pressure
+        fixed_parameters['vapour_pressure'] = vapour_pressure
     return fixed_parameters
 
 def check_psf_parameters(psf_parameters, chunked_data):

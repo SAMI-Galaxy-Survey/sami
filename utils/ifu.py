@@ -4,6 +4,8 @@ import numpy as np
 # astropy fits file io (replacement for pyfits)
 import astropy.io.fits as pf
 
+from ..dr.fluxcal2 import read_model_parameters
+
 class IFU:
 
     def __init__(self, rss_filename, probe_identifier, flag_name=True):
@@ -159,6 +161,17 @@ class IFU:
             self.y_refmed = offsets['Y_REFMED']
             self.x_shift = -1 * offsets['X_SHIFT']
             self.y_shift = offsets['Y_SHIFT']
+
+        # Fitted DAR parameters, if available
+        try:
+            hdu_fluxcal = hdulist['FLUX_CALIBRATION']
+        except KeyError:
+            # Haven't been measured yet; never mind
+            pass
+        else:
+            self.atmosphere = read_model_parameters(hdu_fluxcal)
+            del self.atmosphere['flux']
+            del self.atmosphere['background']
 
         # Object RA & DEC
         self.obj_ra=table_new.field('GRP_MRA')
