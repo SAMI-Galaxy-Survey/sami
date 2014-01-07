@@ -227,7 +227,7 @@ def dar_correct(ifu_list, xfibre_all, yfibre_all, method='simple',update_rss=Fal
 
 def dithered_cubes_from_rss_files(inlist, objects='all', size_of_grid=50, output_pix_size_arcsec=0.5,
                                   drop_factor=0.5, clip=True, plot=True, write=False, suffix='',
-                                  nominal=False, root='', overwrite=False):
+                                  nominal=False, root='', overwrite=False, covar_mode = 'optimal'):
     """A wrapper to make a cube from reduced RSS files, passed as a filename containing a list of filenames. Only input files that go together - ie have the same objects."""
 
     # Read in the list of all the RSS files input by the user.
@@ -240,12 +240,13 @@ def dithered_cubes_from_rss_files(inlist, objects='all', size_of_grid=50, output
 
     dithered_cubes_from_rss_list(files, objects=objects, size_of_grid=size_of_grid, 
                                  output_pix_size_arcsec=output_pix_size_arcsec, clip=clip, plot=plot,
-                                 write=write, root=root, suffix=suffix, nominal=nominal, overwrite=overwrite)
+                                 write=write, root=root, suffix=suffix, nominal=nominal, overwrite=overwrite,
+                                 covar_mode = covar_mode)
     return
 
 def dithered_cubes_from_rss_list(files, objects='all', size_of_grid=50, output_pix_size_arcsec=0.5,
                                  drop_factor=0.5, clip=True, plot=True, write=False, suffix='',
-                                 nominal=False, root='', overwrite=False):
+                                 nominal=False, root='', overwrite=False, covar_mode = 'optimal'):
     """A wrapper to make a cube from reduced RSS files, passed as a list. Only input files that go together - ie have the same objects."""
         
     start_time = datetime.datetime.now()
@@ -312,15 +313,16 @@ def dithered_cubes_from_rss_list(files, objects='all', size_of_grid=50, output_p
         # Call dithered_cube_from_rss to create the flux, variance and weight cubes for the object.
         
         # For now, putting in a try/except block to skip over any errors
-        try:
-            flux_cube, var_cube, weight_cube, diagnostics = \
+        #try:
+        flux_cube, var_cube, weight_cube, diagnostics, covar_cube, covar_locs = \
                 dithered_cube_from_rss(ifu_list, size_of_grid=size_of_grid,
-                                       output_pix_size_arcsec=output_pix_size_arcsec, clip=clip, plot=plot)
-        except Exception:
-            print 'Cubing failed! Skipping to next galaxy.'
-            print 'Object:', name
-            print 'Files:', files
-            continue
+                                       output_pix_size_arcsec=output_pix_size_arcsec,
+                                       clip=clip, plot=plot,covar_mode=covar_mode)
+        #except Exception:
+        #    print 'Cubing failed! Skipping to next galaxy.'
+        #    print 'Object:', name
+        #    print 'Files:', files
+        #    continue
             #raise
 
         # Write out FITS files.
@@ -356,12 +358,23 @@ def dithered_cubes_from_rss_list(files, objects='all', size_of_grid=50, output_p
             hdu2=pf.ImageHDU(np.transpose(var_cube, (2,1,0)), name='VARIANCE')
             hdu3=pf.ImageHDU(np.transpose(weight_cube, (2,1,0)), name='WEIGHT')
 
+            if covar_mode != 'none':
+                hdu4 = pf.ImageHDU(np.transpose(covariance_cube,(4,3,2,1,0)),name='COVAR')
+                hdu4.header['COVARMOD'] = (covar_mode, 'Covariance mode')
+                if covar_mode == 'optimal':
+                    hdu4.header['COVAR_N'] = (len(covar_locs), 'Number of covariance locations')
+                    for i in xrange(len(covar_locs)):
+                        hdu4.header['COVARLOC_'+str(i+1)] = covar_locs[i]
+
             # Create HDUs for meta-data
             #metadata_table = create_metadata_table(ifu_list)
             
             # Put individual HDUs into a HDU list
-            hdulist=pf.HDUList([hdu1, hdu2, hdu3]) #,metadata_table])
-        
+            if covar_mode == 'none':
+                hdulist=pf.HDUList([hdu1,hdu2,hdu3]) #,metadata_table])
+            else:
+                hdulist=pf.HDUList([hdu1,hdu2,hdu3,hdu4])
+
             # Write the file
             print "Writing", outfile_name_full
             "--------------------------------------------------------------"
@@ -373,7 +386,7 @@ def dithered_cubes_from_rss_list(files, objects='all', size_of_grid=50, output_p
     print("Time dithered_cubes_from_files wall time: {0}".format(datetime.datetime.now() - start_time))
 
 def dithered_cube_from_rss(ifu_list, size_of_grid=50, output_pix_size_arcsec=0.5, drop_factor=0.5,
-                           clip=True, plot=True, offsets='file'):
+                           clip=True, plot=True, offsets='file', covar_mode = 'optimal'):
    
     diagnostic_info = {}
 
@@ -578,6 +591,12 @@ def dithered_cube_from_rss(ifu_list, size_of_grid=50, output_pix_size_arcsec=0.5
     # and we have confirmed that all RSS files are on the same wavelength
     # solution.
     wavelength_array = ifu_list[0].lambda_range
+
+
+    # Initialise some covariance variables
+    overlap_array = 0
+    overlap_array_old = 0
+    overlap_array_older = 0
     
     # This loops over wavelength slices (e.g., 2048). 
     for l in xrange(n_slices):
@@ -615,7 +634,54 @@ def dithered_cube_from_rss(ifu_list, size_of_grid=50, output_pix_size_arcsec=0.5
 
 
         # Compute drizzle maps for this wavelength slice.
+        # Store previous slices drizzle map for optimal covariance approach
+        overlap_array_older = overlap_array_old
+        overlap_array_old = overlap_array
         overlap_array, weight_grid_slice = overlap_maps.drizzle(xfibre_all[:,l], yfibre_all[:,l])
+        
+        #######################################
+        # Determine covariance array at either i) all slices (mode = full)
+        # or ii) either side of DAR corrected slices (mode = optimal)
+        # NB - Code between the #### could be parceled out into a separate function,
+        # but because of the number of variables required
+        if (l == 0) and (covar_mode != 'none'):
+            covariance_array_slice = create_covar_matrix(overlap_array,var_rss_slice)
+            s_covar_slice = np.shape(covariance_array_slice)
+            covariance_array = covariance_array_slice.reshape(np.append(s_covar_slice,1))
+            recompute_tracker = 1
+            recompute_flag = 0
+            covariance_slice_locs = [0]
+        
+        elif (l == (n_slices-1)) and (covar_mode != 'none'):
+            covariance_array_slice = create_covar_matrix(overlap_array,var_rss_slice)
+            covariance_array_slice = covariance_array_slice.reshape(np.append(s_covar_slice,1))
+            covariance_array = np.append(covariance_array,covariance_array_slice,axis=len(s_covar_slice))
+            covariance_slice_locs.append(l)
+        
+        elif covar_mode == 'full':
+            covariance_array_slice = create_covar_matrix(overlap_array,var_rss_slice)
+            covariance_array_slice.reshape(np.append(s_covar_slice,1))
+            covariance_array = np.append(covariance_array,covariance_array_slice,axis=len(s_covar_slice))
+        
+        elif (covar_mode == 'optimal') and (recompute_flag == 1):
+            covariance_array_slice = create_covar_matrix(overlap_array,var_rss_slice)
+            covariance_array_slice = covariance_array_slice.reshape(np.append(s_covar_slice,1))
+            covariance_array_slice_prev = create_covar_matrix(overlap_array_old,var_all[:,l-1])
+            covariance_array_slice_prev = covariance_array_slice_prev.reshape(np.append(s_covar_slice,1))
+            covariance_array_slice_prev2 = create_covar_matrix(overlap_array_older,var_all[:,l-2])
+            covariance_array_slice_prev2 = covariance_array_slice_prev2.reshape(np.append(s_covar_slice,1))
+            covariance_array = np.append(covariance_array,covariance_array_slice_prev2,axis=len(s_covar_slice))
+            covariance_array = np.append(covariance_array,covariance_array_slice_prev,axis=len(s_covar_slice))
+            covariance_array = np.append(covariance_array,covariance_array_slice,axis=len(s_covar_slice))
+            covariance_slice_locs.append(l-2)
+            covariance_slice_locs.append(l-1)
+            covariance_slice_locs.append(l)
+            recompute_tracker = overlap_maps.n_drizzle_recompute
+            recompute_flag = 0
+        
+        if recompute_tracker != overlap_maps.n_drizzle_recompute:
+            recompute_flag = 1
+        ##########################################
         
         # Map RSS slices onto gridded slices
         norm_grid_slice_fibres=overlap_array*norm_rss_slice        
@@ -679,7 +745,7 @@ def dithered_cube_from_rss(ifu_list, size_of_grid=50, output_pix_size_arcsec=0.5
 
     print("Total calls to drizzle: {}, recomputes: {}, ({}%)".format(
                 overlap_maps.n_drizzle, overlap_maps.n_drizzle_recompute,
-                float(overlap_maps.n_drizzle_recompute)/overlap_maps.n_drizzle_recompute))
+                float(overlap_maps.n_drizzle_recompute)/overlap_maps.n_drizzle*100.))
 
     # The flux and variance cubes must be rescaled to account for the reduction
     # in drop size. See Section 9.3: "Flux Scaling" of the data reduction paper.
@@ -694,7 +760,7 @@ def dithered_cube_from_rss(ifu_list, size_of_grid=50, output_pix_size_arcsec=0.5
     flux_cube_unprimed=flux_cube_scaled/weight_cube_scaled 
     var_cube_unprimed=var_cube_scaled/(weight_cube_scaled*weight_cube_scaled)
 
-    return flux_cube_unprimed, var_cube_unprimed, weight_cube_scaled, diagnostic_info
+    return flux_cube_unprimed, var_cube_unprimed, weight_cube_scaled, diagnostic_info, covariance_array, covariance_slice_locs
 
 def sigma_clip_mask_slice_fibres(grid_slice_fibres):
     """Return a mask with outliers removed."""
@@ -1051,7 +1117,7 @@ def WCS_position_coords(object_RA, object_DEC, wave, object_flux_cube, object_na
             urllib.urlretrieve("http://www.sdss.org/dr3/instruments/imager/filters/"+str(band)+".dat", "sdss_"+str(band)+".dat")
         
         # and convolve with the SDSS throughput
-        sdss = ascii.read("SDSS_"+str(band)+".dat", quotechar="#", names=["wave", "pt_secz=1.3", "ext_secz=1.3", "ext_secz=0.0", "extinction"])
+        sdss = ascii.read("SDSS_"+str(band)+".dat", comment="#", names=["wave", "pt_secz=1.3", "ext_secz=1.3", "ext_secz=0.0", "extinction"])
         
         # re-grid g["wave"] -> wave
         thru_regrid = griddata(sdss["wave"], sdss["ext_secz=1.3"], wave, method="cubic", fill_value=0.0)
@@ -1254,3 +1320,52 @@ def getSDSSimage(object_name="unknown", RA=0, DEC=0, band="g", size=0.006944,
                +str(object_name)+"_SDSS_"+str(band)+".fits")
         
         print "The URL for this object is: ", URL
+
+def create_covar_matrix(overlap_array,variances):
+    """Create the covariance matrix for a single wavelength slice. 
+        As input takes the output of the drizzle class, overlap_array, 
+        and the variances of the individual fibres"""
+    
+    covarS = 2 # Radius of sub-region to record covariance information - probably
+               # shouldn't be hard coded, but scaled to drop size in some way
+    
+    s = np.shape(overlap_array)
+    if s[2] != len(variances):
+        raise Exception('Length of variance array must be equal to the number of fibre overlap maps supplied')
+    
+    #Set up the covariance array
+    covariance_array = np.zeros((s[0],s[1],(covarS*2)+1,(covarS*2)+1))
+    if len(np.where(np.isfinite(variances) == True)[0]) == 0:
+        return covariance_array
+    
+    #Set up coordinate arrays for the covariance sub-arrays
+    xB = np.zeros(((covarS*2+1)**2),dtype=np.int)
+    yB = np.zeros(((covarS*2+1)**2),dtype=np.int)
+    for i in range(covarS*2+1):
+        for j in range(covarS*2+1):
+            xB[j+i*(covarS*2+1)] = i
+            yB[j+i*(covarS*2+1)] = j
+    xB = xB - covarS
+    yB = yB - covarS
+    
+    #Pad overlap_array with covarS blank space in the spatial axis
+    
+    overlap_array_padded = np.zeros([s[0]+2*covarS,s[1]+2*covarS,s[2]])
+    overlap_array_padded[covarS:-covarS,covarS:-covarS,:] = overlap_array
+    overlap_array = overlap_array_padded
+
+    #Loop over output pixels
+    for xA in range(s[0]):
+        for yA in range(s[1]):
+            #Loop over each fibre
+            for f in range(len(variances)):
+                if np.isfinite(overlap_array[xA+covarS,yA+covarS,f]):
+                    xC = xA +covarS + xB
+                    yC = yA + covarS + yB
+                    a = overlap_array[xA+covarS,yA+covarS,f]*np.sqrt(variances[f])
+                    b = overlap_array[xC,yC,f]*np.sqrt(variances[f])
+                    b[np.where(np.isfinite(b) == False)] = 0.0
+                    covariance_array[xA,yA,:,:] = covariance_array[xA,yA,:,:] + (a*b).reshape(5,5)
+            covariance_array[xA,yA,:,:] = covariance_array[xA,yA,:,:]/covariance_array[xA,yA,covarS,covarS]
+    
+    return covariance_array

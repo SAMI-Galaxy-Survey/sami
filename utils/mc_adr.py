@@ -103,7 +103,7 @@ def parallactic_angle(hour_angle, declination, latitude):
         -numpy.arctan2( cos_lat * sin_ha, sin_lat * cos_dec - cos_lat * sin_dec * cos_ha)
         )
     
-def zenith_distance(declination, hour_angle, latitude=latitude.degrees):
+def zenith_distance(declination, hour_angle, latitude=latitude.degree):
     """Return the zenith distance in degrees of an object.
     
     All inputs are in degrees.
@@ -141,7 +141,7 @@ class DARCorrector(object):
             self.ref_wavelength = 5000.0
 
         # Latitude of the observatory, default to AAT.
-        self.latitude = latitude.degrees
+        self.latitude = latitude.degree
         
         # Private variables
         self._pa = False
