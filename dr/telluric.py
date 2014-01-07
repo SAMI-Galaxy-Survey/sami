@@ -129,7 +129,7 @@ def correction_linear_fit(frame_list, n_trim=0):
     return
 
 def extract_secondary_standard(path_list, 
-                               model_name='ref_centre_alpha_dist_circ',
+                               model_name='ref_centre_alpha_dist_circ_hdratm',
                                n_trim=0):
     """Identify and extract the secondary standard in a reduced RSS file."""
     
