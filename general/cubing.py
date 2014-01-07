@@ -336,7 +336,8 @@ def dithered_cubes_from_rss_list(files, objects='all', size_of_grid=50, output_p
                 raise ValueError('Could not identify band. Exiting')
 
             # Equate Positional WCS
-            WCS_pos, WCS_flag=WCS_position(ifu_list[0], flux_cube, name, band, plot, nominal=nominal)   
+            WCS_pos, WCS_flag=WCS_position(ifu_list[0], flux_cube, name, band, size_of_grid,
+                                           output_pix_size_arcsec, plot, nominal=nominal)   
             
             # First get some info from one of the headers.
             list1=pf.open(files[0])
@@ -1068,8 +1069,9 @@ def create_metadata_table(ifu_list):
    
     return pf.new_table(columns)
 
-def WCS_position(myIFU, object_flux_cube, object_name, band, plot=False, write=False, nominal=False,
-                 remove_thput_file=True):
+def WCS_position(myIFU, object_flux_cube, object_name, band, size_of_grid, output_pix_size_arcsec,
+                 plot=False, write=False, nominal=False, remove_thput_file=True):
+    
     """Wrapper for WCS_position_coords, extracting coords from IFU.
     
     This function cross-correlates a g-band convolved SAMI cube with its
@@ -1093,13 +1095,14 @@ def WCS_position(myIFU, object_flux_cube, object_name, band, plot=False, write=F
         
     object_flux_cube = np.transpose(object_flux_cube, (2,0,1))
     
-    return WCS_position_coords(object_RA, object_DEC, wave, object_flux_cube,
-                               object_name, band, plot=plot, write=write,
+    return WCS_position_coords(object_RA, object_DEC, wave, object_flux_cube, object_name, band,
+                               size_of_grid, output_pix_size_arcsec, plot=plot, write=write,
                                nominal=nominal)
 
 
 def WCS_position_coords(object_RA, object_DEC, wave, object_flux_cube, object_name, band,
-                        plot=False, write=False, nominal=False, remove_thput_file=True):
+                        size_of_grid, output_pix_size_arcsec, plot=False, write=False, nominal=False,
+                        remove_thput_file=True):
     """Equate the WCS position information from a cross-correlation between a 
     g-band SAMI cube and a g-band SDSS image."""
 
@@ -1235,7 +1238,6 @@ def WCS_position_coords(object_RA, object_DEC, wave, object_flux_cube, object_na
             WCS_pos={"CRVAL1":(img_crval1 + x_offset_degree), "CRVAL2":(img_crval2 + y_offset_degree), "CRPIX1":(xcube/2), 
                      "CRPIX2":(ycube/2), "CDELT1":(img_cdelt1), "CDELT2":(img_cdelt2), "CTYPE1":"DEGREE", "CTYPE2":"DEGREE"}
 
-
 ##########
 
     # Remove temporary files
@@ -1249,6 +1251,7 @@ def WCS_position_coords(object_RA, object_DEC, wave, object_flux_cube, object_na
 
 def update_WCS_coords(filename, nominal=False, remove_thput_file=True):
     """Recalculate the WCS data in a SAMI datacube."""
+    
     # Pick out the relevant data
     header = pf.getheader(filename)
     ra = (header['CRVAL1'] + 
