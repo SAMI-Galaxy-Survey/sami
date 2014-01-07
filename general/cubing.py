@@ -216,7 +216,7 @@ def dithered_cubes_from_rss_files(inlist,
 def dithered_cubes_from_rss_list(files, 
                                  objects='all', clip=True, plot=True, 
                                  write=False, suffix='', nominal=False, root='',
-                                 overwrite=False):
+                                 overwrite=False, do_dar_correct=True):
     """A wrapper to make a cube from reduced RSS files, passed as a list. Only input files that go together - ie have the same objects."""
         
     start_time = datetime.datetime.now()
@@ -289,7 +289,8 @@ def dithered_cubes_from_rss_list(files,
         # For now, putting in a try/except block to skip over any errors
         try:
             flux_cube, var_cube, weight_cube, diagnostics = \
-                dithered_cube_from_rss(ifu_list, clip=clip, plot=plot)
+                dithered_cube_from_rss(ifu_list, clip=clip, plot=plot,
+                    do_dar_correct=do_dar_correct)
         except Exception:
             print 'Cubing failed! Skipping to next galaxy.'
             print 'Object:', name, 'files:', files
@@ -508,7 +509,8 @@ def create_metadata_table(ifu_list):
    
     return pf.new_table(columns)
 
-def dithered_cube_from_rss(ifu_list, clip=True, plot=True, offsets='file'):
+def dithered_cube_from_rss(ifu_list, clip=True, plot=True, offsets='file',
+                           do_dar_correct=True):
         
     diagnostic_info = {}
 
@@ -659,7 +661,8 @@ def dithered_cube_from_rss(ifu_list, clip=True, plot=True, offsets='file'):
     #     DAR correction is handled by another function in this module, which
     #     updates the fibre positions in place.
     
-    dar_correct(ifu_list, xfibre_all, yfibre_all)
+    if do_dar_correct:
+        dar_correct(ifu_list, xfibre_all, yfibre_all)
 
     # Reshape the arrays
     #
