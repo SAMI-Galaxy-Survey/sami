@@ -110,6 +110,8 @@ import astropy.io.ascii as ascii
 from scipy.interpolate import griddata
 import urllib
 
+import code
+
 # Some global constants:
 HG_CHANGESET = utils.hg_changeset(__file__)
 
@@ -314,7 +316,7 @@ def dithered_cubes_from_rss_list(files, objects='all', size_of_grid=50, output_p
         
         # For now, putting in a try/except block to skip over any errors
         #try:
-        flux_cube, var_cube, weight_cube, diagnostics, covar_cube, covar_locs = \
+        flux_cube, var_cube, weight_cube, diagnostics, covariance_cube, covar_locs = \
                 dithered_cube_from_rss(ifu_list, size_of_grid=size_of_grid,
                                        output_pix_size_arcsec=output_pix_size_arcsec,
                                        clip=clip, plot=plot,covar_mode=covar_mode)
@@ -365,7 +367,7 @@ def dithered_cubes_from_rss_list(files, objects='all', size_of_grid=50, output_p
                 if covar_mode == 'optimal':
                     hdu4.header['COVAR_N'] = (len(covar_locs), 'Number of covariance locations')
                     for i in xrange(len(covar_locs)):
-                        hdu4.header['COVARLOC_'+str(i+1)] = covar_locs[i]
+                        hdu4.header['HIERARCH COVARLOC_'+str(i+1)] = covar_locs[i]
 
             # Create HDUs for meta-data
             #metadata_table = create_metadata_table(ifu_list)
@@ -598,8 +600,13 @@ def dithered_cube_from_rss(ifu_list, size_of_grid=50, output_pix_size_arcsec=0.5
     overlap_array = 0
     overlap_array_old = 0
     overlap_array_older = 0
+    overlap_array_oldest = 0
+    recompute_tracker = 1
+    recompute_flag = 0
+    covariance_array = []
+    covariance_slice_locs = []
     
-    # This loops over wavelength slices (e.g., 2048). 
+    # This loops over wavelength slices (e.g., 2048).
     for l in xrange(n_slices):
 
         # In this loop, we will map the RSS fluxes from individual fibres
@@ -636,23 +643,48 @@ def dithered_cube_from_rss(ifu_list, size_of_grid=50, output_pix_size_arcsec=0.5
 
         # Compute drizzle maps for this wavelength slice.
         # Store previous slices drizzle map for optimal covariance approach
-        overlap_array_older = overlap_array_old
-        overlap_array_old = overlap_array
+        overlap_array_oldest = np.copy(overlap_array_older)
+        overlap_array_older = np.copy(overlap_array_old)
+        overlap_array_old = np.copy(overlap_array)
         overlap_array, weight_grid_slice = overlap_maps.drizzle(xfibre_all[:,l], yfibre_all[:,l])
         
         #######################################
         # Determine covariance array at either i) all slices (mode = full)
         # or ii) either side of DAR corrected slices (mode = optimal)
         # NB - Code between the #### could be parceled out into a separate function,
-        # but because of the number of variables required
-        if (l == 0) and (covar_mode != 'none'):
+        # but because of the number of variables required I've opted to leave it here
+        if (l == 100) and (covar_mode != 'none'):
             covariance_array_slice = create_covar_matrix(overlap_array,var_rss_slice)
             s_covar_slice = np.shape(covariance_array_slice)
             covariance_array = covariance_array_slice.reshape(np.append(s_covar_slice,1))
-            recompute_tracker = 1
+            covariance_slice_locs = [100]
+
+        elif (covar_mode == 'optimal') and (recompute_flag == 1):
+            covariance_array_slice = create_covar_matrix(overlap_array,var_rss_slice)
+            covariance_array_slice = covariance_array_slice.reshape(np.append(s_covar_slice,1))
+            covariance_array_slice_prev = create_covar_matrix(overlap_array_old,var_all[:,l-1])
+            covariance_array_slice_prev = covariance_array_slice_prev.reshape(np.append(s_covar_slice,1))
+            covariance_array_slice_prev2 = create_covar_matrix(overlap_array_older,var_all[:,l-2])
+            covariance_array_slice_prev2 = covariance_array_slice_prev2.reshape(np.append(s_covar_slice,1))
+            covariance_array_slice_prev3 = create_covar_matrix(overlap_array_oldest,var_all[:,l-3])
+            covariance_array_slice_prev3 = covariance_array_slice_prev3.reshape(np.append(s_covar_slice,1))
+            covariance_array = np.append(covariance_array,covariance_array_slice_prev3,axis=len(s_covar_slice))
+            covariance_array = np.append(covariance_array,covariance_array_slice_prev2,axis=len(s_covar_slice))
+            covariance_array = np.append(covariance_array,covariance_array_slice_prev,axis=len(s_covar_slice))
+            covariance_array = np.append(covariance_array,covariance_array_slice,axis=len(s_covar_slice))
+            covariance_slice_locs.append(l-3)
+            covariance_slice_locs.append(l-2)
+            covariance_slice_locs.append(l-1)
+            covariance_slice_locs.append(l)
+            recompute_tracker = overlap_maps.n_drizzle_recompute
             recompute_flag = 0
-            covariance_slice_locs = [0]
-        
+
+        elif ((l%200 == 0) or (l == (n_slices-2)) or (l == (n_slices-1))) and (covar_mode != 'none'):
+            covariance_array_slice = create_covar_matrix(overlap_array,var_rss_slice)
+            covariance_array_slice = covariance_array_slice.reshape(np.append(s_covar_slice,1))
+            covariance_array = np.append(covariance_array,covariance_array_slice,axis=len(s_covar_slice))
+            covariance_slice_locs.append(l)
+
         elif (l == (n_slices-1)) and (covar_mode != 'none'):
             covariance_array_slice = create_covar_matrix(overlap_array,var_rss_slice)
             covariance_array_slice = covariance_array_slice.reshape(np.append(s_covar_slice,1))
@@ -661,24 +693,8 @@ def dithered_cube_from_rss(ifu_list, size_of_grid=50, output_pix_size_arcsec=0.5
         
         elif covar_mode == 'full':
             covariance_array_slice = create_covar_matrix(overlap_array,var_rss_slice)
-            covariance_array_slice.reshape(np.append(s_covar_slice,1))
-            covariance_array = np.append(covariance_array,covariance_array_slice,axis=len(s_covar_slice))
-        
-        elif (covar_mode == 'optimal') and (recompute_flag == 1):
-            covariance_array_slice = create_covar_matrix(overlap_array,var_rss_slice)
             covariance_array_slice = covariance_array_slice.reshape(np.append(s_covar_slice,1))
-            covariance_array_slice_prev = create_covar_matrix(overlap_array_old,var_all[:,l-1])
-            covariance_array_slice_prev = covariance_array_slice_prev.reshape(np.append(s_covar_slice,1))
-            covariance_array_slice_prev2 = create_covar_matrix(overlap_array_older,var_all[:,l-2])
-            covariance_array_slice_prev2 = covariance_array_slice_prev2.reshape(np.append(s_covar_slice,1))
-            covariance_array = np.append(covariance_array,covariance_array_slice_prev2,axis=len(s_covar_slice))
-            covariance_array = np.append(covariance_array,covariance_array_slice_prev,axis=len(s_covar_slice))
             covariance_array = np.append(covariance_array,covariance_array_slice,axis=len(s_covar_slice))
-            covariance_slice_locs.append(l-2)
-            covariance_slice_locs.append(l-1)
-            covariance_slice_locs.append(l)
-            recompute_tracker = overlap_maps.n_drizzle_recompute
-            recompute_flag = 0
         
         if recompute_tracker != overlap_maps.n_drizzle_recompute:
             recompute_flag = 1
