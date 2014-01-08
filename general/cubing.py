@@ -46,6 +46,8 @@ root - Root directory for writing files to. Should be a string. Default is null 
 
 overwrite - Overwrite existing files with the same output name. Default is False.
 
+covar_mode - Option are 'none', 'optimal' or 'full'. Default is 'optimal'.
+
 OUTPUTS:
 If write is set to True two data cubes will be produced for each object cubed. These are
 written by default to a new directory, created within the working directory, with the name
