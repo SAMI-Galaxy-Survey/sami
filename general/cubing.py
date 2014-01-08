@@ -679,7 +679,7 @@ def dithered_cube_from_rss(ifu_list, size_of_grid=50, output_pix_size_arcsec=0.5
             recompute_tracker = overlap_maps.n_drizzle_recompute
             recompute_flag = 0
 
-        elif ((l%200 == 0) or (l == (n_slices-2)) or (l == (n_slices-1))) and (covar_mode != 'none'):
+        elif (((l%200 == 0) and (l != 0)) or (l == (n_slices-2)) or (l == (n_slices-1))) and (covar_mode != 'none'):
             covariance_array_slice = create_covar_matrix(overlap_array,var_rss_slice)
             covariance_array_slice = covariance_array_slice.reshape(np.append(s_covar_slice,1))
             covariance_array = np.append(covariance_array,covariance_array_slice,axis=len(s_covar_slice))
