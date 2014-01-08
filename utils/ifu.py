@@ -4,7 +4,7 @@ import numpy as np
 # astropy fits file io (replacement for pyfits)
 import astropy.io.fits as pf
 
-from ..dr.fluxcal2 import read_model_parameters
+from .fluxcal2_io import read_model_parameters
 
 class IFU:
 
@@ -169,7 +169,7 @@ class IFU:
             # Haven't been measured yet; never mind
             pass
         else:
-            self.atmosphere = read_model_parameters(hdu_fluxcal)
+            self.atmosphere = read_model_parameters(hdu_fluxcal)[0]
             del self.atmosphere['flux']
             del self.atmosphere['background']
 
