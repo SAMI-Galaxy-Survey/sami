@@ -925,9 +925,6 @@ def create_primary_header(ifu_list,name,files,WCS_pos,WCS_flag):
     hdr = ifu_list[0].primary_header
     fbr_hdr = ifu_list[0].fibre_table_header
 
-    # Get positional information from WCS_pos
-    #### Do something here!!!
-
     # Create the wcs.
     wcs_new=pw.WCS(naxis=3)
     wcs_new.wcs.crpix = [WCS_pos["CRPIX1"], WCS_pos["CRPIX2"], hdr['CRPIX1']]
@@ -1002,6 +999,11 @@ def create_primary_header(ifu_list,name,files,WCS_pos,WCS_flag):
     hist_ind = np.where(np.array(hdr.keys()) == 'HISTORY')[0]
     for i in hist_ind: 
         hdr_new.append(hdr.cards[i])
+
+    # Add catalogue RA & DEC to header
+    print ifu_list[0].obj_ra[0]
+    hdr_new.set('CATARA', ifu_list[0].obj_ra[0], after='CRVAL3')
+    hdr_new.set('CATADEC', ifu_list[0].obj_dec[0], after='CATARA')
 
     return hdr_new
 

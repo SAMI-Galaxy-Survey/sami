@@ -14,4 +14,4 @@ import config
 # Bring all subpackage modules up to the package name space.
 from general import *
 from observing import *
-
+from sdss import *
