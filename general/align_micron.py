@@ -110,7 +110,8 @@ ARCSEC_TO_MICRON = 1000.0 / 15.2
 
 ifus=[1,2,3,4,5,6,7,8,9,10,11,12,13]
 
-def find_dither(RSSname,reference,centroid=True,inter=False,plot=False,remove_files=True):
+def find_dither(RSSname,reference,centroid=True,inter=False,plot=False,remove_files=True,
+                do_dar_correct=True):
       
       
       ## For each file in inlist call the get_cetroid module, computes centroid coordinates and stores them 
@@ -118,7 +119,7 @@ def find_dither(RSSname,reference,centroid=True,inter=False,plot=False,remove_fi
 
       if centroid:
           for name in RSSname:
-              get_centroid(name)
+              get_centroid(name, do_dar_correct=do_dar_correct)
             
       nRSS=len(RSSname)
       
@@ -381,7 +382,7 @@ def find_dither(RSSname,reference,centroid=True,inter=False,plot=False,remove_fi
 
 
 
-def get_centroid(infile):
+def get_centroid(infile, do_dar_correct=True):
 
     ## Create name of the file where centroid coordinates are stored 
     
@@ -411,11 +412,12 @@ def get_centroid(infile):
             y_out= yout_mic
             
             # Adjust for DAR, which means that "true" galaxy position is offset from observed position
-            dar_calc = DARCorrector(method='simple')
-            dar_calc.setup_for_ifu(ifu_data)
-            dar_calc.wavelength = np.mean(ifu_data.lambda_range)
-            x_out -= dar_calc.dar_east * ARCSEC_TO_MICRON
-            y_out += dar_calc.dar_north * ARCSEC_TO_MICRON
+            if do_dar_correct:
+                dar_calc = DARCorrector(method='simple')
+                dar_calc.setup_for_ifu(ifu_data)
+                dar_calc.wavelength = np.mean(ifu_data.lambda_range)
+                x_out -= dar_calc.dar_east * ARCSEC_TO_MICRON
+                y_out += dar_calc.dar_north * ARCSEC_TO_MICRON
 
             # the data to write to file
             s=ifu_data.name+' '+str(ifu_data.ifu)+' '+str(x_out)+' '+str(y_out)+'\n'

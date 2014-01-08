@@ -153,7 +153,7 @@ def dar_correct(ifu_list, xfibre_all, yfibre_all, method='simple',update_rss=Fal
             darcorr.temperature = obs.atmosphere['temperature']
             darcorr.air_pres = obs.atmosphere['pressure']
             darcorr.water_pres = obs.atmosphere['vapour_pressure']
-            darcorr.zenith_distance = obs.atmosphere['zenith_distance']
+            darcorr.zenith_distance = np.rad2deg(obs.atmosphere['zenith_distance'])
         else:
             # Get the atmospheric parameters from the fibre table header
             darcorr.temperature = obs.fibre_table_header['ATMTEMP'] 
@@ -190,7 +190,7 @@ def dar_correct(ifu_list, xfibre_all, yfibre_all, method='simple',update_rss=Fal
             dar_x = dar_correctors[i_obs].dar_east * 1000.0 / plate_scale 
             dar_y = dar_correctors[i_obs].dar_north * 1000.0 / plate_scale 
             # TODO: Need to change to arcsecs!
-    
+
             xfibre_all[i_obs,:,l] = xfibre_all[i_obs,:,l] + dar_x
             yfibre_all[i_obs,:,l] = yfibre_all[i_obs,:,l] + dar_y
             
@@ -201,7 +201,6 @@ def dar_correct(ifu_list, xfibre_all, yfibre_all, method='simple',update_rss=Fal
     if diagnostics.enabled:
         diagnostics.DAR.xfib = xfibre_all
         diagnostics.DAR.yfib = yfibre_all
-
 
 
 def dithered_cubes_from_rss_files(inlist, 
