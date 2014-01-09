@@ -129,7 +129,7 @@ def correction_linear_fit(frame_list, n_trim=0):
     return
 
 def extract_secondary_standard(path_list, 
-                               model_name='ref_centre_alpha_dist_circ',
+                               model_name='ref_centre_alpha_dist_circ_hdratm',
                                n_trim=0):
     """Identify and extract the secondary standard in a reduced RSS file."""
     
@@ -140,7 +140,8 @@ def extract_secondary_standard(path_list,
                                      sigma_clip=5)
     trim_chunked_data(chunked_data, n_trim)
     # Fit the PSF
-    fixed_parameters = set_fixed_parameters(path_list, model_name)
+    fixed_parameters = set_fixed_parameters(
+        path_list, model_name, probenum=star_match['probenum'])
     psf_parameters = fit_model_flux(
         chunked_data['data'], 
         chunked_data['variance'],
@@ -157,7 +158,7 @@ def extract_secondary_standard(path_list,
             ifu, psf_parameters, model_name, clip=5.0)
         save_extracted_flux(path, observed_flux, observed_background,
                             star_match, psf_parameters, model_name,
-                            good_psf)
+                            good_psf, HG_CHANGESET)
     return
 
 def identify_secondary_standard(path):
