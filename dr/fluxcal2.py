@@ -38,11 +38,14 @@ from astropy import units
 from astropy.io import fits as pf
 from astropy import __version__ as astropy_version
 
-from .. import utils
+from ..utils import hg_changeset
 from ..utils.ifu import IFU
-from ..utils.mc_adr import parallactic_angle
+from ..utils.mc_adr import parallactic_angle, adr_r
+from ..utils.other import saturated_partial_pressure_water
+from ..config import millibar_to_mmHg
+from ..utils.fluxcal2_io import read_model_parameters, save_extracted_flux
 
-HG_CHANGESET = utils.hg_changeset(__file__)
+HG_CHANGESET = hg_changeset(__file__)
 
 STANDARD_CATALOGUES = ('./standards/ESO/ESOstandards.dat',
                        './standards/Bessell/Bessellstandards.dat')
@@ -261,7 +264,8 @@ def first_guess_parameters(datatube, vartube, xfibre, yfibre, wavelength,
         par_0['zenith_distance'] = np.pi / 8.0
         par_0['alpha_ref'] = 1.0
         par_0['beta'] = 4.0
-    elif model_name == 'ref_centre_alpha_dist_circ':
+    elif (model_name == 'ref_centre_alpha_dist_circ' or
+          model_name == 'ref_centre_alpha_dist_circ_hdratm'):
         par_0['flux'] = np.nansum(datatube, axis=0)
         par_0['background'] = np.zeros(len(par_0['flux']))
         par_0['xcen_ref'] = np.sum(xfibre * weighted_data)
@@ -309,7 +313,8 @@ def parameters_dict_to_vector(parameters_dict, model_name):
              parameters_dict['zenith_distance'],
              parameters_dict['alpha_ref'],
              parameters_dict['beta']))
-    elif model_name == 'ref_centre_alpha_dist_circ':
+    elif (model_name == 'ref_centre_alpha_dist_circ' or
+          model_name == 'ref_centre_alpha_dist_circ_hdratm'):
         parameters_vector = np.hstack(
             (parameters_dict['flux'],
              parameters_dict['background'],
@@ -360,7 +365,8 @@ def parameters_vector_to_dict(parameters_vector, model_name):
         parameters_dict['zenith_distance'] = parameters_vector[-3]
         parameters_dict['alpha_ref'] = parameters_vector[-2]
         parameters_dict['beta'] = parameters_vector[-1]
-    elif model_name == 'ref_centre_alpha_dist_circ':
+    elif (model_name == 'ref_centre_alpha_dist_circ' or
+          model_name == 'ref_centre_alpha_dist_circ_hdratm'):
         n_slice = (len(parameters_vector) - 5) / 2
         parameters_dict['flux'] = parameters_vector[0:n_slice]
         parameters_dict['background'] = parameters_vector[n_slice:2*n_slice]
@@ -395,11 +401,11 @@ def parameters_dict_to_array(parameters_dict, wavelength, model_name):
                                        'formats':formats})
     if model_name == 'ref_centre_alpha_angle':
         parameters_array['xcen'] = (
-            parameters_dict['xcen_ref'] -
+            parameters_dict['xcen_ref'] +
             np.sin(parameters_dict['zenith_direction']) * 
             dar(wavelength, parameters_dict['zenith_distance']))
         parameters_array['ycen'] = (
-            parameters_dict['ycen_ref'] -
+            parameters_dict['ycen_ref'] +
             np.cos(parameters_dict['zenith_direction']) * 
             dar(wavelength, parameters_dict['zenith_distance']))
         parameters_array['alphax'] = (
@@ -415,11 +421,11 @@ def parameters_dict_to_array(parameters_dict, wavelength, model_name):
     elif (model_name == 'ref_centre_alpha_angle_circ' or
           model_name == 'ref_centre_alpha_dist_circ'):
         parameters_array['xcen'] = (
-            parameters_dict['xcen_ref'] - 
+            parameters_dict['xcen_ref'] + 
             np.sin(parameters_dict['zenith_direction']) * 
             dar(wavelength, parameters_dict['zenith_distance']))
         parameters_array['ycen'] = (
-            parameters_dict['ycen_ref'] - 
+            parameters_dict['ycen_ref'] + 
             np.cos(parameters_dict['zenith_direction']) * 
             dar(wavelength, parameters_dict['zenith_distance']))
         parameters_array['alphax'] = (
@@ -432,16 +438,17 @@ def parameters_dict_to_array(parameters_dict, wavelength, model_name):
             parameters_array['flux'] = parameters_dict['flux']
         if len(parameters_dict['background']) == len(parameters_array):
             parameters_array['background'] = parameters_dict['background']
-    elif model_name == 'ref_centre_alpha_angle_circ_atm':
+    elif (model_name == 'ref_centre_alpha_angle_circ_atm' or
+          model_name == 'ref_centre_alpha_dist_circ_hdratm'):
         parameters_array['xcen'] = (
-            parameters_dict['xcen_ref'] -
+            parameters_dict['xcen_ref'] +
             np.sin(parameters_dict['zenith_direction']) * 
             dar(wavelength, parameters_dict['zenith_distance'],
                 temperature=parameters_dict['temperature'],
                 pressure=parameters_dict['pressure'],
                 vapour_pressure=parameters_dict['vapour_pressure']))
         parameters_array['ycen'] = (
-            parameters_dict['ycen_ref'] -
+            parameters_dict['ycen_ref'] +
             np.cos(parameters_dict['zenith_direction']) * 
             dar(wavelength, parameters_dict['zenith_distance'],
                 temperature=parameters_dict['temperature'],
@@ -465,40 +472,50 @@ def alpha(wavelength, alpha_ref):
     """Return alpha at the specified wavelength(s)."""
     return alpha_ref * ((wavelength / REFERENCE_WAVELENGTH)**(-0.2))
 
-def dar(wavelength, zenith_distance, temperature=None, pressure=None, 
+def dar(wavelength, zenith_distance, temperature=None, pressure=None,
         vapour_pressure=None):
     """Return the DAR offset in arcseconds at the specified wavelength(s)."""
-    # Analytic expectations from Fillipenko (1982)
-    n_observed = refractive_index(
-        wavelength, temperature, pressure, vapour_pressure)
-    n_reference = refractive_index(
-        REFERENCE_WAVELENGTH, temperature, pressure, vapour_pressure)
-    return 206265. * (n_observed - n_reference) * np.tan(zenith_distance)
+    return (adr_r(wavelength, np.rad2deg(zenith_distance), 
+                  air_pres=pressure, temperature=temperature, 
+                  water_pres=vapour_pressure) - 
+            adr_r(REFERENCE_WAVELENGTH, np.rad2deg(zenith_distance), 
+                  air_pres=pressure, temperature=temperature, 
+                  water_pres=vapour_pressure))
 
-def refractive_index(wavelength, temperature=None, pressure=None, 
-                     vapour_pressure=None):
-    """Return the refractive index at the specified wavelength(s)."""
-    # Analytic expectations from Fillipenko (1982)
-    if temperature is None:
-        temperature = 7.
-    if pressure is None:
-        pressure = 600.
-    if vapour_pressure is None:
-        vapour_pressure = 8.
-    # Convert wavelength from Angstroms to microns
-    wl = wavelength * 1e-4
-    seaLevelDry = ( 64.328 + ( 29498.1 / ( 146. - ( 1 / wl**2. ) ) )
-                    + 255.4 / ( 41. - ( 1. / wl**2. ) ) )
-    altitudeCorrection = ( 
-        ( pressure * ( 1. + (1.049 - 0.0157*temperature ) * 1e-6 * pressure ) )
-        / ( 720.883 * ( 1. + 0.003661 * temperature ) ) )
-    vapourCorrection = ( ( 0.0624 - 0.000680 / wl**2. )
-                         / ( 1. + 0.003661 * temperature ) ) * vapour_pressure
-    return 1e-6 * (seaLevelDry * altitudeCorrection - vapourCorrection) + 1
+# def dar(wavelength, zenith_distance, temperature=None, pressure=None, 
+#         vapour_pressure=None):
+#     """Return the DAR offset in arcseconds at the specified wavelength(s)."""
+#     # Analytic expectations from Fillipenko (1982)
+#     n_observed = refractive_index(
+#         wavelength, temperature, pressure, vapour_pressure)
+#     n_reference = refractive_index(
+#         REFERENCE_WAVELENGTH, temperature, pressure, vapour_pressure)
+#     return 206265. * (n_observed - n_reference) * np.tan(zenith_distance)
+
+# def refractive_index(wavelength, temperature=None, pressure=None, 
+#                      vapour_pressure=None):
+#     """Return the refractive index at the specified wavelength(s)."""
+#     # Analytic expectations from Fillipenko (1982)
+#     if temperature is None:
+#         temperature = 7.
+#     if pressure is None:
+#         pressure = 600.
+#     if vapour_pressure is None:
+#         vapour_pressure = 8.
+#     # Convert wavelength from Angstroms to microns
+#     wl = wavelength * 1e-4
+#     seaLevelDry = ( 64.328 + ( 29498.1 / ( 146. - ( 1 / wl**2. ) ) )
+#                     + 255.4 / ( 41. - ( 1. / wl**2. ) ) )
+#     altitudeCorrection = ( 
+#         ( pressure * ( 1. + (1.049 - 0.0157*temperature ) * 1e-6 * pressure ) )
+#         / ( 720.883 * ( 1. + 0.003661 * temperature ) ) )
+#     vapourCorrection = ( ( 0.0624 - 0.000680 / wl**2. )
+#                          / ( 1. + 0.003661 * temperature ) ) * vapour_pressure
+#     return 1e-6 * (seaLevelDry * altitudeCorrection - vapourCorrection) + 1
 
 def derive_transfer_function(path_list, max_sep_arcsec=60.0,
                              catalogues=STANDARD_CATALOGUES,
-                             model_name='ref_centre_alpha_dist_circ',
+                             model_name='ref_centre_alpha_dist_circ_hdratm',
                              n_trim=0):
     """Derive transfer function and save it in each FITS file."""
     # First work out which star we're looking at, and which hexabundle it's in
@@ -511,7 +528,8 @@ def derive_transfer_function(path_list, max_sep_arcsec=60.0,
     chunked_data = read_chunked_data(path_list, star_match['probenum'])
     trim_chunked_data(chunked_data, n_trim)
     # Fit the PSF
-    fixed_parameters = set_fixed_parameters(path_list, model_name)
+    fixed_parameters = set_fixed_parameters(
+        path_list, model_name, probenum=standard_data['probenum'])
     psf_parameters = fit_model_flux(
         chunked_data['data'], 
         chunked_data['variance'],
@@ -528,7 +546,7 @@ def derive_transfer_function(path_list, max_sep_arcsec=60.0,
             ifu, psf_parameters, model_name)
         save_extracted_flux(path, observed_flux, observed_background,
                             star_match, psf_parameters, model_name,
-                            good_psf)
+                            good_psf, HG_CHANGESET)
         transfer_function = take_ratio(
             standard_data['flux'], 
             standard_data['wavelength'], 
@@ -686,81 +704,6 @@ def residual_slice(flux_background, model, data, variance):
     variance[data < cutoff] = cutoff
     return ((background + flux * model) - data) / np.sqrt(variance)
     #return ((background + flux * model) - data) / np.sqrt(variance)
-
-def save_extracted_flux(path, observed_flux, observed_background,
-                        star_match, psf_parameters, model_name,
-                        good_psf):
-    """Add the extracted flux to the specified FITS file."""
-    # Turn the data into a single array
-    data = np.vstack((observed_flux, observed_background))
-    # Make the new HDU
-    hdu_name = 'FLUX_CALIBRATION'
-    new_hdu = pf.ImageHDU(data, name=hdu_name)
-    # Add info to the header
-    header_item_list = [
-        ('PROBENUM', star_match['probenum'], 'Number of the probe containing '
-                                             'the star'),
-        ('STDNAME', star_match['name'], 'Name of standard star'),
-        ('HGFLXCAL', HG_CHANGESET, 'Hg changeset ID for fluxcal code'),
-        ('MODEL', model_name, 'Name of model used in PSF fit'),
-        ('GOODPSF', good_psf, 'Whether the PSF fit has good parameters')]
-    if 'path' in star_match:
-        header_item_list.append(
-            ('STDFILE', star_match['path'], 'Filename of standard spectrum'))
-    if 'separation' in star_match:
-        header_item_list.append(
-            ('STDOFF', star_match['separation'], 'Offset (arcsec) to standard '
-                                                 'star coordinates'))
-    for key, value in psf_parameters.items():
-        header_item_list.append((header_translate(key), value, 
-                                 'PSF model parameter'))
-    for key, value, comment in header_item_list:
-        try:
-            new_hdu.header[key] = (value, comment)
-        except ValueError:
-            # Probably tried to save an array, just ditch it
-            pass
-    # Update the file
-    hdulist = pf.open(path, 'update', do_not_scale_image_data=True)
-    # Check if there's already an extracted flux, and delete if so
-    try:
-        existing_index = hdulist.index_of(hdu_name)
-    except KeyError:
-        pass
-    else:
-        del hdulist[existing_index]
-    hdulist.append(new_hdu)
-    hdulist.close()
-    del hdulist
-    return
-
-def header_translate(key):
-    """Translate parameter names to be suitable for headers."""
-    name_dict = {'xcen_ref': 'XCENREF',
-                 'ycen_ref': 'YCENREF',
-                 'zenith_direction': 'ZENDIR',
-                 'zenith_distance': 'ZENDIST',
-                 'flux': 'FLUX',
-                 'beta': 'BETA',
-                 'background': 'BCKGRND',
-                 'alpha_ref': 'ALPHAREF'}
-    try:
-        header_name = name_dict[key]
-    except KeyError:
-        header_name = key[:8]
-    return header_name
-
-def header_translate_inverse(header_name):
-    """Translate parameter names back from headers."""
-    name_dict = {'XCENREF': 'xcen_ref',
-                 'YCENREF': 'ycen_ref',
-                 'ZENDIR': 'zenith_direction',
-                 'ZENDIST': 'zenith_distance',
-                 'FLUX': 'flux',
-                 'BETA': 'beta',
-                 'BCKGRND': 'background',
-                 'ALPHAREF': 'alpha_ref'}
-    return name_dict[header_name]
 
 def save_transfer_function(path, transfer_function):
     """Add the transfer function to a pre-existing FLUX_CALIBRATION HDU."""
@@ -1068,22 +1011,6 @@ def read_model(path):
     model = model_flux(psf_parameters, xfibre, yfibre, wavelength, model_name)
     return model
 
-def read_model_parameters(hdu):
-    """Return the PSF model parameters in a header, with the model name."""
-    psf_parameters = {}
-    model_name = None
-    for key, value in hdu.header.items():
-        if key == 'MODEL':
-            model_name = value
-        else:
-            try:
-                psf_parameters[header_translate_inverse(key)] = value
-            except KeyError:
-                continue
-    psf_parameters['flux'] = hdu.data[0, :]
-    psf_parameters['background'] = hdu.data[1, :]
-    return psf_parameters, model_name
-
 def insert_fixed_parameters(parameters_dict, fixed_parameters):
     """Insert the fixed parameters into the parameters_dict."""
     if fixed_parameters is not None:
@@ -1091,15 +1018,32 @@ def insert_fixed_parameters(parameters_dict, fixed_parameters):
             parameters_dict[key] = value
     return parameters_dict
 
-def set_fixed_parameters(path_list, model_name):
+def set_fixed_parameters(path_list, model_name, probenum=None):
     """Return fixed values for certain parameters."""
-    if model_name == 'ref_centre_alpha_dist_circ':
+    fixed_parameters = {}
+    if (model_name == 'ref_centre_alpha_dist_circ' or
+        model_name == 'ref_centre_alpha_dist_circ_hdratm'):
         header = pf.getheader(path_list[0])
+        ifu = IFU(path_list[0], probenum, flag_name=False)
+        ha_offset = ifu.ra - ifu.meanra  # The offset from the HA of the field centre
+        ha_start = header['HASTART'] + ha_offset
+        # The header includes HAEND, but this goes very wrong if the telescope
+        # slews during readout. The equation below goes somewhat wrong if the
+        # observation was paused, but somewhat wrong is better than very wrong.
+        ha_end = ha_start + (ifu.exptime / 3600.0) * 15.0
+        ha = 0.5 * (ha_start + ha_end)
         zenith_direction = np.deg2rad(parallactic_angle(
-            header['HASTART'], header['ZDSTART'], header['LAT_OBS']))
-        fixed_parameters = {'zenith_direction': zenith_direction}
-    else:
-        fixed_parameters = {}
+            ha, header['MEANDEC'], header['LAT_OBS']))
+        fixed_parameters['zenith_direction'] = zenith_direction
+    if model_name == 'ref_centre_alpha_dist_circ_hdratm':
+        fibre_table_header = pf.getheader(path_list[0], 'FIBRES_IFU')
+        temperature = fibre_table_header['ATMTEMP']
+        pressure = fibre_table_header['ATMPRES'] * millibar_to_mmHg
+        vapour_pressure = (fibre_table_header['ATMRHUM'] * 
+            saturated_partial_pressure_water(pressure, temperature))
+        fixed_parameters['temperature'] = temperature
+        fixed_parameters['pressure'] = pressure
+        fixed_parameters['vapour_pressure'] = vapour_pressure
     return fixed_parameters
 
 def check_psf_parameters(psf_parameters, chunked_data):
