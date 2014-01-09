@@ -1166,7 +1166,8 @@ class Manager:
         self.map(measure_offsets_group, complete_groups)
         return
 
-    def cube(self, overwrite=False, min_exposure=599.0, name='main', **kwargs):
+    def cube(self, overwrite=False, min_exposure=599.0, name='main', 
+             star_only=False, **kwargs):
         """Make datacubes from the given RSS files."""
         groups = self.group_files_by(
             ['field_id', 'ccd'], ndf_class='MFOBJECT', do_not_use=False,
@@ -1174,7 +1175,7 @@ class Manager:
         # Add in the root path as well, so that cubing puts things in the 
         # right place
         cubed_root = os.path.join(self.root, 'cubed')
-        groups = [(key, fits_list, cubed_root, overwrite) 
+        groups = [(key, fits_list, cubed_root, overwrite, star_only) 
                   for key, fits_list in groups.items()]
         # Send the cubing tasks off to multiple CPUs
         self.map(cube_group, groups)
@@ -2561,15 +2562,20 @@ def measure_offsets_group(group):
 
 def cube_group(group):
     """Cube a set of RSS files."""
-    field, fits_list, root, overwrite = group
+    field, fits_list, root, overwrite, star_only = group
     print 'Cubing field ID: {}, CCD: {}'.format(field[0], field[1])
     path_list = [best_path(fits) for fits in fits_list]
     print 'These are the files:'
     for path in path_list:
         print '  ', os.path.basename(path)
+    if star_only:
+        objects = [pf.getval(path_list[0], 'STDNAME', 'FLUX_CALIBRATION')]
+    else:
+        objects = 'all'
     dithered_cubes_from_rss_list(path_list, suffix='_'+field[0], 
                                  write=True, nominal=True, root=root,
-                                 overwrite=overwrite, do_dar_correct=True)
+                                 overwrite=overwrite, do_dar_correct=True,
+                                 objects=objects)
     return
 
 def best_path(fits):
