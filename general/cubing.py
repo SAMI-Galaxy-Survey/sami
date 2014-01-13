@@ -332,6 +332,7 @@ def dithered_cubes_from_rss_list(files, objects='all', size_of_grid=50,
         flux_cube, var_cube, weight_cube, diagnostics, covariance_cube, covar_locs = \
                 dithered_cube_from_rss(ifu_list, size_of_grid=size_of_grid,
                                        output_pix_size_arcsec=output_pix_size_arcsec,
+                                       drop_factor=drop_factor,
                                        clip=clip, plot=plot, covar_mode=covar_mode,
                                        do_dar_correct=do_dar_correct)
 
