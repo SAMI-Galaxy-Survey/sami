@@ -15,21 +15,13 @@ Table of Contents:
 .query_multiple  Perform any number of queries on any number of SAMI tables. 
 .search          The query prototype.
 .test_contents   ??
-
-For commit message:
-
-Now catching an exception that occurs when misspelling a column (variable) name in queryMaster(), or any mistakes in table/variable name in queryMultiple(). 
 """
 
 import numpy as np
 import h5py as h5
 import tables
-#import astropy.io.fits as pf
-#import astropy.io.ascii as ascii
 import os
 import sys
-#import sami
-
 
 # ~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~
 def print_sami(s, idfile, queryText, outFile=True, verbose=True):
@@ -63,20 +55,54 @@ def print_sami(s, idfile, queryText, outFile=True, verbose=True):
 
 
 # ~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~
+def makeTable(table, tableOut='sami_selection.html'):
+# ~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~
+    """ Generate an html table for website output """
+
+    """ 
+    1) Trim master table. 
+    2) Open a file, iterate line by line, write all cells.
+       -- Hyperlink CATID to Gerald's datasheets. 
+
+    # Open-read h5file. 
+    hdf = tables.openFile(h5file, 'r')
+
+    # Identify the SAMI master table, assumed to live in the Table directory
+    g_table = hdf.getNode('/SAMI/0.4/Table/')
+    table = g_table.SAMI_MASTER
+
+    """
+    
+    # Open a file to write the table, write html preamble. 
+    f = open(tableOut, 'w')
+
+    f.write('<html><body><table>')
+    f.write("<tr><td>%s</td><td>%s</td></tr>" % 
+            ('CATID', 'z_spec'))
+
+    # Keep a running index of the following loop. 
+    index = 0
+
+    # Do the deed. 
+    for tables.row in table:
+        index = index+1
+        row = str(index)
+
+        f.write("<tr><td>%s</td><td>%s</td></tr>" % 
+                (str(tables.row['CATID']), str(tables.row['z_spec'])))
+
+    # Wrap up html. 
+    f.write("</table></body></html>")
+    f.close()
+
+
+# ~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~
 def queryMaster(h5file, queryIn, version='', idfile='sami_query.lis', 
-                verbose=True, returnID=True, overwrite=True):
+                verbose=True, returnID=False, tabulate=True, overwrite=True):
 # ~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~
     """ Read a SAMI master table and perform a query """
 
     import sami.db.export as export
-
-    """
-    NOTES: 
-
-    The query should be passed either as a string argument or as an ascii file 
-    containing such a string. Adding '@list' functionality will facilitate 
-    browser-generated queries farther down the track. 
-    """
 
     # Interpret the 'query' argument (look for a filename). 
     if os.path.isfile(queryIn):
@@ -85,6 +111,10 @@ def queryMaster(h5file, queryIn, version='', idfile='sami_query.lis',
     else:
         queryText = queryIn
 
+    # Check that the nominated h5 file exists. 
+    if not os.path.isfile(h5file):
+        raise SystemExit("Cannot find nominated HDF5 file ('"+h5file+"').")
+        
     # Get latest data version, if not supplied
     hdf0 = h5.File(h5file, 'r')
     version = export.getVersion(h5file, hdf0, version)
@@ -116,6 +146,10 @@ def queryMaster(h5file, queryIn, version='', idfile='sami_query.lis',
         hdf.close()
         raise SystemExit("Oops! Your query was not understood. Please "+
                          "check the spelling of the chosen variable.")
+
+    # Generate a table, if requested.
+    if tabulate:
+        makeTable(master.where(queryText))
 
     # Close h5 file and return query results. 
     hdf.close()
