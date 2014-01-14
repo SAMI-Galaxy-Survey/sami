@@ -171,7 +171,6 @@ import astropy.io.fits as pf
 import astropy.io.ascii as ascii
 import os
 import sys
-import sami
 
 """ 
 For commit message: 
@@ -221,6 +220,8 @@ def import_cube(blue_cube, red_cube, h5file, version, safe_mode=False,
                 version_confirm=True):
 # ~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~
     """ Import a set of data-cubes and parents to the SAMI Archive. """
+    
+    import sami
     
     # Check if the nominated h5 file exists; prompt for creation if not, exit. 
     if not os.path.isfile(h5file):
