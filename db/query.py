@@ -405,12 +405,12 @@ def querycone(h5file, RAc, DECc, radius, version='', idfile='sami_query.lis', ou
 # ~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~
 def sph_dist(ra1, dec1,ra2, dec2):
 # ~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~
-"""
-Compute the spherical distance between 2 pairs of coordinates
-using the Haversine formula
-Input coordinates are in decimal degrees
-Output: angular distance in decimal degrees
-"""
+    """
+    Compute the spherical distance between 2 pairs of coordinates
+    using the Haversine formula
+    Input coordinates are in decimal degrees
+    Output: angular distance in decimal degrees
+    """
     ra1_rad = np.radians(ra1)
     dec1_rad = np.radians(dec1)
     ra2_rad = np.radians(ra2)
