@@ -55,41 +55,39 @@ def print_sami(s, idfile, queryText, outFile=True, verbose=True):
 
 
 # ~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~
-def makeTable(table, tableOut='sami_selection.html'):
+def makeTable(table, tabIndex, tableOut='sami_selection.html'):
 # ~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~
     """ Generate an html table for website output """
-
-    """ 
-    1) Trim master table. 
-    2) Open a file, iterate line by line, write all cells.
-       -- Hyperlink CATID to Gerald's datasheets. 
-
-    # Open-read h5file. 
-    hdf = tables.openFile(h5file, 'r')
-
-    # Identify the SAMI master table, assumed to live in the Table directory
-    g_table = hdf.getNode('/SAMI/0.4/Table/')
-    table = g_table.SAMI_MASTER
-
-    """
     
     # Open a file to write the table, write html preamble. 
     f = open(tableOut, 'w')
 
     f.write('<html><body><table>')
-    f.write("<tr><td>%s</td><td>%s</td></tr>" % 
-            ('CATID', 'z_spec'))
+    #f.write("<tr><td>%s</td><td>%s</td></tr>" % 
+    #        ('CATID', 'z_spec'))
+    f.write("<tr>" + 
+            "".join(["<td>"+str(s)+"</td>" for s in table.colnames]) + 
+            "</tr>")
+
 
     # Keep a running index of the following loop. 
     index = 0
 
     # Do the deed. 
-    for tables.row in table:
+    for tables.row in table[tabIndex]:
         index = index+1
         row = str(index)
 
-        f.write("<tr><td>%s</td><td>%s</td></tr>" % 
-                (str(tables.row['CATID']), str(tables.row['z_spec'])))
+        try:
+            f.write("<tr>" + 
+                  "".join(["<td>"+str(s)+"</td>" for s in tables.row]) + 
+                  "</tr>")
+        except:
+            print('Nah')
+
+        #Original: manually select columns to be displayed. 
+        #f.write("<tr><td>%s</td><td>%s</td></tr>" % 
+        #        (str(tables.row['CATID']), str(tables.row['z_spec'])))
 
     # Wrap up html. 
     f.write("</table></body></html>")
@@ -98,7 +96,7 @@ def makeTable(table, tableOut='sami_selection.html'):
 
 # ~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~
 def queryMaster(h5file, queryIn, version='', idfile='sami_query.lis', 
-                verbose=True, returnID=False, tabulate=True, overwrite=True):
+                verbose=False, returnID=False, tabulate=True, overwrite=True):
 # ~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~
     """ Read a SAMI master table and perform a query """
 
@@ -141,15 +139,17 @@ def queryMaster(h5file, queryIn, version='', idfile='sami_query.lis',
     # Run the row iterator -- try! 
     try: 
         idlist = print_sami(master.where(queryText), idfile, 
-                            queryText, outFile=returnID, verbose=True)
+                            queryText, outFile=returnID, verbose=verbose)
     except:
         hdf.close()
         raise SystemExit("Oops! Your query was not understood. Please "+
                          "check the spelling of the chosen variable.")
 
-    # Generate a table, if requested.
+    # Generate a table, if requested, given a row index and the table.
     if tabulate:
-        makeTable(master.where(queryText))
+        tabIndex = [row.nrow for row in master.where(queryText)]
+        #makeTable(master.where(queryText))
+        makeTable(master, tabIndex)
 
     # Close h5 file and return query results. 
     hdf.close()
