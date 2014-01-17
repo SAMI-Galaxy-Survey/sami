@@ -443,6 +443,76 @@ def fetch_cube(name, h5file, version='', colour='',
     # close h5file and end process
     hdf.close()
 
+def validate_sami_id(candidate_sami_id):
+    """Dummy validation function for SAMI IDs, always returns true."""
+    return True
+
+def interpret_id_list_from_file(filename):
+    """Execute interpret_id_list on the contents of filename."""
+    
+    return interpret_id_list(open(filename).read())
+    
+def interpret_id_list(id_list_string):
+    """Extract SAMI IDs and extra information from a string list.
+    
+    Arguments
+    ---------
+    
+        id_list_string (string): A string containing a list of SAMI IDs and 
+            additional information as a white space separated table.
+
+    Returns: a tuple of two lists, the first being the list of SAMI IDs, and
+    the second being the corresponding list of additional information.
+            
+    The input list is expected to be one SAMI ID per line, followed by any
+    additional information provided by the user, such as a cross-
+    identification. This is split up and returned as two lists, one of the
+    SAMI IDs, and one of the corresponding additional information. SAMI IDs
+    are validated with validate_sami_id, and invalid IDs are removed. Blank
+    lines and lines starting with a hash character (#) are treated as comments
+    and removed.
+
+    In reality, this is all accomplished with a regular expression, so the
+    syntax of the input is actually much more forgiving.
+
+    """
+    
+    from re import compile, VERBOSE
+
+    assert isinstance(id_list_string, str)
+    
+    split_re = compile(r"""
+        \A          # Start of line
+        \s*         # White space at start of line (optional)
+        (\d+)       # Digits of SAMI ID (captured)
+        (?:         # Start of non-capturing grouping
+            [,\s+]  # Whitespace and/or comma separator from extra data
+            (.*?)   # Extra data (captured)
+        )?          # End of grouping, contents of group optional
+        \s*         # Whitespace at end of line (optional)
+        \Z          # End of line """,
+                       VERBOSE)
+    
+    lines = id_list_string.splitlines()
+
+    # Remove lines which do not match the pattern:
+    lines = filter(split_re.match, lines)
+        
+    # Split into ID and extra_data, with the empty string for extra_data if
+    # missing:
+    id_info_list = [split_re.match(l).groups("") for l in lines]
+    
+    # Remove rows with invalid SAMI IDs
+    id_info_list = filter(lambda l: validate_sami_id(l[0]), id_info_list)
+    
+    # Convert into separate lists
+    id_list = [l[0] for l in id_info_list]
+    info_list = [l[1] for l in id_info_list]
+
+    assert isinstance(id_list, list)
+    assert isinstance(info_list, list)
+    
+    return id_list, info_list
 
 # ~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~
 def export(name, h5file, version='', getCube=True, getRSS=False, 
