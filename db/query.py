@@ -63,31 +63,22 @@ def makeTable(table, tabIndex, tableOut='sami_selection.html'):
     f = open(tableOut, 'w')
 
     f.write('<html><body><table>')
-    #f.write("<tr><td>%s</td><td>%s</td></tr>" % 
-    #        ('CATID', 'z_spec'))
     f.write("<tr>" + 
+            "<td>Quicklook</td>" + 
             "".join(["<td>"+str(s)+"</td>" for s in table.colnames]) + 
             "</tr>")
 
-
-    # Keep a running index of the following loop. 
-    index = 0
+    # Where do the quick-look plots live? 
+    baseURL ='file:///Users/iraklis/Data/SAMI/datasheets/GAMA/'
 
     # Do the deed. 
     for tables.row in table[tabIndex]:
-        index = index+1
-        row = str(index)
 
-        try:
-            f.write("<tr>" + 
-                  "".join(["<td>"+str(s)+"</td>" for s in tables.row]) + 
-                  "</tr>")
-        except:
-            print('Nah')
-
-        #Original: manually select columns to be displayed. 
-        #f.write("<tr><td>%s</td><td>%s</td></tr>" % 
-        #        (str(tables.row['CATID']), str(tables.row['z_spec'])))
+        hlink = "<td><a href='"+baseURL+str(tables.row[0])+".pdf'>" +\
+                "View</a></td>"
+        f.write("<tr>" + hlink + 
+                "".join(["<td>"+str(s)+"</td>" for s in tables.row]) + 
+                "</tr>")
 
     # Wrap up html. 
     f.write("</table></body></html>")
