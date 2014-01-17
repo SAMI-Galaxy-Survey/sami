@@ -6,6 +6,8 @@ import update_csv
 import manager
 import dr
 
+import logging
+
 from log import logger
 
 # the config file which contains some constants and stuff
@@ -15,3 +17,5 @@ import config
 from general import *
 from observing import *
 from sdss import *
+
+logging.getLogger('sami').debug("sami/__init__ called")
