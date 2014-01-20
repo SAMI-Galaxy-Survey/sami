@@ -2523,7 +2523,9 @@ def telluric_correct_pair(fits_pair):
     path_pair = (fits_1.fluxcal_path, fits_2.fluxcal_path)
     print ('Deriving telluric correction for ' + fits_1.filename +
            ' and ' + fits_2.filename)
-    telluric.correction_linear_fit(path_pair, n_trim=n_trim)
+    PS_spec_file = "unknown"
+    PS_rss_file = "unknown"
+    telluric.secondary_standard_transfer_function(path_pair, PS_spec_file, PS_rss_file, use_PS=False,n_trim=n_trim)
     print 'Telluric correcting file:', fits_2.filename
     if os.path.exists(fits_2.telluric_path):
         os.remove(fits_2.telluric_path)
