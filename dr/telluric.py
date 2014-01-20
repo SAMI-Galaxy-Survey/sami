@@ -55,12 +55,12 @@ def secondary_standard_transfer_function(frame_list, PS_spec_file, PS_rss_file, 
     hdulist.close()
     
     # create transfer function for secondary standard
-    SS_transfer_function, SS_SNR = create_transfer_function(SS_flux_data,SS_wave_axis,naxis1)
+    SS_transfer_function = create_transfer_function(SS_flux_data,SS_wave_axis,naxis1)
     
-    # check for SNR and if too low then use a scaled primary standard telluric correction
+    # if user defines, use a scaled primary standard telluric correction
     if use_PS:
         # get primary standard transfer function
-        PS_transfer_function, PS_SNR, PS_wave_axis = primary_standard_transfer_function(PS_spec_file, PS_rss_file)
+        PS_transfer_function, PS_wave_axis = primary_standard_transfer_function(PS_spec_file, PS_rss_file)
         
         # find least squares fit on scalar
         A = 1.1
@@ -129,9 +129,9 @@ def primary_standard_transfer_function(PS_spec_file, PS_rss_file):
     PS_spec_median = np.median(PS_spec_array,axis=0)
     
     # get transfer function for primary standard
-    PS_transfer_function, SNR = create_transfer_function(PS_spec_median,PS_wave_axis,naxis1)
+    PS_transfer_function = create_transfer_function(PS_spec_median,PS_wave_axis,naxis1)
     
-    return PS_transfer_function, SNR, PS_wave_axis
+    return PS_transfer_function, PS_wave_axis
 
 def create_transfer_function(standard_spectrum,wave_axis,naxis1):
 
@@ -189,7 +189,7 @@ def create_transfer_function(standard_spectrum,wave_axis,naxis1):
     # rename to "transfer_function"
     transfer_function = standard_spectrum_telluric_factor
     
-    return transfer_function, SNR
+    return transfer_function
 
 def extract_secondary_standard(path_list,model_name='ref_centre_alpha_dist_circ_hdratm',n_trim=0):
     """Identify and extract the secondary standard in a reduced RSS file."""
