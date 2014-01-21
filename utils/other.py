@@ -4,20 +4,31 @@ import os
 import subprocess
 import gzip as gz
 
+import logging
+logger = logging.getLogger(__name__)
+
 from collections import namedtuple
 
 # Attempt to import bottleneck to improve speed, but fall back to old routines
 # if bottleneck isn't present
+logger.debug("Will attempt to import bottleneck to improve speed, but fall back if bottleneck isn't present.")
 try:
     from bottleneck import nanmedian
+    logger.debug("Using bottleneck to improve speed of nan operations")
 except:
+    logger.debug("Not Using bottleneck: Speed will be improved if you install bottleneck")
     from scipy.stats import nanmedian
-    print("Not Using bottleneck: Speed will be improved if you install bottleneck")
+    logger.debug("Not Using bottleneck: Speed will be improved if you install bottleneck")
 
+logger.debug("Importing sami.update_csv...")
 from sami import update_csv
 
 # import constants defined in the config file.
+logger.debug("Importing sami.config.*...")
 from sami.config import *
+
+logger.debug("Finished imports in %s", __name__)
+
 
 """
 This file is the utilities script for SAMI data. See below for description of functions.

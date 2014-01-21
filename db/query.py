@@ -23,6 +23,9 @@ import tables
 import os
 import sys
 
+#from . import export
+import export
+
 # ~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~
 def print_sami(s, idfile, queryText, outFile=True, verbose=True):
 # ~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~
@@ -100,7 +103,7 @@ def queryMaster(h5file, queryIn, version='', idfile='sami_query.lis',
 # ~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~
     """ Read a SAMI master table and perform a query """
 
-    import sami.db.export as export
+    #import sami.db.export as export
 
     # Interpret the 'query' argument (look for a filename). 
     if os.path.isfile(queryIn):
@@ -163,7 +166,7 @@ def queryMultiple(h5file, qfile, writeFile=True, outFile='multipleQuery.lis',
 # ~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~
     """ Query multiple tables within an h5 archive and combine results """
 
-    import sami.db.export as export
+    #import sami.db.export as export
     
     """ 
     This is modelled after query_master. One main difference is the query 
@@ -372,7 +375,7 @@ def querycone(h5file, RAc, DECc, radius, version='', idfile='sami_query.lis', ou
     """ Performs a cone search and gives as output the idfile """
     """ Heavily based on the queryMaster function"""
 
-    import sami.db.export as export
+    #import sami.db.export as export
 
  
     # Get latest data version, if not supplied

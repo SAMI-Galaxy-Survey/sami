@@ -171,7 +171,7 @@ def copyH5(name, h5archive, version, colour='',
 # ~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~
     """ Copy or link datasets from the SAMI archive to a new h5 file """
 
-    from sami.db.ingest import create
+    from ingest import create
     import string
     import random
     import itertools
