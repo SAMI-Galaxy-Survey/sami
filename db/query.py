@@ -163,7 +163,7 @@ def queryMultiple(h5file, qfile, writeFile=True, outFile='multipleQuery.lis',
     
     # Check that the input files exist
     if (not os.path.isfile(h5file)) or (not os.path.isfile(qfile)):
-        raise System.Exit("One of the nominated files does not exist. Exiting.")
+        raise SystemExit("One of the nominated files does not exist. Exiting.")
 
     # Open and read the query file line-per-line (even=table,odd=query) 
     counter = 0
