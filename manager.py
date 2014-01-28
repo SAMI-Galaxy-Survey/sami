@@ -69,7 +69,7 @@ import re
 import subprocess
 import multiprocessing
 from contextlib import contextmanager
-from collections import defaultdict, deque
+from collections import defaultdict
 
 import astropy.coordinates as coord
 from astropy import units
@@ -142,10 +142,25 @@ PILOT_FIELD_LIST = [
      'coords': '00h42m34.09s -09d12m08.1s'}]
 
 # Things that should be visually checked
-# Priorities: 0 should be done first
+# Priorities: Lower numbers (more negative) should be done first
 # Each key ('TLM', 'ARC',...) matches to a check method named 
 # check_tlm, check_arc,...
 CHECK_DATA = {
+    'BIA': {'name': 'Bias',
+            'ndf_class': 'BIAS',
+            'spectrophotometric': None,
+            'priority': -3,
+            'group_by': ('ccd',)},
+    'DRK': {'name': 'Dark',
+            'ndf_class': 'DARK',
+            'spectrophotometric': None,
+            'priority': -2,
+            'group_by': ('ccd', 'exposure_str')},
+    'LFL': {'name': 'Long-slit flat',
+            'ndf_class': 'LFLAT',
+            'spectrophotometric': None,
+            'priority': -1,
+            'group_by': ('ccd',)},
     'TLM': {'name': 'Tramline map',
             'ndf_class': 'MFFFF',
             'spectrophotometric': None,
@@ -2035,6 +2050,37 @@ class Manager:
             print '   ' + getattr(fits, filename_type)
         print message
         self.load_2dfdr_gui(fits_list[0])
+        return
+
+    def check_bia(self, fits_list):
+        """Check a set of bias frames."""
+        # Check the individual bias frames, and then the combined file
+        message = 'Check that the bias frames have no more artefacts than normal.'
+        self.check_2dfdr(fits_list, message)
+        combined_path = self.bias_combined_path(fits_list[0].ccd)
+        if os.path.exists(combined_path):
+            check_plots.check_bia(combined_path)
+        return
+
+    def check_drk(self, fits_list):
+        """Check a set of dark frames."""
+        # Check the individual dark frames, and then the combined file
+        message = 'Check that the dark frames are free from any stray light.'
+        self.check_2dfdr(fits_list, message)
+        combined_path = self.dark_combined_path(fits_list[0].ccd, 
+                                                fits_list[0].exposure_str)
+        if os.path.exists(combined_path):
+            check_plots.check_drk(combined_path)
+        return
+
+    def check_lfl(self, fits_list):
+        """Check a set of long-slit flats."""
+        # Check the individual long-slit flats, and then the combined file
+        message = 'Check that the long-slit flats have smooth illumination.'
+        self.check_2dfdr(fits_list, message)
+        combined_path = self.lflat_combined_path(fits_list[0].ccd)
+        if os.path.exists(combined_path):
+            check_plots.check_lfl(combined_path)
         return
 
     def check_tlm(self, fits_list):
