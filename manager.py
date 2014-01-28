@@ -68,7 +68,7 @@ import subprocess
 import multiprocessing
 import tempfile
 from contextlib import contextmanager
-from collections import defaultdict, deque
+from collections import defaultdict
 
 import astropy.coordinates as coord
 from astropy import units
@@ -141,10 +141,25 @@ PILOT_FIELD_LIST = [
      'coords': '00h42m34.09s -09d12m08.1s'}]
 
 # Things that should be visually checked
-# Priorities: 0 should be done first
+# Priorities: Lower numbers (more negative) should be done first
 # Each key ('TLM', 'ARC',...) matches to a check method named 
 # check_tlm, check_arc,...
 CHECK_DATA = {
+    'BIA': {'name': 'Bias',
+            'ndf_class': 'BIAS',
+            'spectrophotometric': None,
+            'priority': -3,
+            'group_by': ('ccd',)},
+    'DRK': {'name': 'Dark',
+            'ndf_class': 'DARK',
+            'spectrophotometric': None,
+            'priority': -2,
+            'group_by': ('ccd', 'exposure_str')},
+    'LFL': {'name': 'Long-slit flat',
+            'ndf_class': 'LFLAT',
+            'spectrophotometric': None,
+            'priority': -1,
+            'group_by': ('ccd',)},
     'TLM': {'name': 'Tramline map',
             'ndf_class': 'MFFFF',
             'spectrophotometric': None,
@@ -1172,30 +1187,53 @@ class Manager:
             self.update_checks('TEL', [fits_pair[1]], False)
         return
 
-    def cube(self, overwrite=False, **kwargs):
+    def measure_offsets(self, overwrite=False, min_exposure=599.0, name='main',
+                        ccd='both', **kwargs):
+        """Measure the offsets between dithered observations."""
+        if ccd == 'both':
+            ccd_measure = 'ccd_2'
+            copy_to_other_arm = True
+        else:
+            ccd_measure = ccd
+            copy_to_other_arm = False
+        groups = self.group_files_by(
+            'field_id', ndf_class='MFOBJECT', do_not_use=False,
+            reduced=True, min_exposure=min_exposure, name=name, ccd=ccd_measure,
+            **kwargs)
+        complete_groups = []
+        for key, fits_list in groups.items():
+            fits_list_other_arm = [self.other_arm(fits) for fits in fits_list]
+            if overwrite:
+                complete_groups.append(
+                    (key, fits_list, copy_to_other_arm, fits_list_other_arm))
+                continue
+            for fits in fits_list:
+                # This loop checks each fits file and adds the group to the
+                # complete list if *any* of them are missing the ALIGNMENT HDU
+                try:
+                    pf.getheader(fits, 'ALIGNMENT')
+                except KeyError:
+                    # No previous measurement, so we need to do this group
+                    complete_groups.append(
+                        (key, fits_list, copy_to_other_arm, 
+                         fits_list_other_arm))
+                    break
+        self.map(measure_offsets_group, complete_groups)
+        return
+
+    def cube(self, overwrite=False, min_exposure=599.0, name='main', 
+             star_only=False, **kwargs):
         """Make datacubes from the given RSS files."""
-        target_dir = os.path.join(self.abs_root, 'cubed')
-        if 'min_exposure' in kwargs:
-            min_exposure = kwargs['min_exposure']
-            del kwargs['min_exposure']
-        else:
-            min_exposure = 599.0
-        if 'name' in kwargs:
-            name = kwargs['name']
-            del kwargs['name']
-        else:
-            name = 'main'
         groups = self.group_files_by(
             ['field_id', 'ccd'], ndf_class='MFOBJECT', do_not_use=False,
             reduced=True, min_exposure=min_exposure, name=name, **kwargs)
         # Add in the root path as well, so that cubing puts things in the 
         # right place
         cubed_root = os.path.join(self.root, 'cubed')
-        groups = [(item[0], item[1], cubed_root, overwrite) 
-                  for item in groups.items()]
-        with self.visit_dir(target_dir):
-            # Send the cubing tasks off to multiple CPUs
-            self.map(cube_group, groups)
+        groups = [(key, fits_list, cubed_root, overwrite, star_only) 
+                  for key, fits_list in groups.items()]
+        # Send the cubing tasks off to multiple CPUs
+        self.map(cube_group, groups)
         # Mark all cubes as not checked. Ideally would only mark those that
         # actually exist. Maybe set dithered_cubes_from_rss_list to return a 
         # list of those it created?
@@ -1220,6 +1258,7 @@ class Manager:
         self.combine_transfer_function(overwrite, **kwargs)
         self.flux_calibrate(overwrite, **kwargs)
         self.telluric_correct(overwrite, **kwargs)
+        self.measure_offsets(overwrite, **kwargs)
         self.cube(overwrite, **kwargs)
         return
 
@@ -2009,6 +2048,37 @@ class Manager:
         self.load_2dfdr_gui(fits_list[0])
         return
 
+    def check_bia(self, fits_list):
+        """Check a set of bias frames."""
+        # Check the individual bias frames, and then the combined file
+        message = 'Check that the bias frames have no more artefacts than normal.'
+        self.check_2dfdr(fits_list, message)
+        combined_path = self.bias_combined_path(fits_list[0].ccd)
+        if os.path.exists(combined_path):
+            check_plots.check_bia(combined_path)
+        return
+
+    def check_drk(self, fits_list):
+        """Check a set of dark frames."""
+        # Check the individual dark frames, and then the combined file
+        message = 'Check that the dark frames are free from any stray light.'
+        self.check_2dfdr(fits_list, message)
+        combined_path = self.dark_combined_path(fits_list[0].ccd, 
+                                                fits_list[0].exposure_str)
+        if os.path.exists(combined_path):
+            check_plots.check_drk(combined_path)
+        return
+
+    def check_lfl(self, fits_list):
+        """Check a set of long-slit flats."""
+        # Check the individual long-slit flats, and then the combined file
+        message = 'Check that the long-slit flats have smooth illumination.'
+        self.check_2dfdr(fits_list, message)
+        combined_path = self.lflat_combined_path(fits_list[0].ccd)
+        if os.path.exists(combined_path):
+            check_plots.check_lfl(combined_path)
+        return
+
     def check_tlm(self, fits_list):
         """Check a set of tramline maps."""
         message = 'Zoom in to check that the red fitted tramlines go through the data.'
@@ -2503,30 +2573,62 @@ def telluric_correct_pair(fits_pair):
                               fits_2.telluric_path)
     return
 
-def cube_group(group):
-    """Cube a set of RSS files."""
-    field, fits_list, root, overwrite = group
-    print 'Cubing field ID: {}, CCD: {}'.format(field[0], field[1])
-    path_list = []
-    for fits in fits_list:
-        if os.path.exists(fits.telluric_path):
-            path = fits.telluric_path
-        elif os.path.exists(fits.fluxcal_path):
-            path = fits.fluxcal_path
-        else:
-            path = fits.reduced_path
-        path_list.append(path)
+def measure_offsets_group(group):
+    """Measure offsets between a set of dithered observations."""
+    field, fits_list, copy_to_other_arm, fits_list_other_arm = group
+    print 'Measuring offsets for field ID: {}'.format(field[0])
+    path_list = [best_path(fits) for fits in fits_list]
     print 'These are the files:'
     for path in path_list:
         print '  ', os.path.basename(path)
-    # First calculate the offsets
-    find_dither(path_list, path_list[0], centroid=True, 
-                remove_files=True)
-    # Now do the actual cubing
+    if len(path_list) < 2:
+        # Can't measure offsets for a single file
+        print 'Only one file so no offsets to measure!'
+        return
+    find_dither(path_list, path_list[0], centroid=True,
+                remove_files=True, do_dar_correct=True)
+    if copy_to_other_arm:
+        for fits, fits_other_arm in zip(fits_list, fits_list_other_arm):
+            hdulist_this_arm = pf.open(best_path(fits))
+            hdulist_other_arm = pf.open(best_path(fits_other_arm), 'update')
+            try:
+                del hdulist_other_arm['ALIGNMENT']
+            except KeyError:
+                # Nothing to delete; no worries
+                pass
+            hdulist_other_arm.append(hdulist_this_arm['ALIGNMENT'])
+            hdulist_other_arm.flush()
+            hdulist_other_arm.close()
+            hdulist_this_arm.close()
+    return
+
+def cube_group(group):
+    """Cube a set of RSS files."""
+    field, fits_list, root, overwrite, star_only = group
+    print 'Cubing field ID: {}, CCD: {}'.format(field[0], field[1])
+    path_list = [best_path(fits) for fits in fits_list]
+    print 'These are the files:'
+    for path in path_list:
+        print '  ', os.path.basename(path)
+    if star_only:
+        objects = [pf.getval(path_list[0], 'STDNAME', 'FLUX_CALIBRATION')]
+    else:
+        objects = 'all'
     dithered_cubes_from_rss_list(path_list, suffix='_'+field[0], 
                                  write=True, nominal=True, root=root,
-                                 overwrite=overwrite)
+                                 overwrite=overwrite, do_dar_correct=True,
+                                 objects=objects)
     return
+
+def best_path(fits):
+    """Return the best (most calibrated) path for the given file."""
+    if os.path.exists(fits.telluric_path):
+        path = fits.telluric_path
+    elif os.path.exists(fits.fluxcal_path):
+        path = fits.fluxcal_path
+    else:
+        path = fits.reduced_path
+    return path    
 
 def run_2dfdr_single_wrapper(group):
     """Run 2dfdr on a single file."""

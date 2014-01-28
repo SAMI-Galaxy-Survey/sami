@@ -1,6 +1,7 @@
 import astropy.units as u
 import astropy.coordinates as coords
 import os.path
+from astropy import __version__ as astropy_version
 
 # This script contains constants that are used in other SAMI packages.
 
@@ -24,7 +25,12 @@ declination_dome_dist=0.0982  # dome radii
 
 # Latitude of SSO (based on AAT Zenith Position, may not be most accurate)
 latitude=coords.Angle(-31.3275, unit=u.degree)
-latitude_radians=latitude.radians
+
+# astropy version catch to be backwards compatible
+if float(astropy_version[2]) >= 3.:
+    latitude_radians=latitude.radian
+else:
+    latitude_radians=latitude.radians
 # ----------------------------------------------------------------------------------------
 
 # Pressure conversion factor from millibars to mm of Hg 
