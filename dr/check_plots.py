@@ -8,6 +8,43 @@ import os
 import itertools
 from glob import glob
 
+def check_bia(combined_path):
+    """Plot a combined bias calibration frame."""
+    message = """Check that the combined bias frame has no more artefacts than
+normal."""
+    check_combined(combined_path, message)
+    return
+
+def check_drk(combined_path):
+    """Plot a combined dark calibration frame."""
+    message = """Check that the combined dark frame has no more artefacts than
+normal."""
+    check_combined(combined_path, message)
+    return
+
+def check_lfl(combined_path):
+    """Plot a combined long-slit flat calibration frame."""
+    message = """Check that the combined long-slit flat has no more artefacts
+than normal."""
+    check_combined(combined_path, message)
+    return
+
+def check_combined(combined_path, message):
+    """Plot a combined calibration frame of some sort."""
+    print message
+    # Read the data
+    image = pf.getdata(combined_path)
+    sorted_image = np.ravel(image)
+    sorted_image = np.sort(sorted_image[np.isfinite(sorted_image)])
+    one_per_cent = len(sorted_image) / 100
+    vmin = sorted_image[one_per_cent]
+    vmax = sorted_image[-one_per_cent]
+    fig = plt.figure('Combined calibration', figsize=(6., 10.))
+    plt.imshow(image, vmin=vmin, vmax=vmax, cmap='GnBu')
+    plt.colorbar()
+    print "When you're ready to move on..."
+    return
+
 def check_flx(fits_list):
     """Plot the results of flux calibration."""
     # Tell the user what to do
