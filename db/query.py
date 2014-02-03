@@ -15,21 +15,13 @@ Table of Contents:
 .query_multiple  Perform any number of queries on any number of SAMI tables. 
 .search          The query prototype.
 .test_contents   ??
-
-For commit message:
-
-Now catching an exception that occurs when misspelling a column (variable) name in queryMaster(), or any mistakes in table/variable name in queryMultiple(). 
 """
 
 import numpy as np
 import h5py as h5
 import tables
-#import astropy.io.fits as pf
-#import astropy.io.ascii as ascii
 import os
 import sys
-#import sami
-
 
 # ~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~
 def print_sami(s, idfile, queryText, outFile=True, verbose=True):
@@ -63,20 +55,80 @@ def print_sami(s, idfile, queryText, outFile=True, verbose=True):
 
 
 # ~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~
+def makeTable(table, tabIndex, tableOut='sami_selection.html'):
+# ~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~
+    """ Generate an html table for website output """
+
+    print('TEST')
+    print(tabIndex)
+    print('TEST')
+
+    # Where do the quick-look plots live? 
+    baseURL ='file:///Users/iraklis/Data/SAMI/datasheets/GAMA/'
+
+    # Write html preamble. 
+    htmlTab = '<html><body><table>'
+
+    # Write Row 0, column headings. 
+    htmlTab = htmlTab+\
+              "<tr>"+\
+              "<td>Quicklook</td>"+\
+              "".join(["<td>"+str(s)+"</td>" for s in table.colnames])+\
+              "</tr>"
+
+    # Populate the table. 
+    for tables.row in table[tabIndex]:
+        
+        hlink = "<td><a href='"+baseURL+str(tables.row[0])+".pdf'>" +\
+                "View</a></td>"
+        try:
+            htmlTab = htmlTab+\
+                      "<tr>" + hlink+\
+                      "".join(["<td>"+str(s)+"</td>" for s in tables.row])+\
+                      "</tr>"
+        except:
+            print('Nah, mate [2]')
+
+    # Wrap up html, return table.
+    htmlTab = htmlTab +"</table></body></html>"
+    return(htmlTab)
+
+
+    """ This used to write an html file. Keeping old code here for now. 
+    # Open a file to write the table, write html preamble. 
+    f = open(tableOut, 'w')
+
+    f.write('<html><body><table>')
+    f.write("<tr>" + 
+            "<td>Quicklook</td>" + 
+            "".join(["<td>"+str(s)+"</td>" for s in table.colnames]) + 
+            "</tr>")
+
+    # Where do the quick-look plots live? 
+    baseURL ='file:///Users/iraklis/Data/SAMI/datasheets/GAMA/'
+
+    # Do the deed. 
+    for tables.row in table[tabIndex]:
+
+        hlink = "<td><a href='"+baseURL+str(tables.row[0])+".pdf'>" +\
+                "View</a></td>"
+        f.write("<tr>" + hlink + 
+                "".join(["<td>"+str(s)+"</td>" for s in tables.row]) + 
+                "</tr>")
+
+    # Wrap up html. 
+    f.write("</table></body></html>")
+    f.close()
+    """ 
+
+
+# ~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~
 def queryMaster(h5file, queryIn, version='', idfile='sami_query.lis', 
-                verbose=True, returnID=True, overwrite=True):
+                verbose=False, returnID=False, tabulate=True, overwrite=True):
 # ~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~
     """ Read a SAMI master table and perform a query """
 
     import sami.db.export as export
-
-    """
-    NOTES: 
-
-    The query should be passed either as a string argument or as an ascii file 
-    containing such a string. Adding '@list' functionality will facilitate 
-    browser-generated queries farther down the track. 
-    """
 
     # Interpret the 'query' argument (look for a filename). 
     if os.path.isfile(queryIn):
@@ -85,6 +137,10 @@ def queryMaster(h5file, queryIn, version='', idfile='sami_query.lis',
     else:
         queryText = queryIn
 
+    # Check that the nominated h5 file exists. 
+    if not os.path.isfile(h5file):
+        raise SystemExit("Cannot find nominated HDF5 file ('"+h5file+"').")
+        
     # Get latest data version, if not supplied
     hdf0 = h5.File(h5file, 'r')
     version = export.getVersion(h5file, hdf0, version)
@@ -101,31 +157,37 @@ def queryMaster(h5file, queryIn, version='', idfile='sami_query.lis',
                 raise SystemExit("The nominated output file ('"+idfile+"') "+
                                  "already exists. Please raise the 'overwrite'"+
                                  " flag or enter a different filename. ")
-        #f = open(idfile, 'w')
-        #idlist = []
 
     # Identify the SAMI master table, assumed to live in the Table directory
     g_table = hdf.getNode('/SAMI/'+version+'/Table/')
     master = g_table.SAMI_MASTER
 
-    # Run the row iterator -- try! 
+    # Run the row iterator.
     try: 
         idlist = print_sami(master.where(queryText), idfile, 
-                            queryText, outFile=returnID, verbose=True)
+                            queryText, outFile=returnID, verbose=verbose)
     except:
         hdf.close()
         raise SystemExit("Oops! Your query was not understood. Please "+
                          "check the spelling of the chosen variable.")
 
-    # Close h5 file and return query results. 
-    hdf.close()
-    return(idlist)
+    # Generate a table, if requested, given a row index and the table.
+    if tabulate:
+        tabIndex = [row.nrow for row in master.where(queryText)]
+        madeTab = makeTable(master, tabIndex)
+        hdf.close()
+        return(madeTab)
+
+    # Otherwise close h5 file and return list of query results. 
+    if not tabulate:
+        hdf.close()
+        return(idlist)
 
 
 
 # ~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~
-def queryMultiple(h5file, qfile, writeFile=True, outFile='multipleQuery.lis', 
-                  overwrite=False, verbose=True, version=''):
+def queryMultiple(h5file, qfile, writeFile=False, outFile='multipleQuery.lis', 
+                  overwrite=False, tabulate=True, verbose=True, version=''):
 # ~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~
     """ Query multiple tables within an h5 archive and combine results """
 
@@ -138,7 +200,7 @@ def queryMultiple(h5file, qfile, writeFile=True, outFile='multipleQuery.lis',
     
     # Check that the input files exist
     if (not os.path.isfile(h5file)) or (not os.path.isfile(qfile)):
-        raise System.Exit("One of the nominated files does not exist. Exiting.")
+        raise SystemExit("One of the nominated files does not exist. Exiting.")
 
     # Open and read the query file line-per-line (even=table,odd=query) 
     counter = 0
@@ -202,9 +264,6 @@ def queryMultiple(h5file, qfile, writeFile=True, outFile='multipleQuery.lis',
             raise SystemExit("Oops! Your query was not understood. Please "+
                              "check the spelling of query '"+queries[i]+"'.")
 
-    # This seems like a good place to close the h5 file.
-    hdf.close()
-
     # Finally, intersect all idlists within all_lists container return, exit.
     final_idlist = set(all_lists[0]).intersection(*all_lists)
     if verbose: 
@@ -220,9 +279,25 @@ def queryMultiple(h5file, qfile, writeFile=True, outFile='multipleQuery.lis',
             f = open(outFile, 'w')
             [f.write(s) for s in str(list(final_idlist))]
             f.close()
-            
-    return(final_idlist)
+    
+    if tabulate:
+        # Identify the SAMI master table, assumed to live in the Table directory
+        g_table = hdf.getNode('/SAMI/'+version+'/Table/')
+        master = g_table.SAMI_MASTER
+        
+        # Iterate over Master, locate CATID in final_idlist. 
+        tabIndex = []
+        for row in master:
+            if row['CATID'] in final_idlist:
+                tabIndex.append(row.nrow)
 
+        madeTab = makeTable(master, tabIndex)
+        hdf.close()
+        return(madeTab)
+    else:
+        hdf.close()
+        return(final_idlist)
+        
 
 # ~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~
 def test_contents(h5file):
@@ -405,12 +480,12 @@ def querycone(h5file, RAc, DECc, radius, version='', idfile='sami_query.lis', ou
 # ~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~
 def sph_dist(ra1, dec1,ra2, dec2):
 # ~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~
-"""
-Compute the spherical distance between 2 pairs of coordinates
-using the Haversine formula
-Input coordinates are in decimal degrees
-Output: angular distance in decimal degrees
-"""
+    """
+    Compute the spherical distance between 2 pairs of coordinates
+    using the Haversine formula
+    Input coordinates are in decimal degrees
+    Output: angular distance in decimal degrees
+    """
     ra1_rad = np.radians(ra1)
     dec1_rad = np.radians(dec1)
     ra2_rad = np.radians(ra2)
