@@ -547,11 +547,14 @@ class Manager:
         self.extra_list = []
         self.dark_exposure_str_list = []
         self.dark_exposure_list = []
-        self.inspect_root(copy_files, move_files)
         self.cwd = os.getcwd()
-        self.imp_scratch = os.environ['IMP_SCRATCH']
+        if 'IMP_SCRATCH' in os.environ:
+            self.imp_scratch = os.environ['IMP_SCRATCH']
+        else:
+            self.imp_scratch = ''
         self.scratch_dir = os.path.join(self.abs_root, 'imp_scratch')
         self.min_exposure_for_throughput = 900.0
+        self.inspect_root(copy_files, move_files)
 
     def inspect_root(self, copy_files, move_files, trust_header=True):
         """Add details of existing files to internal lists."""
