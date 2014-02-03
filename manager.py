@@ -881,9 +881,7 @@ class Manager:
                                    do_not_use=False, **kwargs)
         reduced_files = self.reduce_file_iterable(
             file_iterable, overwrite=overwrite)
-        # Calibrator checks not yet implemented
-        # self.update_checks(calibrator_type[:3].upper(), reduced_files, False)
-        return
+        return reduced_files
 
     def combine_calibrator(self, calibrator_type, overwrite=False):
         """Produce and link necessary XXXXcombined.fits files."""
@@ -934,7 +932,9 @@ class Manager:
 
     def reduce_bias(self, overwrite=False, **kwargs):
         """Reduce all bias frames."""
-        self.reduce_calibrator('bias', overwrite=overwrite, **kwargs)
+        reduced_files = self.reduce_calibrator(
+            'bias', overwrite=overwrite, **kwargs)
+        self.update_checks('BIA', reduced_files, False)
         return
 
     def combine_bias(self, overwrite=False):
@@ -949,7 +949,9 @@ class Manager:
 
     def reduce_dark(self, overwrite=False, **kwargs):
         """Reduce all dark frames."""
-        self.reduce_calibrator('dark', overwrite=overwrite, **kwargs)
+        reduced_files = self.reduce_calibrator(
+            'dark', overwrite=overwrite, **kwargs)
+        self.update_checks('DRK', reduced_files, False)
         return
         
     def combine_dark(self, overwrite=False):
@@ -964,7 +966,9 @@ class Manager:
 
     def reduce_lflat(self, overwrite=False, **kwargs):
         """Reduce all lflat frames."""
-        self.reduce_calibrator('lflat', overwrite=overwrite, **kwargs)
+        reduced_files = self.reduce_calibrator(
+            'lflat', overwrite=overwrite, **kwargs)
+        self.update_checks('LFL', reduced_files, False)
         return
 
     def combine_lflat(self, overwrite=False):
