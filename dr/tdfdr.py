@@ -91,7 +91,7 @@ def run_2dfdr_combine(input_path_list, output_path, return_to=None, **kwargs):
                    script_filename,
                    '-Timeout',
                    timeout]
-        run_2dfdr(output_dir, options, return_to=return_to, **kwargs)
+        run_2dfdr(output_dir, options, **kwargs)
         # Clean up the script file
         os.remove(script_filename)
     return
