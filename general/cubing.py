@@ -139,23 +139,34 @@ def dar_correct(ifu_list, xfibre_all, yfibre_all, method='simple',update_rss=Fal
     for obs in ifu_list:
         darcorr = DARCorrector(method=method)
     
-        darcorr.temperature = obs.fibre_table_header['ATMTEMP'] 
-        darcorr.air_pres = obs.fibre_table_header['ATMPRES'] * millibar_to_mmHg
-        #                     (factor converts from millibars to mm of Hg)
-        darcorr.water_pres = \
-            utils.saturated_partial_pressure_water(darcorr.air_pres, darcorr.temperature) * \
-            obs.fibre_table_header['ATMRHUM']
-
         ha_offset = obs.ra - obs.meanra  # The offset from the HA of the field centre
-    
-        darcorr.zenith_distance = \
-            integrate.quad(lambda ha: zenith_distance(obs.dec, ha),
-                           obs.primary_header['HASTART'] + ha_offset,
-                           obs.primary_header['HAEND'] + ha_offset)[0] / (
-                              obs.primary_header['HAEND'] - obs.primary_header['HASTART'])
 
-        darcorr.hour_angle = \
-            (obs.primary_header['HASTART'] + obs.primary_header['HAEND']) / 2 + ha_offset
+        ha_start = obs.primary_header['HASTART'] + ha_offset
+        # The header includes HAEND, but this goes very wrong if the telescope
+        # slews during readout. The equation below goes somewhat wrong if the
+        # observation was paused, but somewhat wrong is better than very wrong.
+        ha_end = ha_start + (obs.exptime / 3600.0) * 15.0
+    
+        if hasattr(obs, 'atmosphere'):
+            # Take the atmospheric parameters from the file, as measured
+            # during telluric correction
+            darcorr.temperature = obs.atmosphere['temperature']
+            darcorr.air_pres = obs.atmosphere['pressure']
+            darcorr.water_pres = obs.atmosphere['vapour_pressure']
+            darcorr.zenith_distance = np.rad2deg(obs.atmosphere['zenith_distance'])
+        else:
+            # Get the atmospheric parameters from the fibre table header
+            darcorr.temperature = obs.fibre_table_header['ATMTEMP'] 
+            darcorr.air_pres = obs.fibre_table_header['ATMPRES'] * millibar_to_mmHg
+            #                     (factor converts from millibars to mm of Hg)
+            darcorr.water_pres = \
+                utils.saturated_partial_pressure_water(darcorr.air_pres, darcorr.temperature) * \
+                obs.fibre_table_header['ATMRHUM']
+            darcorr.zenith_distance = \
+                integrate.quad(lambda ha: zenith_distance(obs.dec, ha),
+                               ha_start, ha_end)[0] / (ha_end - ha_start)
+
+        darcorr.hour_angle = 0.5 * (ha_start + ha_end)
     
         darcorr.declination = obs.dec
 
@@ -179,7 +190,7 @@ def dar_correct(ifu_list, xfibre_all, yfibre_all, method='simple',update_rss=Fal
             dar_x = dar_correctors[i_obs].dar_east * 1000.0 / plate_scale 
             dar_y = dar_correctors[i_obs].dar_north * 1000.0 / plate_scale 
             # TODO: Need to change to arcsecs!
-    
+
             xfibre_all[i_obs,:,l] = xfibre_all[i_obs,:,l] + dar_x
             yfibre_all[i_obs,:,l] = yfibre_all[i_obs,:,l] + dar_y
             
@@ -190,7 +201,6 @@ def dar_correct(ifu_list, xfibre_all, yfibre_all, method='simple',update_rss=Fal
     if diagnostics.enabled:
         diagnostics.DAR.xfib = xfibre_all
         diagnostics.DAR.yfib = yfibre_all
-
 
 
 def dithered_cubes_from_rss_files(inlist, 
@@ -216,7 +226,7 @@ def dithered_cubes_from_rss_files(inlist,
 def dithered_cubes_from_rss_list(files, 
                                  objects='all', clip=True, plot=True, 
                                  write=False, suffix='', nominal=False, root='',
-                                 overwrite=False):
+                                 overwrite=False, do_dar_correct=True):
     """A wrapper to make a cube from reduced RSS files, passed as a list. Only input files that go together - ie have the same objects."""
         
     start_time = datetime.datetime.now()
@@ -260,12 +270,13 @@ def dithered_cubes_from_rss_list(files,
         if write:
             # First check if the object directory already exists or not.
             directory = os.path.join(root, name)
-            if os.path.isdir(directory):
+            try:
+                os.makedirs(directory)
+            except OSError:
                 print "Directory Exists", directory
                 print "Writing files to the existing directory"
             else:
                 print "Making directory", directory
-                os.mkdir(directory)
 
             # Filename to write to
             arm = ifu_list[0].spectrograph_arm            
@@ -288,12 +299,13 @@ def dithered_cubes_from_rss_list(files,
         # For now, putting in a try/except block to skip over any errors
         try:
             flux_cube, var_cube, weight_cube, diagnostics = \
-                dithered_cube_from_rss(ifu_list, clip=clip, plot=plot)
+                dithered_cube_from_rss(ifu_list, clip=clip, plot=plot,
+                    do_dar_correct=do_dar_correct)
         except Exception:
-            print 'Cubing failed! Skipping to next galaxy.'
-            print 'Object:', name, 'files:', files
-            continue
-            #raise
+            #print 'Cubing failed! Skipping to next galaxy.'
+            #print 'Object:', name, 'files:', files
+            #continue
+            raise
 
         # Write out FITS files.
         if write==True:
@@ -507,7 +519,8 @@ def create_metadata_table(ifu_list):
    
     return pf.new_table(columns)
 
-def dithered_cube_from_rss(ifu_list, clip=True, plot=True, offsets='file'):
+def dithered_cube_from_rss(ifu_list, clip=True, plot=True, offsets='file',
+                           do_dar_correct=True):
         
     diagnostic_info = {}
 
@@ -658,7 +671,8 @@ def dithered_cube_from_rss(ifu_list, clip=True, plot=True, offsets='file'):
     #     DAR correction is handled by another function in this module, which
     #     updates the fibre positions in place.
     
-    dar_correct(ifu_list, xfibre_all, yfibre_all)
+    if do_dar_correct:
+        dar_correct(ifu_list, xfibre_all, yfibre_all)
 
     # Reshape the arrays
     #

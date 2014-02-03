@@ -1,12 +1,14 @@
+from .. import utils
+from ..observing import centroid
+from ..utils.mc_adr import DARCorrector
+
+
 try:
     from pyraf import iraf
 except ImportError:
     print "pyraf not found! Can't do image alignment here."
-import sami
 import string
-import sami.utils as utils
 import numpy as np
-import sami.observing.centroid
 import os
 import matplotlib.pyplot as plt
 from matplotlib import cm
@@ -103,9 +105,13 @@ You should not touch this one, as it is called automatically, in case needed.
 
 HG_CHANGESET = utils.hg_changeset(__file__)
 
+# Multiply by this value to convert arcseconds to microns
+ARCSEC_TO_MICRON = 1000.0 / 15.2
+
 ifus=[1,2,3,4,5,6,7,8,9,10,11,12,13]
 
-def find_dither(RSSname,reference,centroid=True,inter=False,plot=False,remove_files=True):
+def find_dither(RSSname,reference,centroid=True,inter=False,plot=False,remove_files=True,
+                do_dar_correct=True):
       
       
       ## For each file in inlist call the get_cetroid module, computes centroid coordinates and stores them 
@@ -113,7 +119,7 @@ def find_dither(RSSname,reference,centroid=True,inter=False,plot=False,remove_fi
 
       if centroid:
           for name in RSSname:
-              get_centroid(name)
+              get_centroid(name, do_dar_correct=do_dar_correct)
             
       nRSS=len(RSSname)
       
@@ -376,7 +382,7 @@ def find_dither(RSSname,reference,centroid=True,inter=False,plot=False,remove_fi
 
 
 
-def get_centroid(infile):
+def get_centroid(infile, do_dar_correct=True):
 
     ## Create name of the file where centroid coordinates are stored 
     
@@ -394,7 +400,7 @@ def get_centroid(infile):
                 # Probably a broken hexabundle
                 continue
                 
-            p_mic, data_mic, xlin_mic, ylin_mic, model_mic=sami.observing.centroid.centroid_fit(ifu_data.x_microns, ifu_data.y_microns,
+            p_mic, data_mic, xlin_mic, ylin_mic, model_mic=centroid.centroid_fit(ifu_data.x_microns, ifu_data.y_microns,
                                                                                     ifu_data.data, circular=True)
             amplitude_mic, xout_mic, yout_mic, sig_mic, bias_mic=p_mic
             
@@ -405,6 +411,14 @@ def get_centroid(infile):
             x_out= -1*xout_mic
             y_out= yout_mic
             
+            # Adjust for DAR, which means that "true" galaxy position is offset from observed position
+            if do_dar_correct:
+                dar_calc = DARCorrector(method='simple')
+                dar_calc.setup_for_ifu(ifu_data)
+                dar_calc.wavelength = np.mean(ifu_data.lambda_range)
+                x_out -= dar_calc.dar_east * ARCSEC_TO_MICRON
+                y_out += dar_calc.dar_north * ARCSEC_TO_MICRON
+
             # the data to write to file
             s=ifu_data.name+' '+str(ifu_data.ifu)+' '+str(x_out)+' '+str(y_out)+'\n'
                     
