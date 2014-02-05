@@ -390,6 +390,11 @@ class Manager:
     Cubing
     ======
 
+    Before the frames can be combined their relative offsets must be
+    measured:
+
+    >>> mngr.measure_offsets()
+
     The final step in the data reduction is to turn the individual
     calibrated spectra into datacubes:
 
