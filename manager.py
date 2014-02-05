@@ -1438,6 +1438,8 @@ class Manager:
             if filename_match is not None:
                 # Note we can't use else for the above line, because
                 # filename_match might have changed
+                if match_class == 'tlmap_flap':
+                    match_class = 'tlmap'
                 options.extend(['-'+match_class.upper()+'_FILENAME',
                                 filename_match])
         return options        
@@ -2624,7 +2626,7 @@ def cube_group(group):
     dithered_cubes_from_rss_list(path_list, suffix='_'+field[0], 
                                  write=True, nominal=True, root=root,
                                  overwrite=overwrite, do_dar_correct=True,
-                                 objects=objects)
+                                 objects=objects, clip=False)
     return
 
 def best_path(fits):

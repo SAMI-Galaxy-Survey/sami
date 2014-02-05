@@ -529,7 +529,7 @@ def derive_transfer_function(path_list, max_sep_arcsec=60.0,
     trim_chunked_data(chunked_data, n_trim)
     # Fit the PSF
     fixed_parameters = set_fixed_parameters(
-        path_list, model_name, probenum=standard_data['probenum'])
+        path_list, model_name, probenum=star_match['probenum'])
     psf_parameters = fit_model_flux(
         chunked_data['data'], 
         chunked_data['variance'],
@@ -871,8 +871,8 @@ def rebin_flux(target_wavelength, source_wavelength, source_flux):
                 weights = np.hstack( ( weights, np.array( [ uppfrac  ] ) ) )
 
             fraccounted[ indices ] += weights
-            rebinneddata[ i ] = np.sum( weights * originalflux[ :, indices ] )
-            rebinnedweight[i ]= np.sum( weights * originalweight[:,indices ] )
+            rebinneddata[ i ] = np.sum( weights * originalflux[indices] )
+            rebinnedweight[i ]= np.sum( weights * originalweight[indices] )
 
     # now go back from total flux in each bin to flux per unit wavelength
     rebinneddata = rebinneddata / rebinnedweight 
