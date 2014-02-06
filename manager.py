@@ -545,7 +545,7 @@ class Manager:
             self.map = map
         self.root = root
         self.abs_root = os.path.abspath(root)
-        self.scratch_dir = os.path.join(self.abs_root, 'scratch')
+        self.tmp_dir = os.path.join(self.abs_root, 'tmp')
         # Match objects within 1'
         self.matching_radius = \
             coord.AngularSeparation(0.0, 0.0, 0.0, 1.0, units.arcmin)
@@ -812,12 +812,12 @@ class Manager:
             for filename in filename_list:
                 if self.file_filter(filename):
                     self.update_copy(os.path.join(dirname, filename),
-                                     os.path.join(self.scratch_dir, filename))
-                    self.import_file(self.scratch_dir, filename,
+                                     os.path.join(self.tmp_dir, filename))
+                    self.import_file(self.tmp_dir, filename,
                                      trust_header=trust_header,
                                      copy_files=False, move_files=True)
-        if len(os.listdir(self.scratch_dir)) == 0:
-            os.rmdir(self.scratch_dir)
+        if len(os.listdir(self.tmp_dir)) == 0:
+            os.rmdir(self.tmp_dir)
         return
 
     def fits_file(self, filename):
