@@ -1150,8 +1150,8 @@ class Manager:
         # Now send this list to as many cores as we are using
         self.map(telluric_correct_pair, inputs_list)
         # Mark telluric corrections as not checked
-        for _, fits_2, _, _, _ in inputs_list:
-            self.update_checks('TEL', fits_2, False)
+        fits_2_list = [inputs[1] for inputs in inputs_list]
+        self.update_checks('TEL', fits_2_list, False)
         return
 
     def measure_offsets(self, overwrite=False, min_exposure=599.0, name='main',
