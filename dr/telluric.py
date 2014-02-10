@@ -55,7 +55,7 @@ def derive_transfer_function(frame_list, PS_spec_file=None, use_PS=False,
     hdulist.close()
     
     # create transfer function for secondary standard
-    SS_transfer_function = create_transfer_function(SS_flux_data,SS_wave_axis,naxis1)
+    SS_transfer_function, linear_fit = create_transfer_function(SS_flux_data,SS_wave_axis,naxis1)
     
     # if user defines, use a scaled primary standard telluric correction
     if use_PS:
@@ -68,27 +68,23 @@ def derive_transfer_function(frame_list, PS_spec_file=None, use_PS=False,
         
         PS_transfer_function_scaled = PS_transfer_function.copy() ** best_scalar[0][0]
 
-        #py.figure()
-        #py.plot(SS_transfer_function,'b')
-        #py.plot(PS_transfer_function_scaled,'r')
-        
         transfer_function = PS_transfer_function_scaled
     
     else:
         transfer_function = SS_transfer_function
+
+    # Require that all corrections are > 1, as expected for absorption
+    transfer_function = np.maximum(transfer_function, 1.0)
+    
+    model_flux = linear_fit / transfer_function
 
     # Update the file to include telluric correction factor
     hdulist = pf.open(frame_list[1], 'update', do_not_scale_image_data=True)
     hdulist[0].header['HGTELLUR'] = (HG_CHANGESET,'Hg changeset ID for telluric code')
     hdu_name = 'FLUX_CALIBRATION'
     hdu = hdulist[hdu_name]
-    data = hdu.data
-    if len(data) == 2:
-        # No previous telluric fit saved; append it to the data
-        data = np.vstack((data, transfer_function))
-    elif len(data) == 3:
-        # Previous telluric fit to overwrite
-        data[2, :] = transfer_function
+    # Arrange the data into a single array
+    data = np.vstack((hdu.data[:2, :], model_flux, transfer_function))
     # Save the data back into the FITS file
     hdu.data = data
     hdulist.close()
@@ -128,7 +124,7 @@ def primary_standard_transfer_function(PS_spec_file):
     PS_spec_median = np.median(PS_spec_array,axis=0)
     
     # get transfer function for primary standard
-    PS_transfer_function = create_transfer_function(PS_spec_median,PS_wave_axis,naxis1)
+    PS_transfer_function, linear_fit = create_transfer_function(PS_spec_median,PS_wave_axis,naxis1)
     
     return PS_transfer_function, PS_wave_axis
 
@@ -180,15 +176,13 @@ def create_transfer_function(standard_spectrum,wave_axis,naxis1):
                                    
     # Create the normalisation factor to apply to object data
     standard_spectrum_telluric_factor = fit / standard_spectrum_telluric
-    # Require that all corrections are > 1, as expected for absorption
-    standard_spectrum_telluric_factor = np.maximum(standard_spectrum_telluric_factor, 1.0)
     # Require that we actually have a correction factor everywhere
     standard_spectrum_telluric_factor[~np.isfinite(standard_spectrum_telluric_factor)] = 1.0
     
     # rename to "transfer_function"
     transfer_function = standard_spectrum_telluric_factor
     
-    return transfer_function
+    return transfer_function, fit
 
 def extract_secondary_standard(path_list,model_name='ref_centre_alpha_dist_circ_hdratm',n_trim=0):
     """Identify and extract the secondary standard in a reduced RSS file."""
@@ -243,7 +237,7 @@ def identify_secondary_standard(path):
 def apply_correction(path_in, path_out):
     """Apply an already-derived correction to the file."""
     hdulist = pf.open(path_in)
-    telluric_function = hdulist['FLUX_CALIBRATION'].data[2, :]
+    telluric_function = hdulist['FLUX_CALIBRATION'].data[-1, :]
     hdulist[0].data *= telluric_function
     hdulist['VARIANCE'].data *= telluric_function**2
     hdulist[0].header['HGTELLUR'] = (HG_CHANGESET, 
