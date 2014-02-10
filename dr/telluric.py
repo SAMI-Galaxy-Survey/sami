@@ -17,7 +17,8 @@ HG_CHANGESET = utils.hg_changeset(__file__)
 
 # KEY:      SS = Secondary Standard, PS = Primary Standard
 
-def secondary_standard_transfer_function(frame_list, PS_spec_file, PS_rss_file, use_PS=False, n_trim=0):
+def derive_transfer_function(frame_list, PS_spec_file=None, use_PS=False, 
+                             n_trim=0):
     """
     Finds the telluric correction factor to multiply object data by. The factor 
     as a function of wavelength is saved into the red frame under the extension 
@@ -27,9 +28,8 @@ def secondary_standard_transfer_function(frame_list, PS_spec_file, PS_rss_file, 
     
     # frame_list = list = two element list of strings that give the path and file names for the location of the secondary standard. First element is the blue frame and the second is the red frame.
     # PS_spec_file = str = path and file name of Primary Standard's "TRANSFERcombined.fits" file.
-    # PS_rss_file = str = path and file name of associated RSS file of Primary Standard used in PS_spec_file. This is to read in the wave_axis of the Primary Standard.
     # use_PS = bool = switch to use Primary Standard or Secondary Standard for the telluric transfer function. Default is to use the SS (use_PS=False), but if working with Pilot data, then the user might want to change this to "use_PS=True" such that the PS is used and scaled to the SS optical depth. This might become default, but requires testing before so.
-    # n_trim = ? = not sure what this is. Ask James Allen.
+    # n_trim = int = trim this many chunks off the blue end (used for pilot data only)
     
     # Always re-extract the secondary standard
     extract_secondary_standard(frame_list, n_trim=n_trim)
@@ -60,7 +60,7 @@ def secondary_standard_transfer_function(frame_list, PS_spec_file, PS_rss_file, 
     # if user defines, use a scaled primary standard telluric correction
     if use_PS:
         # get primary standard transfer function
-        PS_transfer_function, PS_wave_axis = primary_standard_transfer_function(PS_spec_file, PS_rss_file)
+        PS_transfer_function, PS_wave_axis = primary_standard_transfer_function(PS_spec_file)
         
         # find least squares fit on scalar
         A = 1.1
@@ -101,14 +101,13 @@ def residual(A, SS_transfer_function, PS_transfer_function, PS_wave_axis):
 
     return transfer_function_residual
 
-def primary_standard_transfer_function(PS_spec_file, PS_rss_file):
+def primary_standard_transfer_function(PS_spec_file):
     
     # import data
     PS_spec_data = pf.open(PS_spec_file)
-    PS_rss_data = pf.open(PS_rss_file)
     
     # build wavelength axis
-    header = PS_rss_data[0].header
+    header = PS_spec_data[0].header
     crval1 = header['CRVAL1']
     cdelt1 = header['CDELT1']
     naxis1 = header['NAXIS1']
