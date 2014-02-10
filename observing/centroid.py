@@ -146,6 +146,10 @@ def centroid(infile, ifus='all', savefile=True, plot=True):
     fwhm_arr=[]
     fwhm_conv_arr=[] # For the converted numbers
 
+    # List for the x and y offsets in arcseconds.
+    x_off_arr=[]
+    y_off_arr=[]
+
     # Print the heading for the offsets
     print "-------------------------------------------------"
     print "Offsets RA Dec:"
@@ -198,6 +202,10 @@ def centroid(infile, ifus='all', savefile=True, plot=True):
         #print "FWHM from four techniques:", fwhm, fwhm_corr, fwhm_conv, fwhm_conv_corr
 
         print "Probe", ifu_data.ifu, x_off, y_off #,  x_off_conv, y_off_conv  #, xm_off, ym_off, x_off, y_off
+
+        # Add the offsets to the lists
+        x_off_arr.append(x_off)
+        y_off_arr.append(y_off)
 
         # Make an image of the bundle with the fit overlaid in contours. NOTE - plotting is done with the fit using
         # the micron values. This is more aesthetic and simple.
@@ -294,8 +302,36 @@ def centroid(infile, ifus='all', savefile=True, plot=True):
     
     print "-------------------------------------------------"
     print
-    print "FWHM of fits (in \")."
+    print "FWHM of fits (in \"):"
     print fwhm_arr
+    print 
+    # Now print the average offsets
+    x_off_arr=np.asarray(x_off_arr)
+    y_off_arr=np.asarray(y_off_arr)
+
+    RA_med=np.median(x_off_arr)
+    Dec_med=np.median(y_off_arr)
+    
+    #print "Median offsets RA/Dec (in \"):"
+    #print "RA:", np.median(x_off_arr)
+    #print "Dec:", np.median(y_off_arr)
+
+    
+    if RA_med < 0.0:
+        RA_flag='W'
+    else:
+        RA_flag='E'
+
+    if Dec_med < 0.0:
+        Dec_flag='S'
+
+    else:
+        Dec_flag='N'
+
+    print "To centre the objects in the bundles you should offset the telescope:"
+    print "RA", RA_med, RA_flag
+    print "Dec", Dec_med, Dec_flag
+
     #print fwhm_conv_arr
 
 def focus(inlist, ifu):
