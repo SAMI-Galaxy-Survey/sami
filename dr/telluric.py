@@ -17,7 +17,8 @@ HG_CHANGESET = utils.hg_changeset(__file__)
 
 # KEY:      SS = Secondary Standard, PS = Primary Standard
 
-def derive_transfer_function(frame_list, PS_spec_file=None, use_PS=False, 
+def derive_transfer_function(frame_list, PS_spec_file=None, use_PS=False,
+                             scale_PS_by_airmass=False, 
                              model_name='ref_centre_alpha_dist_circ_hdratm',
                              n_trim=0):
     """
@@ -33,6 +34,9 @@ def derive_transfer_function(frame_list, PS_spec_file=None, use_PS=False,
     # n_trim = int = trim this many chunks off the blue end (used for pilot data only)
     
     # Always re-extract the secondary standard
+    # NB: when use_PS is True and scale_PS_by_airmass is False, we don't
+    # actually need to extract it, but we do still need to create the
+    # extension and copy atmospheric parameters across
     extract_secondary_standard(frame_list, model_name=model_name, n_trim=n_trim)
 
     # Get data
@@ -63,11 +67,17 @@ def derive_transfer_function(frame_list, PS_spec_file=None, use_PS=False,
         # get primary standard transfer function
         PS_transfer_function, PS_wave_axis = primary_standard_transfer_function(PS_spec_file)
 
-        # find least squares fit on scalar
-        A = 1.1
-        best_scalar = optimize.leastsq(residual,A,args=(SS_transfer_function,PS_transfer_function,PS_wave_axis),full_output=1)
-        
-        PS_transfer_function_scaled = PS_transfer_function.copy() ** best_scalar[0][0]
+        if scale_PS_by_airmass:
+            # Use the theoretical scaling based on airmass
+            scale = ((1.0 / np.cos(np.deg2rad(header['ZDSTART']))) / 
+                     (1.0 / np.cos(np.deg2rad(pf.getval(PS_spec_file, 'MEANZD')))))
+        else:
+            # find least squares fit on scalar
+            A = 1.1
+            best_scalar = optimize.leastsq(residual,A,args=(SS_transfer_function,PS_transfer_function,PS_wave_axis),full_output=1)
+            scale = best_scalar[0][0]
+
+        PS_transfer_function_scaled = PS_transfer_function.copy() ** scale
 
         transfer_function = PS_transfer_function_scaled
     

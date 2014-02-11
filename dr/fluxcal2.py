@@ -1014,6 +1014,8 @@ def save_combined_transfer_function(path_out, tf_combined, path_list):
     header_input = pf.getheader(path_list[0])
     for key in ['CRVAL1', 'CDELT1', 'NAXIS1', 'CRPIX1']:
         primary_hdu.header[key] = header_input[key]
+    zd = np.mean([pf.getval(path, 'ZDSTART') for path in path_list])
+    primary_hdu.header['MEANZD'] = zd
     # Make an HDU list, which will also contain all the individual functions
     hdulist = pf.HDUList([primary_hdu])
     for index, path in enumerate(path_list):
