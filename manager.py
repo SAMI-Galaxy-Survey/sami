@@ -1183,7 +1183,7 @@ class Manager:
     def telluric_correct(self, overwrite=False, **kwargs):
         """Apply telluric correction to object frames."""
         # First make the list of file pairs to correct
-        pair_list = []
+        inputs_list = []
         for fits_2 in self.files(ndf_class='MFOBJECT', do_not_use=False,
                                  spectrophotometric=False, ccd='ccd_2', 
                                  **kwargs):
@@ -1191,12 +1191,50 @@ class Manager:
                 # Already been done; skip to the next file
                 continue
             fits_1 = self.other_arm(fits_2)
-            pair_list.append((fits_1, fits_2))
+            if fits_2.epoch < 2013.0:
+                # SAMI v1 had awful throughput at blue end of blue, need to
+                # trim that data.
+                n_trim = 3
+                # Also get telluric shape from primary standard
+                use_PS = True
+                fits_spectrophotometric = self.matchmaker(fits_2, 'fcal')
+                if fits_spectrophotometric is None:
+                    # Try again with less strict criteria
+                    fits_spectrophotometric = self.matchmaker(
+                        fits_2, 'fcal_loose')
+                    if fits_spectrophotometric is None:
+                        raise MatchException('No matching flux calibrator ' + 
+                                             'found for ' + fits_2.filename)
+                PS_spec_file = os.path.join(
+                    fits_spectrophotometric.reduced_dir,
+                    'TRANSFERcombined.fits')
+                # For September 2012, secondary stars were often not in the
+                # hexabundle at all, so use the theoretical airmass scaling
+                if fits_2.epoch < 2012.75:
+                    scale_PS_by_airmass = True
+                else:
+                    scale_PS_by_airmass = False
+                # Also constrain the zenith distance in fitting the star
+                model_name = 'ref_centre_alpha_circ_hdratm'
+            else:
+                # These days everything is hunkydory
+                n_trim = 0
+                use_PS = False
+                PS_spec_file = None
+                scale_PS_by_airmass = False
+                model_name = 'ref_centre_alpha_dist_circ_hdratm'
+            inputs_list.append({
+                'fits_1': fits_1,
+                'fits_2': fits_2,
+                'n_trim': n_trim,
+                'use_PS': use_PS,
+                'scale_PS_by_airmass': scale_PS_by_airmass,
+                'PS_spec_file': PS_spec_file})
         # Now send this list to as many cores as we are using
-        self.map(telluric_correct_pair, pair_list)
+        self.map(telluric_correct_pair, inputs_list)
         # Mark telluric corrections as not checked
-        for fits_pair in pair_list:
-            self.update_checks('TEL', [fits_pair[1]], False)
+        fits_2_list = [inputs['fits_2'] for inputs in inputs_list]
+        self.update_checks('TEL', fits_2_list, False)
         return
 
     def measure_offsets(self, overwrite=False, min_exposure=599.0, name='main',
@@ -2563,23 +2601,24 @@ class FITSFile:
         return
 
 
-def telluric_correct_pair(fits_pair):
+def telluric_correct_pair(inputs):
     """Telluric correct a pair of fits files."""
-    fits_1, fits_2 = fits_pair
+    fits_1 = inputs['fits_1']
+    fits_2 = inputs['fits_2']
+    n_trim = inputs['n_trim']
+    use_PS = inputs['use_PS']
+    scale_PS_by_airmass = inputs['scale_PS_by_airmass']
+    PS_spec_file = inputs['PS_spec_file']
     if fits_1 is None or not os.path.exists(fits_1.fluxcal_path):
         print ('Matching blue arm not found for ' + fits_2.filename +
                '; skipping this file.')
         return
-    if fits_1.epoch < 2013.0:
-        # SAMI v1 had awful throughput at blue end of blue, need to
-        # trim that data
-        n_trim = 3
-    else:
-        n_trim = 0
     path_pair = (fits_1.fluxcal_path, fits_2.fluxcal_path)
     print ('Deriving telluric correction for ' + fits_1.filename +
            ' and ' + fits_2.filename)
-    telluric.correction_linear_fit(path_pair, n_trim=n_trim)
+    telluric.derive_transfer_function(
+        path_pair, PS_spec_file=PS_spec_file, use_PS=use_PS, n_trim=n_trim,
+        scale_PS_by_airmass=scale_PS_by_airmass)
     print 'Telluric correcting file:', fits_2.filename
     if os.path.exists(fits_2.telluric_path):
         os.remove(fits_2.telluric_path)
