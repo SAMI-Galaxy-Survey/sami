@@ -2667,7 +2667,7 @@ def cube_group(group):
         objects = [pf.getval(path_list[0], 'STDNAME', 'FLUX_CALIBRATION')]
     else:
         objects = 'all'
-    dithered_cubes_from_rss_list(path_list, suffix='_'+field[0], 
+    dithered_cubes_from_rss_list(path_list, suffix='_'+field[0], size_of_grid=50,
                                  write=True, nominal=True, root=root,
                                  overwrite=overwrite, do_dar_correct=True,
                                  objects=objects, clip=False)
