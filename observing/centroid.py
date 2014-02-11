@@ -329,8 +329,8 @@ def centroid(infile, ifus='all', savefile=True, plot=True):
         Dec_flag='N'
 
     print "To centre the objects in the bundles you should offset the telescope:"
-    print "RA", RA_med, RA_flag
-    print "Dec", Dec_med, Dec_flag
+    print "RA", np.abs(RA_med), RA_flag
+    print "Dec", np.abs(Dec_med), Dec_flag
 
     #print fwhm_conv_arr
 
