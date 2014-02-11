@@ -1141,11 +1141,14 @@ class Manager:
                 PS_spec_file = os.path.join(
                     fits_spectrophotometric.reduced_dir,
                     'TRANSFERcombined.fits')
+                # Also constrain the zenith distance in fitting the star
+                model_name = 'ref_centre_alpha_circ_hdratm'
             else:
                 # These days everything is hunkydory
                 n_trim = 0
                 use_PS = False
                 PS_spec_file = None
+                model_name = 'ref_centre_alpha_dist_circ_hdratm'
             inputs_list.append((fits_1, fits_2, n_trim, use_PS, PS_spec_file))
         # Now send this list to as many cores as we are using
         self.map(telluric_correct_pair, inputs_list)

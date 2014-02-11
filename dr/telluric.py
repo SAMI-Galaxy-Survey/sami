@@ -18,6 +18,7 @@ HG_CHANGESET = utils.hg_changeset(__file__)
 # KEY:      SS = Secondary Standard, PS = Primary Standard
 
 def derive_transfer_function(frame_list, PS_spec_file=None, use_PS=False, 
+                             model_name='ref_centre_alpha_dist_circ_hdratm',
                              n_trim=0):
     """
     Finds the telluric correction factor to multiply object data by. The factor 
@@ -32,7 +33,7 @@ def derive_transfer_function(frame_list, PS_spec_file=None, use_PS=False,
     # n_trim = int = trim this many chunks off the blue end (used for pilot data only)
     
     # Always re-extract the secondary standard
-    extract_secondary_standard(frame_list, n_trim=n_trim)
+    extract_secondary_standard(frame_list, model_name=model_name, n_trim=n_trim)
 
     # Get data
     hdulist = pf.open(frame_list[1])
@@ -61,7 +62,7 @@ def derive_transfer_function(frame_list, PS_spec_file=None, use_PS=False,
     if use_PS:
         # get primary standard transfer function
         PS_transfer_function, PS_wave_axis = primary_standard_transfer_function(PS_spec_file)
-        
+
         # find least squares fit on scalar
         A = 1.1
         best_scalar = optimize.leastsq(residual,A,args=(SS_transfer_function,PS_transfer_function,PS_wave_axis),full_output=1)
@@ -93,7 +94,7 @@ def derive_transfer_function(frame_list, PS_spec_file=None, use_PS=False,
 
 def residual(A, SS_transfer_function, PS_transfer_function, PS_wave_axis):
     
-    transfer_function_residual = SS_transfer_function - PS_transfer_function ** A
+    transfer_function_residual = 1./SS_transfer_function - 1./(PS_transfer_function ** A)
 
     return transfer_function_residual
 
