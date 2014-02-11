@@ -285,6 +285,13 @@ def first_guess_parameters(datatube, vartube, xfibre, yfibre, wavelength,
         par_0['zenith_distance'] = np.pi / 8.0
         par_0['alpha_ref'] = 1.0
         par_0['beta'] = 4.0
+    elif model_name == 'ref_centre_alpha_circ_hdratm':
+        par_0['flux'] = np.nansum(datatube, axis=0)
+        par_0['background'] = np.zeros(len(par_0['flux']))
+        par_0['xcen_ref'] = np.sum(xfibre * weighted_data)
+        par_0['ycen_ref'] = np.sum(yfibre * weighted_data)
+        par_0['alpha_ref'] = 1.0
+        par_0['beta'] = 4.0
     else:
         raise KeyError('Unrecognised model name: ' + model_name)
     return par_0
@@ -334,6 +341,14 @@ def parameters_dict_to_vector(parameters_dict, model_name):
              parameters_dict['ycen_ref'],
              parameters_dict['zenith_direction'],
              parameters_dict['zenith_distance'],
+             parameters_dict['alpha_ref'],
+             parameters_dict['beta']))
+    elif model_name == 'ref_centre_alpha_circ_hdratm':
+        parameters_vector = np.hstack(
+            (parameters_dict['flux'],
+             parameters_dict['background'],
+             parameters_dict['xcen_ref'],
+             parameters_dict['ycen_ref'],
              parameters_dict['alpha_ref'],
              parameters_dict['beta']))
     else:
@@ -388,6 +403,14 @@ def parameters_vector_to_dict(parameters_vector, model_name):
         parameters_dict['zenith_distance'] = parameters_vector[-3]
         parameters_dict['alpha_ref'] = parameters_vector[-2]
         parameters_dict['beta'] = parameters_vector[-1]
+    elif model_name == 'ref_centre_alpha_circ_hdratm':
+        n_slice = (len(parameters_vector) - 4) / 2
+        parameters_dict['flux'] = parameters_vector[0:n_slice]
+        parameters_dict['background'] = parameters_vector[n_slice:2*n_slice]
+        parameters_dict['xcen_ref'] = parameters_vector[-4]
+        parameters_dict['ycen_ref'] = parameters_vector[-3]
+        parameters_dict['alpha_ref'] = parameters_vector[-2]
+        parameters_dict['beta'] = parameters_vector[-1]
     else:
         raise KeyError('Unrecognised model name: ' + model_name)
     return parameters_dict
@@ -439,7 +462,8 @@ def parameters_dict_to_array(parameters_dict, wavelength, model_name):
         if len(parameters_dict['background']) == len(parameters_array):
             parameters_array['background'] = parameters_dict['background']
     elif (model_name == 'ref_centre_alpha_angle_circ_atm' or
-          model_name == 'ref_centre_alpha_dist_circ_hdratm'):
+          model_name == 'ref_centre_alpha_dist_circ_hdratm' or
+          model_name == 'ref_centre_alpha_circ_hdratm'):
         parameters_array['xcen'] = (
             parameters_dict['xcen_ref'] +
             np.sin(parameters_dict['zenith_direction']) * 
@@ -1039,7 +1063,8 @@ def set_fixed_parameters(path_list, model_name, probenum=None):
         zenith_direction = np.deg2rad(parallactic_angle(
             ha, header['MEANDEC'], header['LAT_OBS']))
         fixed_parameters['zenith_direction'] = zenith_direction
-    if model_name == 'ref_centre_alpha_dist_circ_hdratm':
+    if (model_name == 'ref_centre_alpha_dist_circ_hdratm' or
+        model_name == 'ref_centre_alpha_circ_hdratm'):
         fibre_table_header = pf.getheader(path_list[0], 'FIBRES_IFU')
         temperature = fibre_table_header['ATMTEMP']
         pressure = fibre_table_header['ATMPRES'] * millibar_to_mmHg
@@ -1048,6 +1073,10 @@ def set_fixed_parameters(path_list, model_name, probenum=None):
         fixed_parameters['temperature'] = temperature
         fixed_parameters['pressure'] = pressure
         fixed_parameters['vapour_pressure'] = vapour_pressure
+    if model_name == 'ref_centre_alpha_circ_hdratm':
+        # Should take into account variation over course of observation
+        # instead of just using the start value
+        fixed_parameters['zenith_distance'] = np.deg2rad(header['ZDSTART'])
     return fixed_parameters
 
 def check_psf_parameters(psf_parameters, chunked_data):
