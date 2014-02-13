@@ -255,7 +255,7 @@ def dithered_cubes_from_rss_files(inlist, objects='all', size_of_grid=50,
     dithered_cubes_from_rss_list(files, objects=objects, size_of_grid=size_of_grid, 
                                  output_pix_size_arcsec=output_pix_size_arcsec, clip=clip, plot=plot,
                                  write=write, root=root, suffix=suffix, nominal=nominal, overwrite=overwrite,
-                                 covar_mode=covar_mode, do_dar_correct=do_dar_correct)
+                                 covar_mode=covar_mode, do_dar_correct=do_dar_correct, drop_factor=drop_factor)
     return
 
 def dithered_cubes_from_rss_list(files, objects='all', size_of_grid=50, 
