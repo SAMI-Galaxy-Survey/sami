@@ -1052,7 +1052,8 @@ def set_fixed_parameters(path_list, model_name, probenum=None):
     """Return fixed values for certain parameters."""
     fixed_parameters = {}
     if (model_name == 'ref_centre_alpha_dist_circ' or
-        model_name == 'ref_centre_alpha_dist_circ_hdratm'):
+        model_name == 'ref_centre_alpha_dist_circ_hdratm' or
+        model_name == 'ref_centre_alpha_circ_hdratm'):
         header = pf.getheader(path_list[0])
         ifu = IFU(path_list[0], probenum, flag_name=False)
         ha_offset = ifu.ra - ifu.meanra  # The offset from the HA of the field centre
