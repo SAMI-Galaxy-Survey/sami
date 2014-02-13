@@ -167,7 +167,7 @@ def display_list(inlist, ifu, log=True):
     fig=py.figure()
 
     for i, infile in enumerate(files):
-
+        
         # Get the data.
         ifu_data=utils.IFU(infile, ifu, flag_name=False)
 

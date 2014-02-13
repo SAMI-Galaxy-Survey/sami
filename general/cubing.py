@@ -255,7 +255,7 @@ def dithered_cubes_from_rss_files(inlist, objects='all', size_of_grid=50,
     dithered_cubes_from_rss_list(files, objects=objects, size_of_grid=size_of_grid, 
                                  output_pix_size_arcsec=output_pix_size_arcsec, clip=clip, plot=plot,
                                  write=write, root=root, suffix=suffix, nominal=nominal, overwrite=overwrite,
-                                 covar_mode=covar_mode, do_dar_correct=do_dar_correct)
+                                 covar_mode=covar_mode, do_dar_correct=do_dar_correct, drop_factor=drop_factor)
     return
 
 def dithered_cubes_from_rss_list(files, objects='all', size_of_grid=50, 
@@ -328,13 +328,17 @@ def dithered_cubes_from_rss_list(files, objects='all', size_of_grid=50,
                     continue
 
         # Call dithered_cube_from_rss to create the flux, variance and weight cubes for the object.
-        
-        flux_cube, var_cube, weight_cube, diagnostics, covariance_cube, covar_locs = \
-                dithered_cube_from_rss(ifu_list, size_of_grid=size_of_grid,
-                                       output_pix_size_arcsec=output_pix_size_arcsec,
-                                       drop_factor=drop_factor,
-                                       clip=clip, plot=plot, covar_mode=covar_mode,
-                                       do_dar_correct=do_dar_correct)
+        try:
+            flux_cube, var_cube, weight_cube, diagnostics, covariance_cube, covar_locs = \
+                       dithered_cube_from_rss(ifu_list, size_of_grid=size_of_grid,
+                                              output_pix_size_arcsec=output_pix_size_arcsec,
+                                              drop_factor=drop_factor,
+                                              clip=clip, plot=plot, covar_mode=covar_mode,
+                                              do_dar_correct=do_dar_correct)
+
+        except Exception:
+            print "Cubing Failed."
+            continue
 
         # Write out FITS files.
         if write==True:
