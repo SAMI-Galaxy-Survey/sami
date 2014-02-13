@@ -1229,7 +1229,8 @@ class Manager:
                 'n_trim': n_trim,
                 'use_PS': use_PS,
                 'scale_PS_by_airmass': scale_PS_by_airmass,
-                'PS_spec_file': PS_spec_file})
+                'PS_spec_file': PS_spec_file,
+                'model_name': model_name})
         # Now send this list to as many cores as we are using
         self.map(telluric_correct_pair, inputs_list)
         # Mark telluric corrections as not checked
@@ -2609,6 +2610,7 @@ def telluric_correct_pair(inputs):
     use_PS = inputs['use_PS']
     scale_PS_by_airmass = inputs['scale_PS_by_airmass']
     PS_spec_file = inputs['PS_spec_file']
+    model_name = inputs['model_name']
     if fits_1 is None or not os.path.exists(fits_1.fluxcal_path):
         print ('Matching blue arm not found for ' + fits_2.filename +
                '; skipping this file.')
@@ -2618,7 +2620,7 @@ def telluric_correct_pair(inputs):
            ' and ' + fits_2.filename)
     telluric.derive_transfer_function(
         path_pair, PS_spec_file=PS_spec_file, use_PS=use_PS, n_trim=n_trim,
-        scale_PS_by_airmass=scale_PS_by_airmass)
+        scale_PS_by_airmass=scale_PS_by_airmass, model_name=model_name)
     print 'Telluric correcting file:', fits_2.filename
     if os.path.exists(fits_2.telluric_path):
         os.remove(fits_2.telluric_path)
