@@ -213,6 +213,11 @@ def plate2sky(x, y, linear=False):
         # Convert to arcseconds
         xi *= (180.0 / np.pi) * 3600.0
         eta = y * xi / x
+        if np.size(x) > 1 and np.size(y) > 1:
+            # Check for (0,0) values in input arrays
+            zeros = ((x == 0.0) & (y == 0.0))
+            xi[zeros] = 0.0
+            eta[zeros] = 0.0
         coords = AngularCoords(xi, eta)
 
     return coords
