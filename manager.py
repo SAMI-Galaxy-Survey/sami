@@ -1088,7 +1088,9 @@ class Manager:
             target = fits.reduced_path
         return target
 
-    def derive_transfer_function(self, overwrite=False, **kwargs):
+    def derive_transfer_function(self, 
+            overwrite=False, model_name='ref_centre_alpha_dist_circ_hdratm', 
+            **kwargs):
         """Derive flux calibration transfer functions and save them."""
         for fits in self.files(ndf_class='MFOBJECT', do_not_use=False,
                                spectrophotometric=True, ccd='ccd_1', **kwargs):
@@ -1114,7 +1116,8 @@ class Manager:
             print ('Deriving transfer function for ' + fits.filename + 
                    ' and ' + fits_2.filename)
             try:
-                fluxcal2.derive_transfer_function(path_pair, n_trim=n_trim)
+                fluxcal2.derive_transfer_function(path_pair, n_trim=n_trim,
+                                                  model_name=model_name)
             except ValueError:
                 print ('Warning: No star found in dataframe, skipping ' + 
                        fits.filename)
