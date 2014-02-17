@@ -1092,6 +1092,7 @@ class Manager:
             overwrite=False, model_name='ref_centre_alpha_dist_circ_hdratm', 
             **kwargs):
         """Derive flux calibration transfer functions and save them."""
+        inputs_list = []
         for fits in self.files(ndf_class='MFOBJECT', do_not_use=False,
                                spectrophotometric=True, ccd='ccd_1', **kwargs):
             if not overwrite:
@@ -1113,20 +1114,9 @@ class Manager:
                 n_trim = 3
             else:
                 n_trim = 0
-            print ('Deriving transfer function for ' + fits.filename + 
-                   ' and ' + fits_2.filename)
-            try:
-                fluxcal2.derive_transfer_function(path_pair, n_trim=n_trim,
-                                                  model_name=model_name)
-            except ValueError:
-                print ('Warning: No star found in dataframe, skipping ' + 
-                       fits.filename)
-                continue
-            good_psf = pf.getval(fits.reduced_path, 'GOODPSF',
-                                 'FLUX_CALIBRATION')
-            if not good_psf:
-                print ('Warning: Bad PSF fit in ' + fits.filename + 
-                       '; will skip this one in combining.')
+            inputs_list.append({'path_pair': path_pair, 'n_trim': n_trim, 
+                                'model_name': model_name})
+        self.map(derive_transfer_function_pair, inputs_list)
         return
 
     def combine_transfer_function(self, overwrite=False, **kwargs):
@@ -2610,6 +2600,28 @@ class FITSFile:
             hdulist.close()
         return
 
+
+def derive_transfer_function_pair(inputs):
+    """Derive transfer function for a pair of fits files."""
+    path_pair = inputs['path_pair']
+    n_trim = inputs['n_trim']
+    model_name = inputs['model_name']
+    print ('Deriving transfer function for ' + 
+            os.path.basename(path_pair[0]) + ' and ' + 
+            os.path.basename(path_pair[1]))
+    try:
+        fluxcal2.derive_transfer_function(path_pair, n_trim=n_trim,
+                                          model_name=model_name)
+    except ValueError:
+        print ('Warning: No star found in dataframe, skipping ' + 
+               os.path.basename(path_pair[0]))
+        return
+    good_psf = pf.getval(path_pair[0], 'GOODPSF',
+                         'FLUX_CALIBRATION')
+    if not good_psf:
+        print ('Warning: Bad PSF fit in ' + os.path.basename(path_pair[0]) + 
+               '; will skip this one in combining.')
+    return
 
 def telluric_correct_pair(inputs):
     """Telluric correct a pair of fits files."""
