@@ -1180,7 +1180,7 @@ class Manager:
                     path_transfer_fn)
         return
 
-    def telluric_correct(self, overwrite=False, **kwargs):
+    def telluric_correct(self, overwrite=False, model_name=None, **kwargs):
         """Apply telluric correction to object frames."""
         # First make the list of file pairs to correct
         inputs_list = []
@@ -1215,14 +1215,20 @@ class Manager:
                 else:
                     scale_PS_by_airmass = False
                 # Also constrain the zenith distance in fitting the star
-                model_name = 'ref_centre_alpha_circ_hdratm'
+                if model_name is None:
+                    model_name_out = 'ref_centre_alpha_circ_hdratm'
+                else:
+                    model_name_out = model_name
             else:
                 # These days everything is hunkydory
                 n_trim = 0
                 use_PS = False
                 PS_spec_file = None
                 scale_PS_by_airmass = False
-                model_name = 'ref_centre_alpha_dist_circ_hdratm'
+                if model_name is None:
+                    model_name_out = 'ref_centre_alpha_dist_circ_hdratm'
+                else:
+                    model_name_out = model_name
             inputs_list.append({
                 'fits_1': fits_1,
                 'fits_2': fits_2,
@@ -1230,7 +1236,7 @@ class Manager:
                 'use_PS': use_PS,
                 'scale_PS_by_airmass': scale_PS_by_airmass,
                 'PS_spec_file': PS_spec_file,
-                'model_name': model_name})
+                'model_name': model_name_out})
         # Now send this list to as many cores as we are using
         self.map(telluric_correct_pair, inputs_list)
         # Mark telluric corrections as not checked
