@@ -13,6 +13,23 @@ described below.
 
 **dithered_cubes_from_rss_files**
 
+** notes from RGS
+>cd ~/SAMI/
+>ipython
+>import sami
+> sami.general.cubing.dithered_cubes_from_rss_files("testfiles1.txt")   - no actual output made
+> sami.general.cubing.dithered_cubes_from_rss_files("testfiles1.txt",write=True,clip=False,drop_factor=0.5,suffix="_NoClip",covar_mode="none",nominal=True,root="testing/",overwrite=True)
+
+> sami.general.cubing.dithered_cubes_from_rss_files("testfiles1.txt",write=True,clip=False,drop_factor=0.5,suffix="_NoClip",covar_mode="none",nominal=True,root="testing_small/",overwrite=True,objects=["36894","47286"])
+> sami.general.cubing.dithered_cubes_from_rss_files("testfiles1.txt",write=True,clip=True,drop_factor=1.0,suffix="__Full_Clip",covar_mode="none",nominal=True,root="testing_small/",overwrite=True,objects=["36894","47286"])
+> sami.general.cubing.dithered_cubes_from_rss_files("testfiles1.txt",write=True,clip=True,drop_factor=0.5,suffix="_Clip",covar_mode="none",nominal=True,root="testing_small/",overwrite=True,objects=["36894","47286"])
+> sami.general.cubing.dithered_cubes_from_rss_files("testfiles1.txt",write=True,clip=True,drop_factor=0.5,suffix="_FullClip",covar_mode="none",nominal=True,root="testing_small/",overwrite=True,objects=["36894","47286"])
+
+> sami.general.cubing.dithered_cubes_from_rss_files("testfiles1blue.txt",write=True,clip=False,drop_factor=0.5,suffix="_ReducedDrop_NoClip",covar_mode="none",nominal=True,root="testing_small/",overwrite=True,objects=["36894","47286"])
+> sami.general.cubing.dithered_cubes_from_rss_files("testfiles1blue.txt",write=True,clip=True,drop_factor=0.5,suffix="_ReducedDrop_ClipWithReducedDrop",covar_mode="none",nominal=True,root="testing_small/",overwrite=True,objects=["36894","47286"])
+> sami.general.cubing.dithered_cubes_from_rss_files("testfiles1blue.txt",write=True,clip=True,drop_factor=0.5,suffix="_ReducedDrop_ClipWithFullDrop",covar_mode="none",nominal=True,root="testing_small/",overwrite=True,objects=["36894","47286"])
+
+
 INPUTS:
 inlist - a file containing the names of the RSS files to be cubed. These file
 namesare one per line in this file.
@@ -418,6 +435,11 @@ def dithered_cube_from_rss(ifu_list, size_of_grid=50, output_pix_size_arcsec=0.5
     # The attributes of this instance don't change from ifu to ifu.
     overlap_maps=SAMIDrizzler(size_of_grid, output_pix_size_arcsec, drop_factor, n_obs * n_fibres)
 
+    ### RGS 27/2/14 We also need a second copy of this IFF we are clipping the data AND drop_factor != 1
+    if drop_factor != 1 and clip:
+        ### But, check this does not bugger up intermediate calculation elements in the code?
+        overlap_maps_fulldrop=SAMIDrizzler(size_of_grid, output_pix_size_arcsec, 1, n_obs * n_fibres)
+                
     # Empty lists for positions and data. Could be arrays, might be faster? Should test...
     xfibre_all=[]
     yfibre_all=[]
@@ -667,6 +689,15 @@ def dithered_cube_from_rss(ifu_list, size_of_grid=50, output_pix_size_arcsec=0.5
         overlap_array_older = np.copy(overlap_array_old)
         overlap_array_old = np.copy(overlap_array)
         overlap_array = overlap_maps.drizzle(xfibre_all[:,l], yfibre_all[:,l])
+
+        ### RGS 7/2/12 - If a small drop size is being used, AND if clipping is selected
+        ### then we make a second overlap array, which maps the full size fibres to the output array
+        ### we then use this full size mapping in order to make a smoothed version for clipping bad data points
+        ### then we actyally combined only the data on the reduced drop size mapping
+        if drop_factor != 1 and clip:            
+            #print("Clipping with a small drop_factor, so calculating a full size overlap map.")
+            ### This needs a new overlap map instance as that is where the drop size gets set...
+            overlap_array_fulldrop = overlap_maps_fulldrop.drizzle(xfibre_all[:,l], yfibre_all[:,l])
         
         #######################################
         # Determine covariance array at either i) all slices (mode = full)
@@ -721,19 +752,43 @@ def dithered_cube_from_rss(ifu_list, size_of_grid=50, output_pix_size_arcsec=0.5
         ##########################################
         
         # Map RSS slices onto gridded slices
+        ### rgs 7/2/14 - if cosmic ray clipping is set AND a small drop size is used, then we will need an additional 
+        ### map here which shows the the full fibre size mapping in ordero to perform the clipping on that "smoothed data.
         norm_grid_slice_fibres=overlap_array*norm_rss_slice        
         data_grid_slice_fibres=overlap_array*data_rss_slice
         var_grid_slice_fibres=(overlap_array*overlap_array)*var_rss_slice
 
         if clip:
-            # Perform sigma clipping of the data if the clip flag is set.
-            
-            n_unmasked_pixels_before_clipping = np.isfinite(data_grid_slice_fibres).sum()
-        
-            # Sigma clip it - pixel by pixel and make a master mask
-            # array. Current clipping, sigma=5 and 1 iteration.        
-            mask_grid_slice_fibres = sigma_clip_mask_slice_fibres(norm_grid_slice_fibres/overlap_array)
 
+            ### RGS 7/2/14 - I think all that is needed here, to fix the clipping for reduced drop size
+            ### is to run the mask_grid... generation using the FULL drop size overlap_array_FULL
+            ### then apply that mask directly to a "data_grid_slice" which uses the reduced drop size overlap_array
+            ### However, I need to check that the fibre mapping works for that.
+            ### Are the overlap arrays sparse arrays (i.e., full "cubes" with zero where there is no overlap?
+            ### Or are they very specific remappings of "pointer like" elements? 
+
+            if drop_factor != 1:
+            #if 2 != 2: # kludge to turn this off for testing
+            #print("A reduced drop_factor was detected")
+            #print("Cliping using the full size drop mask")
+                
+                # Perform sigma clipping of the data if the clip flag is set.
+                n_unmasked_pixels_before_clipping = np.isfinite(overlap_array_fulldrop*data_rss_slice).sum()
+                
+                # Sigma clip it - pixel by pixel and make a master mask
+                # array. Current clipping, sigma=5 and 1 iteration.        
+                mask_grid_slice_fibres = sigma_clip_mask_slice_fibres(overlap_array_fulldrop*norm_rss_slice/overlap_array_fulldrop)
+                #mask_grid_slice_fibres = sigma_clip_mask_slice_fibres(norm_rss_slice)
+
+            else:
+                # Perform sigma clipping of the data if the clip flag is set.
+                n_unmasked_pixels_before_clipping = np.isfinite(data_grid_slice_fibres).sum()
+            
+                # Sigma clip it - pixel by pixel and make a master mask
+                # array. Current clipping, sigma=5 and 1 iteration.        
+                mask_grid_slice_fibres = sigma_clip_mask_slice_fibres(norm_grid_slice_fibres/overlap_array)
+
+            
             # Below is without the normalised spectra for the clip.
             #mask_grid_slice_fibres = sigma_clip_mask_slice_fibres(data_grid_slice_fibres/weight_grid_slice)
         
