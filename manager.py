@@ -1536,7 +1536,8 @@ class Manager:
               min_exposure=None, max_exposure=None,
               reduced_dir=None, reduced=None, tlm_created=None,
               flux_calibrated=None, telluric_corrected=None,
-              spectrophotometric=None, name=None, lamp=None):
+              spectrophotometric=None, name=None, lamp=None,
+              central_wavelength=None):
         """Generator for FITS files that satisfy requirements."""
         for fits in self.file_list:
             if fits.ndf_class is None:
@@ -1579,7 +1580,9 @@ class Manager:
                   (fits.spectrophotometric == spectrophotometric))) and
                 (name is None or 
                  (fits.name is not None and fits.name in name)) and
-                (lamp is None or fits.lamp == lamp)):
+                (lamp is None or fits.lamp == lamp) and
+                (central_wavelength is None or 
+                 fits.central_wavelength == central_wavelength)):
                 yield fits
         return
 
@@ -1744,6 +1747,7 @@ class Manager:
         telluric_corrected = None
         spectrophotometric = None
         lamp = None
+        central_wavelength = None
         # Define some functions for figures of merit
         time_difference = lambda fits, fits_test: (
             abs(fits_test.epoch - fits.epoch))
@@ -1868,6 +1872,7 @@ class Manager:
             ccd = fits.ccd
             reduced = True
             spectrophotometric = True
+            central_wavelength = fits.central_wavelength
             fom = time_difference
         elif match_class.lower() == 'fcal_loose':
             # Spectrophotometric with less strict criteria
@@ -1875,6 +1880,7 @@ class Manager:
             ccd = fits.ccd
             reduced = True
             spectrophotometric = True
+            central_wavelength = fits.central_wavelength
             fom = time_difference
         elif match_class.lower() == 'bias':
             # Just return the standard BIAScombined filename
@@ -2216,6 +2222,7 @@ class FITSFile:
         self.set_exposure()
         self.set_epoch()
         self.set_lamp()
+        self.set_central_wavelength()
         self.set_do_not_use()
         self.set_coords_flags()
         self.hdulist.close()
@@ -2446,6 +2453,14 @@ class FITSFile:
                 self.lamp = 'Flap'
         else:
             self.lamp = None
+        return
+
+    def set_central_wavelength(self):
+        """Set what the requested central wavelength of the observation was."""
+        if self.ndf_class:
+            self.central_wavelength = self.header['LAMBDCR']
+        else:
+            self.central_wavelength = None
         return
 
     def set_do_not_use(self):
