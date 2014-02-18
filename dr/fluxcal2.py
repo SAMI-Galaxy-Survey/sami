@@ -566,6 +566,7 @@ def derive_transfer_function(path_list, max_sep_arcsec=60.0,
     good_psf = check_psf_parameters(psf_parameters, chunked_data)
     for path in path_list:
         ifu = IFU(path, star_match['probenum'], flag_name=False)
+        remove_atmosphere(ifu)
         observed_flux, observed_background = extract_total_flux(
             ifu, psf_parameters, model_name)
         save_extracted_flux(path, observed_flux, observed_background,
