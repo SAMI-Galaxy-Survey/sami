@@ -26,6 +26,7 @@ import numpy as np
 import scipy as sp
 import astropy.io.fits as pf
 import urllib
+import os.path
 
 #########################################################################################
 
@@ -61,7 +62,7 @@ def getSDSSimage(path="unknown",object_name="unknown", RA=0, DEC=0, band="g", si
         # Get SDSS image
         urllib.urlretrieve(str(URL), str(object_name)+"_SDSS_"+str(band)+".fits")
     else:
-        urllib.urlretrieve(str(URL), path+str(object_name)+"_SDSS_"+str(band)+".fits")
+        urllib.urlretrieve(str(URL), os.path.join(path, str(object_name)+"_SDSS_"+str(band)+".fits"))
                                                                      
     if url_show=="True":
         print ("SDSS "+str(band)+"-band image of object "+str(object_name)+" has finished downloading to the working directory with the file name: "+str(object_name)+"_SDSS_"+str(band)+".fits")

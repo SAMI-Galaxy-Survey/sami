@@ -69,6 +69,7 @@ import multiprocessing
 import tempfile
 from contextlib import contextmanager
 from collections import defaultdict
+from glob import glob
 
 import astropy.coordinates as coord
 from astropy import units
@@ -78,6 +79,8 @@ import numpy as np
 from .utils.other import find_fibre_table
 from .general.cubing import dithered_cubes_from_rss_list
 from .general.align_micron import find_dither
+from .general.wcs import retrieve_sdss_images_rss, retrieve_sdss_bandpasses
+from .general.wcs import update_wcs_coords, copy_wcs_coords
 from .dr import fluxcal2, telluric, check_plots, tdfdr
 
 
@@ -1279,7 +1282,7 @@ class Manager:
             reduced=True, min_exposure=min_exposure, name=name, **kwargs)
         # Add in the root path as well, so that cubing puts things in the 
         # right place
-        cubed_root = os.path.join(self.root, 'cubed')
+        cubed_root = os.path.join(self.abs_root, 'cubed')
         groups = [(key, fits_list, cubed_root, overwrite, star_only) 
                   for key, fits_list in groups.items()]
         # Send the cubing tasks off to multiple CPUs
@@ -2183,6 +2186,54 @@ class Manager:
         check_plots.check_cub(fits_list)
         return
 
+    def retrieve_sdss_data(self, overwrite=False):
+        """Download SDSS images and band throughputs."""
+        sdss_path = os.path.join(self.abs_root, 'sdss')
+        for (field_id,), file_list in self.group_files_by(
+                'field_id', ndf_class='MFOBJECT', name='main', do_not_use=False,
+                reduced=True).items():
+            print "Downloading data for field " + field_id
+            retrieve_sdss_images_rss(sdss_path, file_list[0].reduced_path,
+                                     overwrite=overwrite)
+        print "Downloading data for SDSS bandpasses"
+        retrieve_sdss_bandpasses(sdss_path, overwrite=overwrite)
+        return
+
+    def measure_absolute_wcs(self, overwrite=False):
+        """Measure the absolute WCS position via SDSS images."""
+        sdss_path = os.path.join(self.abs_root, 'sdss')
+        for (field_id,), file_list in self.group_files_by(
+                'field_id', ndf_class='MFOBJECT', name='main', do_not_use=False,
+                reduced=True).items():
+            fibre_table = pf.getdata(file_list[0].reduced_path, 'FIBRES_IFU')
+            object_name_list = np.unique(
+                fibre_table[fibre_table['TYPE'] == 'P']['NAME'])
+            for object_name in object_name_list:
+                glob_blue = os.path.join(
+                    self.abs_root, 'cubed', object_name, object_name + 
+                    '_blue_*_' + field_id + '.fits')
+                path_blue_list = glob(glob_blue)
+                path_blue_list.extend(glob(glob_blue + '.gz'))
+                if not path_blue_list:
+                    continue
+                path_blue = path_blue_list[0]
+                if overwrite or pf.getval(path_blue, 'WCS_SRC') == 'Nominal':
+                    print ("Measuring absolute WCS for blue arm of " 
+                           + object_name + " in field " + field_id)
+                    update_wcs_coords(sdss_path, path_blue, nominal=False)
+                glob_red = os.path.join(
+                    self.abs_root, 'cubed', object_name, object_name + 
+                    '_red_*_' + field_id + '.fits')
+                path_red_list = glob(glob_red)
+                path_red_list.extend(glob(glob_red + '.gz'))
+                if not path_red_list:
+                    continue
+                path_red = path_red_list[0]
+                if overwrite or pf.getval(path_red, 'WCS_SRC') == 'Nominal':
+                    print ("Copying absolute WCS to red arm of "
+                           + object_name + " in field " + field_id)
+                    copy_wcs_coords(path_blue, path_red)
+        return
 
 
 

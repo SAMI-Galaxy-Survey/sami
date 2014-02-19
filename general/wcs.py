@@ -13,7 +13,7 @@ from ..utils.other import gzip
 
 #########################
 
-def wcs_solve(myIFU, sdss_path, object_flux_cube, object_name, band, size_of_grid, output_pix_size_arcsec, plot=False, write=False, nominal=False, remove_thput_file=True):
+def wcs_solve(myIFU, sdss_path, object_flux_cube, object_name, band, size_of_grid, output_pix_size_arcsec, plot=False, write=False, nominal=False):
     
     """Wrapper for wcs_position_coords, extracting coords from IFU.
         
@@ -40,7 +40,7 @@ def wcs_solve(myIFU, sdss_path, object_flux_cube, object_name, band, size_of_gri
     
     return wcs_position_coords(sdss_path,object_RA, object_DEC, wave, object_flux_cube, object_name, band, size_of_grid, output_pix_size_arcsec, plot=plot, write=write, nominal=nominal)
 
-def wcs_position_coords(sdss_path, object_RA, object_DEC, wave, object_flux_cube, object_name, band, size_of_grid, output_pix_size_arcsec, plot=False, write=False, nominal=False, remove_thput_file=True):
+def wcs_position_coords(sdss_path, object_RA, object_DEC, wave, object_flux_cube, object_name, band, size_of_grid, output_pix_size_arcsec, plot=False, write=False, nominal=False):
     """Equate the WCS position information from a cross-correlation between a
         g-band SAMI cube and a g-band SDSS image."""
     
@@ -105,7 +105,7 @@ def wcs_position_coords(sdss_path, object_RA, object_DEC, wave, object_flux_cube
         image_data = image_file[str(band)].data
         
         
-        image_header = image_file['Primary'].header
+        image_header = image_file['g'].header
         img_crval1 = float(image_header['CRVAL1']) #RA
         img_crval2 = float(image_header['CRVAL2']) #DEC
         img_crpix1 = float(image_header['CRPIX1']) #Reference x-pixel
@@ -183,7 +183,7 @@ def wcs_position_coords(sdss_path, object_RA, object_DEC, wave, object_flux_cube
 
 #########################
 
-def update_wcs_coords(sdss_path,filename, nominal=False, remove_thput_file=True):
+def update_wcs_coords(sdss_path,filename, nominal=False):
     """Recalculate the WCS data in a SAMI datacube."""
     
     # Pick out the relevant data
@@ -206,7 +206,7 @@ def update_wcs_coords(sdss_path,filename, nominal=False, remove_thput_file=True)
     output_pix_size_arcsec = header['CDELT1'] #should be = 0.5
 
     # Calculate the WCS
-    WCS_pos, WCS_flag = wcs_position_coords(sdss_path,object_RA, object_DEC, wave, object_flux_cube, object_name, band, size_of_grid, output_pix_size_arcsec, nominal=nominal, remove_thput_file=remove_thput_file)
+    WCS_pos, WCS_flag = wcs_position_coords(sdss_path,object_RA, object_DEC, wave, object_flux_cube, object_name, band, size_of_grid, output_pix_size_arcsec, nominal=nominal)
 
     # Update the file
     hdulist = pf.open(filename, 'update', do_not_scale_image_data=True)
@@ -240,28 +240,28 @@ def copy_wcs_coords(file_to_copy_from,file_to_copy_to):
 def retrieve_sdss_images_rss(sdss_path, rss_path, overwrite=False):
     for probenum in xrange(1, 14):
         ifu = IFU(rss_path, probenum, flag_name=False)
-        object_RA = np.around(myIFU.obj_ra[myIFU.n == 1][0], decimals=6)
-        object_DEC = np.around(myIFU.obj_dec[myIFU.n == 1][0], decimals=6)
-        retrieve_sdss_images(sdss_path, object_RA, object_DEC, overwrite=overwrite)
+        object_RA = np.around(ifu.obj_ra[ifu.n == 1][0], decimals=6)
+        object_DEC = np.around(ifu.obj_dec[ifu.n == 1][0], decimals=6)
+        retrieve_sdss_images(sdss_path, ifu.name, object_RA, object_DEC, overwrite=overwrite)
     return
 
 def retrieve_sdss_images(sdss_path, object_name, object_RA, object_DEC, overwrite=False):
 
-    if not os.path.isfile(os.path.join(sdss_path, str(object_name)+"_SDSS_images.fits.gz")) or overwrite==True:
+    if not os.path.isfile(os.path.join(sdss_path, str(object_name)+"_SDSS_images.fits.gz")) or overwrite:
         
         primary = pf.PrimaryHDU(np.asarray([]))
         hdulist = pf.HDUList([primary])
         
         # get g-band image
         sdss.getSDSSimage(object_name=object_name, RA=object_RA, DEC=object_DEC,
-                          band="g", size=0.00694444, number_of_pixels=50)
-        hdu = pf.open(sdss_path+str(object_name)+"_SDSS_g.fits")[0]
+                          band="g", size=0.00694444, number_of_pixels=50, path=sdss_path)
+        hdu = pf.open(os.path.join(sdss_path, str(object_name)+"_SDSS_g.fits"))[0]
         hdu.update_ext_name("G")
         hdulist.append(hdu)
         # get r-band image
         sdss.getSDSSimage(object_name=object_name, RA=object_RA, DEC=object_DEC,
-                          band="r", size=0.00694444, number_of_pixels=50)
-        hdu = pf.open(sdss_path+str(object_name)+"_SDSS_r.fits")[0]
+                          band="r", size=0.00694444, number_of_pixels=50, path=sdss_path)
+        hdu = pf.open(os.path.join(sdss_path, str(object_name)+"_SDSS_r.fits"))[0]
         hdu.update_ext_name("R")
         hdulist.append(hdu)
 
@@ -272,14 +272,14 @@ def retrieve_sdss_images(sdss_path, object_name, object_RA, object_DEC, overwrit
         os.remove(os.path.join(sdss_path, str(object_name)+"_SDSS_r.fits"))
 
 
-def retrieve_sdss_bandpasses(sdss_path):
+def retrieve_sdss_bandpasses(sdss_path, overwrite=False):
 
-    if not os.path.isfile(sdss_path+"SDSS_g.dat"):
+    if not os.path.isfile(sdss_path+"SDSS_g.dat") or overwrite:
 
-        urllib.urlretrieve("http://www.sdss.org/dr3/instruments/imager/filters/g.dat", sdss_path+"SDSS_g.dat")
+        urllib.urlretrieve("http://www.sdss.org/dr3/instruments/imager/filters/g.dat", os.path.join(sdss_path, "SDSS_g.dat"))
 
-    if not os.path.isfile(sdss_path+"SDSS_r.dat"):
+    if not os.path.isfile(sdss_path+"SDSS_r.dat") or overwrite:
     
-        urllib.urlretrieve("http://www.sdss.org/dr3/instruments/imager/filters/r.dat", sdss_path+"SDSS_r.dat")
+        urllib.urlretrieve("http://www.sdss.org/dr3/instruments/imager/filters/r.dat", os.path.join(sdss_path, "SDSS_r.dat"))
 
 ############### END OF FILE ###############
