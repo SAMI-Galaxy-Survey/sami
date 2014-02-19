@@ -29,7 +29,7 @@ import urllib
 
 #########################################################################################
 
-def getSDSSimage(object_name="unknown", RA=0, DEC=0, band="g", size=0.006944,
+def getSDSSimage(path="unknown",object_name="unknown", RA=0, DEC=0, band="g", size=0.006944,
                  number_of_pixels=50, projection="Tan", url_show="False"):
     """This function queries the SDSS surver at skyview.gsfc.nasa.gov and returns an image
         with a user supplied set of parameters.
@@ -56,9 +56,12 @@ def getSDSSimage(object_name="unknown", RA=0, DEC=0, band="g", size=0.006944,
     size = str(size).split(".")
     
     URL = "http://skyview.gsfc.nasa.gov//cgi-bin/pskcall?position="+(str(RA[0])+"%2e"+str(RA[1])+"%2c"+str(DEC[0])+"%2e"+str(DEC[1])+"&Survey=SDSSdr7"+str(band)+"&size="+str(size[0])+"%2e"+str(size[1])+"&pixels="+str(number_of_pixels)+"&proj="+str(projection))
-                                                                     
-    # Get SDSS image
-    urllib.urlretrieve(str(URL), str(object_name)+"_SDSS_"+str(band)+".fits")
+    
+    if path == "unknown":
+        # Get SDSS image
+        urllib.urlretrieve(str(URL), str(object_name)+"_SDSS_"+str(band)+".fits")
+    else:
+        urllib.urlretrieve(str(URL), path+str(object_name)+"_SDSS_"+str(band)+".fits")
                                                                      
     if url_show=="True":
         print ("SDSS "+str(band)+"-band image of object "+str(object_name)+" has finished downloading to the working directory with the file name: "+str(object_name)+"_SDSS_"+str(band)+".fits")
