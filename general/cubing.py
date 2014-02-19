@@ -1063,9 +1063,27 @@ def create_primary_header(ifu_list,name,files,WCS_pos,WCS_flag):
         hdr_new.append(hdr.cards[i])
 
     # Add catalogue RA & DEC to header
-    print ifu_list[0].obj_ra[0]
     hdr_new.set('CATARA', ifu_list[0].obj_ra[0], after='CRVAL3')
     hdr_new.set('CATADEC', ifu_list[0].obj_dec[0], after='CATARA')
+
+    # Additional header items from random extensions
+    # Each key in `additional` is a FITS extension name
+    # Each value is a list of FITS header keywords to copy from that extension
+    additional = {'FLUX_CALIBRATION': ('STDNAME',)}
+    for extname, key_list in additional.items():
+        add_hdr_list = [pf.getheader(f, extname) for f in files]
+        for key in key_list:
+            val = []
+            try:
+                for add_hdr in add_hdr_list:
+                    val.append(add_hdr[key])
+            except KeyError:
+                print 'Keyword not found:', key, 'in extension', extname
+            else:
+                if len(set(val)) == 1:
+                    hdr_new.append(add_hdr.cards[key])
+                else:
+                    print 'Non-unique value for keyword:', key, 'in extension', extension
 
     return hdr_new
 
