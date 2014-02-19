@@ -8,6 +8,8 @@ import urllib
 
 from .. import samifitting as fitting
 from ..sdss import sdss
+from ..utils.ifu import IFU
+from ..utils.other import gzip
 
 #########################
 
@@ -53,11 +55,12 @@ def wcs_position_coords(sdss_path, object_RA, object_DEC, wave, object_flux_cube
     else:
         
         # Get SDSS g-band throughput curve
-        if not os.path.isfile(sdss_path+"SDSS_"+str(band)+".dat"):
+        band_path = os.path.join(sdss_path, "SDSS_"+str(band)+".dat")
+        if not os.path.isfile(band_path):
             raise ValueError("Can't find SDSS "+str(band)+"-band filter file. Please make sure it is in the corrent path prior to calling WCS")
         
         # and convolve with the SDSS throughput
-        sdss_filter = ascii.read(sdss_path+"SDSS_"+str(band)+".dat", comment="#", names=["wave", "pt_secz=1.3", "ext_secz=1.3", "ext_secz=0.0", "extinction"])
+        sdss_filter = ascii.read(band_path, comment="#", names=["wave", "pt_secz=1.3", "ext_secz=1.3", "ext_secz=0.0", "extinction"])
         
         # re-grid g["wave"] -> wave
         thru_regrid = griddata(sdss_filter["wave"], sdss_filter["ext_secz=1.3"], wave, method="cubic", fill_value=0.0)
@@ -93,11 +96,12 @@ def wcs_position_coords(sdss_path, object_RA, object_DEC, wave, object_flux_cube
         cube_size = np.around((size_of_grid*output_pix_size_arcsec)/3600, decimals=6)
         
         # Get SDSS Image
-        if not os.path.isfile(sdss_path+str(object_name)+"_SDSS_images.fits.gz"):
+        image_path = os.path.join(sdss_path, str(object_name)+"_SDSS_images.fits.gz")
+        if not os.path.isfile(image_path):
             raise ValueError("Can't find SDSS images file. Please make sure it is in the corrent path prior to calling WCS")
         
         # Open SDSS image and extract data & header information
-        image_file = pf.open(sdss_path+str(object_name)+"_SDSS_images.fits.gz")
+        image_file = pf.open(image_path)
         image_data = image_file[str(band)].data
         
         
@@ -233,9 +237,17 @@ def copy_wcs_coords(file_to_copy_from,file_to_copy_to):
 
 #########################
 
+def retrieve_sdss_images_rss(sdss_path, rss_path, overwrite=False):
+    for probenum in xrange(1, 14):
+        ifu = IFU(rss_path, probenum, flag_name=False)
+        object_RA = np.around(myIFU.obj_ra[myIFU.n == 1][0], decimals=6)
+        object_DEC = np.around(myIFU.obj_dec[myIFU.n == 1][0], decimals=6)
+        retrieve_sdss_images(sdss_path, object_RA, object_DEC, overwrite=overwrite)
+    return
+
 def retrieve_sdss_images(sdss_path, object_name, object_RA, object_DEC, overwrite=False):
 
-    if not os.path.isfile(sdss_path+str(object_name)+"_SDSS_images.fits.gz") or overwrite==True:
+    if not os.path.isfile(os.path.join(sdss_path, str(object_name)+"_SDSS_images.fits.gz")) or overwrite==True:
         
         primary = pf.PrimaryHDU(np.asarray([]))
         hdulist = pf.HDUList([primary])
@@ -254,10 +266,10 @@ def retrieve_sdss_images(sdss_path, object_name, object_RA, object_DEC, overwrit
         hdulist.append(hdu)
 
         # write consolidated fits file, gzip and delete other files
-        hdulist.writeto(sdss_path+str(object_name)+"_SDSS_images.fits",clobber=True,output_verify='silentfix')
-        os.system("gzip -f "+sdss_path+str(object_name)+"_SDSS_images.fits")
-        os.remove(sdss_path+str(object_name)+"_SDSS_g.fits")
-        os.remove(sdss_path+str(object_name)+"_SDSS_r.fits")
+        hdulist.writeto(os.path.join(sdss_path, str(object_name)+"_SDSS_images.fits"), clobber=True, output_verify='silentfix')
+        gzip(os.path.join(sdss_path, str(object_name)+"_SDSS_images.fits"))
+        os.remove(os.path.join(sdss_path, str(object_name)+"_SDSS_g.fits"))
+        os.remove(os.path.join(sdss_path, str(object_name)+"_SDSS_r.fits"))
 
 
 def retrieve_sdss_bandpasses(sdss_path):
