@@ -1071,7 +1071,11 @@ def create_primary_header(ifu_list,name,files,WCS_pos,WCS_flag):
     # Each value is a list of FITS header keywords to copy from that extension
     additional = {'FLUX_CALIBRATION': ('STDNAME',)}
     for extname, key_list in additional.items():
-        add_hdr_list = [pf.getheader(f, extname) for f in files]
+        try:
+            add_hdr_list = [pf.getheader(f, extname) for f in files]
+        except KeyError:
+            print 'Extension not found:', extname
+            continue
         for key in key_list:
             val = []
             try:
@@ -1079,11 +1083,11 @@ def create_primary_header(ifu_list,name,files,WCS_pos,WCS_flag):
                     val.append(add_hdr[key])
             except KeyError:
                 print 'Keyword not found:', key, 'in extension', extname
+                continue
+            if len(set(val)) == 1:
+                hdr_new.append(add_hdr.cards[key])
             else:
-                if len(set(val)) == 1:
-                    hdr_new.append(add_hdr.cards[key])
-                else:
-                    print 'Non-unique value for keyword:', key, 'in extension', extension
+                print 'Non-unique value for keyword:', key, 'in extension', extension
 
     return hdr_new
 
