@@ -398,10 +398,30 @@ class Manager:
 
     >>> mngr.measure_offsets()
 
-    The final step in the data reduction is to turn the individual
-    calibrated spectra into datacubes:
+    The individual calibrated spectra can then be turned into datacubes:
 
     >>> mngr.cube()
+
+    Measuring absolute positions
+    ============================
+
+    The absolute RA/Dec coordinates of the datacubes are calibrated by
+    comparison to SDSS images. First, these must be downloaded from the
+    NASA server:
+
+    >>> mngr.retrieve_sdss_data()
+
+    Obviously you need an internet connection for this to work. It only
+    downloads data for cubes that have already been created, so if you
+    make any new cubes you'll have to run it again.
+
+    Once the SDSS images have downloaded, you can run the 
+    cross-correlation against the datacubes:
+
+    >>> mngr.measure_absolute_wcs()
+
+    This will cross-correlate the blue datacubes against the SDSS g-band
+    images, and update the headers in both blue and red datacubes.
 
     Checking outputs
     ================
@@ -2186,12 +2206,12 @@ class Manager:
         check_plots.check_cub(fits_list)
         return
 
-    def retrieve_sdss_data(self, overwrite=False):
+    def retrieve_sdss_data(self, overwrite=False, **kwargs):
         """Download SDSS images and band throughputs."""
         sdss_path = os.path.join(self.abs_root, 'sdss')
         for (field_id,), file_list in self.group_files_by(
                 'field_id', ndf_class='MFOBJECT', name='main', do_not_use=False,
-                reduced=True).items():
+                reduced=True, **kwargs).items():
             print "Downloading data for field " + field_id
             retrieve_sdss_images_rss(sdss_path, file_list[0].reduced_path,
                                      overwrite=overwrite)
@@ -2199,12 +2219,12 @@ class Manager:
         retrieve_sdss_bandpasses(sdss_path, overwrite=overwrite)
         return
 
-    def measure_absolute_wcs(self, overwrite=False):
+    def measure_absolute_wcs(self, overwrite=False, **kwargs):
         """Measure the absolute WCS position via SDSS images."""
         sdss_path = os.path.join(self.abs_root, 'sdss')
         for (field_id,), file_list in self.group_files_by(
                 'field_id', ndf_class='MFOBJECT', name='main', do_not_use=False,
-                reduced=True).items():
+                reduced=True, **kwargs).items():
             fibre_table = pf.getdata(file_list[0].reduced_path, 'FIBRES_IFU')
             object_name_list = np.unique(
                 fibre_table[fibre_table['TYPE'] == 'P']['NAME'])
