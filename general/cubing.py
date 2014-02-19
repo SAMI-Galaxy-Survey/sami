@@ -18,16 +18,16 @@ described below.
 >ipython
 >import sami
 > sami.general.cubing.dithered_cubes_from_rss_files("testfiles1.txt")   - no actual output made
-> sami.general.cubing.dithered_cubes_from_rss_files("testfiles1.txt",write=True,clip=False,drop_factor=0.5,suffix="_NoClip",covar_mode="none",nominal=True,root="testing/",overwrite=True)
+> sami.general.cubing.dithered_cubes_from_rss_files("testfiles1.txt",write=True,clip=False,drop_factor=0.5,suffix="_NoClip",covar_mode="none",root="testing/",overwrite=True)
 
-> sami.general.cubing.dithered_cubes_from_rss_files("testfiles1.txt",write=True,clip=False,drop_factor=0.5,suffix="_NoClip",covar_mode="none",nominal=True,root="testing_small/",overwrite=True,objects=["36894","47286"])
-> sami.general.cubing.dithered_cubes_from_rss_files("testfiles1.txt",write=True,clip=True,drop_factor=1.0,suffix="__Full_Clip",covar_mode="none",nominal=True,root="testing_small/",overwrite=True,objects=["36894","47286"])
-> sami.general.cubing.dithered_cubes_from_rss_files("testfiles1.txt",write=True,clip=True,drop_factor=0.5,suffix="_Clip",covar_mode="none",nominal=True,root="testing_small/",overwrite=True,objects=["36894","47286"])
-> sami.general.cubing.dithered_cubes_from_rss_files("testfiles1.txt",write=True,clip=True,drop_factor=0.5,suffix="_FullClip",covar_mode="none",nominal=True,root="testing_small/",overwrite=True,objects=["36894","47286"])
+> sami.general.cubing.dithered_cubes_from_rss_files("testfiles1.txt",write=True,clip=False,drop_factor=0.5,suffix="_NoClip",covar_mode="none",root="testing_small/",overwrite=True,objects=["36894","47286"])
+> sami.general.cubing.dithered_cubes_from_rss_files("testfiles1.txt",write=True,clip=True,drop_factor=1.0,suffix="__Full_Clip",covar_mode="none",root="testing_small/",overwrite=True,objects=["36894","47286"])
+> sami.general.cubing.dithered_cubes_from_rss_files("testfiles1.txt",write=True,clip=True,drop_factor=0.5,suffix="_Clip",covar_mode="none",root="testing_small/",overwrite=True,objects=["36894","47286"])
+> sami.general.cubing.dithered_cubes_from_rss_files("testfiles1.txt",write=True,clip=True,drop_factor=0.5,suffix="_FullClip",covar_mode="none",root="testing_small/",overwrite=True,objects=["36894","47286"])
 
-> sami.general.cubing.dithered_cubes_from_rss_files("testfiles1blue.txt",write=True,clip=False,drop_factor=0.5,suffix="_ReducedDrop_NoClip",covar_mode="none",nominal=True,root="testing_small/",overwrite=True,objects=["36894","47286"])
-> sami.general.cubing.dithered_cubes_from_rss_files("testfiles1blue.txt",write=True,clip=True,drop_factor=0.5,suffix="_ReducedDrop_ClipWithReducedDrop",covar_mode="none",nominal=True,root="testing_small/",overwrite=True,objects=["36894","47286"])
-> sami.general.cubing.dithered_cubes_from_rss_files("testfiles1blue.txt",write=True,clip=True,drop_factor=0.5,suffix="_ReducedDrop_ClipWithFullDrop",covar_mode="none",nominal=True,root="testing_small/",overwrite=True,objects=["36894","47286"])
+> sami.general.cubing.dithered_cubes_from_rss_files("testfiles1blue.txt",write=True,clip=False,drop_factor=0.5,suffix="_ReducedDrop_NoClip",covar_mode="none",root="testing_small/",overwrite=True,objects=["36894","47286"])
+> sami.general.cubing.dithered_cubes_from_rss_files("testfiles1blue.txt",write=True,clip=True,drop_factor=0.5,suffix="_ReducedDrop_ClipWithReducedDrop",covar_mode="none",root="testing_small/",overwrite=True,objects=["36894","47286"])
+> sami.general.cubing.dithered_cubes_from_rss_files("testfiles1blue.txt",write=True,clip=True,drop_factor=0.5,suffix="_ReducedDrop_ClipWithFullDrop",covar_mode="none",root="testing_small/",overwrite=True,objects=["36894","47286"])
 
 
 INPUTS:
@@ -55,9 +55,6 @@ made. Default is True.
 write - Write data cubes to file after creating them. The default is False. (Should change?)
 
 suffix - A suffix to add to the output file name. Should be a string. Default is a null string.
-
-nominal - Use the nominal tabulated object positions when determining WCS. Default is False and
-a full comparison with SDSS is done.
 
 root - Root directory for writing files to. Should be a string. Default is null string.
 
@@ -257,7 +254,7 @@ def dar_correct(ifu_list, xfibre_all, yfibre_all, method='simple',update_rss=Fal
 def dithered_cubes_from_rss_files(inlist, objects='all', size_of_grid=50, 
                                   output_pix_size_arcsec=0.5, drop_factor=0.5,
                                   clip=True, plot=True, write=False, suffix='',
-                                  nominal=False, root='', overwrite=False, 
+                                  root='', overwrite=False, 
                                   covar_mode='optimal', do_dar_correct=True):
     """A wrapper to make a cube from reduced RSS files, passed as a filename containing a list of filenames. Only input files that go together - ie have the same objects."""
 
@@ -271,14 +268,14 @@ def dithered_cubes_from_rss_files(inlist, objects='all', size_of_grid=50,
 
     dithered_cubes_from_rss_list(files, objects=objects, size_of_grid=size_of_grid, 
                                  output_pix_size_arcsec=output_pix_size_arcsec, clip=clip, plot=plot,
-                                 write=write, root=root, suffix=suffix, nominal=nominal, overwrite=overwrite,
+                                 write=write, root=root, suffix=suffix, overwrite=overwrite,
                                  covar_mode=covar_mode, do_dar_correct=do_dar_correct, drop_factor=drop_factor)
     return
 
 def dithered_cubes_from_rss_list(files, objects='all', size_of_grid=50, 
                                  output_pix_size_arcsec=0.5, drop_factor=0.5,
                                  clip=True, plot=True, write=False, suffix='',
-                                 nominal=False, root='', overwrite=False,
+                                 root='', overwrite=False,
                                  covar_mode='optimal', do_dar_correct=True):
     """A wrapper to make a cube from reduced RSS files, passed as a list. Only input files that go together - ie have the same objects."""
         
@@ -368,7 +365,7 @@ def dithered_cubes_from_rss_list(files, objects='all', size_of_grid=50,
                 raise ValueError('Could not identify band. Exiting')
 
             # Equate Positional WCS
-            WCS_pos, WCS_flag=wcs.wcs_solve(ifu_list[0], "", flux_cube, name, band, size_of_grid, output_pix_size_arcsec, plot, nominal=nominal)
+            WCS_pos, WCS_flag=wcs.wcs_solve(ifu_list[0], "", flux_cube, name, band, size_of_grid, output_pix_size_arcsec, plot, nominal=True)
             
             # First get some info from one of the headers.
             list1=pf.open(files[0])
