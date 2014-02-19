@@ -368,7 +368,7 @@ def dithered_cubes_from_rss_list(files, objects='all', size_of_grid=50,
                 raise ValueError('Could not identify band. Exiting')
 
             # Equate Positional WCS
-            WCS_pos, WCS_flag=wcs.wcs_solve(ifu_list[0], flux_cube, name, band, size_of_grid, output_pix_size_arcsec, plot, nominal=nominal)
+            WCS_pos, WCS_flag=wcs.wcs_solve(ifu_list[0], "", flux_cube, name, band, size_of_grid, output_pix_size_arcsec, plot, nominal=nominal)
             
             # First get some info from one of the headers.
             list1=pf.open(files[0])
