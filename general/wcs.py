@@ -213,14 +213,14 @@ def update_wcs_coords(sdss_path,filename, nominal=False, remove_thput_file=True)
     header = hdulist[0].header
     for key, value in WCS_pos.items():
         header[key] = value
-        header['WCS_SRC'] = WCS_flag
+    header['WCS_SRC'] = WCS_flag
     hdulist.close()
 
     return
 
 def copy_wcs_coords(file_to_copy_from,file_to_copy_to):
 
-    copy_hdr = pf.open(file_to_copy_from)[0].header
+    copy_hdr = pf.getheader(file_to_copy_from)
 
     hdulist = pf.open(file_to_copy_to, 'update', do_not_scale_image_data=True)
     
