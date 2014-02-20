@@ -1340,6 +1340,11 @@ class Manager:
         options = []
         # For now, setting all files to use GAUSS extraction
         options.extend(['-EXTR_OPERATION', 'GAUSS'])
+        if fits.ccd == 'ccd_2':
+            # Adjust wavelength calibration of red frames using sky lines
+            options.extend(['-SKYSCRUNCH', '1'])
+            # Turn off bias and dark subtraction
+            options.extend(['-USEBIASIM', '0', '-USEDARKIM', '0'])
         if fits.ndf_class == 'BIAS':
             files_to_match = []
         elif fits.ndf_class == 'DARK':
@@ -1371,13 +1376,23 @@ class Manager:
                                   'fflat']
         else:
             raise ValueError('Unrecognised NDF_CLASS: '+fits.ndf_class)
+        # Remove unnecessary files from files_to_match
+        if 'bias' in files_to_match and '-USEBIASIM' in options:
+            if options[options.index('-USEBIASIM') + 1] == '0':
+                files_to_match.remove('bias')
+        if 'dark' in files_to_match and '-USEDARKIM' in options:
+            if options[options.index('-USEDARKIM') + 1] == '0':
+                files_to_match.remove('dark')
+        if 'lflat' in files_to_match and '-USEFLATIM' in options:
+            if options[options.index('-USEFLATIM') + 1] == '0':
+                files_to_match.remove('lflat')
         # Disable bias/dark/lflat if they're not being used
         # If you don't, 2dfdr might barf
-        if 'bias' not in files_to_match:
+        if 'bias' not in files_to_match and '-USEBIASIM' not in options:
             options.extend(['-USEBIASIM', '0'])
-        if 'dark' not in files_to_match:
+        if 'dark' not in files_to_match and '-USEDARKIM' not in options:
             options.extend(['-USEDARKIM', '0'])
-        if 'lflat' not in files_to_match:
+        if 'lflat' not in files_to_match and '-USEFLATIM' not in options:
             options.extend(['-USEFLATIM', '0'])
         for match_class in files_to_match:
             filename_match = self.match_link(fits, match_class)
