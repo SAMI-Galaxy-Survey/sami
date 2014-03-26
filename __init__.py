@@ -5,6 +5,7 @@ import samifitting
 import update_csv
 import manager
 import dr
+import qc
 
 from log import logger
 
