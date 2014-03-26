@@ -111,7 +111,7 @@ ARCSEC_TO_MICRON = 1000.0 / 15.2
 ifus=[1,2,3,4,5,6,7,8,9,10,11,12,13]
 
 def find_dither(RSSname,reference,centroid=True,inter=False,plot=False,remove_files=True,
-                do_dar_correct=True):
+                do_dar_correct=True,max_shift=350.0):
       
       
       ## For each file in inlist call the get_cetroid module, computes centroid coordinates and stores them 
@@ -244,9 +244,9 @@ def find_dither(RSSname,reference,centroid=True,inter=False,plot=False,remove_fi
             
              f=open(file_geoin, 'w')
              for j in xrange(n_ifu):
-                 # Immediately censor any point that's moved by more than 980um
-                 # (The diameter of a hexabundle)
-                 if np.sqrt((xin[j] - xref[j])**2 + (yin[j] - yref[j])**2) > 980.0:
+                 # Immediately censor any point that's moved by more than max_shift
+                 # (Default value is 350um, about 5")
+                 if np.sqrt((xin[j] - xref[j])**2 + (yin[j] - yref[j])**2) > max_shift:
                      continue
                  s=str(xin[j])+' '+str(yin[j])+' '+str(xref[j])+' '+str(yref[j])+'\n' 
                  f.write(s)
