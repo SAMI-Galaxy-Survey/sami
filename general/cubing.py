@@ -258,7 +258,8 @@ def dithered_cubes_from_rss_files(inlist, objects='all', size_of_grid=50,
                                   output_pix_size_arcsec=0.5, drop_factor=0.5,
                                   clip=True, plot=True, write=False, suffix='',
                                   nominal=False, root='', overwrite=False, 
-                                  covar_mode='optimal', do_dar_correct=True):
+                                  covar_mode='optimal', do_dar_correct=True,
+                                  clip_throughput=True):
     """A wrapper to make a cube from reduced RSS files, passed as a filename containing a list of filenames. Only input files that go together - ie have the same objects."""
 
     # Read in the list of all the RSS files input by the user.
@@ -272,14 +273,16 @@ def dithered_cubes_from_rss_files(inlist, objects='all', size_of_grid=50,
     dithered_cubes_from_rss_list(files, objects=objects, size_of_grid=size_of_grid, 
                                  output_pix_size_arcsec=output_pix_size_arcsec, clip=clip, plot=plot,
                                  write=write, root=root, suffix=suffix, nominal=nominal, overwrite=overwrite,
-                                 covar_mode=covar_mode, do_dar_correct=do_dar_correct, drop_factor=drop_factor)
+                                 covar_mode=covar_mode, do_dar_correct=do_dar_correct, drop_factor=drop_factor,
+                                 clip_throughput=clip_throughput)
     return
 
 def dithered_cubes_from_rss_list(files, objects='all', size_of_grid=50, 
                                  output_pix_size_arcsec=0.5, drop_factor=0.5,
                                  clip=True, plot=True, write=False, suffix='',
                                  nominal=False, root='', overwrite=False,
-                                 covar_mode='optimal', do_dar_correct=True):
+                                 covar_mode='optimal', do_dar_correct=True,
+                                 clip_throughput=True):
     """A wrapper to make a cube from reduced RSS files, passed as a list. Only input files that go together - ie have the same objects."""
         
     start_time = datetime.datetime.now()
@@ -351,7 +354,8 @@ def dithered_cubes_from_rss_list(files, objects='all', size_of_grid=50,
                                               output_pix_size_arcsec=output_pix_size_arcsec,
                                               drop_factor=drop_factor,
                                               clip=clip, plot=plot, covar_mode=covar_mode,
-                                              do_dar_correct=do_dar_correct)
+                                              do_dar_correct=do_dar_correct,
+                                              clip_throughput=clip_throughput)
 
         except Exception:
             print "Cubing Failed."
@@ -419,7 +423,7 @@ def dithered_cubes_from_rss_list(files, objects='all', size_of_grid=50,
 
 def dithered_cube_from_rss(ifu_list, size_of_grid=50, output_pix_size_arcsec=0.5, drop_factor=0.5,
                            clip=True, plot=True, offsets='file', covar_mode='optimal',
-                           do_dar_correct=True):
+                           do_dar_correct=True, clip_throughput=True):
     diagnostic_info = {}
 
     n_obs = len(ifu_list)
@@ -534,6 +538,13 @@ def dithered_cube_from_rss(ifu_list, size_of_grid=50, output_pix_size_arcsec=0.5
             # Hopefully only useful for test purposes. LF 05/06/2013
             xm=galaxy_data.x_microns - np.mean(galaxy_data.x_microns)
             ym=galaxy_data.y_microns - np.mean(galaxy_data.y_microns)
+
+        if clip_throughput:
+            # Clip out fibres that have suspicious throughput values
+            bad_throughput = ((galaxy_data.fibre_throughputs < 0.5) |
+                              (galaxy_data.fibre_throughputs > 1.5))
+            galaxy_data.data[bad_throughput, :] = np.nan
+            galaxy_data.var[bad_throughput, :] = np.nan
     
         xfibre_all.append(xm)
         yfibre_all.append(ym)
