@@ -265,6 +265,6 @@ def measure_band(band, flux, wavelength, sdss_dir='./sdss/'):
     filter_interpolated = np.interp(
         wavelength, filter_wavelength, filter_response)
     flux_band = (np.sum(wavelength * filter_interpolated * flux) / 
-                 np.sum(wavelength * filter_interpolated))
+                 np.sum(filter_interpolated / wavelength))
     return -2.5 * np.log10(flux_band)
 
