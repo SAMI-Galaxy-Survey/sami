@@ -137,7 +137,11 @@ class IFU:
         #    each fibre which requires the RWSS file/option in 2dfdr
 
         # 2dfdr determined fibre througput corrections
-        self.fibre_throughputs = hdulist['THPUT'].data[ind]
+        try:
+            self.fibre_throughputs = hdulist['THPUT'].data[ind]
+        except KeyError:
+            # None available; never mind.
+            pass
 
         # Added for Iraklis, might need to check this.
         self.fibtab=table_new
