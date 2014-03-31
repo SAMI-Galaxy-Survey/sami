@@ -559,6 +559,7 @@ class Manager:
             self.imp_scratch = ''
         self.scratch_dir = os.path.join(self.abs_root, 'imp_scratch')
         self.min_exposure_for_throughput = 900.0
+        self.min_exposure_for_sky_wave = 900.0
         self.inspect_root(copy_files, move_files)
 
     def inspect_root(self, copy_files, move_files, trust_header=True):
@@ -1341,8 +1342,9 @@ class Manager:
         # For now, setting all files to use GAUSS extraction
         options.extend(['-EXTR_OPERATION', 'GAUSS'])
         if fits.ccd == 'ccd_2':
-            # Adjust wavelength calibration of red frames using sky lines
-            options.extend(['-SKYSCRUNCH', '1'])
+            if fits.exposure >= self.min_exposure_for_sky_wave:
+                # Adjust wavelength calibration of red frames using sky lines
+                options.extend(['-SKYSCRUNCH', '1'])
             # Turn off bias and dark subtraction
             options.extend(['-USEBIASIM', '0', '-USEDARKIM', '0'])
         if fits.ndf_class == 'BIAS':
