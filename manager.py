@@ -2671,9 +2671,19 @@ def telluric_correct_pair(inputs):
     path_pair = (fits_1.fluxcal_path, fits_2.fluxcal_path)
     print ('Deriving telluric correction for ' + fits_1.filename +
            ' and ' + fits_2.filename)
-    telluric.derive_transfer_function(
-        path_pair, PS_spec_file=PS_spec_file, use_PS=use_PS, n_trim=n_trim,
-        scale_PS_by_airmass=scale_PS_by_airmass, model_name=model_name)
+    try:
+        telluric.derive_transfer_function(
+            path_pair, PS_spec_file=PS_spec_file, use_PS=use_PS, n_trim=n_trim,
+            scale_PS_by_airmass=scale_PS_by_airmass, model_name=model_name)
+    except ValueError as err:
+        if err.message.startswith('No star identified in file:'):
+            # No standard star found; probably a star field
+            print err.message
+            print 'Skipping telluric correction for file:', fits_2.filename
+            return
+        else:
+            # Some other, unexpected error. Re-raise it.
+            raise err
     print 'Telluric correcting file:', fits_2.filename
     if os.path.exists(fits_2.telluric_path):
         os.remove(fits_2.telluric_path)
