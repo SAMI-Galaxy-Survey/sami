@@ -820,10 +820,16 @@ def smooth_ratio(ratio, width=10.0):
     smoothed = 1.0 / inverse
     return smoothed
 
-def fit_chebyshev(wavelength, ratio, deg=7):
+def fit_chebyshev(wavelength, ratio, deg=None):
     """Fit a Chebyshev polynomial, and return the fit."""
     # Do the fit in terms of 1.0 / ratio, because observed flux can go to 0.
     good = np.where(np.isfinite(ratio) & ~(in_telluric_band(wavelength)))[0]
+    if deg is None:
+        # Choose default degree based on which arm this data is for.
+        if wavelength[good[0]] >= 6000.0:
+            deg = 3
+        else:
+            deg = 7
     coefficients = np.polynomial.chebyshev.chebfit(
         wavelength[good], (1.0 / ratio[good]), deg)
     fit = 1.0 / np.polynomial.chebyshev.chebval(wavelength, coefficients)
