@@ -156,52 +156,73 @@ they look galaxy-like, and the spectra have no obvious artefacts."""
     root = os.path.join(fits_list[0].raw_dir, '../../../cubed')
     for object_name in object_name_list:
         # Find the datacubes
-        path_blue = glob(root+'/'+object_name+'/*blue*'+field_id+'*.fits')[0]
-        path_red = glob(root+'/'+object_name+'/*red*'+field_id+'*.fits')[0]
+        glob_blue = root+'/'+object_name+'/*blue*'+field_id+'*.fits'
+        path_list_blue = glob(glob_blue) + glob(glob_blue + '.gz')
+        if path_list_blue:
+            path_blue = path_list_blue[0]
+            blue_available = True
+        else:
+            blue_available = False
+        glob_red = root+'/'+object_name+'/*red*'+field_id+'*.fits'
+        path_list_red = glob(glob_red) + glob(glob_red + '.gz')
+        if path_list_red:
+            path_red = path_list_red[0]
+            red_available = True
+        else:
+            red_available = False
+        if not blue_available and not red_available:
+            print 'No data found for object', object_name
         # Load the data
-        hdulist_blue = pf.open(path_blue)
-        data_blue = hdulist_blue[0].data
-        header_blue = hdulist_blue[0].header
-        hdulist_blue.close()
-        hdulist_red = pf.open(path_red)
-        data_red = hdulist_red[0].data
-        header_red = hdulist_red[0].header
-        hdulist_red.close()
+        if blue_available:
+            hdulist_blue = pf.open(path_blue)
+            data_blue = hdulist_blue[0].data
+            header_blue = hdulist_blue[0].header
+            hdulist_blue.close()
+        if red_available:
+            hdulist_red = pf.open(path_red)
+            data_red = hdulist_red[0].data
+            header_red = hdulist_red[0].header
+            hdulist_red.close()
         # Set up the figure
         fig = plt.figure(object_name, figsize=(16., 12.))
         # Show collapsed images of the object
         trim = 100
-        ax_blue = fig.add_subplot(221)
-        plt.imshow(np.nansum(data_blue[trim:-1*trim, :, :], axis=0), 
-                   origin='lower', interpolation='nearest', cmap='GnBu')
-        ax_blue.set_title('Blue arm')
-        ax_red = fig.add_subplot(222)
-        plt.imshow(np.nansum(data_red[trim:-1*trim, :, :], axis=0), 
-                   origin='lower', interpolation='nearest', cmap='GnBu')
-        ax_red.set_title('Red arm')
+        if blue_available:
+            ax_blue = fig.add_subplot(221)
+            plt.imshow(np.nansum(data_blue[trim:-1*trim, :, :], axis=0), 
+                       origin='lower', interpolation='nearest', cmap='GnBu')
+            ax_blue.set_title('Blue arm')
+            wavelength_blue = header_blue['CRVAL3'] + header_blue['CDELT3'] * (
+                1 + np.arange(header_blue['NAXIS3']) - header_blue['CRPIX3'])
+        if red_available:
+            ax_red = fig.add_subplot(222)
+            plt.imshow(np.nansum(data_red[trim:-1*trim, :, :], axis=0), 
+                       origin='lower', interpolation='nearest', cmap='GnBu')
+            ax_red.set_title('Red arm')
+            wavelength_red = header_red['CRVAL3'] + header_red['CDELT3'] * (
+                1 + np.arange(header_red['NAXIS3']) - header_red['CRPIX3'])
         # Show the central spectrum and a few others
         color_cycle = itertools.cycle(['r', 'g', 'b', 'c', 'm', 'y', 'k'])
-        wavelength_blue = header_blue['CRVAL3'] + header_blue['CDELT3'] * (
-            1 + np.arange(header_blue['NAXIS3']) - header_blue['CRPIX3'])
-        wavelength_red = header_red['CRVAL3'] + header_red['CDELT3'] * (
-            1 + np.arange(header_red['NAXIS3']) - header_red['CRPIX3'])
         ax_spec = fig.add_subplot(212)
         for name, coords in position_dict.items():
-            flux_blue = np.nansum(np.nansum(
-                data_blue[:, int(coords[0]):int(coords[0])+2, 
-                          int(coords[1]):int(coords[1])+2], 
-                axis=2), axis=1) / 4.0
-            flux_red = np.nansum(np.nansum(
-                data_red[:, int(coords[0]):int(coords[0])+2, 
-                         int(coords[1]):int(coords[1])+2], 
-                axis=2), axis=1) / 4.0
             color = next(color_cycle)
-            plt.plot(wavelength_blue, flux_blue, c=color, label=name)
-            plt.plot(wavelength_red, flux_red, c=color)
+            if blue_available:
+                flux_blue = np.nansum(np.nansum(
+                    data_blue[:, int(coords[0]):int(coords[0])+2, 
+                              int(coords[1]):int(coords[1])+2], 
+                    axis=2), axis=1) / 4.0
+                plt.plot(wavelength_blue, flux_blue, c=color, label=name)
+                # Add location marker to the blue image
+                ax_blue.scatter(coords[0], coords[1], marker='x', c=color)
+            if red_available:
+                flux_red = np.nansum(np.nansum(
+                    data_red[:, int(coords[0]):int(coords[0])+2, 
+                             int(coords[1]):int(coords[1])+2], 
+                    axis=2), axis=1) / 4.0
+                plt.plot(wavelength_red, flux_red, c=color)
+                # Add location marker to the red image
+                ax_red.scatter(coords[0], coords[1], marker='x', c=color)
             plt.legend()
-            # Also add location markers to the images
-            ax_blue.scatter(coords[0], coords[1], marker='x', c=color)
-            ax_red.scatter(coords[0], coords[1], marker='x', c=color)
     print "When you're ready to move on..."
     return
 
