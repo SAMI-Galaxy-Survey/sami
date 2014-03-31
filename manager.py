@@ -1455,12 +1455,12 @@ class Manager:
                     # Try with looser criteria
                     filename_match = self.match_link(fits, 'fflat_loose')
                     if filename_match is None:
-                        # Try using a dome flat instead
-                        filename_match = self.match_link(fits, 'fflat_dome')
+                        # Try using a flap flat instead
+                        filename_match = self.match_link(fits, 'fflat_flap')
                         if filename_match is None:
                             # Try with looser criteria
                             filename_match = self.match_link(
-                                fits, 'fflat_dome_loose')
+                                fits, 'fflat_flap_loose')
                             if filename_match is None:
                                 # Still nothing. Raise an exception
                                 raise MatchException(
@@ -1469,12 +1469,12 @@ class Manager:
                             else:
                                 print ('Warning: No good flat found for '
                                     'flat fielding. '
-                                    'Using dome flat from different field '
+                                    'Using flap flat from different field '
                                     'for ' + fits.filename)
                         else:
-                            print ('Warning: No flap flat found for flat '
+                            print ('Warning: No dome flat found for flat '
                                 'fielding. '
-                                'Using dome flat instead for ' + fits.filename)
+                                'Using flap flat instead for ' + fits.filename)
                     else:
                         print ('Warning: No matching flat found for flat '
                             'fielding. '
@@ -1731,10 +1731,10 @@ class Manager:
         tlmap_flap_loose -- As tlmap_flap, but with less strict criteria
         wavel            -- Find a reduced arc file
         wavel_loose      -- As wavel, but with less strict criteria
-        fflat            -- Find a reduced fibre flat field from the flap lamp
+        fflat            -- Find a reduced fibre flat field from the dome lamp
         fflat_loose      -- As fflat, but with less strict criteria
-        fflat_dome       -- As fflat, but from the dome lamp
-        fflat_dome_loose -- As fflat_dome, but with less strict criteria
+        fflat_flap       -- As fflat, but from the flap lamp
+        fflat_flap_loose -- As fflat_flap, but with less strict criteria
         thput            -- Find a reduced offset sky (twilight) file
         thput_object     -- As thput, but find a suitable object frame
         bias             -- Find a combined bias frame
@@ -1828,38 +1828,38 @@ class Manager:
             reduced = True
             fom = time_difference
         elif match_class.lower() == 'fflat':
-            # Find a reduced fibre flat field from the flap lamp
+            # Find a reduced fibre flat field from the dome lamp
             ndf_class = 'MFFFF'
             date = fits.date
             plate_id = fits.plate_id
             field_id = fits.field_id
             ccd = fits.ccd
             reduced = True
-            lamp = 'Flap'
+            lamp = 'Dome'
             fom = time_difference
         elif match_class.lower() == 'fflat_loose':
             # Find a reduced fibre flat field with looser criteria
             ndf_class = 'MFFFF'
             ccd = fits.ccd
             reduced = True
-            lamp = 'Flap'
+            lamp = 'Dome'
             fom = time_difference
-        elif match_class.lower() == 'fflat_dome':
-            # Find a reduced dome fibre flat field
+        elif match_class.lower() == 'fflat_flap':
+            # Find a reduced flap fibre flat field
             ndf_class = 'MFFFF'
             date = fits.date
             plate_id = fits.plate_id
             field_id = fits.field_id
             ccd = fits.ccd
             reduced = True
-            lamp = 'Dome'
+            lamp = 'Flap'
             fom = time_difference
-        elif match_class.lower() == 'fflat_dome_loose':
-            # Fibre flat field from dome lamp with looser criteria
+        elif match_class.lower() == 'fflat_flap_loose':
+            # Fibre flat field from flap lamp with looser criteria
             ndf_class = 'MFFFF'
             ccd = fits.ccd
             reduced = True
-            lamp = 'Dome'
+            lamp = 'Flap'
             fom = time_difference
         elif match_class.lower() == 'thput':
             # Find a reduced offset sky field
@@ -1974,7 +1974,7 @@ class Manager:
         # These are the cases where we do want to make a link
         require_link = [
             'tlmap', 'tlmap_loose', 'tlmap_flap', 'tlmap_flap_loose', 
-            'fflat', 'fflat_loose', 'fflat_dome', 'fflat_dome_loose',
+            'fflat', 'fflat_loose', 'fflat_flap', 'fflat_flap_loose',
             'wavel', 'wavel_loose', 'thput', 'thput_object']
         if match_class.lower() in require_link:
             link_path = os.path.join(fits.reduced_dir, filename)
