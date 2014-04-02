@@ -558,7 +558,8 @@ class Manager:
             self.imp_scratch = os.environ['IMP_SCRATCH']
         else:
             self.imp_scratch = ''
-        self.scratch_dir = os.path.join(self.abs_root, 'imp_scratch')
+        # self.scratch_dir = os.path.join(self.abs_root, 'imp_scratch')
+        self.scratch_dir = None
         self.min_exposure_for_throughput = 900.0
         self.min_exposure_for_sky_wave = 900.0
         self.inspect_root(copy_files, move_files)

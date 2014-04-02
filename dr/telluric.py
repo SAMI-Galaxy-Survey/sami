@@ -20,7 +20,7 @@ HG_CHANGESET = utils.hg_changeset(__file__)
 def derive_transfer_function(frame_list, PS_spec_file=None, use_PS=False,
                              scale_PS_by_airmass=False, 
                              model_name='ref_centre_alpha_dist_circ_hdratm',
-                             n_trim=0):
+                             n_trim=0, use_probe=None):
     """
     Finds the telluric correction factor to multiply object data by. The factor 
     as a function of wavelength is saved into the red frame under the extension 
@@ -37,7 +37,7 @@ def derive_transfer_function(frame_list, PS_spec_file=None, use_PS=False,
     # NB: when use_PS is True and scale_PS_by_airmass is False, we don't
     # actually need to extract it, but we do still need to create the
     # extension and copy atmospheric parameters across
-    extract_secondary_standard(frame_list, model_name=model_name, n_trim=n_trim)
+    extract_secondary_standard(frame_list, model_name=model_name, n_trim=n_trim, use_probe=use_probe)
 
     # Get data
     hdulist = pf.open(frame_list[1])
@@ -195,11 +195,11 @@ def create_transfer_function(standard_spectrum,wave_axis,naxis1):
     
     return transfer_function, fit
 
-def extract_secondary_standard(path_list,model_name='ref_centre_alpha_dist_circ_hdratm',n_trim=0):
+def extract_secondary_standard(path_list,model_name='ref_centre_alpha_dist_circ_hdratm',n_trim=0,use_probe=None):
     """Identify and extract the secondary standard in a reduced RSS file."""
     
     # First check which hexabundle we need to look at
-    star_match = identify_secondary_standard(path_list[0])
+    star_match = identify_secondary_standard(path_list[0], use_probe=use_probe)
     # Read the observed data, in chunks
     chunked_data = read_chunked_data(path_list, star_match['probenum'], 
                                      sigma_clip=5)
@@ -226,22 +226,27 @@ def extract_secondary_standard(path_list,model_name='ref_centre_alpha_dist_circ_
                             good_psf, HG_CHANGESET)
     return
 
-def identify_secondary_standard(path):
+def identify_secondary_standard(path, use_probe=None):
     """Identify the secondary standard star in the given file."""
     fibre_table = pf.getdata(path, 'FIBRES_IFU')
-    unique_names = np.unique(fibre_table['NAME'])
-    pilot_star = '([0-9]{15,})'
-    gama_star = '(1000[0-9]{4})'
-    abell_star = '(Abell[0-9]+_SS[0-9]+)'
-    cluster_star = '(((999)|(888))[0-9]{9})'
-    star_re = '|'.join((pilot_star, gama_star, abell_star, cluster_star))
-    for name in unique_names:
-        if re.match(star_re, name):
-            break
+    if use_probe is None:
+        unique_names = np.unique(fibre_table['NAME'])
+        pilot_star = '([0-9]{15,})'
+        gama_star = '(1000[0-9]{4})'
+        abell_star = '(Abell[0-9]+_SS[0-9]+)'
+        cluster_star = '(((999)|(888))[0-9]{9})'
+        star_re = '|'.join((pilot_star, gama_star, abell_star, cluster_star))
+        for name in unique_names:
+            if re.match(star_re, name):
+                break
+        else:
+            raise ValueError('No star identified in file: ' + path)
+        probenum = fibre_table['PROBENUM'][fibre_table['NAME'] == name]
+        probenum = probenum[0]
     else:
-        raise ValueError('No star identified in file: ' + path)
-    probenum = fibre_table['PROBENUM'][fibre_table['NAME'] == name]
-    probenum = probenum[0]
+        probenum = use_probe
+        name = fibre_table['NAME'][(fibre_table['PROBENUM'] == probenum) & (fibre_table['TYPE'] == 'P')]
+        name = name[0]
     star_match = {'name': name, 'probenum': probenum}
     return star_match
 
