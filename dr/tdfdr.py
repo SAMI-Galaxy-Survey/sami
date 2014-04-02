@@ -144,8 +144,11 @@ def temp_imp_scratch(restore_to=None, scratch_dir=None, do_not_delete=False):
         yield
     finally:
         # Change the IMP_SCRATCH environment variable back to what it was
-        if restore_to is not None:
-            os.environ['IMP_SCRATCH'] = restore_to
+        if restore_to is not False:
+            if restore_to is not None:
+                os.environ['IMP_SCRATCH'] = restore_to
+            else:
+                del os.environ['IMP_SCRATCH']
         if not do_not_delete:
             # Remove the temporary directory and all its contents
             shutil.rmtree(imp_scratch)
