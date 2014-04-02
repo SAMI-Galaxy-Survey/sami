@@ -818,7 +818,7 @@ class Manager:
                     self.import_file(self.tmp_dir, filename,
                                      trust_header=trust_header,
                                      copy_files=False, move_files=True)
-        if len(os.listdir(self.tmp_dir)) == 0:
+        if os.path.exists(self.tmp_dir) and len(os.listdir(self.tmp_dir)) == 0:
             os.rmdir(self.tmp_dir)
         return
 
