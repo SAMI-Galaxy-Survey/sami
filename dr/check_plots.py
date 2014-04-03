@@ -92,8 +92,8 @@ nomalisation is ok."""
         filename = os.path.basename(hdu_1.header['ORIGFILE'])
         hdu_2 = match_fcal_hdu(hdulist_combined_2, hdu_1)
         color = next(color_cycle)
-        plt.plot(wavelength_1, 1.0 / hdu_1.data[2, :], c=color, label=filename)
-        plt.plot(wavelength_2, 1.0 / hdu_2.data[2, :], c=color)
+        plt.plot(wavelength_1, 1.0 / hdu_1.data[-1, :], c=color, label=filename)
+        plt.plot(wavelength_2, 1.0 / hdu_2.data[-1, :], c=color)
     plt.plot(wavelength_1, 1.0 / hdulist_combined_1[0].data, c='k', linewidth=3,
              label='Combined')
     plt.plot(wavelength_2, 1.0 / hdulist_combined_2[0].data, c='k', linewidth=3)
@@ -108,13 +108,13 @@ nomalisation is ok."""
                                 hdu_1.data[0, :]) / standard_star['flux'])
         plt.plot(standard_star['wavelength'], observed_ratio_1, 
                  label='Observed ratio', c='b')
-        plt.plot(wavelength_1, 1.0 / hdu_1.data[2, :], 
+        plt.plot(wavelength_1, 1.0 / hdu_1.data[-1, :], 
                  label='Fitted ratio', c='g')
         observed_ratio_2 = (
             fluxcal2.rebin_flux(standard_star['wavelength'], wavelength_2, 
                                 hdu_2.data[0, :]) / standard_star['flux'])
         plt.plot(standard_star['wavelength'], observed_ratio_2, c='b')
-        plt.plot(wavelength_2, 1.0 / hdu_2.data[2, :], c='g')
+        plt.plot(wavelength_2, 1.0 / hdu_2.data[-1, :], c='g')
         plt.legend(loc='best')
     print "When you're ready to move on..."
     return

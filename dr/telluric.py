@@ -95,7 +95,7 @@ def derive_transfer_function(frame_list, PS_spec_file=None, use_PS=False,
     hdu_name = 'FLUX_CALIBRATION'
     hdu = hdulist[hdu_name]
     # Arrange the data into a single array
-    data = np.vstack((hdu.data[:2, :], model_flux, transfer_function))
+    data = np.vstack((hdu.data[:4, :], model_flux, transfer_function))
     # Save the data back into the FITS file
     hdu.data = data
     hdulist.close()
@@ -219,9 +219,10 @@ def extract_secondary_standard(path_list,model_name='ref_centre_alpha_dist_circ_
     good_psf = check_psf_parameters(psf_parameters, chunked_data)
     for path in path_list:
         ifu = IFU(path, star_match['probenum'], flag_name=False)
-        observed_flux, observed_background = extract_total_flux(
-            ifu, psf_parameters, model_name, clip=5.0)
+        observed_flux, observed_background, sigma_flux, sigma_background = \
+            extract_total_flux(ifu, psf_parameters, model_name, clip=5.0)
         save_extracted_flux(path, observed_flux, observed_background,
+                            sigma_flux, sigma_background,
                             star_match, psf_parameters, model_name,
                             good_psf, HG_CHANGESET)
     return

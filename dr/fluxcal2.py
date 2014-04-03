@@ -29,7 +29,7 @@ are completely degenerate with each other and with ZD.
 import os
 
 import numpy as np
-from scipy.optimize import leastsq
+from scipy.optimize import leastsq, curve_fit
 from scipy.ndimage.filters import median_filter, gaussian_filter1d
 from scipy.stats.stats import nanmean
 
@@ -567,9 +567,10 @@ def derive_transfer_function(path_list, max_sep_arcsec=60.0,
     for path in path_list:
         ifu = IFU(path, star_match['probenum'], flag_name=False)
         remove_atmosphere(ifu)
-        observed_flux, observed_background = extract_total_flux(
-            ifu, psf_parameters, model_name)
+        observed_flux, observed_background, sigma_flux, sigma_background = \
+            extract_total_flux(ifu, psf_parameters, model_name)
         save_extracted_flux(path, observed_flux, observed_background,
+                            sigma_flux, sigma_background,
                             star_match, psf_parameters, model_name,
                             good_psf, HG_CHANGESET)
         transfer_function = take_ratio(
@@ -636,12 +637,15 @@ def extract_total_flux(ifu, psf_parameters, model_name, clip=None):
     n_pixel = len(psf_parameters_array)
     flux = np.zeros(n_pixel)
     background = np.zeros(n_pixel)
+    sigma_flux = np.zeros(n_pixel)
+    sigma_background = np.zeros(n_pixel)
     good_fibre = (ifu.fib_type == 'P')
     for index, psf_parameters_slice in enumerate(psf_parameters_array):
-        flux[index], background[index] = extract_flux_slice(
-            ifu.data[good_fibre, index], ifu.var[good_fibre, index], 
-            ifu.xpos_rel[good_fibre], ifu.ypos_rel[good_fibre],
-            psf_parameters_slice)
+        flux[index], background[index], sigma_flux[index], \
+            sigma_background[index] = extract_flux_slice(
+                ifu.data[good_fibre, index], ifu.var[good_fibre, index], 
+                ifu.xpos_rel[good_fibre], ifu.ypos_rel[good_fibre],
+                psf_parameters_slice)
     if clip is not None:
         # Clip out discrepant data. Wavelength slices are targeted based on
         # their overall deviation from the model, but within a slice only
@@ -665,10 +669,12 @@ def extract_total_flux(ifu, psf_parameters, model_name, clip=None):
                 keep_bool[keep[worst_pixel]] = False
                 keep = np.where(keep_bool)[0]
                 # Re-fit the model to the data
-                flux[bad_pixel], background[bad_pixel] = extract_flux_slice(
-                    ifu.data[keep, bad_pixel], ifu.var[keep, bad_pixel],
-                    ifu.xpos_rel[keep], ifu.ypos_rel[keep], 
-                    psf_parameters_array[bad_pixel])
+                flux[bad_pixel], background[bad_pixel], \
+                    sigma_flux[bad_pixel], sigma_background[bad_pixel] = \
+                    extract_flux_slice(
+                        ifu.data[keep, bad_pixel], ifu.var[keep, bad_pixel],
+                        ifu.xpos_rel[keep], ifu.ypos_rel[keep], 
+                        psf_parameters_array[bad_pixel])
                 # Re-calculate the deviation from the model
                 model_parameters['flux'] = np.array(
                     [flux[bad_pixel]])
@@ -698,7 +704,7 @@ def extract_total_flux(ifu, psf_parameters, model_name, clip=None):
             interp_over, interp_from, flux[interp_from])
         background[interp_over] = np.interp(
             interp_over, interp_from, background[interp_from])
-    return flux, background
+    return flux, background, sigma_flux, sigma_background
 
 def extract_flux_slice(data, variance, xpos, ypos, psf_parameters_slice):
     """Extract the flux from a single wavelength slice."""
@@ -707,28 +713,39 @@ def extract_flux_slice(data, variance, xpos, ypos, psf_parameters_slice):
     if len(good_data) > 30:
         data = data[good_data]
         variance = variance[good_data]
+        noise = np.sqrt(variance)
         xpos = xpos[good_data]
         ypos = ypos[good_data]
         model = moffat_normalised(psf_parameters_slice, xpos, ypos)
-        args = (model, data, variance)
+        # args = (model, data, variance)
         # Initial guess for flux and background
         guess = [np.sum(data), 0.0]
-        flux_slice, background_slice = leastsq(
-            residual_slice, guess, args=args)[0]
+        fitfunc = lambda x, flux, background: flux * model + background
+        result, covar = curve_fit(
+            fitfunc, np.arange(len(data)), data, guess, noise)
+        flux_slice, background_slice = result
+        reduced_chi2 = (
+            ((fitfunc(None, flux_slice, background_slice) - data) / noise)**2 /
+            (len(data) - 2)).sum()
+        sigma_flux_slice, sigma_background_slice = np.sqrt(
+            covar[np.arange(2), np.arange(2)] / reduced_chi2)
+        # flux_slice, background_slice = leastsq(
+        #     residual_slice, guess, args=args)[0]
     else:
         flux_slice = np.nan
         background_slice = np.nan
-    return flux_slice, background_slice
+        sigma_flux_slice = np.nan
+        sigma_background_slice = np.nan
+    return flux_slice, background_slice, sigma_flux_slice, sigma_background_slice
 
 def residual_slice(flux_background, model, data, variance):
     """Residual of the model flux in a single wavelength slice."""
     flux, background = flux_background
-    # For now, ignoring the variance - it has too many 2dfdr-induced mistakes
-    variance = data.copy()
-    cutoff = 0.05 * data.max()
-    variance[data < cutoff] = cutoff
+    # # For now, ignoring the variance - it has too many 2dfdr-induced mistakes
+    # variance = data.copy()
+    # cutoff = 0.05 * data.max()
+    # variance[data < cutoff] = cutoff
     return ((background + flux * model) - data) / np.sqrt(variance)
-    #return ((background + flux * model) - data) / np.sqrt(variance)
 
 def save_transfer_function(path, transfer_function):
     """Add the transfer function to a pre-existing FLUX_CALIBRATION HDU."""
@@ -736,12 +753,12 @@ def save_transfer_function(path, transfer_function):
     hdulist = pf.open(path, 'update', do_not_scale_image_data=True)
     hdu = hdulist['FLUX_CALIBRATION']
     data = hdu.data
-    if len(data) == 2:
+    if len(data) == 4:
         # No previous transfer function saved; append it to the data
         data = np.vstack((data, transfer_function))
-    elif len(data) == 3:
+    elif len(data) == 5:
         # Previous transfer function to overwrite
-        data[2, :] = transfer_function
+        data[-1, :] = transfer_function
     # Save the data back into the FITS file
     hdu.data = data
     hdulist.close()
@@ -1040,6 +1057,7 @@ def read_model(path):
     """Return the model encoded in a FITS file."""
     hdulist = pf.open(path)
     hdu = hdulist['FLUX_CALIBRATION']
+    hdulist.close()
     psf_parameters, model_name = read_model_parameters(hdu)
     ifu = IFU(path, hdu.header['PROBENUM'], flag_name=False)
     xfibre = ifu.xpos_rel
