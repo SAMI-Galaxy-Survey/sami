@@ -702,8 +702,12 @@ def extract_total_flux(ifu, psf_parameters, model_name, clip=None):
         interp_from = np.where(np.isfinite(flux))[0]
         flux[interp_over] = np.interp(
             interp_over, interp_from, flux[interp_from])
+        sigma_flux[interp_over] = np.interp(
+            interp_over, interp_from , sigma_flux[interp_from])
         background[interp_over] = np.interp(
             interp_over, interp_from, background[interp_from])
+        sigma_background[interp_over] = np.interp(
+            interp_over, interp_from, sigma_background[interp_from])
     return flux, background, sigma_flux, sigma_background
 
 def extract_flux_slice(data, variance, xpos, ypos, psf_parameters_slice):
@@ -727,8 +731,15 @@ def extract_flux_slice(data, variance, xpos, ypos, psf_parameters_slice):
         reduced_chi2 = (
             ((fitfunc(None, flux_slice, background_slice) - data) / noise)**2 /
             (len(data) - 2)).sum()
-        sigma_flux_slice, sigma_background_slice = np.sqrt(
-            covar[np.arange(2), np.arange(2)] / reduced_chi2)
+        try:
+            sigma_flux_slice, sigma_background_slice = np.sqrt(
+                covar[np.arange(2), np.arange(2)] / reduced_chi2)
+        except TypeError:
+            # covar wasn't returned as an array
+            flux_slice = np.nan
+            background_slice = np.nan
+            sigma_flux_slice = np.nan
+            sigma_background_slice = np.nan
         # flux_slice, background_slice = leastsq(
         #     residual_slice, guess, args=args)[0]
     else:
