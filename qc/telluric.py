@@ -21,10 +21,17 @@ def snr_in_all_tellurics(mngr):
                        [7130, 7360],
                        [7560, 7770],
                        [8100, 8360]]
-    result = []
+    snr_telluric = []
+    snr_input = []
+    snr_output = []
+    central = 31 + 63*np.arange(13)
     for fits in mngr.files(ndf_class='MFOBJECT', telluric_corrected=True,
-                           min_exposure=900.0, ccd='ccd_2'):
+                           min_exposure=900.0, ccd='ccd_2', name='main'):
         telluric_data = pf.getdata(fits.telluric_path, 'FLUX_CALIBRATION')
+        corrected_data = pf.getdata(fits.telluric_path)
+        corrected_noise = np.sqrt(pf.getdata(fits.telluric_path, 'VARIANCE'))
+        uncorrected_data = pf.getdata(fits.fluxcal_path)
+        uncorrected_noise = np.sqrt(pf.getdata(fits.fluxcal_path, 'VARIANCE'))
         header = pf.getheader(fits.telluric_path)
         wavelength = header['CRVAL1'] + header['CDELT1'] * (
             1 + np.arange(header['NAXIS1']) - header['CRPIX1'])
@@ -44,7 +51,14 @@ def snr_in_all_tellurics(mngr):
                 in_telluric[wavelength > telluric_limits_single[1]] = True
             in_telluric[~(np.isfinite(telluric_data[0, :]) & 
                           np.isfinite(telluric_data[2, :]))] = False
-        result.append(np.median(telluric_data[5, in_telluric] / 
-                                telluric_data[6, in_telluric]))
-    return np.array(result)
-    
+        snr_telluric.append(np.median(telluric_data[5, in_telluric] / 
+                                      telluric_data[6, in_telluric]))
+        corrected_data = corrected_data[central, :][:, in_telluric]
+        corrected_noise = corrected_noise[central, :][:, in_telluric]
+        uncorrected_data = uncorrected_data[central, :][:, in_telluric]
+        uncorrected_noise = uncorrected_noise[central, :][:, in_telluric]
+        snr_input.append(np.median(uncorrected_data / uncorrected_noise, 
+                                   axis=1))
+        snr_output.append(np.median(corrected_data / corrected_noise,
+                                    axis=1))
+    return np.array(snr_telluric), np.array(snr_input), np.array(snr_output)
