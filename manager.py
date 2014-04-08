@@ -1092,7 +1092,7 @@ class Manager:
 
     def derive_transfer_function(self, 
             overwrite=False, model_name='ref_centre_alpha_dist_circ_hdratm', 
-            **kwargs):
+            smooth='spline', **kwargs):
         """Derive flux calibration transfer functions and save them."""
         inputs_list = []
         for fits in self.files(ndf_class='MFOBJECT', do_not_use=False,
@@ -1117,7 +1117,7 @@ class Manager:
             else:
                 n_trim = 0
             inputs_list.append({'path_pair': path_pair, 'n_trim': n_trim, 
-                                'model_name': model_name})
+                                'model_name': model_name, 'smooth': smooth})
         self.map(derive_transfer_function_pair, inputs_list)
         return
 
@@ -2639,12 +2639,13 @@ def derive_transfer_function_pair(inputs):
     path_pair = inputs['path_pair']
     n_trim = inputs['n_trim']
     model_name = inputs['model_name']
+    smooth = inputs['smooth']
     print ('Deriving transfer function for ' + 
             os.path.basename(path_pair[0]) + ' and ' + 
             os.path.basename(path_pair[1]))
     try:
-        fluxcal2.derive_transfer_function(path_pair, n_trim=n_trim,
-                                          model_name=model_name)
+        fluxcal2.derive_transfer_function(
+            path_pair, n_trim=n_trim, model_name=model_name, smooth=smooth)
     except ValueError:
         print ('Warning: No star found in dataframe, skipping ' + 
                os.path.basename(path_pair[0]))
