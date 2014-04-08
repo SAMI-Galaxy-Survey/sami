@@ -874,22 +874,27 @@ def rebin_flux_noise(target_wavelength, source_wavelength, source_flux,
     if clip:
         good = good & ((np.abs(source_flux - median_filter(source_flux, 7)) /
                         source_noise) < 10.0)
-    # interp_flux, interp_noise = interpolate_flux_noise(
-    #     source_flux, source_noise, good)
-    interp_flux = source_flux.copy()
-    interp_noise = source_noise.copy()
+    interp_flux, interp_noise = interpolate_flux_noise(
+        source_flux, source_noise, good)
+    interp_good = np.isfinite(interp_flux)
+    interp_flux = interp_flux[interp_good]
+    interp_noise = interp_noise[interp_good]
+    interp_wavelength = source_wavelength[interp_good]
     interp_variance = interp_noise ** 2
     # Assume pixel size is fixed
     target_delta_wave = target_wavelength[1] - target_wavelength[0]
-    source_delta_wave = source_wavelength[1] - source_wavelength[0]
+    interp_delta_wave = interp_wavelength[1] - interp_wavelength[0]
+    # Correct to start/end of pixels instead of centre points
+    target_wave_limits = target_wavelength - 0.5*target_delta_wave
+    interp_wave_limits = interp_wavelength - 0.5*interp_delta_wave
     n_pix_out = np.size(target_wavelength)
     bins = np.arange(n_pix_out + 1)    
     # The output pixel that each input pixel starts/ends in
     start_pix = np.floor(
-        (source_wavelength - target_wavelength[0]) / 
+        (interp_wave_limits - target_wave_limits[0]) / 
         target_delta_wave).astype(int)
     end_pix = np.floor(
-        (source_wavelength + source_delta_wave - target_wavelength[0]) / 
+        (interp_wave_limits + interp_delta_wave - target_wave_limits[0]) / 
         target_delta_wave).astype(int)
     # `complete` is True if the input pixel is entirely within one output pixel
     complete = (start_pix == end_pix)
@@ -897,7 +902,7 @@ def rebin_flux_noise(target_wavelength, source_wavelength, source_flux,
     # The fraction of the input pixel that falls in the start_pix output pixel
     # Only correct for incomplete pixels
     frac_low = (
-        (target_wavelength[end_pix] - source_wavelength) / source_delta_wave)
+        (target_wave_limits[end_pix] - interp_wave_limits) / interp_delta_wave)
     # Make output arrays
     flux_out = np.zeros(n_pix_out)
     variance_out = np.zeros(n_pix_out)
@@ -944,6 +949,25 @@ def rebin_flux_noise(target_wavelength, source_wavelength, source_flux,
     variance_out[zero_input] = np.nan
     noise_out = np.sqrt(variance_out)
     return flux_out, noise_out, count_out
+
+def interpolate_flux_noise(flux, noise, good):
+    """Interpolate over bad pixels, fixing the noise for later rebinning."""
+    bad = ~good
+    interp_flux = flux.copy()
+    interp_noise = noise.copy()
+    interp_flux[bad] = np.interp(
+        np.where(bad)[0], np.where(good)[0], flux[good])
+    start_bad = np.where(good[:-1] & bad[1:])[0] + 1
+    end_bad = np.where(bad[:-1] & good[1:])[0] + 1
+    for begin, finish in zip(start_bad, end_bad):
+        n_bad = finish - begin
+        interp_noise[begin:finish] = np.sqrt(
+            ((((1 + 0.5*n_bad)**2) - 1) / n_bad) * 
+            (noise[begin-1]**2 + noise[finish]**2))
+    # Set any bad pixels at the start and end of the spectrum back to nan
+    still_bad = ~np.isfinite(interp_noise)
+    interp_flux[still_bad] = np.nan
+    return interp_flux, interp_noise
 
 def rebin_flux(target_wavelength, source_wavelength, source_flux):
     """Rebin a flux onto a new wavelength grid."""
