@@ -866,6 +866,85 @@ def fit_chebyshev(wavelength, ratio, deg=None):
     fit[good[-1]+1:] = np.nan
     return fit
 
+def rebin_flux_noise(target_wavelength, source_wavelength, source_flux,
+                     source_noise, clip=True):
+    """Rebin flux and noise onto a new wavelength grid."""
+    # Interpolate over bad pixels
+    good = np.isfinite(source_flux) & np.isfinite(source_noise)
+    if clip:
+        good = good & ((np.abs(source_flux - median_filter(source_flux, 7)) /
+                        source_noise) < 10.0)
+    # interp_flux, interp_noise = interpolate_flux_noise(
+    #     source_flux, source_noise, good)
+    interp_flux = source_flux.copy()
+    interp_noise = source_noise.copy()
+    interp_variance = interp_noise ** 2
+    # Assume pixel size is fixed
+    target_delta_wave = target_wavelength[1] - target_wavelength[0]
+    source_delta_wave = source_wavelength[1] - source_wavelength[0]
+    n_pix_out = np.size(target_wavelength)
+    bins = np.arange(n_pix_out + 1)    
+    # The output pixel that each input pixel starts/ends in
+    start_pix = np.floor(
+        (source_wavelength - target_wavelength[0]) / 
+        target_delta_wave).astype(int)
+    end_pix = np.floor(
+        (source_wavelength + source_delta_wave - target_wavelength[0]) / 
+        target_delta_wave).astype(int)
+    # `complete` is True if the input pixel is entirely within one output pixel
+    complete = (start_pix == end_pix)
+    incomplete = ~complete
+    # The fraction of the input pixel that falls in the start_pix output pixel
+    # Only correct for incomplete pixels
+    frac_low = (
+        (target_wavelength[end_pix] - source_wavelength) / source_delta_wave)
+    # Make output arrays
+    flux_out = np.zeros(n_pix_out)
+    variance_out = np.zeros(n_pix_out)
+    count_out = np.zeros(n_pix_out)
+    # Add the flux from the `complete` pixels
+    flux_out += np.histogram(
+        start_pix[complete], weights=interp_flux[complete], 
+        bins=bins)[0]
+    variance_out += np.histogram(
+        start_pix[complete], weights=interp_variance[complete], 
+        bins=bins)[0]
+    count_out += np.histogram(
+        start_pix[complete],
+        bins=bins)[0]
+    # Add the flux from the `incomplete` pixels
+    flux_out += np.histogram(
+        start_pix[incomplete], 
+        weights=interp_flux[incomplete] * frac_low[incomplete],
+        bins=bins)[0]
+    variance_out += np.histogram(
+        start_pix[incomplete], 
+        weights=interp_variance[incomplete] * frac_low[incomplete]**2,
+        bins=bins)[0]
+    count_out += np.histogram(
+        start_pix[incomplete],
+        weights=frac_low[incomplete],
+        bins=bins)[0]
+    flux_out += np.histogram(
+        end_pix[incomplete],
+        weights=interp_flux[incomplete] * (1 - frac_low[incomplete]),
+        bins=bins)[0]
+    variance_out += np.histogram(
+        end_pix[incomplete],
+        weights=interp_variance[incomplete] * (1 - frac_low[incomplete])**2,
+        bins=bins)[0]
+    count_out += np.histogram(
+        end_pix[incomplete],
+        weights=(1 - frac_low[incomplete]),
+        bins=bins)[0]
+    flux_out /= count_out
+    variance_out /= count_out ** 2
+    zero_input = (count_out == 0)
+    flux_out[zero_input] = np.nan
+    variance_out[zero_input] = np.nan
+    noise_out = np.sqrt(variance_out)
+    return flux_out, noise_out, count_out
+
 def rebin_flux(target_wavelength, source_wavelength, source_flux):
     """Rebin a flux onto a new wavelength grid."""
     targetwl = target_wavelength
