@@ -30,6 +30,7 @@ import os
 
 import numpy as np
 from scipy.optimize import leastsq, curve_fit
+from scipy.interpolate import LSQUnivariateSpline
 from scipy.ndimage.filters import median_filter, gaussian_filter1d
 from scipy.stats.stats import nanmean
 
@@ -540,7 +541,7 @@ def dar(wavelength, zenith_distance, temperature=None, pressure=None,
 def derive_transfer_function(path_list, max_sep_arcsec=60.0,
                              catalogues=STANDARD_CATALOGUES,
                              model_name='ref_centre_alpha_dist_circ_hdratm',
-                             n_trim=0):
+                             n_trim=0, smooth='spline'):
     """Derive transfer function and save it in each FITS file."""
     # First work out which star we're looking at, and which hexabundle it's in
     star_match = match_standard_star(
@@ -574,10 +575,12 @@ def derive_transfer_function(path_list, max_sep_arcsec=60.0,
                             star_match, psf_parameters, model_name,
                             good_psf, HG_CHANGESET)
         transfer_function = take_ratio(
-            standard_data['flux'], 
-            standard_data['wavelength'], 
-            observed_flux, 
-            ifu.lambda_range)
+            standard_data['flux'],
+            standard_data['wavelength'],
+            observed_flux,
+            sigma_flux,
+            ifu.lambda_range,
+            smooth=smooth)
         save_transfer_function(path, transfer_function)
     return
 
@@ -802,17 +805,19 @@ def read_standard_data(star):
     return standard_data
 
 def take_ratio(standard_flux, standard_wavelength, observed_flux, 
-               observed_wavelength, smooth=True):
+               sigma_flux, observed_wavelength, smooth='spline'):
     """Return the ratio of two spectra, after rebinning."""
-    # First some very minor smoothing to take out some spurions
-    observed_flux = median_filter(observed_flux, 5)
     # Rebin the observed spectrum onto the (coarser) scale of the standard
-    observed_flux_rebinned = rebin_flux(
-        standard_wavelength, observed_wavelength, observed_flux)
+    observed_flux_rebinned, sigma_flux_rebinned, count_rebinned = \
+        rebin_flux_noise(standard_wavelength, observed_wavelength,
+                         observed_flux, sigma_flux)
     ratio = standard_flux / observed_flux_rebinned
-    if smooth:
+    if smooth == 'gauss':
+        ratio = smooth_ratio(ratio)
+    elif smooth == 'chebyshev':
         ratio = fit_chebyshev(standard_wavelength, ratio)
-        # ratio = smooth_ratio(ratio)
+    elif smooth == 'spline':
+        ratio = fit_spline(standard_wavelength, ratio)
     # Put the ratio back onto the observed wavelength scale
     ratio = 1.0 / np.interp(observed_wavelength, standard_wavelength, 
                             1.0 / ratio)
@@ -861,6 +866,27 @@ def fit_chebyshev(wavelength, ratio, deg=None):
     coefficients = np.polynomial.chebyshev.chebfit(
         wavelength[good], (1.0 / ratio[good]), deg)
     fit = 1.0 / np.polynomial.chebyshev.chebval(wavelength, coefficients)
+    # Mark with NaNs anything outside the fitted wavelength range
+    fit[:good[0]] = np.nan
+    fit[good[-1]+1:] = np.nan
+    return fit
+
+def fit_spline(wavelength, ratio):
+    """Fit a smoothing spline to the data, and return the fit."""
+    # Do the fit in terms of 1.0 / ratio, because it seems to give better
+    # results.
+    good = np.where(np.isfinite(ratio) & ~(in_telluric_band(wavelength)))[0]
+    knots = np.linspace(wavelength[good][0], wavelength[good][-1], 8)
+    # Add extra knots around 5500A, where there's a sharp turn
+    extra = knots[(knots > 5000) & (knots < 6000)]
+    if len(extra) > 1:
+        extra = 0.5 * (extra[1:] + extra[:-1])
+        knots = np.sort(np.hstack((knots, extra)))
+    # Remove any knots sitting in a telluric band
+    knots = knots[~in_telluric_band(knots)]
+    spline = LSQUnivariateSpline(
+        wavelength[good], 1.0/ratio[good], knots[1:-1])
+    fit = 1.0 / spline(wavelength)
     # Mark with NaNs anything outside the fitted wavelength range
     fit[:good[0]] = np.nan
     fit[good[-1]+1:] = np.nan
