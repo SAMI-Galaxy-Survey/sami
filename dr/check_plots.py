@@ -79,6 +79,7 @@ nomalisation is ok."""
     # Load the spectrum of the standard star
     standard_star = fluxcal2.read_standard_data(
         {'path': hdulist_combined_1[1].header['STDFILE']})
+    in_telluric = fluxcal2.in_telluric_band(standard_star['wavelength'])
     # Construct wavelength arrays
     header_1 = pf.getheader(fits_1.reduced_path)
     wavelength_1 = header_1['CRVAL1'] + header_1['CDELT1'] * (
@@ -104,17 +105,28 @@ nomalisation is ok."""
         hdu_2 = match_fcal_hdu(hdulist_combined_2, hdu_1)
         fig_single = plt.figure(filename, figsize=(16., 6.))
         observed_ratio_1 = (
-            fluxcal2.rebin_flux(standard_star['wavelength'], wavelength_1, 
-                                hdu_1.data[0, :]) / standard_star['flux'])
-        plt.plot(standard_star['wavelength'], observed_ratio_1, 
-                 label='Observed ratio', c='b')
-        plt.plot(wavelength_1, 1.0 / hdu_1.data[-1, :], 
-                 label='Fitted ratio', c='g')
+            fluxcal2.rebin_flux_noise(
+                standard_star['wavelength'], wavelength_1, 
+                hdu_1.data[0, :], hdu_1.data[2, :])[0] /
+            standard_star['flux'])
+        observed_ratio_masked_1 = observed_ratio_1.copy()
+        observed_ratio_masked_1[in_telluric] = np.nan
+        plt.plot(standard_star['wavelength'], observed_ratio_1, c='g', 
+                 label='Observed ratio')
+        plt.plot(standard_star['wavelength'], observed_ratio_masked_1, c='b',
+                 label='Observed ratio (masked)')
+        plt.plot(wavelength_1, 1.0 / hdu_1.data[-1, :], c='r', 
+                 label='Fitted ratio')
         observed_ratio_2 = (
-            fluxcal2.rebin_flux(standard_star['wavelength'], wavelength_2, 
-                                hdu_2.data[0, :]) / standard_star['flux'])
-        plt.plot(standard_star['wavelength'], observed_ratio_2, c='b')
-        plt.plot(wavelength_2, 1.0 / hdu_2.data[-1, :], c='g')
+            fluxcal2.rebin_flux_noise(
+                standard_star['wavelength'], wavelength_2, 
+                hdu_2.data[0, :], hdu_2.data[2, :])[0] / 
+            standard_star['flux'])
+        observed_ratio_masked_2 = observed_ratio_2.copy()
+        observed_ratio_masked_2[in_telluric] = np.nan
+        plt.plot(standard_star['wavelength'], observed_ratio_2, c='g')
+        plt.plot(standard_star['wavelength'], observed_ratio_masked_2, c='b')
+        plt.plot(wavelength_2, 1.0 / hdu_2.data[-1, :], c='r')
         plt.legend(loc='best')
     print "When you're ready to move on..."
     return
