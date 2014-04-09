@@ -898,8 +898,14 @@ def rebin_flux_noise(target_wavelength, source_wavelength, source_flux,
     # Interpolate over bad pixels
     good = np.isfinite(source_flux) & np.isfinite(source_noise)
     if clip:
+        # Clip points that are a long way from a narrow median filter
         good = good & ((np.abs(source_flux - median_filter(source_flux, 7)) /
                         source_noise) < 10.0)
+        # Also clip points where the noise value spikes (changes by more than
+        # 35% relative to the baseline)
+        filtered_noise = median_filter(source_noise, 21)
+        good = good & ((np.abs(source_noise - filtered_noise) / 
+                        filtered_noise) < 0.35)
     interp_flux, interp_noise = interpolate_flux_noise(
         source_flux, source_noise, good)
     interp_good = np.isfinite(interp_flux)
@@ -1274,6 +1280,23 @@ def primary_flux_calibrate(path_in, path_out, path_transfer_function):
                                   'Units')
     hdulist.writeto(path_out)
     return
+
+def median_filter_rotate(array, window):
+    """Median filter with the array extended by rotating the end pieces."""
+    good = np.where(np.isfinite(array))[0]
+    array_ext = array[good[0]:good[-1]+1]
+    end_values = (np.median(array_ext[:5*window]),
+                  np.median(array_ext[-5*window:]))
+    array_ext = np.hstack((2*end_values[0] - array_ext[window:0:-1],
+                           array_ext,
+                           2*end_values[1] - array_ext[-1:-1-window:-1]))
+    result = np.zeros_like(array)
+    result[good[0]:good[-1]+1] = (
+        median_filter(array_ext, window)[window:-window])
+    result[:good[0]] = array[:good[0]]
+    result[good[-1]+1:] = array[good[-1]+1:]
+    return result
+
 
 
 
