@@ -4,8 +4,10 @@ import tempfile
 import shutil
 from contextlib import contextmanager
 
+LOCKDIR = '2dfdrLockDir'
+
 def run_2dfdr(dirname, options=None, return_to=None, unique_imp_scratch=False,
-              **kwargs):
+              lockdir=LOCKDIR, **kwargs):
     """Run 2dfdr with a specified set of command-line options."""
     command = ['drcontrol']
     if options is not None:
@@ -13,17 +15,17 @@ def run_2dfdr(dirname, options=None, return_to=None, unique_imp_scratch=False,
     if unique_imp_scratch:
         with temp_imp_scratch(**kwargs):
             with visit_dir(dirname, return_to=return_to, 
-                           cleanup_2dfdr=True):
+                           cleanup_2dfdr=True, lockdir=lockdir):
                 with open(os.devnull, 'w') as dump:
                     subprocess.call(command, stdout=dump)
     else:
         with visit_dir(dirname, return_to=return_to, 
-                       cleanup_2dfdr=True):
+                       cleanup_2dfdr=True, lockdir=lockdir):
             with open(os.devnull, 'w') as dump:
                 subprocess.call(command, stdout=dump)
     return
 
-def load_gui(dirname=None, idx_file=None, **kwargs):
+def load_gui(dirname=None, idx_file=None, lockdir=LOCKDIR, **kwargs):
     """Load the 2dfdr GUI in the specified directory."""
     if dirname is None:
         dirname = os.getcwd()
@@ -31,10 +33,10 @@ def load_gui(dirname=None, idx_file=None, **kwargs):
         options = [idx_file]
     else:
         options = None
-    run_2dfdr(dirname, options, **kwargs)
+    run_2dfdr(dirname, options, lockdir=lockdir, **kwargs)
     return
 
-def run_2dfdr_single(fits, idx_file, options=None, **kwargs):
+def run_2dfdr_single(fits, idx_file, options=None, lockdir=LOCKDIR, **kwargs):
     """Run 2dfdr on a single FITS file."""
     print 'Reducing file:', fits.filename
     if fits.ndf_class == 'BIAS':
@@ -56,10 +58,11 @@ def run_2dfdr_single(fits, idx_file, options=None, **kwargs):
     options_all = [task, fits.filename, '-idxfile', idx_file]
     if options is not None:
         options_all.extend(options)
-    run_2dfdr(fits.reduced_dir, options=options_all, **kwargs)
+    run_2dfdr(fits.reduced_dir, options=options_all, lockdir=lockdir, **kwargs)
     return
 
-def run_2dfdr_combine(input_path_list, output_path, return_to=None, **kwargs):
+def run_2dfdr_combine(input_path_list, output_path, return_to=None, 
+                      lockdir=LOCKDIR, **kwargs):
     """Run 2dfdr to combine the specified FITS files."""
     if len(input_path_list) < 2:
         raise ValueError('Need at least 2 files to combine!')
@@ -91,7 +94,7 @@ def run_2dfdr_combine(input_path_list, output_path, return_to=None, **kwargs):
                    script_filename,
                    '-Timeout',
                    timeout]
-        run_2dfdr(output_dir, options, **kwargs)
+        run_2dfdr(output_dir, options, lockdir=lockdir, **kwargs)
         # Clean up the script file
         os.remove(script_filename)
     return
@@ -102,18 +105,29 @@ def cleanup():
         subprocess.call(['cleanup'], stdout=dump)
 
 @contextmanager
-def visit_dir(dir_path, return_to=None, cleanup_2dfdr=False):
+def visit_dir(dir_path, return_to=None, cleanup_2dfdr=False, lockdir=LOCKDIR):
     """Context manager to temporarily visit a directory."""
     if return_to is None:
         return_to = os.getcwd()
     if not os.path.exists(dir_path):
         os.makedirs(dir_path)
     os.chdir(dir_path)
+    if lockdir is not None:
+        try:
+            os.mkdir(lockdir)
+        except OSError:
+            # Lock directory already exists, i.e. another task is working here
+            # Run away!
+            os.chdir(return_to)
+            raise LockException(
+                'Directory locked by another process: ' + dir_path)
     try:
         yield
     finally:
         if cleanup_2dfdr:
             cleanup()
+        if lockdir is not None:
+            os.rmdir(lockdir)
         os.chdir(return_to)
 
 @contextmanager
@@ -159,4 +173,12 @@ def temp_imp_scratch(restore_to=None, scratch_dir=None, do_not_delete=False):
                 # It wasn't empty; never mind
                 pass
     return
+
+class TdfdrException(Exception):
+    """Base 2dfdr exception."""
+    pass
+
+class LockException(Exception):
+    """Exception raised when attempting to work in a locked directory."""
+    pass
 
