@@ -2757,7 +2757,9 @@ def run_2dfdr_single_wrapper(group):
             unique_imp_scratch=True, restore_to=imp_scratch, 
             scratch_dir=scratch_dir)
     except tdfdr.LockException:
-        print 'Abandoning', fits.filename, 'for now.'
+        message = ('Postponing ' + fits.filename + 
+                   ' while other process has directory lock.')
+        print message
         return False
     return True
 
