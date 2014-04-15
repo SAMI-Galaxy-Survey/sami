@@ -91,7 +91,7 @@ def run_2dfdr_combine(input_path_list, output_path, return_to=None, **kwargs):
                    script_filename,
                    '-Timeout',
                    timeout]
-        run_2dfdr(output_dir, options, return_to=return_to, **kwargs)
+        run_2dfdr(output_dir, options, **kwargs)
         # Clean up the script file
         os.remove(script_filename)
     return
@@ -122,11 +122,17 @@ def temp_imp_scratch(restore_to=None, scratch_dir=None, do_not_delete=False):
     Create a temporary directory for 2dfdr IMP_SCRATCH,
     allowing multiple instances of 2dfdr to be run simultaneously.
     """
+    try:
+        old_imp_scratch = os.environ['IMP_SCRATCH']
+    except KeyError:
+        old_imp_scratch = None
     # Use current value for restore_to if not provided
     if restore_to is None:
-        restore_to = os.environ['IMP_SCRATCH']
+        restore_to = old_imp_scratch
     # Make the parent directory, if specified
     # If not specified, tempfile.mkdtemp will choose a suitable location
+    if scratch_dir is None and old_imp_scratch is not None:
+        scratch_dir = old_imp_scratch
     if scratch_dir is not None and not os.path.exists(scratch_dir):
         os.makedirs(scratch_dir)
     # Make a temporary directory with a unique name
@@ -138,7 +144,11 @@ def temp_imp_scratch(restore_to=None, scratch_dir=None, do_not_delete=False):
         yield
     finally:
         # Change the IMP_SCRATCH environment variable back to what it was
-        os.environ['IMP_SCRATCH'] = restore_to
+        if restore_to is not False:
+            if restore_to is not None:
+                os.environ['IMP_SCRATCH'] = restore_to
+            else:
+                del os.environ['IMP_SCRATCH']
         if not do_not_delete:
             # Remove the temporary directory and all its contents
             shutil.rmtree(imp_scratch)

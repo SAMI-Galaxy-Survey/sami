@@ -4,6 +4,8 @@ import numpy as np
 # astropy fits file io (replacement for pyfits)
 import astropy.io.fits as pf
 
+from .fluxcal2_io import read_model_parameters
+
 class IFU:
 
     def __init__(self, rss_filename, probe_identifier, flag_name=True):
@@ -135,7 +137,11 @@ class IFU:
         #    each fibre which requires the RWSS file/option in 2dfdr
 
         # 2dfdr determined fibre througput corrections
-        self.fibre_throughputs = hdulist['THPUT'].data[ind]
+        try:
+            self.fibre_throughputs = hdulist['THPUT'].data[ind]
+        except KeyError:
+            # None available; never mind.
+            pass
 
         # Added for Iraklis, might need to check this.
         self.fibtab=table_new
@@ -159,6 +165,17 @@ class IFU:
             self.y_refmed = offsets['Y_REFMED']
             self.x_shift = -1 * offsets['X_SHIFT']
             self.y_shift = offsets['Y_SHIFT']
+
+        # Fitted DAR parameters, if available
+        try:
+            hdu_fluxcal = hdulist['FLUX_CALIBRATION']
+        except KeyError:
+            # Haven't been measured yet; never mind
+            pass
+        else:
+            self.atmosphere = read_model_parameters(hdu_fluxcal)[0]
+            del self.atmosphere['flux']
+            del self.atmosphere['background']
 
         # Object RA & DEC
         self.obj_ra=table_new.field('GRP_MRA')

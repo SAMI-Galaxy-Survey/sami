@@ -68,7 +68,7 @@ import subprocess
 import multiprocessing
 import tempfile
 from contextlib import contextmanager
-from collections import defaultdict, deque
+from collections import defaultdict
 
 import astropy.coordinates as coord
 from astropy import units
@@ -141,10 +141,25 @@ PILOT_FIELD_LIST = [
      'coords': '00h42m34.09s -09d12m08.1s'}]
 
 # Things that should be visually checked
-# Priorities: 0 should be done first
+# Priorities: Lower numbers (more negative) should be done first
 # Each key ('TLM', 'ARC',...) matches to a check method named 
 # check_tlm, check_arc,...
 CHECK_DATA = {
+    'BIA': {'name': 'Bias',
+            'ndf_class': 'BIAS',
+            'spectrophotometric': None,
+            'priority': -3,
+            'group_by': ('ccd', 'date')},
+    'DRK': {'name': 'Dark',
+            'ndf_class': 'DARK',
+            'spectrophotometric': None,
+            'priority': -2,
+            'group_by': ('ccd', 'exposure_str', 'date')},
+    'LFL': {'name': 'Long-slit flat',
+            'ndf_class': 'LFLAT',
+            'spectrophotometric': None,
+            'priority': -1,
+            'group_by': ('ccd', 'date')},
     'TLM': {'name': 'Tramline map',
             'ndf_class': 'MFFFF',
             'spectrophotometric': None,
@@ -375,6 +390,11 @@ class Manager:
     Cubing
     ======
 
+    Before the frames can be combined their relative offsets must be
+    measured:
+
+    >>> mngr.measure_offsets()
+
     The final step in the data reduction is to turn the individual
     calibrated spectra into datacubes:
 
@@ -532,11 +552,16 @@ class Manager:
         self.extra_list = []
         self.dark_exposure_str_list = []
         self.dark_exposure_list = []
-        self.inspect_root(copy_files, move_files)
         self.cwd = os.getcwd()
-        self.imp_scratch = os.environ['IMP_SCRATCH']
-        self.scratch_dir = os.path.join(self.abs_root, 'imp_scratch')
+        if 'IMP_SCRATCH' in os.environ:
+            self.imp_scratch = os.environ['IMP_SCRATCH']
+        else:
+            self.imp_scratch = None
+        # self.scratch_dir = os.path.join(self.abs_root, 'imp_scratch')
+        self.scratch_dir = None
         self.min_exposure_for_throughput = 900.0
+        self.min_exposure_for_sky_wave = 900.0
+        self.inspect_root(copy_files, move_files)
 
     def inspect_root(self, copy_files, move_files, trust_header=True):
         """Add details of existing files to internal lists."""
@@ -866,9 +891,7 @@ class Manager:
                                    do_not_use=False, **kwargs)
         reduced_files = self.reduce_file_iterable(
             file_iterable, overwrite=overwrite)
-        # Calibrator checks not yet implemented
-        # self.update_checks(calibrator_type[:3].upper(), reduced_files, False)
-        return
+        return reduced_files
 
     def combine_calibrator(self, calibrator_type, overwrite=False):
         """Produce and link necessary XXXXcombined.fits files."""
@@ -919,7 +942,9 @@ class Manager:
 
     def reduce_bias(self, overwrite=False, **kwargs):
         """Reduce all bias frames."""
-        self.reduce_calibrator('bias', overwrite=overwrite, **kwargs)
+        reduced_files = self.reduce_calibrator(
+            'bias', overwrite=overwrite, **kwargs)
+        self.update_checks('BIA', reduced_files, False)
         return
 
     def combine_bias(self, overwrite=False):
@@ -934,7 +959,9 @@ class Manager:
 
     def reduce_dark(self, overwrite=False, **kwargs):
         """Reduce all dark frames."""
-        self.reduce_calibrator('dark', overwrite=overwrite, **kwargs)
+        reduced_files = self.reduce_calibrator(
+            'dark', overwrite=overwrite, **kwargs)
+        self.update_checks('DRK', reduced_files, False)
         return
         
     def combine_dark(self, overwrite=False):
@@ -949,7 +976,9 @@ class Manager:
 
     def reduce_lflat(self, overwrite=False, **kwargs):
         """Reduce all lflat frames."""
-        self.reduce_calibrator('lflat', overwrite=overwrite, **kwargs)
+        reduced_files = self.reduce_calibrator(
+            'lflat', overwrite=overwrite, **kwargs)
+        self.update_checks('LFL', reduced_files, False)
         return
 
     def combine_lflat(self, overwrite=False):
@@ -1061,8 +1090,11 @@ class Manager:
             target = fits.reduced_path
         return target
 
-    def derive_transfer_function(self, overwrite=False, **kwargs):
+    def derive_transfer_function(self, 
+            overwrite=False, model_name='ref_centre_alpha_dist_circ_hdratm', 
+            smooth='spline', **kwargs):
         """Derive flux calibration transfer functions and save them."""
+        inputs_list = []
         for fits in self.files(ndf_class='MFOBJECT', do_not_use=False,
                                spectrophotometric=True, ccd='ccd_1', **kwargs):
             if not overwrite:
@@ -1084,19 +1116,9 @@ class Manager:
                 n_trim = 3
             else:
                 n_trim = 0
-            print ('Deriving transfer function for ' + fits.filename + 
-                   ' and ' + fits_2.filename)
-            try:
-                fluxcal2.derive_transfer_function(path_pair, n_trim=n_trim)
-            except ValueError:
-                print ('Warning: No star found in dataframe, skipping ' + 
-                       fits.filename)
-                continue
-            good_psf = pf.getval(fits.reduced_path, 'GOODPSF',
-                                 'FLUX_CALIBRATION')
-            if not good_psf:
-                print ('Warning: Bad PSF fit in ' + fits.filename + 
-                       '; will skip this one in combining.')
+            inputs_list.append({'path_pair': path_pair, 'n_trim': n_trim, 
+                                'model_name': model_name, 'smooth': smooth})
+        self.map(derive_transfer_function_pair, inputs_list)
         return
 
     def combine_transfer_function(self, overwrite=False, **kwargs):
@@ -1153,10 +1175,10 @@ class Manager:
                     path_transfer_fn)
         return
 
-    def telluric_correct(self, overwrite=False, **kwargs):
+    def telluric_correct(self, overwrite=False, model_name=None, **kwargs):
         """Apply telluric correction to object frames."""
         # First make the list of file pairs to correct
-        pair_list = []
+        inputs_list = []
         for fits_2 in self.files(ndf_class='MFOBJECT', do_not_use=False,
                                  spectrophotometric=False, ccd='ccd_2', 
                                  **kwargs):
@@ -1164,38 +1186,106 @@ class Manager:
                 # Already been done; skip to the next file
                 continue
             fits_1 = self.other_arm(fits_2)
-            pair_list.append((fits_1, fits_2))
+            if fits_2.epoch < 2013.0:
+                # SAMI v1 had awful throughput at blue end of blue, need to
+                # trim that data.
+                n_trim = 3
+                # Also get telluric shape from primary standard
+                use_PS = True
+                fits_spectrophotometric = self.matchmaker(fits_2, 'fcal')
+                if fits_spectrophotometric is None:
+                    # Try again with less strict criteria
+                    fits_spectrophotometric = self.matchmaker(
+                        fits_2, 'fcal_loose')
+                    if fits_spectrophotometric is None:
+                        raise MatchException('No matching flux calibrator ' + 
+                                             'found for ' + fits_2.filename)
+                PS_spec_file = os.path.join(
+                    fits_spectrophotometric.reduced_dir,
+                    'TRANSFERcombined.fits')
+                # For September 2012, secondary stars were often not in the
+                # hexabundle at all, so use the theoretical airmass scaling
+                if fits_2.epoch < 2012.75:
+                    scale_PS_by_airmass = True
+                else:
+                    scale_PS_by_airmass = False
+                # Also constrain the zenith distance in fitting the star
+                if model_name is None:
+                    model_name_out = 'ref_centre_alpha_circ_hdratm'
+                else:
+                    model_name_out = model_name
+            else:
+                # These days everything is hunkydory
+                n_trim = 0
+                use_PS = False
+                PS_spec_file = None
+                scale_PS_by_airmass = False
+                if model_name is None:
+                    model_name_out = 'ref_centre_alpha_dist_circ_hdratm'
+                else:
+                    model_name_out = model_name
+            inputs_list.append({
+                'fits_1': fits_1,
+                'fits_2': fits_2,
+                'n_trim': n_trim,
+                'use_PS': use_PS,
+                'scale_PS_by_airmass': scale_PS_by_airmass,
+                'PS_spec_file': PS_spec_file,
+                'model_name': model_name_out})
         # Now send this list to as many cores as we are using
-        self.map(telluric_correct_pair, pair_list)
+        self.map(telluric_correct_pair, inputs_list)
         # Mark telluric corrections as not checked
-        for fits_pair in pair_list:
-            self.update_checks('TEL', [fits_pair[1]], False)
+        fits_2_list = [inputs['fits_2'] for inputs in inputs_list]
+        self.update_checks('TEL', fits_2_list, False)
         return
 
-    def cube(self, overwrite=False, **kwargs):
+    def measure_offsets(self, overwrite=False, min_exposure=599.0, name='main',
+                        ccd='both', **kwargs):
+        """Measure the offsets between dithered observations."""
+        if ccd == 'both':
+            ccd_measure = 'ccd_2'
+            copy_to_other_arm = True
+        else:
+            ccd_measure = ccd
+            copy_to_other_arm = False
+        groups = self.group_files_by(
+            'field_id', ndf_class='MFOBJECT', do_not_use=False,
+            reduced=True, min_exposure=min_exposure, name=name, ccd=ccd_measure,
+            **kwargs)
+        complete_groups = []
+        for key, fits_list in groups.items():
+            fits_list_other_arm = [self.other_arm(fits) for fits in fits_list]
+            if overwrite:
+                complete_groups.append(
+                    (key, fits_list, copy_to_other_arm, fits_list_other_arm))
+                continue
+            for fits in fits_list:
+                # This loop checks each fits file and adds the group to the
+                # complete list if *any* of them are missing the ALIGNMENT HDU
+                try:
+                    pf.getheader(fits, 'ALIGNMENT')
+                except KeyError:
+                    # No previous measurement, so we need to do this group
+                    complete_groups.append(
+                        (key, fits_list, copy_to_other_arm, 
+                         fits_list_other_arm))
+                    break
+        self.map(measure_offsets_group, complete_groups)
+        return
+
+    def cube(self, overwrite=False, min_exposure=599.0, name='main', 
+             star_only=False, **kwargs):
         """Make datacubes from the given RSS files."""
-        target_dir = os.path.join(self.abs_root, 'cubed')
-        if 'min_exposure' in kwargs:
-            min_exposure = kwargs['min_exposure']
-            del kwargs['min_exposure']
-        else:
-            min_exposure = 599.0
-        if 'name' in kwargs:
-            name = kwargs['name']
-            del kwargs['name']
-        else:
-            name = 'main'
         groups = self.group_files_by(
             ['field_id', 'ccd'], ndf_class='MFOBJECT', do_not_use=False,
             reduced=True, min_exposure=min_exposure, name=name, **kwargs)
         # Add in the root path as well, so that cubing puts things in the 
         # right place
         cubed_root = os.path.join(self.root, 'cubed')
-        groups = [(item[0], item[1], cubed_root, overwrite) 
-                  for item in groups.items()]
-        with self.visit_dir(target_dir):
-            # Send the cubing tasks off to multiple CPUs
-            self.map(cube_group, groups)
+        groups = [(key, fits_list, cubed_root, overwrite, star_only) 
+                  for key, fits_list in groups.items()]
+        # Send the cubing tasks off to multiple CPUs
+        self.map(cube_group, groups)
         # Mark all cubes as not checked. Ideally would only mark those that
         # actually exist. Maybe set dithered_cubes_from_rss_list to return a 
         # list of those it created?
@@ -1220,6 +1310,7 @@ class Manager:
         self.combine_transfer_function(overwrite, **kwargs)
         self.flux_calibrate(overwrite, **kwargs)
         self.telluric_correct(overwrite, **kwargs)
+        self.measure_offsets(overwrite, **kwargs)
         self.cube(overwrite, **kwargs)
         return
 
@@ -1251,6 +1342,12 @@ class Manager:
         options = []
         # For now, setting all files to use GAUSS extraction
         options.extend(['-EXTR_OPERATION', 'GAUSS'])
+        if fits.ccd == 'ccd_2':
+            if fits.exposure >= self.min_exposure_for_sky_wave:
+                # Adjust wavelength calibration of red frames using sky lines
+                options.extend(['-SKYSCRUNCH', '1'])
+            # Turn off bias and dark subtraction
+            options.extend(['-USEBIASIM', '0', '-USEDARKIM', '0'])
         if fits.ndf_class == 'BIAS':
             files_to_match = []
         elif fits.ndf_class == 'DARK':
@@ -1282,13 +1379,23 @@ class Manager:
                                   'fflat']
         else:
             raise ValueError('Unrecognised NDF_CLASS: '+fits.ndf_class)
+        # Remove unnecessary files from files_to_match
+        if 'bias' in files_to_match and '-USEBIASIM' in options:
+            if options[options.index('-USEBIASIM') + 1] == '0':
+                files_to_match.remove('bias')
+        if 'dark' in files_to_match and '-USEDARKIM' in options:
+            if options[options.index('-USEDARKIM') + 1] == '0':
+                files_to_match.remove('dark')
+        if 'lflat' in files_to_match and '-USEFLATIM' in options:
+            if options[options.index('-USEFLATIM') + 1] == '0':
+                files_to_match.remove('lflat')
         # Disable bias/dark/lflat if they're not being used
         # If you don't, 2dfdr might barf
-        if 'bias' not in files_to_match:
+        if 'bias' not in files_to_match and '-USEBIASIM' not in options:
             options.extend(['-USEBIASIM', '0'])
-        if 'dark' not in files_to_match:
+        if 'dark' not in files_to_match and '-USEDARKIM' not in options:
             options.extend(['-USEDARKIM', '0'])
-        if 'lflat' not in files_to_match:
+        if 'lflat' not in files_to_match and '-USEFLATIM' not in options:
             options.extend(['-USEFLATIM', '0'])
         for match_class in files_to_match:
             filename_match = self.match_link(fits, match_class)
@@ -1349,12 +1456,12 @@ class Manager:
                     # Try with looser criteria
                     filename_match = self.match_link(fits, 'fflat_loose')
                     if filename_match is None:
-                        # Try using a dome flat instead
-                        filename_match = self.match_link(fits, 'fflat_dome')
+                        # Try using a flap flat instead
+                        filename_match = self.match_link(fits, 'fflat_flap')
                         if filename_match is None:
                             # Try with looser criteria
                             filename_match = self.match_link(
-                                fits, 'fflat_dome_loose')
+                                fits, 'fflat_flap_loose')
                             if filename_match is None:
                                 # Still nothing. Raise an exception
                                 raise MatchException(
@@ -1363,12 +1470,12 @@ class Manager:
                             else:
                                 print ('Warning: No good flat found for '
                                     'flat fielding. '
-                                    'Using dome flat from different field '
+                                    'Using flap flat from different field '
                                     'for ' + fits.filename)
                         else:
-                            print ('Warning: No flap flat found for flat '
+                            print ('Warning: No dome flat found for flat '
                                 'fielding. '
-                                'Using dome flat instead for ' + fits.filename)
+                                'Using flap flat instead for ' + fits.filename)
                     else:
                         print ('Warning: No matching flat found for flat '
                             'fielding. '
@@ -1392,6 +1499,8 @@ class Manager:
             if filename_match is not None:
                 # Note we can't use else for the above line, because
                 # filename_match might have changed
+                if match_class == 'tlmap_flap':
+                    match_class = 'tlmap'
                 options.extend(['-'+match_class.upper()+'_FILENAME',
                                 filename_match])
         return options        
@@ -1445,7 +1554,8 @@ class Manager:
               min_exposure=None, max_exposure=None,
               reduced_dir=None, reduced=None, tlm_created=None,
               flux_calibrated=None, telluric_corrected=None,
-              spectrophotometric=None, name=None, lamp=None):
+              spectrophotometric=None, name=None, lamp=None,
+              central_wavelength=None):
         """Generator for FITS files that satisfy requirements."""
         for fits in self.file_list:
             if fits.ndf_class is None:
@@ -1488,7 +1598,9 @@ class Manager:
                   (fits.spectrophotometric == spectrophotometric))) and
                 (name is None or 
                  (fits.name is not None and fits.name in name)) and
-                (lamp is None or fits.lamp == lamp)):
+                (lamp is None or fits.lamp == lamp) and
+                (central_wavelength is None or 
+                 fits.central_wavelength == central_wavelength)):
                 yield fits
         return
 
@@ -1620,10 +1732,10 @@ class Manager:
         tlmap_flap_loose -- As tlmap_flap, but with less strict criteria
         wavel            -- Find a reduced arc file
         wavel_loose      -- As wavel, but with less strict criteria
-        fflat            -- Find a reduced fibre flat field from the flap lamp
+        fflat            -- Find a reduced fibre flat field from the dome lamp
         fflat_loose      -- As fflat, but with less strict criteria
-        fflat_dome       -- As fflat, but from the dome lamp
-        fflat_dome_loose -- As fflat_dome, but with less strict criteria
+        fflat_flap       -- As fflat, but from the flap lamp
+        fflat_flap_loose -- As fflat_flap, but with less strict criteria
         thput            -- Find a reduced offset sky (twilight) file
         thput_object     -- As thput, but find a suitable object frame
         bias             -- Find a combined bias frame
@@ -1653,6 +1765,7 @@ class Manager:
         telluric_corrected = None
         spectrophotometric = None
         lamp = None
+        central_wavelength = None
         # Define some functions for figures of merit
         time_difference = lambda fits, fits_test: (
             abs(fits_test.epoch - fits.epoch))
@@ -1716,38 +1829,38 @@ class Manager:
             reduced = True
             fom = time_difference
         elif match_class.lower() == 'fflat':
-            # Find a reduced fibre flat field from the flap lamp
+            # Find a reduced fibre flat field from the dome lamp
             ndf_class = 'MFFFF'
             date = fits.date
             plate_id = fits.plate_id
             field_id = fits.field_id
             ccd = fits.ccd
             reduced = True
-            lamp = 'Flap'
+            lamp = 'Dome'
             fom = time_difference
         elif match_class.lower() == 'fflat_loose':
             # Find a reduced fibre flat field with looser criteria
             ndf_class = 'MFFFF'
             ccd = fits.ccd
             reduced = True
-            lamp = 'Flap'
+            lamp = 'Dome'
             fom = time_difference
-        elif match_class.lower() == 'fflat_dome':
-            # Find a reduced dome fibre flat field
+        elif match_class.lower() == 'fflat_flap':
+            # Find a reduced flap fibre flat field
             ndf_class = 'MFFFF'
             date = fits.date
             plate_id = fits.plate_id
             field_id = fits.field_id
             ccd = fits.ccd
             reduced = True
-            lamp = 'Dome'
+            lamp = 'Flap'
             fom = time_difference
-        elif match_class.lower() == 'fflat_dome_loose':
-            # Fibre flat field from dome lamp with looser criteria
+        elif match_class.lower() == 'fflat_flap_loose':
+            # Fibre flat field from flap lamp with looser criteria
             ndf_class = 'MFFFF'
             ccd = fits.ccd
             reduced = True
-            lamp = 'Dome'
+            lamp = 'Flap'
             fom = time_difference
         elif match_class.lower() == 'thput':
             # Find a reduced offset sky field
@@ -1777,6 +1890,7 @@ class Manager:
             ccd = fits.ccd
             reduced = True
             spectrophotometric = True
+            central_wavelength = fits.central_wavelength
             fom = time_difference
         elif match_class.lower() == 'fcal_loose':
             # Spectrophotometric with less strict criteria
@@ -1784,6 +1898,7 @@ class Manager:
             ccd = fits.ccd
             reduced = True
             spectrophotometric = True
+            central_wavelength = fits.central_wavelength
             fom = time_difference
         elif match_class.lower() == 'bias':
             # Just return the standard BIAScombined filename
@@ -1860,7 +1975,7 @@ class Manager:
         # These are the cases where we do want to make a link
         require_link = [
             'tlmap', 'tlmap_loose', 'tlmap_flap', 'tlmap_flap_loose', 
-            'fflat', 'fflat_loose', 'fflat_dome', 'fflat_dome_loose',
+            'fflat', 'fflat_loose', 'fflat_flap', 'fflat_flap_loose',
             'wavel', 'wavel_loose', 'thput', 'thput_object']
         if match_class.lower() in require_link:
             link_path = os.path.join(fits.reduced_dir, filename)
@@ -2009,6 +2124,37 @@ class Manager:
         self.load_2dfdr_gui(fits_list[0])
         return
 
+    def check_bia(self, fits_list):
+        """Check a set of bias frames."""
+        # Check the individual bias frames, and then the combined file
+        message = 'Check that the bias frames have no more artefacts than normal.'
+        self.check_2dfdr(fits_list, message)
+        combined_path = self.bias_combined_path(fits_list[0].ccd)
+        if os.path.exists(combined_path):
+            check_plots.check_bia(combined_path)
+        return
+
+    def check_drk(self, fits_list):
+        """Check a set of dark frames."""
+        # Check the individual dark frames, and then the combined file
+        message = 'Check that the dark frames are free from any stray light.'
+        self.check_2dfdr(fits_list, message)
+        combined_path = self.dark_combined_path(fits_list[0].ccd, 
+                                                fits_list[0].exposure_str)
+        if os.path.exists(combined_path):
+            check_plots.check_drk(combined_path)
+        return
+
+    def check_lfl(self, fits_list):
+        """Check a set of long-slit flats."""
+        # Check the individual long-slit flats, and then the combined file
+        message = 'Check that the long-slit flats have smooth illumination.'
+        self.check_2dfdr(fits_list, message)
+        combined_path = self.lflat_combined_path(fits_list[0].ccd)
+        if os.path.exists(combined_path):
+            check_plots.check_lfl(combined_path)
+        return
+
     def check_tlm(self, fits_list):
         """Check a set of tramline maps."""
         message = 'Zoom in to check that the red fitted tramlines go through the data.'
@@ -2094,6 +2240,7 @@ class FITSFile:
         self.set_exposure()
         self.set_epoch()
         self.set_lamp()
+        self.set_central_wavelength()
         self.set_do_not_use()
         self.set_coords_flags()
         self.hdulist.close()
@@ -2326,6 +2473,14 @@ class FITSFile:
             self.lamp = None
         return
 
+    def set_central_wavelength(self):
+        """Set what the requested central wavelength of the observation was."""
+        if self.ndf_class:
+            self.central_wavelength = self.header['LAMBDCR']
+        else:
+            self.central_wavelength = None
+        return
+
     def set_do_not_use(self):
         """Set whether or not to use this file."""
         try:
@@ -2479,23 +2634,58 @@ class FITSFile:
         return
 
 
-def telluric_correct_pair(fits_pair):
+def derive_transfer_function_pair(inputs):
+    """Derive transfer function for a pair of fits files."""
+    path_pair = inputs['path_pair']
+    n_trim = inputs['n_trim']
+    model_name = inputs['model_name']
+    smooth = inputs['smooth']
+    print ('Deriving transfer function for ' + 
+            os.path.basename(path_pair[0]) + ' and ' + 
+            os.path.basename(path_pair[1]))
+    try:
+        fluxcal2.derive_transfer_function(
+            path_pair, n_trim=n_trim, model_name=model_name, smooth=smooth)
+    except ValueError:
+        print ('Warning: No star found in dataframe, skipping ' + 
+               os.path.basename(path_pair[0]))
+        return
+    good_psf = pf.getval(path_pair[0], 'GOODPSF',
+                         'FLUX_CALIBRATION')
+    if not good_psf:
+        print ('Warning: Bad PSF fit in ' + os.path.basename(path_pair[0]) + 
+               '; will skip this one in combining.')
+    return
+
+def telluric_correct_pair(inputs):
     """Telluric correct a pair of fits files."""
-    fits_1, fits_2 = fits_pair
+    fits_1 = inputs['fits_1']
+    fits_2 = inputs['fits_2']
+    n_trim = inputs['n_trim']
+    use_PS = inputs['use_PS']
+    scale_PS_by_airmass = inputs['scale_PS_by_airmass']
+    PS_spec_file = inputs['PS_spec_file']
+    model_name = inputs['model_name']
     if fits_1 is None or not os.path.exists(fits_1.fluxcal_path):
         print ('Matching blue arm not found for ' + fits_2.filename +
                '; skipping this file.')
         return
-    if fits_1.epoch < 2013.0:
-        # SAMI v1 had awful throughput at blue end of blue, need to
-        # trim that data
-        n_trim = 3
-    else:
-        n_trim = 0
     path_pair = (fits_1.fluxcal_path, fits_2.fluxcal_path)
     print ('Deriving telluric correction for ' + fits_1.filename +
            ' and ' + fits_2.filename)
-    telluric.correction_linear_fit(path_pair, n_trim=n_trim)
+    try:
+        telluric.derive_transfer_function(
+            path_pair, PS_spec_file=PS_spec_file, use_PS=use_PS, n_trim=n_trim,
+            scale_PS_by_airmass=scale_PS_by_airmass, model_name=model_name)
+    except ValueError as err:
+        if err.message.startswith('No star identified in file:'):
+            # No standard star found; probably a star field
+            print err.message
+            print 'Skipping telluric correction for file:', fits_2.filename
+            return
+        else:
+            # Some other, unexpected error. Re-raise it.
+            raise err
     print 'Telluric correcting file:', fits_2.filename
     if os.path.exists(fits_2.telluric_path):
         os.remove(fits_2.telluric_path)
@@ -2503,30 +2693,62 @@ def telluric_correct_pair(fits_pair):
                               fits_2.telluric_path)
     return
 
-def cube_group(group):
-    """Cube a set of RSS files."""
-    field, fits_list, root, overwrite = group
-    print 'Cubing field ID: {}, CCD: {}'.format(field[0], field[1])
-    path_list = []
-    for fits in fits_list:
-        if os.path.exists(fits.telluric_path):
-            path = fits.telluric_path
-        elif os.path.exists(fits.fluxcal_path):
-            path = fits.fluxcal_path
-        else:
-            path = fits.reduced_path
-        path_list.append(path)
+def measure_offsets_group(group):
+    """Measure offsets between a set of dithered observations."""
+    field, fits_list, copy_to_other_arm, fits_list_other_arm = group
+    print 'Measuring offsets for field ID: {}'.format(field[0])
+    path_list = [best_path(fits) for fits in fits_list]
     print 'These are the files:'
     for path in path_list:
         print '  ', os.path.basename(path)
-    # First calculate the offsets
-    find_dither(path_list, path_list[0], centroid=True, 
-                remove_files=True)
-    # Now do the actual cubing
-    dithered_cubes_from_rss_list(path_list, suffix='_'+field[0], 
-                                 write=True, nominal=True, root=root,
-                                 overwrite=overwrite)
+    if len(path_list) < 2:
+        # Can't measure offsets for a single file
+        print 'Only one file so no offsets to measure!'
+        return
+    find_dither(path_list, path_list[0], centroid=True,
+                remove_files=True, do_dar_correct=True)
+    if copy_to_other_arm:
+        for fits, fits_other_arm in zip(fits_list, fits_list_other_arm):
+            hdulist_this_arm = pf.open(best_path(fits))
+            hdulist_other_arm = pf.open(best_path(fits_other_arm), 'update')
+            try:
+                del hdulist_other_arm['ALIGNMENT']
+            except KeyError:
+                # Nothing to delete; no worries
+                pass
+            hdulist_other_arm.append(hdulist_this_arm['ALIGNMENT'])
+            hdulist_other_arm.flush()
+            hdulist_other_arm.close()
+            hdulist_this_arm.close()
     return
+
+def cube_group(group):
+    """Cube a set of RSS files."""
+    field, fits_list, root, overwrite, star_only = group
+    print 'Cubing field ID: {}, CCD: {}'.format(field[0], field[1])
+    path_list = [best_path(fits) for fits in fits_list]
+    print 'These are the files:'
+    for path in path_list:
+        print '  ', os.path.basename(path)
+    if star_only:
+        objects = [pf.getval(path_list[0], 'STDNAME', 'FLUX_CALIBRATION')]
+    else:
+        objects = 'all'
+    dithered_cubes_from_rss_list(path_list, suffix='_'+field[0], size_of_grid=50,
+                                 write=True, nominal=True, root=root,
+                                 overwrite=overwrite, do_dar_correct=True,
+                                 objects=objects, clip=False)
+    return
+
+def best_path(fits):
+    """Return the best (most calibrated) path for the given file."""
+    if os.path.exists(fits.telluric_path):
+        path = fits.telluric_path
+    elif os.path.exists(fits.fluxcal_path):
+        path = fits.fluxcal_path
+    else:
+        path = fits.reduced_path
+    return path    
 
 def run_2dfdr_single_wrapper(group):
     """Run 2dfdr on a single file."""

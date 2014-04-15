@@ -167,7 +167,7 @@ def display_list(inlist, ifu, log=True):
     fig=py.figure()
 
     for i, infile in enumerate(files):
-
+        
         # Get the data.
         ifu_data=utils.IFU(infile, ifu, flag_name=False)
 
@@ -247,6 +247,92 @@ def summed_spectrum(infile, ifu, overplot=False):
     # Put the file name as a title.
     py.title(infile)
 
+
+def field(infile, ifus='all', log=True):
+
+    # Define the list of IFUs to display
+    if ifus=='all':
+        ifus=[1,2,3,4,5,6,7,8,9,10,11,12,13]
+    else:
+        ifus=ifus
+
+    # Create a figure
+    f1=py.figure()
+    ax=f1.add_subplot(1,1,1, xlim=(118365,-118365), ylim=(-118365,118365), aspect='equal')
+    
+    for i, ifu in enumerate(ifus):
+
+        # Get the data.
+        ifu_data=utils.IFU(infile, ifu, flag_name=False)
+        
+        # Sum up the data - across a broad band, 200:1800 pixels.
+        data_sum=np.nansum(ifu_data.data[:,200:1800],axis=1)
+        data_med=stats.nanmedian(ifu_data.data[:,200:1800],axis=1)
+
+        # X and Y positions in microns.
+        x_m=ifu_data.x_microns
+        y_m=ifu_data.y_microns
+
+        # Blow up the hexabundle
+        x_m0=x_m[np.where(ifu_data.n==1)]
+        y_m0=y_m[np.where(ifu_data.n==1)]
+
+        x_m_delta=(x_m-x_m0)*20
+        y_m_delta=(y_m-y_m0)*20
+
+        x_m_new=x_m0+x_m_delta
+        y_m_new=y_m0+y_m_delta
+        
+        print x_m_delta
+        print y_m_delta
+
+        #x_lower=np.min(x_m)-100
+        #x_upper=np.max(x_m)+100
+
+        #y_lower=np.min(y_m)-100
+        #y_upper=np.max(y_m)+100
+
+        # Mask out the negative values that occur because of bad tp correction.
+        for value in data_sum:
+            if value<=0:
+                value=1
+
+        # If the log tag is True log the data array.
+        if log==True:
+            data_sum=np.log10(data_sum)
+
+        # Add a subplot to the figure.
+        field_circle=Circle(xy=(0,0), radius=118265, fc='none')
+        ax.add_artist(field_circle)
+        
+        # Normalise the data and select the colormap.
+        data_norm=data_sum/np.nanmax(data_sum)
+        mycolormap=py.get_cmap('YlGnBu_r')
+
+        fibres=[]
+        # Iterate over the x, y positions making a circle patch for each fibre, with the appropriate color.
+        for xval, yval, dataval in itertools.izip(x_m_new, y_m_new, data_norm):
+            #Add the fibre patch.
+            fibre=Circle(xy=(xval,yval), radius=1500)
+            fibres.append(fibre)
+            
+            fibre.set_facecolor(mycolormap(dataval))
+
+        allpatches=PatchCollection(fibres, cmap=mycolormap) 
+        allpatches.set_array(data_norm)
+
+        ax.add_collection(allpatches)
+        #py.colorbar(allpatches)
+
+        # Give each subplot a title (necessary?).
+        #title_string=string.join(['Probe ', str(ifu_data.ifu)])
+        #ax.set_title(title_string, fontsize=11)
+
+        # Get rid of the tick labels.
+        #py.setp(ax.get_xticklabels(), visible=False)
+        #py.setp(ax.get_yticklabels(), visible=False)
+
+        
 
 def raw(flat_file, object_file, IFU="unknown", sigma_clip=False, log=True, pix_waveband=100, pix_start="unknown"):
     
