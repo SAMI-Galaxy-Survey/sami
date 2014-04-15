@@ -1,77 +1,16 @@
-#########################################################################################
-###                                                                                   ###
-###################################--- sdss.py ---#######################################
-###                                                                                   ###
-#########################################################################################
+# sami.sdss
+# 
+# Contains functions used to interface between SAMI and SDSS. 
 #
-# Written by: Samuel Richards & Iraklis Konstantopoulos
+# Written by: Iraklis Konstantopoulos & Samuel Richards
 #
+# Initial development September 2012 -- March 2013, Iraklis Konstantopoulos. 
+# 
 # Contact: Samuel Richards - samuel@physics.usyd.edu.au
 # Maintainer: Iraklis Konstantopoulos - iraklis@aao.gov.au
 #
-# Version 5
-# 22/07/2013
-#
-#
-# Dependencies:
-#
-#       [1] sami.utils.ifu.py file has been edited to include GRP_MRA & GRP_MDEC, so
-#           get Lisa to add them permanently. The three lines of code to be added just
-#           before the "del hdulist" are:
-#
-#           -----
-#           # Object RA & DEC
-#           self.obj_ra=table_new.field('GRP_MRA')
-#           self.obj_dec=table_new.field('GRP_MDEC')
-#           -----
-#
-#       [2] Files are written/read in from this code, so check the files names match
-#           throughout this code if you change them.
-#
-#
-# Explanation of functions:
-#
-#   "RSS_SDSS_g"
-#
-#       This function convolves the sdss g-band filter with a Blue RSS frame to create
-#       a collapse IFU g-band image.
-#
-#   "RSS_SDSS_resampled"
-#   
-#       This function extracts the SDSS g-band image of the object given using the
-#       "GRP_MRA" & "GRP_MDEC" data in the RSS Fibre Table "FIBRES_IFU", and extracts
-#       the flux for a given IFU footprint.
-#
-#   "residual_data"
-#
-#       This function creates residual maps of functions "RSS_SDSS_g" -
-#       "RSS_SDSS_resampled". It outputs many variables that are used in the
-#       optimisation script for plotting/writing.
-#
-#   "residual_function"
-#
-#       This function creates residual maps of functions "RSS_SDSS_g" -
-#       "RSS_SDSS_resampled". It outputs one variable (the residual array) that is used
-#       in the optimisation function.
-#
-#   "bestfit_SDSS_g"
-#
-#       This function performs a best fit on the residual_function. It uses the scipy
-#       "leastsq" algorithm to do this with an initial guess of the minimum of the brute
-#       force residual grid. At the moment it still somewhat struggles with supious
-#       features like cosmic rays that give a high flux in an otherwise low flux fibre,
-#       and high flux foreground objects, but it is very good with "normal" targets,
-#       fitting in about 210secs per object per RSS. The output "p" is the offset in
-#       arcsec, and the output RA and DEC are the equated RA and DECs for that frame in
-#       degrees.
-#
-# "sim_SDSS_resampled"
-#
-#       This function is essentiall the same as "RSS_SDSS_resampled" but returns
-#       variables with the same names as an RSS frame to supply the code with a simulated
-#       frame instead of an RSS frame. This is used mainly in the testing of the code to
-#       see how robust the optimisation algorithms are, as it should be able to find
-#       itself.
+# Version 7
+# 25/02/2014
 #
 #   "getSDSSimage"
 #
@@ -79,15 +18,6 @@
 #       image with a user supplied set of parameters, which are explained with the
 #       function.
 #
-#   "getSDSSspectra"
-#
-#       NOTE: Not implemented, just a place holder with brief notes on what to do.
-#
-#   "gauss_kern" & "blur_image"
-#
-#       Following two functions from scipy cookbook to use a Gaussian kernal to blur an
-#       image. It was taken from: http://www.scipy.org/Cookbook/SignalSmooth
-# 
 #   "sb" 
 #
 #       Plot a surface brightness map for an SDSS image. Takes arguments controlling the 
@@ -95,840 +25,87 @@
 #       but translates the flux of a given pixel to a surface brightness to the requested 
 #       scale. Mental arithmetics required for interpretation. 
 #
+#  "ten"
+#
+#       Converts from sexagessimal to decimal. 
+# 
+#  "sixty"
+#
+#       Converts from decimal to sexagessimal. 
+# 
+#  "sim_sdss_cube"
+#
+#       Produce a mock g-band image from a blue SAMI cube. Throughputs from: 
+#       - SDSS:    http://www.sdss.org/dr5/instruments/imager/index.html#filters
+#       - AAOmega: http://www.aao.gov.au/cgi-bin/aaomega_calc.cgi
+#       WARNING! A couple of lines pertaining to NaNs in the reconstruct arrays were 
+#       commented out, as the nansum should take care of this. Testing required. 
+# 
+#  "sim_sdss_rss"
+#
+#       Produce a mock g-band image from a SAMI row-stacked spectrum (RSS). 
+# 
+#  "overlay"
+#
+#       Overlay a SAMI bundle schematic onto a fits image. 
+# 
+#  "bundle_definition"
+#
+#       Make a definition file containing a schematic of a SAMI fibre bundle. 
+# 
 #########################################################################################
 
 import numpy as np
-import pylab as py
 import scipy as sp
-import sami.utils as utils
-import sami.samifitting as sf
 import astropy.io.fits as pf
-import astropy.io.ascii as ascii
-from scipy.interpolate import griddata
-import scipy.optimize as optimize
-from matplotlib.collections import PatchCollection
-from matplotlib.patches import Circle
-from matplotlib.patches import Rectangle
 import urllib
-import os
-import datetime
-py.ioff()
+
+import pylab as py
+import sami.utils as utils
+import matplotlib.patches as patches
+import matplotlib.pyplot as plt
+import astropy.io.ascii as tab
+from scipy.interpolate import griddata
+import sys
 
 #########################################################################################
-#
-# "RSS_SDSS_g"
-#
-#   This function convolves the sdss g-band filter with a Blue RSS frame to create a
-#   collapse IFU g-band image.
-#
 
-def RSS_SDSS_g(RSS_file="unknown", GAMA_ID="unknown", IFU=1, show="False", write="False"):
-
-    # Get RSS file name without ".fits"
-    RSS_file_name = RSS_file[(len(RSS_file)-18):(len(RSS_file)-5)]
-    
-    # Read RSS file (GAMA_ID-specific input).
-    if GAMA_ID!="unknown":
-        myIFU = utils.IFU(RSS_file, GAMA_ID)
-    else: myIFU = utils.IFU(RSS_file, IFU, flag_name=False)
-    GAMA_ID=str(myIFU.name)
-
-    # Get wavelength axis as an aspect of the sami.utils.IFU class
-    wave = myIFU.lambda_range
-
-    # Get SDSS g-band throughput curve
-    if not os.path.isfile("sdss_g.dat"):
-        urllib.urlretrieve("http://www.sdss.org/dr3/instruments/imager/filters/g.dat", "sdss_g.dat")
-
-    # and convolve with the SDSS throughput (should live in a library)
-    sdss_g = ascii.read("SDSS_g.dat", quotechar="#", names=["wave", "pt_secz=1.3", "ext_secz=1.3", "ext_secz=0.0", "extinction"])
-
-    # re-grid g["wave"] -> wave
-    thru_regrid = griddata(sdss_g["wave"], sdss_g["ext_secz=1.3"], wave, method="cubic", fill_value=0.0)
-
-    # initialise a simulated g' band flux array
-    reconstruct = np.zeros(len(myIFU.n))
-    tester = np.zeros(len(myIFU.n))
-
-    # Sum convolved flux:
-    for i in range(len(myIFU.n)):
-        reconstruct[i] = np.nansum(np.absolute(myIFU.data[i] * thru_regrid))
+def getSDSSimage(object_name="unknown", RA=0, DEC=0, band="g", size=0.006944,
+                 number_of_pixels=50, projection="Tan", url_show="False"):
+    """This function queries the SDSS surver at skyview.gsfc.nasa.gov and returns an image
+        with a user supplied set of parameters.
         
-    reconstruct[np.isnan(reconstruct)] = 0. # replacing nan with 0.0
-    reconstruct[reconstruct < 0] = 0.       # replacing negative fluxes with 0.0
+        A full description of the input parameters is given at -
+        http://skyview.gsfc.nasa.gov/docs/batchpage.html
         
-    # Check if the user supplied a red RSS file, throw exception.
-    if np.array_equal(reconstruct, tester):
-        raise SystemExit("All values are zero: please check if you might have input a RED spectrum!")
-
-    # Relative fibre positions to Fibre#1 (Plate scale of 15.22"/mm)
-    fibre_xpos_arcsec = (15.22/1000)*(myIFU.x_microns - myIFU.x_microns[myIFU.n == 1])
-    fibre_ypos_arcsec = (15.22/1000)*(myIFU.y_microns - myIFU.y_microns[myIFU.n == 1])
-
-    # Position of GAMA object from the RSS file, but defined by the target selection .dat file on the wiki. Might have slight manual offset from true galaxy position, but is the SAMI working position, so is used here.
-    obj_ra = np.around(myIFU.obj_ra[myIFU.n == 1], decimals=6)
-    obj_dec = np.around(myIFU.obj_dec[myIFU.n == 1], decimals=6)
-
-    RSS_SDSS_g_flux = reconstruct
-
-    # Self normalisation
-    RSS_SDSS_g_flux = (RSS_SDSS_g_flux - np.min(RSS_SDSS_g_flux))/np.max(RSS_SDSS_g_flux - np.min(RSS_SDSS_g_flux))
-
-    # Write out g-band convolved data
-    if write=="True":
-        # Write data
-        outstring = zip(fibre_xpos_arcsec, fibre_ypos_arcsec, RSS_SDSS_g_flux)
-        f = open(str(myIFU.name)+"_RSS_"+str(RSS_file_name)+"_SDSS_g.txt", "w")
-        f.write("# Column 1: Respective x position in arcseconds"+"\n")
-        f.write("# Column 2: Respective y position in arcseconds"+"\n")
-        f.write("# Column 3: SDSS g-band flux"+"\n")
-        f.write("# Position of Object ["+str(GAMA_ID)+"](deg): "+str(obj_ra[0])+", "+str(obj_dec[0])+"\n"+"\n")
-        for line in outstring:
-            f.write(" ".join(str(x) for x in line) + "\n")
-        f.close()
-
-    if show=="True" or write=="True":
-    
-        # Plot fibres with normalised colourmap
-        x = fibre_xpos_arcsec
-        y = fibre_ypos_arcsec
-        radii = np.zeros(len(fibre_xpos_arcsec)) + 0.8
-        patches = []
-        for x1,y1,r in zip(x, y, radii):
-            circle = Circle((x1,y1), r)
-            patches.append(circle)
-        fig1 = py.figure()
-        fig1.set_size_inches(6,6)
-        ax = fig1.add_subplot(1,1,1)
-        ax.set_aspect('equal')
-        colors = RSS_SDSS_g_flux
-        pa = PatchCollection(patches, cmap=py.cm.Blues)
-        pa.set_array(colors)
-        ax.add_collection(pa)
-        py.colorbar(pa)
-        py.axis([-8., 8., -8., 8.])
-        py.xlabel("Delta(RA) [arcsec]")
-        py.ylabel("Delta(DEC) [arcsec]")
-        py.title("GAMA_ID = "+str(GAMA_ID)+"\n"+"RSS_file = "+RSS_file+"\n"+"RSS g-band image")
-        if write=="True":
-            py.savefig(str(myIFU.name)+"_RSS_"+str(RSS_file_name)+"_SDSS_g.png", bbox_inches=0)
-        if show=="True":
-            py.show()
-
-
-    return fibre_xpos_arcsec, fibre_ypos_arcsec, RSS_SDSS_g_flux, obj_ra, obj_dec
-
-#########################################################################################
-#
-# "RSS_SDSS_resampled"
-#
-#   This function extracts the SDSS g-band image of the object given using the "GRP_MRA"
-#   & "GRP_MDEC" data in the RSS Fibre Table "FIBRES_IFU", and extracts the flux for a
-#   given IFU footprint.
-#
-
-def RSS_SDSS_resampled(RSS_file="unknown", GAMA_ID="unknown", IFU=1, x_offset=0, y_offset=0, band="g", show="False", write="False"):
-
-    # Get RSS file name without ".fits"
-    RSS_file_name = RSS_file[(len(RSS_file)-18):(len(RSS_file)-5)]
+        The parameters that can be set here are:
         
-    # Read RSS file (GAMA_ID-specific input)
-    if GAMA_ID!="unknown":
-        myIFU = utils.IFU(RSS_file, GAMA_ID)
-    else: myIFU = utils.IFU(RSS_file, IFU, flag_name=False)
-    GAMA_ID=str(myIFU.name)
-
-    # Converts arcsec offset into degrees as the SDSS image WCS are in degrees
-    x_offset_deg = x_offset/3600.
-    y_offset_deg = y_offset/3600.
-
-    # Relative fibre degree positions to Fibre#1 with applied offset
-    pos_off_x = (((myIFU.x_microns - myIFU.x_microns[myIFU.n==1])*(15.22/1000.))/3600.) + x_offset_deg
-    pos_off_y = (((myIFU.y_microns - myIFU.y_microns[myIFU.n==1])*(15.22/1000.))/3600.) + y_offset_deg
-
-    fibre_xpos_raw = (((myIFU.x_microns - myIFU.x_microns[myIFU.n==1])*(15.22/1000.)))
-    fibre_ypos_raw = (((myIFU.y_microns - myIFU.y_microns[myIFU.n==1])*(15.22/1000.)))
-
-    # Relative fibre positions in arcsec with applied offset to original RSS position
-    fibre_xpos_arcsec = pos_off_x*3600
-    fibre_ypos_arcsec = pos_off_y*3600
-
-    # Position of GAMA object from the RSS file, but defined by the target selection .dat file on the SAMI_Wiki. Might have slight manual offset from true galaxy position, but is the SAMI working position, so is used here.
-    obj_ra = np.around(myIFU.obj_ra[myIFU.n == 1], decimals=6)
-    obj_dec = np.around(myIFU.obj_dec[myIFU.n == 1], decimals=6)
-
-    # Extract SDSS g-band image if not already in working directory.
-    # Returns 250x250 image with a side of ~25" and a pixel size of ~0.1". These are "~" because the SDSS surver works in degrees.
-    if not os.path.isfile(str(myIFU.name)+"_SDSS_g.fits"):
-        getSDSSimage(GAMA_ID=GAMA_ID, RA=obj_ra[0], DEC=obj_dec[0], band=str(band), size=0.00695, number_of_pixels=250, projection="Tan")
-
-    # Open SDSS image and extract data & header information
-    image_file = pf.open(str(myIFU.name)+"_SDSS_g.fits")
-    
-    image_data = image_file['Primary'].data
-    image_header = image_file['Primary'].header
-    
-    img_crval1 = float(image_header['CRVAL1']) #RA
-    img_crval2 = float(image_header['CRVAL2']) #DEC
-    img_crpix1 = float(image_header['CRPIX1']) #Reference x-pixel
-    img_crpix2 = float(image_header['CRPIX2']) #Reference y-pixel
-    img_cdelt1 = float(image_header['CDELT1']) #Delta RA
-    img_cdelt2 = float(image_header['CDELT2']) #Delta DEC
-    img_naxis1 = float(image_header['NAXIS1']) #Number of pixels in x-direction
-    img_naxis2 = float(image_header['NAXIS2']) #Number of pixels in y-direction
-
-    # Smooth SDSS image to median seeing of 1.8arcsec
-    sigma = 2*np.sqrt(2*np.log(2))*(1.8/1)
-    n = sigma
-    image_data_smoothed = blur_image(image_data, n, ny=None)
-    image_data = image_data_smoothed
-
-    # Get SDSS g-band fluxes of each fibre from the SDSS image
-    SDSS_flux = []
-    x_pix_positions = []
-    y_pix_positions = []
+        name - object name to include in file name for reference
+        RA - in degrees
+        DEC - in degrees
+        band - u,g,r,i,z filters
+        size - size of side of image in degrees
+        number_of_pixels - number of pixels of side of image (i.e 50 will return 50x50)
+        projection - 2D mapping of onsky projection. Tan is standard.
+        url_show - this is a function variable if the user wants the url printed to terminal
         
-    for i in xrange(np.shape(fibre_xpos_raw)[0]):
-            
-        # Image pixel positions of a fibre
-        x_pix_pos = ((pos_off_x[i]) / img_cdelt1) + img_crpix1
-        y_pix_pos = ((pos_off_y[i]) / img_cdelt2) + img_crpix2
-        
-        x_pix_positions.append(x_pix_pos)
-        y_pix_positions.append(y_pix_pos)
-            
-        # Fibre radius in units of pixels (Fibre core diamter = 1.6")
-        fibre_radius = ((1.6/2) / 3600) / img_cdelt1
-            
-        # Weight map array of SDSS image for the footprint of one fibre on the image
-        weight = utils.resample_circle(img_naxis1, img_naxis2, (-1)*x_pix_pos, y_pix_pos, fibre_radius)
-            
-        # Multiply weight map & SDSS image data
-        SDSS_flux_fibre_array = image_data * weight
-            
-        # NaNsum eitre flux array to get flux in one fibre
-        SDSS_flux_fibre = np.nansum(SDSS_flux_fibre_array)
-            
-        # Append each fibre flux to list
-        SDSS_flux.append(SDSS_flux_fibre)
+        """
     
-    # Self normalisation
-    SDSS_flux = (SDSS_flux - np.min(SDSS_flux))/np.max(SDSS_flux - np.min(SDSS_flux))
-
-    # Write out g-band convolved data
-    if write=="True":
-        # Write data
-        outstring = zip(fibre_xpos_arcsec, fibre_ypos_arcsec, SDSS_flux)
-        f = open(GAMA_ID+"_RSS_"+str(RSS_file_name)+"_SDSS_"+str(band)+"_resampled.txt", "w")
-        f.write("# Column 1: Respective x position in arcseconds"+"\n")
-        f.write("# Column 2: Respective y position in arcseconds"+"\n")
-        f.write("# Column 3: Normalised SDSS "+str(band)+"-band flux"+"\n")
-        f.write("# Position of Object ["+str(GAMA_ID)+"](deg): "+str(obj_ra[0])+", "+str(obj_dec[0])+"\n"+"\n")
-        for line in outstring:
-            f.write(" ".join(str(x) for x in line) + "\n")
-        f.close()
-
-    if show=="True" or write=="True":
-    
-        # Plot fibres with normalised colourmap
-        x = fibre_xpos_arcsec
-        y = fibre_ypos_arcsec
-        radii = np.zeros(len(fibre_xpos_arcsec)) + 0.8
-        patches = []
-        for x1,y1,r in zip(x, y, radii):
-            circle = Circle((x1,y1), r)
-            patches.append(circle)
-        fig1 = py.figure()
-        fig1.set_size_inches(6,6)
-        ax = fig1.add_subplot(1,1,1)
-        ax.set_aspect('equal')
-        colors = SDSS_flux
-        pa = PatchCollection(patches, cmap=py.cm.Blues)
-        pa.set_array(colors)
-        ax.add_collection(pa)
-        py.colorbar(pa)
-        py.axis([-8., 8., -8., 8.])
-        py.xlabel("Delta(RA) [arcsec]")
-        py.ylabel("Delta(DEC) [arcsec]")
-        py.title("GAMA_ID = "+str(GAMA_ID)+"\n"+"RSS_file = "+RSS_file+"\n"+"SDSS g-band resampled image")
-        if write=="True":
-            py.savefig(str(myIFU.name)+"_RSS_"+str(RSS_file_name)+"_SDSS_"+str(band)+"_resampled.png", bbox_inches=0)
-        if show=="True":
-            py.show()
-        
-
-    return fibre_xpos_arcsec, fibre_ypos_arcsec, SDSS_flux, obj_ra, obj_dec
-
-#########################################################################################
-#
-# "residual_data"
-#
-#   This function creates residual maps of functions "RSS_SDSS_g" - "RSS_SDSS_resampled".
-#
-#   It outputs many variables that are used in the optimisation script for plotting/
-#   writing.
-#
-
-def residual_data(p0, RSS_file, GAMA_ID, IFU=1, sim="False", sim_x_off=1, sim_y_off=1, show="False", write="False"):
-    
-    # Print x_offset, y_offset, and flux scale factor to see what the optimisation code is doing. The offsets need to be in arcsec.
-    print "x_offset: ",p0[0]
-    print "y_offset: ",p0[1]
-    print "#####" # This is just a line spacer to make it easier to read in the terminal.
-    
-    ### Step 1 ###
-    if sim=="True":
-        fibre_xpos_arcsec, fibre_ypos_arcsec, RSS_SDSS_g_flux, obj_ra, obj_dec = sim_SDSS_resampled(RSS_file=RSS_file, GAMA_ID=GAMA_ID, IFU=IFU, sim_x_off=sim_x_off, sim_y_off=sim_y_off, show=show, write=write)
-    else:
-        # Get collapse normalised g-band fluxes from RSS file using SDSS g-band filter
-        fibre_xpos_arcsec, fibre_ypos_arcsec, RSS_SDSS_g_flux, obj_ra, obj_dec = RSS_SDSS_g(RSS_file=RSS_file, GAMA_ID=GAMA_ID, IFU=IFU, show=show, write=write)
-    
-    # Define variables ("raw" denotes the original RSS)
-    raw_xpos_arcsec = np.asarray(fibre_xpos_arcsec)
-    raw_ypos_arcsec = np.asarray(fibre_ypos_arcsec)
-    raw_g_flux = np.asarray(RSS_SDSS_g_flux)
-    raw_obj_ra = np.asarray(obj_ra[0]) #in degrees
-    raw_obj_dec = np.asarray(obj_dec[0]) #in degrees
-    
-    ### Step 2 ###
-    # Get collapse normalised g-band fluxes from IFU overlay on SDSS g-band image
-    fibre_xpos_arcsec, fibre_ypos_arcsec, SDSS_flux, obj_ra, obj_dec = RSS_SDSS_resampled(RSS_file=RSS_file, GAMA_ID=GAMA_ID, IFU=IFU, x_offset=p0[0], y_offset=p0[1], band="g", show=show, write=write)
-    
-    # Define variables ("off" denotes the resampled image after offsets applied)
-    off_xpos_arcsec = np.asarray(fibre_xpos_arcsec)
-    off_ypos_arcsec = np.asarray(fibre_ypos_arcsec)
-    off_g_flux = np.asarray(SDSS_flux)
-    off_obj_ra = np.asarray(obj_ra[0]) #in degrees
-    off_obj_dec = np.asarray(obj_dec[0]) #in degrees
-    
-    ### Step 3 ###
-    # Find residual
-    # use original fibre positions (just relative offsets)
-    x_pos_arcsec = raw_xpos_arcsec
-    residual_flux = off_g_flux - raw_g_flux
-    sumsq_flux = np.nansum(np.power(residual_flux,2))
-        
-    # Plot residual maps
-    if show=="True" or write=="True":
-        
-        # Plot fibres with colourmap
-        x = raw_xpos_arcsec
-        y = raw_ypos_arcsec
-        radii = np.zeros(len(raw_xpos_arcsec)) + 0.8
-        patches = []
-        for x1,y1,r in zip(x, y, radii):
-            circle = Circle((x1,y1), r)
-            patches.append(circle)
-        fig1 = py.figure()
-        fig1.set_size_inches(6,6)
-        ax = fig1.add_subplot(1,1,1)
-        ax.set_aspect('equal')
-        colors = residual_flux
-        pa = PatchCollection(patches, cmap="RdBu")
-        pa.set_array(colors)
-        ax.add_collection(pa)
-        py.colorbar(pa)
-        py.axis([-8., 8., -8., 8.])
-        min = np.min(residual_flux)
-        max = np.max(residual_flux)
-        if np.absolute(min) > np.absolute(max):
-            pa.set_clim([min,-min])
-        else: pa.set_clim([-max,max])
-        py.xlabel("Delta(RA) [arcsec]")
-        py.ylabel("Delta(DEC) [arcsec]")
-        py.title("GAMA_ID = "+GAMA_ID+"\n"+"RSS_file = "+RSS_file+"\n"+"g-band residual image")
-        if write=="True":
-            # Get RSS file name without ".fits"
-            RSS_file_name = RSS_file[(len(RSS_file)-18):(len(RSS_file)-5)]
-            py.savefig(str(GAMA_ID)+"_RSS_"+str(RSS_file_name)+"_SDSS_g_residual.png", bbox_inches=0)
-        if show=="True":
-            py.show()
-        
-    
-    return raw_xpos_arcsec, raw_ypos_arcsec, raw_obj_ra, raw_obj_dec, raw_g_flux, off_xpos_arcsec, off_ypos_arcsec, off_g_flux, residual_flux, sumsq_flux
-
-#########################################################################################
-#
-# "residual_function"
-#
-#   This function creates residual maps of functions "RSS_SDSS_g" - "RSS_SDSS_resampled"
-#   for both the fibre map and also the grids.
-#
-#   It outputs one variable (the residual array) that is used in the optimisation
-#   function.     
-#
-
-def residual_function(p0, RSS_file, GAMA_ID, sim, sim_x_off, sim_y_off, IFU=1, show="False", write="False"):
-
-    # Print x_offset, y_offset, and flux scale factor to see what the optimisation code is doing. The offsets need to be in arcsec.
-    print "x_offset: ",p0[0]
-    print "y_offset: ",p0[1]
-    print "#####" # This is just a line spacer to make it easier to read in the terminal.
-    
-    ### Step 1 ###
-    if sim=="True":
-        fibre_xpos_arcsec, fibre_ypos_arcsec, RSS_SDSS_g_flux, obj_ra, obj_dec = sim_SDSS_resampled(RSS_file=RSS_file, GAMA_ID=GAMA_ID, IFU=IFU, sim_x_off=sim_x_off, sim_y_off=sim_y_off, show=show, write=write)
-    else:
-        # Get collapse normalised g-band fluxes from RSS file using SDSS g-band filter
-        fibre_xpos_arcsec, fibre_ypos_arcsec, RSS_SDSS_g_flux, obj_ra, obj_dec = RSS_SDSS_g(RSS_file=RSS_file, GAMA_ID=GAMA_ID, IFU=IFU, show=show, write=write)
-
-    # Define variables ("raw" denotes the original RSS)
-    raw_g_flux = np.asarray(RSS_SDSS_g_flux)
-    
-    ### Step 2 ###
-    # Get collapse normalised g-band fluxes from IFU overlay on SDSS g-band image
-    fibre_xpos_arcsec, fibre_ypos_arcsec, SDSS_flux, obj_ra, obj_dec = RSS_SDSS_resampled(RSS_file=RSS_file, GAMA_ID=GAMA_ID, IFU=IFU, x_offset=p0[0], y_offset=p0[1], band="g", show=show, write=write)
-    
-    # Define variables ("off" denotes the resampled image after offsets applied)
-    off_g_flux = np.asarray(SDSS_flux)
-    
-    ### Step 3 ###
-    # Find residual
-    residual_flux = off_g_flux - raw_g_flux
-    
-    residual_flux = residual_flux.ravel()
-
-    return residual_flux
-
-#########################################################################################
-#
-# "bestfit_SDSS_g"
-#
-#   This function performs a best fit on the residual_function. It uses the scipy
-#   "leastsq" algorithm to do this with an initial guess of the minimum of the brute
-#   force residual grid. At the moment it still somewhat struggles with supious features
-#   like cosmic rays that give a high flux in an otherwise low flux fibre, and high flux
-#   foreground objects, but it is very good with "normal" targets, fitting in about
-#   210secs per object per RSS. The output "p" is the offset in arcsec, and the output RA
-#   and DEC are the equated RA and DECs for that frame in degrees.
-#
-
-def bestfit_SDSS_g(RSS_file="unknown", GAMA_ID="unknown", IFU=1, sim="False", sim_off="unkown", sim_x_off=0, sim_y_off=0, show="False", write="False"):
-    
-    start_time = datetime.datetime.now()
-    print("### Best Fit Start Time: "+start_time.strftime("%Y-%m-%d %H:%M:%S"))
-
-    # Get RSS file name without ".fits"
-    RSS_file_name = RSS_file[(len(RSS_file)-18):(len(RSS_file)-5)]
-        
-    # Read RSS file (GAMA_ID-specific input)
-    if GAMA_ID!="unknown":
-        myIFU = utils.IFU(RSS_file, GAMA_ID)
-    else: myIFU = utils.IFU(RSS_file, IFU, flag_name=False)
-    GAMA_ID=str(myIFU.name)
-
-    # Relative fibre positions to Fibre#1 (Plate scale of 15.22"/mm)
-    fibre_xpos_arcsec = (15.22/1000)*(myIFU.x_microns - myIFU.x_microns[myIFU.n == 1])
-    fibre_ypos_arcsec = (15.22/1000)*(myIFU.y_microns - myIFU.y_microns[myIFU.n == 1])
-
-
-    # Offset pattern for sim data
-    if sim_off=="A":
-        sim_x_off=0
-        sim_y_off=0
-    if sim_off=="B":
-        sim_x_off=-0.6
-        sim_y_off=0.4
-    if sim_off=="C":
-        sim_x_off=0
-        sim_y_off=-0.7
-    if sim_off=="D":
-        sim_x_off=0.6
-        sim_y_off=0.4
-    if sim_off=="E":
-        sim_x_off=-0.6
-        sim_y_off=-0.4
-    if sim_off=="F":
-        sim_x_off=0.6
-        sim_y_off=-0.4
-    if sim_off=="G":
-        sim_x_off=0
-        sim_y_off=0.7
-
-    ########## OPTIMIZE ############
-    
-    ### My own grid ### ~185s
-    x = np.linspace(-2,2,20)
-    y = np.linspace(-2,2,20)
-    x_coors = []
-    y_coors = []
-    sumsq_vals = []
-    for x_coor in x:
-        for y_coor in y:
-            raw_xpos_arcsec, raw_ypos_arcsec, raw_obj_ra, raw_obj_dec, raw_g_flux, off_xpos_arcsec, off_ypos_arcsec, off_g_flux, residual_flux, sumsq_flux = residual_data([x_coor, y_coor], str(RSS_file), str(GAMA_ID), sim=sim, sim_x_off=sim_x_off, sim_y_off=sim_y_off)
-            x_coors.append(x_coor)
-            y_coors.append(y_coor)
-            sumsq_vals.append(sumsq_flux)
-    print x_coors[sumsq_vals.index(np.min(sumsq_vals))], y_coors[sumsq_vals.index(np.min(sumsq_vals))], sumsq_vals[sumsq_vals.index(np.min(sumsq_vals))]
-
-    g = [x_coors[sumsq_vals.index(np.min(sumsq_vals))],y_coors[sumsq_vals.index(np.min(sumsq_vals))]]
-
-    ### leastsq ### ~25s (including SDSS g-band image download 262KB)
-    p0_guess = [g[0],g[1]] # Initial guess is minimum of above sumsq grid
-    print p0_guess
-    # The "epsfcn" variable was asigned by changing it until the best fit happened for a variety of objects and offsets. This is the value for SAMI, but would be different for another purpose.
-    p, cov_p, infodict, mesg, ier = optimize.leastsq(residual_function,p0_guess,args=(str(RSS_file), str(GAMA_ID), sim, sim_x_off, sim_y_off), epsfcn=2.3, full_output=1)
-    print p
-
-    ########## OPTIMIZE - COMPLETED ############
-
-    # get residual data from new set of offsets from optimisation
-    raw_xpos_arcsec, raw_ypos_arcsec, raw_obj_ra, raw_obj_dec, raw_g_flux, off_xpos_arcsec, off_ypos_arcsec, off_g_flux, residual_flux, sumsq_flux  = residual_data([p[0], p[1]], str(RSS_file), str(GAMA_ID), sim=sim, sim_x_off=sim_x_off, sim_y_off=sim_y_off)
-
-    RA = raw_obj_ra - (p[0]/3600)
-    DEC = raw_obj_dec + (p[1]/3600)
-            
-    print " RA: ", RA
-    print "DEC: ", DEC
-
-    if show=="True" or write=="True":
-        
-        # Close all open plots to allow overlay of subplots
-        py.close("all")
-        
-        ### FIGURE 1 ###
-        # Best fit plots of fibres
-        fig = py.figure(1)
-        fig.set_size_inches(36, 6.5)
-        fig.suptitle("Offset Fit for GAMA_ID = "+str(GAMA_ID)+",     RSS = "+str(RSS_file)+",     Onsky Position: {0:.6f}".format(RA)+", {0:.6f}".format(DEC)+" degrees,     Offset = {0:.3f}".format(p[0])+", {0:.3f}".format(p[1])+" arcsecs", fontsize=18)
-
-        # SUBPLOT-1 Plot raw_flux with onsky positions
-        ax = fig.add_subplot(1,5,1)
-        ax.set_aspect('equal')
-        x = fibre_xpos_arcsec
-        y = fibre_ypos_arcsec
-        radii = np.zeros(len(fibre_xpos_arcsec)) + 0.8
-        patches = []
-        for x1,y1,r in zip(x, y, radii):
-            circle = Circle((x1,y1), r)
-            patches.append(circle)
-        colors =(raw_g_flux - np.min(raw_g_flux))/np.max(raw_g_flux - np.min(raw_g_flux))
-        pa = PatchCollection(patches, cmap=py.cm.Blues)
-        pa.set_array(colors)
-        ax.add_collection(pa)
-        py.axis([-10, 10, -10, 10])
-        py.xlabel("Delta(RA) [arcsec]")
-        py.ylabel("Delta(DEC) [arcsec]")
-        py.title("RSS g-band image")
-
-        # SUBPLOT-2 Overlay figure for with IFU
-        image_file = pf.open(str(GAMA_ID)+"_SDSS_g.fits")
-        image_data = image_file['Primary'].data
-        image_header = image_file['Primary'].header
-        img_crval1 = float(image_header['CRVAL1']) #RA
-        img_crval2 = float(image_header['CRVAL2']) #DEC
-        img_crpix1 = float(image_header['CRPIX1']) #Reference x-pixel
-        img_crpix2 = float(image_header['CRPIX2']) #Reference y-pixel
-        img_cdelt1 = float(image_header['CDELT1']) #Delta RA
-        img_cdelt2 = float(image_header['CDELT2']) #Delta DEC
-        img_naxis1 = float(image_header['NAXIS1']) #Number of pixels in x-direction
-        img_naxis2 = float(image_header['NAXIS2']) #Number of pixels in y-direction
-        x_pix_positions = []
-        y_pix_positions = []
-        for k in xrange(61):
-            # Image pixel positions of a fibre
-            x_pix_pos = ((off_xpos_arcsec[k]/3600) / img_cdelt1) + img_crpix1
-            y_pix_pos = ((off_ypos_arcsec[k]/3600) / img_cdelt2) + img_crpix2
-            x_pix_positions.append(x_pix_pos)
-            y_pix_positions.append(y_pix_pos)
-        ax = fig.add_subplot(1,5,2)
-        ax.set_aspect('equal')
-        py.imshow(image_data, cmap='gist_yarg', aspect="equal")
-        py.xlim(0,250)
-        py.ylim(0,250)
-        x_pix_positions_inv = ((-1)*(np.asarray(x_pix_positions)-img_crpix1)) + img_crpix1
-        x = x_pix_positions_inv
-        y = y_pix_positions
-        patches = []
-        for x1,y1 in zip(x, y):
-            circ = Circle((x1,y1), ((0.8/3600)/img_cdelt1))
-            patches.append(circ)
-        pa = PatchCollection(patches, edgecolor='red', facecolor='none', linewidth=0.75)
-        ax.add_collection(pa)
-        py.scatter(img_crpix1, img_crpix2, marker="+", s=100, color="b")
-        py.setp(ax.get_xticklabels(), visible=False)
-        py.setp(ax.get_yticklabels(), visible=False)
-        py.title("SDSS g-band image with offset overlay")
-        py.xlabel("<--- 25 arcsec --->")
-        py.ylabel("<--- 25 arcsec --->")
-    
-        # SUBPLOT-3 Plot off_flux with onsky positions
-        ax = fig.add_subplot(1,5,3)
-        ax.set_aspect('equal')
-        x = fibre_xpos_arcsec
-        y = fibre_ypos_arcsec
-        radii = np.zeros(len(fibre_xpos_arcsec)) + 0.8
-        patches = []
-        for x1,y1,r in zip(x, y, radii):
-            circle = Circle((x1,y1), r)
-            patches.append(circle)
-        colors =(off_g_flux - np.min(off_g_flux))/np.max(off_g_flux - np.min(off_g_flux))
-        pa = PatchCollection(patches, cmap=py.cm.Blues)
-        pa.set_array(colors)
-        ax.add_collection(pa)
-        py.axis([-10, 10, -10, 10])
-        py.xlabel("Delta(RA) [arcsec]")
-        py.ylabel("Delta(DEC) [arcsec]")
-        py.title("SDSS g-band image resampled")
-        
-        # SUBPLOT-4 Plot sumsq_grid
-        ax = fig.add_subplot(1,5,4)
-        ax.set_aspect('equal')
-        x = np.asarray(x_coors)
-        y = np.asarray(y_coors)
-        patches = []
-        for x1,y1 in zip(x, y):
-            rect = Rectangle((x1-0.1,y1-0.1), 0.2,0.2 , ec="none")
-            patches.append(rect)
-        colors = np.asarray(sumsq_vals)
-        pa = PatchCollection(patches, cmap=py.cm.jet)
-        pa.set_array(colors)
-        ax.add_collection(pa)
-        pa.set_clim([np.min(sumsq_vals),np.max(sumsq_vals)])
-        py.axis([-2.5, 2.5, -2.5, 2.5])
-        py.scatter(g[0], g[1],color='r',marker='x', s=100)
-        py.scatter(p[0], p[1], color='1.0',marker='x', s=100)
-        py.xlabel("Delta(RA) [arcsec]")
-        py.ylabel("Delta(DEC) [arcsec]")
-        py.title("Grid of E(d2) values for each offset, best = {0:.4f}".format(sumsq_flux))
-
-        # SUBPLOT-5 Plot res_flux with onsky positions
-        ax = fig.add_subplot(1,5,5)
-        ax.set_aspect('equal')
-        x = fibre_xpos_arcsec
-        y = fibre_ypos_arcsec
-        radii = np.zeros(len(fibre_xpos_arcsec)) + 0.8
-        patches = []
-        for x1,y1,r in zip(x, y, radii):
-            circle = Circle((x1,y1), r)
-            patches.append(circle)
-        colors = residual_flux
-        pa = PatchCollection(patches, cmap=py.cm.RdBu)
-        pa.set_array(colors)
-        ax.add_collection(pa)
-        py.colorbar(pa)
-        py.axis([-10, 10, -10, 10])
-        min = np.min(residual_flux)
-        max = np.max(residual_flux)
-        if np.absolute(min) > np.absolute(max):
-            pa.set_clim([min,-min])
-        else: pa.set_clim([-max,max])
-        py.xlabel("Delta(RA) [arcsec]")
-        py.ylabel("Delta(DEC) [arcsec]")
-        py.title("Offset residuals")
-            
-        if write=="True":
-            if sim=="True":
-                # Save figure in high-resolution
-                py.savefig(str(GAMA_ID)+"_"+str(RSS_file_name)+"_SDSS_g_bestfit_fibres_sim_"+str(sim_off)+".png", bbox_inches=0, dpi=300)
-            else:
-                # Save figure in high-resolution
-                py.savefig(str(GAMA_ID)+"_"+str(RSS_file_name)+"_SDSS_g_bestfit_fibres_chi2.png", bbox_inches=0, dpi=300)
-        if show=="True":
-            py.show()
-        
-
-    end_time = datetime.datetime.now()
-    print("### End Time: "+end_time.strftime("%Y-%m-%d %H:%M:%S"))
-    
-    print("### Time to solve best fit for object "+str(GAMA_ID)+": {0}".format(end_time-start_time))
-    
-    notes = "############# ---- This is the end of the script ---- #############"
-    
-    return p, RA, DEC, sumsq_flux, notes
-
-#########################################################################################
-#
-# "sim_SDSS_resampled"
-#
-#   This function is essentiall the same as "RSS_SDSS_resampled" but returns variables
-#   with the same names as an RSS frame to supply the code with a simulated frame instead
-#   of an RSS frame. This is used mainly in the testing of the code to see how robust the
-#   optimisation algorithms are, as it should be able to find itself.
-#
-
-def sim_SDSS_resampled(RSS_file="unknown", GAMA_ID="unknown", IFU=1, sim_x_off=1, sim_y_off=1, band="g", show="False", write="False"):
-    
-    # Get RSS file name without ".fits"
-    RSS_file_name = RSS_file[(len(RSS_file)-18):(len(RSS_file)-5)]
-    
-    # Read RSS file (GAMA_ID-specific input)
-    if GAMA_ID!="unknown":
-        myIFU = utils.IFU(RSS_file, GAMA_ID)
-    else: myIFU = utils.IFU(RSS_file, IFU, flag_name=False)
-    GAMA_ID=str(myIFU.name)
-    
-    # Converts arcsec offset into degrees as the SDSS image WCS are in degrees
-    x_offset_deg = sim_x_off/3600.
-    y_offset_deg = sim_y_off/3600.
-    
-    # Relative fibre degree positions to Fibre#1 with applied offset
-    pos_off_x = (((myIFU.x_microns - myIFU.x_microns[myIFU.n==1])*(15.22/1000.))/3600.) + x_offset_deg
-    pos_off_y = (((myIFU.y_microns - myIFU.y_microns[myIFU.n==1])*(15.22/1000.))/3600.) + y_offset_deg
-    
-    fibre_xpos_raw = (((myIFU.x_microns - myIFU.x_microns[myIFU.n==1])*(15.22/1000.)))
-    fibre_ypos_raw = (((myIFU.y_microns - myIFU.y_microns[myIFU.n==1])*(15.22/1000.)))
-    
-    # Relative fibre positions in arcsec with applied offset to original RSS position
-    fibre_xpos_arcsec = pos_off_x*3600
-    fibre_ypos_arcsec = pos_off_y*3600
-    
-    # Position of GAMA object from the RSS file, but defined by the target selection .dat file on the SAMI_Wiki. Might have slight manual offset from true galaxy position, but is the SAMI working position, so is used here.
-    obj_ra = np.around(myIFU.obj_ra[myIFU.n == 1], decimals=6)
-    obj_dec = np.around(myIFU.obj_dec[myIFU.n == 1], decimals=6)
-    
-    # Extract SDSS g-band image if not already in working directory.
-    # Returns 250x250 image with a side of ~25" and a pixel size of ~0.1". These are "~" because the SDSS surver works in degrees.
-    if not os.path.isfile(str(myIFU.name)+"_SDSS_g.fits"):
-        getSDSSimage(GAMA_ID=GAMA_ID, RA=obj_ra[0], DEC=obj_dec[0], band=str(band), size=0.00695, number_of_pixels=250, projection="Tan")
-    
-    # Open SDSS image and extract data & header information
-    image_file = pf.open(str(myIFU.name)+"_SDSS_g.fits")
-    
-    image_data = image_file['Primary'].data
-    image_header = image_file['Primary'].header
-    
-    img_crval1 = float(image_header['CRVAL1']) #RA
-    img_crval2 = float(image_header['CRVAL2']) #DEC
-    img_crpix1 = float(image_header['CRPIX1']) #Reference x-pixel
-    img_crpix2 = float(image_header['CRPIX2']) #Reference y-pixel
-    img_cdelt1 = float(image_header['CDELT1']) #Delta RA
-    img_cdelt2 = float(image_header['CDELT2']) #Delta DEC
-    img_naxis1 = float(image_header['NAXIS1']) #Number of pixels in x-direction
-    img_naxis2 = float(image_header['NAXIS2']) #Number of pixels in y-direction
-    
-    # Smooth SDSS image to median seeing of 1.8arcsec
-    sigma = 2*np.sqrt(2*np.log(2))*(1.8/1)
-    n = sigma
-    image_data_smoothed = blur_image(image_data, n, ny=None)
-    image_data = image_data_smoothed
-    
-    # Get SDSS g-band fluxes of each fibre from the SDSS image
-    SDSS_flux = []
-    x_pix_positions = []
-    y_pix_positions = []
-    
-    for i in xrange(np.shape(fibre_xpos_raw)[0]):
-        
-        # Image pixel positions of a fibre
-        x_pix_pos = ((pos_off_x[i]) / img_cdelt1) + img_crpix1
-        y_pix_pos = ((pos_off_y[i]) / img_cdelt2) + img_crpix2
-        
-        x_pix_positions.append(x_pix_pos)
-        y_pix_positions.append(y_pix_pos)
-        
-        # Fibre radius in units of pixels (Fibre core diamter = 1.6")
-        fibre_radius = ((1.6/2) / 3600) / img_cdelt1
-        
-        # Weight map array of SDSS image for the footprint of one fibre on the image
-        weight = utils.resample_circle(img_naxis1, img_naxis2, (-1)*x_pix_pos, y_pix_pos, fibre_radius)
-        
-        # Multiply weight map & SDSS image data
-        SDSS_flux_fibre_array = image_data * weight
-        
-        # NaNsum eitre flux array to get flux in one fibre
-        SDSS_flux_fibre = np.nansum(SDSS_flux_fibre_array)
-        
-        # Append each fibre flux to list
-        SDSS_flux.append(SDSS_flux_fibre)
-    
-    # Self normalisation
-    SDSS_flux = (SDSS_flux - np.min(SDSS_flux))/np.max(SDSS_flux - np.min(SDSS_flux))
-    
-    fibre_xpos_arcsec = fibre_xpos_arcsec
-    fibre_ypos_arcsec = fibre_ypos_arcsec
-    RSS_SDSS_g = SDSS_flux # Note: This is not RSS, but used so code is compatible
-    obj_ra = obj_ra
-    obj_dec = obj_dec
-
-    return fibre_xpos_arcsec, fibre_ypos_arcsec, RSS_SDSS_g, obj_ra, obj_dec 
-
-#########################################################################################
-#
-# "getSDSSimage"
-#
-#   This function queries the SDSS surver at skyview.gsfc.nasa.gov and returns an image
-#   with a user supplied set of parameters. A full description of the input parameters is
-#   given at - http://skyview.gsfc.nasa.gov/docs/batchpage.html
-#
-#   The parameters that can be set here are:
-#
-#   RA - in degrees
-#   DEC - in degrees
-#   band - u,g,r,i,z filters
-#   size - size of side of image in degrees
-#   number_of_pixels - number of pixels of side of image (i.e 720 will return 720x720)
-#   projection - 2D mapping of onsky projection. Tan is standard.
-#   url_show - this is a function variable if the user wants the url printed to terminal
-#
-
-def getSDSSimage(GAMA_ID="unknown", RA=0.0, DEC=0.0, band="g", size=0.02, number_of_pixels=720, projection="Tan", url_show="False"):
-    
-    #function to retrieve SDSS g-band image
-    
-    # Contruct URL
+    # Construct URL
     RA = str(RA).split(".")
     DEC = str(DEC).split(".")
     size = str(size).split(".")
     
-    URL = "http://skyview.gsfc.nasa.gov//cgi-bin/pskcall?position="+str(RA[0])+"%2e"+str(RA[1])+"%2c"+str(DEC[0])+"%2e"+str(DEC[1])+"&Survey=SDSSdr7"+str(band)+"&size="+str(size[0])+"%2e"+str(size[1])+"&pixels="+str(number_of_pixels)+"&proj="+str(projection)
-    
-    urllib.urlretrieve(str(URL), str(GAMA_ID)+"_SDSS_g.fits")
-    
+    URL = "http://skyview.gsfc.nasa.gov//cgi-bin/pskcall?position="+(str(RA[0])+"%2e"+str(RA[1])+"%2c"+str(DEC[0])+"%2e"+str(DEC[1])+"&Survey=SDSSdr7"+str(band)+"&size="+str(size[0])+"%2e"+str(size[1])+"&pixels="+str(number_of_pixels)+"&proj="+str(projection))
+                                                                     
+    # Get SDSS image
+    urllib.urlretrieve(str(URL), str(object_name)+"_SDSS_"+str(band)+".fits")
+                                                                     
     if url_show=="True":
-        print "SDSS g-band image of object "+str(GAMA_ID)+" has finished downloading to the working directory with the file name: "+str(GAMA_ID)+"_SDSS_g.fits"
-        
+        print ("SDSS "+str(band)+"-band image of object "+str(object_name)+" has finished downloading to the working directory with the file name: "+str(object_name)+"_SDSS_"+str(band)+".fits")
+                                                                                
         print "The URL for this object is: ", URL
 
-#########################################################################################
-#
-# "getSDSSspectra"
-#
-#   NOTE: Not implemented, just a place holder with notes on what to do.
-#
-
-def getSDSSspectra(inlist, show="True", write="True"):
-    
-    
-    #function to retrieve SDSS spectra
-    
-    #example (GAMA-91999):
-    
-    #url for GAMA-91999 spectra (main object is first in list, then two repeat observations of secondary object) [find a way to distiguish between them and extract all spectra for S/N comparison] http://api.sdss3.org/spectrumQuery?ra=214.5090d&dec=0.48423&radius=7
-    
-    #returns list: ["sdss.303.51615.552.26", "sdss.304.51609.405.26", "sdss.304.51957.422.26"]
-    
-    #urllib.urlretrieve("http://api.sdss3.org/spectrum?plate=303&mjd=51615&fiber=552", "spectra_test_91999.fits")
-    
-    print "end"
-
-#########################################################################################
-#
-# "gauss_kern" & "blur_image"
-#
-#   Following two functions from scipy cookbook to use a Gaussian kernal to blur an
-#   image. It was taken from: http://www.scipy.org/Cookbook/SignalSmooth
-#
-
-def gauss_kern(size, sizey=None):
-    """ Returns a normalized 2D gauss kernel array for convolutions """
-    size = int(size)
-    if not sizey:
-        sizey = size
-    else:
-        sizey = int(sizey)
-    x, y = np.mgrid[-size:size+1, -sizey:sizey+1]
-    g = np.exp(-(x**2/float(size) + y**2/float(sizey)))
-    return g / g.sum()
-
-def blur_image(im, n, ny=None) :
-    """ blurs the image by convolving with a gaussian kernel of typical
-        size n. The optional keyword argument ny allows for a different
-        size in the y direction.
-        """
-    g = gauss_kern(n, sizey=ny)
-    improc = sp.signal.convolve(im, g, mode='same')
-    return(improc)
 
 
 #########################################################################################
@@ -941,8 +118,7 @@ def blur_image(im, n, ny=None) :
 #   scale. Mental arithmetics required for interpretation. 
 #
 
-def sb(image, scale=1.0, contour=True, vmin=None, vmax=None, 
-       sky=None, levels=None):  
+def sb(image, scale=1.0, contour=True, vmin=None, vmax=None, sky=None, levels=None):
 
     import matplotlib.pyplot as plt
 
@@ -1029,8 +205,450 @@ def sb(image, scale=1.0, contour=True, vmin=None, vmax=None,
              transform=ax.transAxes)
 
 
+
+
+
+
+def ten(h, m, s, RA=False):
+    result = np.sign(h) * \
+        (np.absolute(float(h)) + (float(m) + float(s)/60.)/60.)
+    if RA==True: result = 15.*result
+    return result
+
+
+def sixty(deg, RA=False):
+    sign = np.sign(deg)
+    if RA==True: deg = float(np.abs(deg)/15.)
+    else: deg = float(np.abs(deg))
+    h = np.fix(deg)
+    m = np.fix(60.*(deg-h))
+    s = 60.*np.around(60*(deg-h) - m, decimals=3)
+    sex = [int(h)*sign, int(m), float(s)]
+    return sex
+
+
+def sim_sdss_cube(cubein, verbose=True, invert=True, log=False):
+    """ 
+    Produce a mock g-band image from a blue SAMI cube. 
+    
+    -- A future incarnation should convert the estimated SDSS flux into 
+       a brightness (in nanomaggies).
+
+    -- Need to add axis labels in arcseconds. 
+
+    Issues: 
+    1) Cubes do not include valid CRVAL1, just CRVAL3. Need an extra step
+       and some trickery to build wavelength axis. 
+    """
+    
+    # Open FITS file. 
+    hdulist = pf.open(cubein)
+    
+    if verbose:  # print file info to screen
+        print('')
+        hdulist.info()
+        print('')
+
+    # Build wavelength axis. 
+    crval3 = hdulist[0].header['CRVAL3']
+    cdelt3 = hdulist[0].header['CDELT3']
+    nwave  = len(hdulist[0].data)
+
+    # -- crval3 is middle of range and indexing starts at 0. 
+    # -- this wave-axis agrees with QFitsView interpretation. 
+    crval1 = crval3 - ((nwave-1)/2)*cdelt3
+    wave = crval1 + cdelt3*np.arange(len(hdulist[0].data))
+    
+    # Read in SDSS throughput (should live in a library)
+    path_curve = '/Users/iraklis/Progs/Python/SAMI_manual/SDSS/SDSS_curves/'
+    sdss_g = tab.read(path_curve+'SDSS_g.dat', quotechar="#", \
+                       names=['wave', 'pt_secz=1.3', 'ext_secz=1.3', \
+                                  'ext_secz=0.0', 'extinction'])
+    
+    # re-grid g['wave'] -> wave
+    thru_regrid = griddata(sdss_g['wave'], sdss_g['ext_secz=1.3'], 
+                           wave, method='cubic', fill_value=0.0)
+    
+    # initialise a 2D simulated g' band flux array. 
+    len_axis = np.shape(hdulist[0].data[1][0])
+    len_axis = np.float32(len_axis)
+    reconstruct = np.zeros((len_axis,len_axis))
+    tester = np.zeros((len_axis,len_axis))
+    data_bit = np.zeros((len(hdulist[0].data),len_axis,len_axis))
+    
+    # Sum convolved flux:  
+    for i in range(len(hdulist[0].data)):
+        data_bit[i] = hdulist[0].data[i]*thru_regrid[i]
+        """
+        reconstruct[i,j] = \
+        np.nansum(np.absolute(hdulist[0].data[:][i][j] * thru_regrid))
+        """
+    reconstruct = np.nansum(data_bit,axis=0) # not absolute right now
+    
+    ### reconstruct[np.isnan(reconstruct)] = 0. # replacing nan with 0.0
+    reconstruct[reconstruct < 0] = 0.       # replacing negative fluxes with 0.0
+    
+    # Check if the user supplied a red RSS file, throw exception. 
+    if np.array_equal(reconstruct, tester): 
+        raise SystemExit('All values are zero: please check if you might ' 
+                         'have input a RED spectrum!')
+    
+    # PLOT
+    if invert: colmap = 'gist_yarg'
+    else: colmap = 'gray'
+    if log: reconstruct = np.log10(reconstruct)
+    plt.imshow(reconstruct,cmap=colmap,interpolation='nearest')
+    
+    # Close the FITS buffer. 
+    hdulist.close()
+    
+
+def sim_sdss_rss(file_in,        # A 2dfdr-processed row-stacked spectrum. 
+                 ifu_num=1,      # Probe number (or galaxy name). 
+                 log=True,       # Logarithmic scaling. 
+                 c_invert=True,  # Invert colour map. 
+                 path='./'):     # Where does file_in live? 
+    """ 
+    Produce a mock g-band image from a SAMI row-stacked spectrum (RSS).
+
+    Description
+    ------------
+    This function reads in a row-stacked SAMI spectrum and simulates an SDSS 
+    g-band image. This is be achieved by convolving the flux in each fibre
+    through the SDSS filter transmission curve.  
+
+    Notes 
+    ------
+    > Log scaling: once absolute flux calibration has been formalised, the 
+                   function will plot/output brightness. 
+
+    > ifu input: at the moment this only accepts a single ifu. Multiplexing 
+                 will be implemented in the next version (not essential for 
+                 survey use). 
+
+    > SDSS throughput: this is now read in, but should live in a repository
+                       of some sort. Otherwise, it should be offered as an 
+                       input. 
+
+    > Need to add a 'cube' function, to perform a px-by-px conversion. 
+
+    > It might be intersting to have a 'rest frame' function that simulates 
+      the image as it would appear in the rest frame. 
+
+    > ISK, 11/4/13: Adapted to the new SAMI utils package and the IFU class. 
+    """
+
+    # ---------------------
+    # INPUT and PROCESSING
+    # ---------------------
+
+    # Read RSS file (IFU-specific input).
+    myIFU = utils.IFU(path+'/'+file_in, ifu_num, flag_name=False)
+    # -- add a bunch of info on the IFU class outputs.
+
+    # Get wavelength axis as an aspect of the sami.utils.IFU class
+    wave = myIFU.lambda_range
+
+    # and convolve with the SDSS throughput (should live in a library)
+    path_curve = '/Users/iraklis/Progs/Python/SAMI_manual/SDSS/SDSS_curves/'
+    sdss_g = tab.read(path_curve+'SDSS_g.dat', quotechar="#", \
+                       names=['wave', 'pt_secz=1.3', 'ext_secz=1.3', \
+                                  'ext_secz=0.0', 'extinction'])
+    
+    # re-grid g['wave'] -> wave
+    thru_regrid = griddata(sdss_g['wave'], sdss_g['ext_secz=1.3'], 
+                           wave, method='cubic', fill_value=0.0)
+    
+    # initialise a simulated g' band flux array
+    reconstruct = np.zeros(len(myIFU.n))
+    tester = np.zeros(len(myIFU.n))
+
+    # Sum convolved flux:  
+    for i in range(len(myIFU.n)): 
+        reconstruct[i] = np.nansum(np.absolute(myIFU.data[i] * thru_regrid))
+    
+    ### reconstruct[np.isnan(reconstruct)] = 0. # replacing nan with 0.0
+    reconstruct[reconstruct < 0] = 0.       # replacing negative fluxes with 0.0
+
+    # Check if the user supplied a red RSS file, throw exception. 
+    if np.array_equal(reconstruct, tester): 
+        raise SystemExit('All values are zero: please check if you might ' 
+                         'have input a RED spectrum!')
+
+    # -----
+    # PLOT 
+    # -----    
+    # produce a colour index for the reconstructed data: 
+    if not log: norm1 = reconstruct - np.min(reconstruct)
+    else: norm1 = np.log10(reconstruct) - np.min(np.log10(reconstruct))
+
+    # normalise to unity
+    norm_reconstruct = norm1/np.max(norm1)
+    norm_reconstruct[norm_reconstruct < 0] = 0.0  # wipe negative fluxes
+    
+    # base plot: set aspect ratio, do not define size: 
+    fig = plt.gcf()
+    fig.clf()
+    ax = fig.add_subplot(111)
+    ax.set_aspect('equal')
+    
+    xaxis_ctr = myIFU.xpos[myIFU.n == 1]
+    yaxis_ctr = myIFU.ypos[myIFU.n == 1]
+    
+    plt.axis([-8., 8., -8., 8.]) # in arcseconds. 
+    
+    # Plot fibres as circle patches. 
+    for i in range(len(myIFU.n)):
+
+        # Define (xy) coordinates. 
+        xy = 3600.*(xaxis_ctr - myIFU.xpos[i]), \
+            3600.*(yaxis_ctr - myIFU.ypos[i])
+
+        if c_invert: 
+            this_col = str(norm_reconstruct[i]) # colour
+            mappable = plt.cm.ScalarMappable(cmap='gray')
+        else: 
+            this_col = str(1.0-norm_reconstruct[i])
+            mappable = plt.cm.ScalarMappable(cmap='gist_yarg') 
+
+        # Create patch, plot it. 
+        circ = patches.Circle(xy, radius=0.8,  
+                              facecolor=this_col, edgecolor='None')
+        ax.add_patch(circ) 
+        # fib_size/2.
+
+    mappable.set_array(norm_reconstruct)
+    plt.colorbar(mappable)
+
+    # and some plot cosmetics to finish it up. 
+    plt.xlabel('Delta(RA) [arcsec]')
+    plt.ylabel('Delta(DEC) [arcsec]')
+    plt.title('Probe #'+str(ifu_num)+' / CATID = '+myIFU.name)
+
+
+def overlay(image, bdf,                  # basic inputs
+            l1=0.0, l2=1.0,              # levels
+            shift=[0.0, 0.0],            # target shift from reference value 
+            radec=[0.0, 0.0],            # target coords, if not ref value (d/s)
+            nod=[0,0],                   # shift from default ctr (in asec)
+            showGrid=False,              # show coordinate grid?
+            stretch='linear',            # 'log', 'linear', etc.     
+            invert=False,                # invert a grayscale image?
+            hdu=0,                       # HDU, if not 0. 
+            gray=True, readAVM=False):   # plot colour, AVM read
+    """ 
+    Overlay a SAMI bundle onto a fits image 
+
+    Adapted to astropy input. 
+
+    Inputs 
+    -------
+      image: fits image used for overlay; 
+      bdf:   a 'bundle definition file', generate with the 'bundle_definition' 
+             function in this module. 
+    """
+
+    import aplpy
+    import astropy.wcs as pywcs
+    
+    # is the input image a fits file? 
+    isfits = (image[len(image)-5:]=='.fits') or (image[len(image)-4:]=='.fit')
+
+    # Use APLPy to read in the FITS file. 
+    fig = aplpy.FITSFigure(image, north=True, hdu=hdu)
+    if (gray==True): 
+        fig.show_grayscale(vmin=l1, vmax=l2, stretch=stretch, invert=invert)
+    else:
+        fig.show_rgb()
+    if showGrid==True: fig.show_grid()
+
+    # Read the AVM of a jpg or tiff image: 
+    if readAVM==True:
+        from pyavm import AVM
+        avm = AVM(image)
+
+    # read BDF
+    tab = tab.read(bdf)
+    
+    # Get field centre coordinates -- quite messy, clean up. 
+    ctr = [0., 0.] # just initiate the field centre (list ok)
+
+    # Input type: image loaded with Astro Visualisation Metadata --
+    if (np.mean(radec)==0.0) and (readAVM!=True) and (isfits!=True): 
+        ctr = [0.0, 0.0]                          # if cannot find AVM, ctr=0,0
+        print("Warning: did not find a valid field centre definition")
+    if (np.mean(radec)!=0.0) and (isfits!=True):  # respec' user input
+        radec = np.array(radec)
+        if radec.size > 2:                        # if input in sex, not dec
+            from SAMI_sdss import ten
+            ctr[0] = ten(radec[0], radec[1], radec[2], RA=True)
+            ctr[1] = ten(radec[3], radec[4], radec[5])
+        else: ctr = radec                               
+                    
+    if readAVM==True and (np.mean(radec)==0.0): 
+        ctr=avm.Spatial.ReferenceValue            # read AVM field centre
+
+    # Input type: fits file -- 
+    if isfits:
+        data = pf.open(image)
+        wcs = pywcs.WCS(data[0].header)
+        ctr = wcs.wcs.crval
+
+    # apply 'nod' (fine positioning shift)
+    if (nod[0]!=0) and (nod[1]!=0): 
+        nod[0] = nod[0]*15
+        nod = np.array(nod)/3600.
+        ctr = np.array(ctr)-nod
+        from SAMI_sdss import sixty
+        stringer1 = 'Recentering to: ' + str(ctr[0]) + ' '+str(ctr[1])
+        stringer2 = '            ie: ' + str(sixty(ctr[0],RA=True)) + \
+            ' ' + str(sixty(ctr[1]))
+        print('')
+        print(stringer1)
+        print(stringer2)
+
+    # shift SAMI bundle into place
+    ra  = tab['RA'] / np.cos(np.radians(ctr[1])) + ctr[0] 
+    dec = tab['DEC'] + ctr[1]
+    
+    # SAMI bundle (individual fibres)
+    fig.show_circles(ra, dec, 0.8/3600., 
+                     edgecolor='cyan', facecolor='cyan', alpha=0.5)
+    
+    # Exclusion radius
+    fig.show_circles(ctr[0], ctr[1], 165./3600., 
+                     edgecolor='green', facecolor='none', linewidth=3.)
+    
+
+def bundle_definition(file_in, ifu=1, path='./', 
+                      diagnose=False, pilot=False):
+    """ 
+    Make a definition file containing a schematic of a fibre bundle 
+
+    There is some duplication in this code, as it includes a test for 
+    two different methods to plot the so-called bundle definition file. 
+    This can be removed. 
+
+    Adapted to new IFU object input. Kept old input (still appropriate 
+    for Pilot Sample data). 
+    """
+    
+    if pilot:
+        # Follow old input style, appropriate for RSS files from Pilot Sample. 
+        # Open file and mask single IFU
+        hdu    = pf.open(path+file_in)
+        fibtab = hdu[2].data   # binary table containing fibre information
+        
+        mask_ifu = fibtab.field('PROBENAME')==ifu # index the selected IFU
+        fibtab = fibtab[mask_ifu]                 # and mask fibre data
+        
+        nfib = len(fibtab)                        # count the number of fibres
+        fib1 = np.where(fibtab['FIBNUM'] == 1)[0] # identify the central fibre
+                
+    if not pilot:
+        myIFU = utils.IFU(file_in, ifu, flag_name=False)
+        nfib = len(myIFU.n)
+
+    # get true angular separation (a) between each fibre and Fib1
+    # ra and dec separations will then be cos(a), sin(a)
+    offset_ra  = np.zeros(nfib, dtype='double')
+    offset_dec = np.zeros(nfib, dtype='double')
+
+    for i in range(nfib):
+
+        if pilot:
+            ra1 = np.radians(fibtab['FIB_MRA'][fib1])
+            ra_fib = np.radians(fibtab['FIB_MRA'][i])
+            dec1  = np.radians(fibtab['FIB_MDEC'][fib1])
+            dec_fib  = np.radians(fibtab['FIB_MDEC'][i])
+
+        if not pilot:
+            ra1    = np.radians(myIFU.xpos[np.where(myIFU.n == 1)])
+            dec1   = np.radians(myIFU.ypos[np.where(myIFU.n == 1)])
+            ra_fib  = np.radians(myIFU.xpos[i])
+            dec_fib = np.radians(myIFU.ypos[i])
+
+        # Angular distance
+        cosA = np.cos(np.pi/2-dec1) * np.cos(np.pi/2-dec_fib) + \
+            np.sin(np.pi/2-dec1) * np.sin(np.pi/2-dec_fib) * np.cos(ra1-ra_fib) 
+
+        # DEC offset
+        cos_dRA  = np.cos(np.pi/2-dec1) * np.cos(np.pi/2-dec1) + \
+            np.sin(np.pi/2-dec1) * np.sin(np.pi/2-dec1) * np.cos(ra1-ra_fib) 
+
+        # RA offset
+        cos_dDEC = np.cos(np.pi/2-dec1) * np.cos(np.pi/2-dec_fib) + \
+            np.sin(np.pi/2-dec1) * np.sin(np.pi/2-dec_fib) * np.cos(ra1-ra1) 
+
+        # Sign check; trig collapses everything to a single quadrant, so need 
+        # to check which I am on: 
+        if (ra_fib >= ra1) and (dec_fib >= dec1):  # 1. quadrant (+, +)
+            offset_ra[i]  = np.degrees(np.arccos(cos_dRA[0]))
+            offset_dec[i] = np.degrees(np.arccos(cos_dDEC[0]))
+
+        if (ra_fib <= ra1) and (dec_fib >= dec1):  # 2. quadrant (-, +)
+            offset_ra[i]  = np.negative(np.degrees(np.arccos(cos_dRA[0])))
+            offset_dec[i] = np.degrees(np.arccos(cos_dDEC[0]))
+
+        if (ra_fib <= ra1) and (dec_fib <= dec1):  # 3. quadrant (-, -)
+            offset_ra[i]  = np.negative(np.degrees(np.arccos(cos_dRA[0])))
+            offset_dec[i] = np.negative(np.degrees(np.arccos(cos_dDEC[0])))
+
+        if (ra_fib >= ra1) and (dec_fib <= dec1):  # 4. quadrant (+, -)
+            offset_ra[i]  = np.degrees(np.arccos(cos_dRA[0]))
+            offset_dec[i] = np.negative(np.degrees(np.arccos(cos_dDEC[0])))
+
+    # Write a dictionary of relative RA, DEC lists
+    datatab = {'RA': offset_ra, 
+               'DEC': offset_dec} # proper, spherical trig, sky-projected
+
+    """
+    datatab2 = {'RA': fibtab['FIB_MRA'] - fibtab['FIB_MRA'][fib1], 
+                'DEC': fibtab['FIB_MDEC'] - fibtab['FIB_MDEC'][fib1]} # simple
+    """
+
+    # Write to file
+    file_out = './bundle'+str(ifu)+'.bdf'
+    tab.write(datatab, file_out, names=['RA', 'DEC']) # need 'names' in order
+    
+    # And test the positioning:
+    if diagnose==True:
+        ctr = [0.0, 0.0]
+        fig = plt.gcf()
+        fig.clf()
+        ax = fig.add_subplot(111)
+        axis = [-8./3600.+ctr[0], 8./3600.+ctr[0], 
+                 -8./3600.+ctr[1], 8./3600.+ctr[1]]
+        plt.axis(axis)
+        plt.title('Bundle '+str(ifu))
+        plt.xlabel('RA Offset [degrees]')
+        plt.ylabel('DEC Offset [degrees]')
+        ax.set_aspect('equal')
+        
+        for i in range(61):
+            circ = patches.Circle((datatab['RA'][i] + ctr[0], 
+                                   datatab['DEC'][i] + ctr[1]), 0.8/3600.,
+                                  edgecolor='none', facecolor='cyan', alpha=.5)
+            ax.add_patch(circ)
+            
+            """
+            circ2 = patches.Circle((datatab2['RA'][i] + ctr[0], 
+                                    datatab2['DEC'][i] + ctr[1]), 0.8/3600.,
+                                   edgecolor='none', facecolor='cyan',alpha=.5)
+            ax.add_patch(circ2)
+            """
+    
+        big_circ = patches.Circle(ctr, 7.5/3600., edgecolor='green', 
+                                  facecolor='none', lw=3)
+        
+        #ax.add_patch(big_circ)
+        plt.savefig('/Users/iraklis/Desktop/bundle.pdf', transparent=True)
+        plt.show()
+
+
 #########################################################################################
 ###                                                                                   ###
 #################################--- END OF FILE ---#####################################
 ###                                                                                   ###
 #########################################################################################
+

@@ -23,6 +23,8 @@ from scipy import integrate
 from ..config import latitude, millibar_to_mmHg
 from other import saturated_partial_pressure_water
 
+from astropy import __version__ as astropy_version
+
 def adr_n1(lam):
     #convert angstroms to microns
     lmic = lam*1.0e-4
@@ -103,7 +105,7 @@ def parallactic_angle(hour_angle, declination, latitude):
         -numpy.arctan2( cos_lat * sin_ha, sin_lat * cos_dec - cos_lat * sin_dec * cos_ha)
         )
     
-def zenith_distance(declination, hour_angle, latitude=latitude.degrees):
+def zenith_distance(declination, hour_angle):
     """Return the zenith distance in degrees of an object.
     
     All inputs are in degrees.
@@ -112,9 +114,15 @@ def zenith_distance(declination, hour_angle, latitude=latitude.degrees):
     
     """
     
-    sin_lat = numpy.sin(numpy.radians(latitude))
+    # astropy version catch to be backwards compatible
+    if float(astropy_version[2]) >= 3.:
+        Latitude=latitude.degree
+    else:
+        Latitude=latitude.degrees
+    
+    sin_lat = numpy.sin(numpy.radians(Latitude))
     sin_dec = numpy.sin(numpy.radians(declination))
-    cos_lat = numpy.cos(numpy.radians(latitude))
+    cos_lat = numpy.cos(numpy.radians(Latitude))
     cos_dec = numpy.cos(numpy.radians(declination))
     cos_ha =numpy.cos(numpy.radians(hour_angle))
     
@@ -139,9 +147,12 @@ class DARCorrector(object):
             self.correction = self.correction_simple
             self.zenith_distance = 0
             self.ref_wavelength = 5000.0
-
-        # Latitude of the observatory, default to AAT.
-        self.latitude = latitude.degrees
+        
+        # astropy version catch to be backwards compatible
+        if float(astropy_version[2]) >= 3.:
+            self.latitude=latitude.degree
+        else:
+            self.latitude=latitude.degrees
         
         # Private variables
         self._pa = False

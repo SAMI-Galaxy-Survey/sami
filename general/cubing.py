@@ -7,24 +7,83 @@ The most likely command a user will want to run is one of:
    dithered_cubes_from_rss_files
    dithered_cubes_from_rss_list
 
-(these differ only very slightly)
+These functions are wrappers for file input/output, with the actual work
+being done in dithered_cube_from_rss. These three functions are briefly
+described below.
 
-These functions are merely wrappers for file input/output, with the actual work
-being done in "dithered_cube_from_rss"
+**dithered_cubes_from_rss_files**
 
-Drop size and output pixel grid size and dimensions are set with the following
-module variables:
+** notes from RGS
+>cd ~/SAMI/
+>ipython
+>import sami
+> sami.general.cubing.dithered_cubes_from_rss_files("testfiles1.txt")   - no actual output made
+> sami.general.cubing.dithered_cubes_from_rss_files("testfiles1.txt",write=True,clip=False,drop_factor=0.5,suffix="_NoClip",covar_mode="none",nominal=True,root="testing/",overwrite=True)
 
-    output_pix_size_arcsec (Default: 0.5) - Size of output spaxel in arcsec
-    drop_factor (Default: 0.5) - Size of drop size as a fraction of the fibre 
-        size
-    size_of_grid (Default: 50) - Number of pixels along each dimension of the 
-        output grid   
+> sami.general.cubing.dithered_cubes_from_rss_files("testfiles1.txt",write=True,clip=False,drop_factor=0.5,suffix="_NoClip",covar_mode="none",nominal=True,root="testing_small/",overwrite=True,objects=["36894","47286"])
+> sami.general.cubing.dithered_cubes_from_rss_files("testfiles1.txt",write=True,clip=True,drop_factor=1.0,suffix="__Full_Clip",covar_mode="none",nominal=True,root="testing_small/",overwrite=True,objects=["36894","47286"])
+> sami.general.cubing.dithered_cubes_from_rss_files("testfiles1.txt",write=True,clip=True,drop_factor=0.5,suffix="_Clip",covar_mode="none",nominal=True,root="testing_small/",overwrite=True,objects=["36894","47286"])
+> sami.general.cubing.dithered_cubes_from_rss_files("testfiles1.txt",write=True,clip=True,drop_factor=0.5,suffix="_FullClip",covar_mode="none",nominal=True,root="testing_small/",overwrite=True,objects=["36894","47286"])
 
-To change the output, these variables can be changed after the module has been
-loaded, but before calling any of the module functions. In particular, any pre-
-existing SAMIDrizzler instances will have strange behaviour if these variables
-are changed.
+> sami.general.cubing.dithered_cubes_from_rss_files("testfiles1blue.txt",write=True,clip=False,drop_factor=0.5,suffix="_ReducedDrop_NoClip",covar_mode="none",nominal=True,root="testing_small/",overwrite=True,objects=["36894","47286"])
+> sami.general.cubing.dithered_cubes_from_rss_files("testfiles1blue.txt",write=True,clip=True,drop_factor=0.5,suffix="_ReducedDrop_ClipWithReducedDrop",covar_mode="none",nominal=True,root="testing_small/",overwrite=True,objects=["36894","47286"])
+> sami.general.cubing.dithered_cubes_from_rss_files("testfiles1blue.txt",write=True,clip=True,drop_factor=0.5,suffix="_ReducedDrop_ClipWithFullDrop",covar_mode="none",nominal=True,root="testing_small/",overwrite=True,objects=["36894","47286"])
+
+
+INPUTS:
+inlist - a file containing the names of the RSS files to be cubed. These file
+namesare one per line in this file.
+
+objects - a python list containing the names of the galaxies to make cubes for.
+The default is the special value (string) 'all', which means all galaxies in the
+input RSS files will be cubed.
+
+size_of_grid - The size of the square output grid in pixels. The default is 50 pixels.
+
+output_pix_size_arcsec - The size of the pixels within the square output grid in
+arcseconds. The default is 0.5 arcseconds.
+
+drop_factor - The size reduction factor for the input fibres when they are drizzled
+onto the output grid.
+
+clip - Clip the data when combining. This should provide cleaner output cubes. Default
+is True.
+
+plot - Make diagnostic plots when creating cubes. This seems to be defunct as no plots are
+made. Default is True.
+
+write - Write data cubes to file after creating them. The default is False. (Should change?)
+
+suffix - A suffix to add to the output file name. Should be a string. Default is a null string.
+
+nominal - Use the nominal tabulated object positions when determining WCS. Default is False and
+a full comparison with SDSS is done.
+
+root - Root directory for writing files to. Should be a string. Default is null string.
+
+overwrite - Overwrite existing files with the same output name. Default is False.
+
+covar_mode - Option are 'none', 'optimal' or 'full'. Default is 'optimal'.
+
+OUTPUTS:
+If write is set to True two data cubes will be produced for each object cubed. These are
+written by default to a new directory, created within the working directory, with the name
+of the object.
+
+**dithered_cubes_from_rss_list**
+INPUTS:
+
+files: a python list of files to be cubed. 
+
+All other inputs as above!
+
+**dithered_cube_from_rss**
+INPUTS:
+
+ifu_list - A list of IFU objects. In most cases this is passed from
+dithered_cubes_from_rss_list.
+
+############################################################################################
 
 """
 
@@ -56,7 +115,6 @@ except:
     from scipy.stats import nanmedian, nanmean
     nansum = np.nansum
 
-
 # Utils code.
 from .. import utils
 from .. import samifitting as fitting
@@ -67,22 +125,15 @@ from .. import diagnostics
 from ..config import *
 
 # WCS code
-import astropy.io.ascii as ascii
-from scipy.interpolate import griddata
-import urllib
+from . import wcs
 
+import code
 
 # Some global constants:
-
 HG_CHANGESET = utils.hg_changeset(__file__)
 
 epsilon = np.finfo(np.float).eps
 # Store the value of epsilon for quick access.
-
-output_pix_size_arcsec = 0.5    # Size of output spaxel in arcsec
-drop_factor = 0.5    # Size of drop as a fraction of the fibre size
-size_of_grid = 50    # Size of a side of the cube such that the cube has 50x50 spaxels
-# @TODO: Compute the size of the grid instead of hard code it!??!
 
 def get_object_names(infile):
     """Get the object names observed in the file infile."""
@@ -139,23 +190,34 @@ def dar_correct(ifu_list, xfibre_all, yfibre_all, method='simple',update_rss=Fal
     for obs in ifu_list:
         darcorr = DARCorrector(method=method)
     
-        darcorr.temperature = obs.fibre_table_header['ATMTEMP'] 
-        darcorr.air_pres = obs.fibre_table_header['ATMPRES'] * millibar_to_mmHg
-        #                     (factor converts from millibars to mm of Hg)
-        darcorr.water_pres = \
-            utils.saturated_partial_pressure_water(darcorr.air_pres, darcorr.temperature) * \
-            obs.fibre_table_header['ATMRHUM']
-
         ha_offset = obs.ra - obs.meanra  # The offset from the HA of the field centre
-    
-        darcorr.zenith_distance = \
-            integrate.quad(lambda ha: zenith_distance(obs.dec, ha),
-                           obs.primary_header['HASTART'] + ha_offset,
-                           obs.primary_header['HAEND'] + ha_offset)[0] / (
-                              obs.primary_header['HAEND'] - obs.primary_header['HASTART'])
 
-        darcorr.hour_angle = \
-            (obs.primary_header['HASTART'] + obs.primary_header['HAEND']) / 2 + ha_offset
+        ha_start = obs.primary_header['HASTART'] + ha_offset
+        # The header includes HAEND, but this goes very wrong if the telescope
+        # slews during readout. The equation below goes somewhat wrong if the
+        # observation was paused, but somewhat wrong is better than very wrong.
+        ha_end = ha_start + (obs.exptime / 3600.0) * 15.0
+    
+        if hasattr(obs, 'atmosphere'):
+            # Take the atmospheric parameters from the file, as measured
+            # during telluric correction
+            darcorr.temperature = obs.atmosphere['temperature']
+            darcorr.air_pres = obs.atmosphere['pressure']
+            darcorr.water_pres = obs.atmosphere['vapour_pressure']
+            darcorr.zenith_distance = np.rad2deg(obs.atmosphere['zenith_distance'])
+        else:
+            # Get the atmospheric parameters from the fibre table header
+            darcorr.temperature = obs.fibre_table_header['ATMTEMP'] 
+            darcorr.air_pres = obs.fibre_table_header['ATMPRES'] * millibar_to_mmHg
+            #                     (factor converts from millibars to mm of Hg)
+            darcorr.water_pres = \
+                utils.saturated_partial_pressure_water(darcorr.air_pres, darcorr.temperature) * \
+                obs.fibre_table_header['ATMRHUM']
+            darcorr.zenith_distance = \
+                integrate.quad(lambda ha: zenith_distance(obs.dec, ha),
+                               ha_start, ha_end)[0] / (ha_end - ha_start)
+
+        darcorr.hour_angle = 0.5 * (ha_start + ha_end)
     
         darcorr.declination = obs.dec
 
@@ -179,7 +241,7 @@ def dar_correct(ifu_list, xfibre_all, yfibre_all, method='simple',update_rss=Fal
             dar_x = dar_correctors[i_obs].dar_east * 1000.0 / plate_scale 
             dar_y = dar_correctors[i_obs].dar_north * 1000.0 / plate_scale 
             # TODO: Need to change to arcsecs!
-    
+
             xfibre_all[i_obs,:,l] = xfibre_all[i_obs,:,l] + dar_x
             yfibre_all[i_obs,:,l] = yfibre_all[i_obs,:,l] + dar_y
             
@@ -192,11 +254,12 @@ def dar_correct(ifu_list, xfibre_all, yfibre_all, method='simple',update_rss=Fal
         diagnostics.DAR.yfib = yfibre_all
 
 
-
-def dithered_cubes_from_rss_files(inlist, 
-                                  objects='all', clip=True, plot=True, 
-                                  write=False, suffix='', root='',
-                                  overwrite=False):
+def dithered_cubes_from_rss_files(inlist, objects='all', size_of_grid=50, 
+                                  output_pix_size_arcsec=0.5, drop_factor=0.5,
+                                  clip=True, plot=True, write=False, suffix='',
+                                  nominal=False, root='', overwrite=False, 
+                                  covar_mode='optimal', do_dar_correct=True,
+                                  clip_throughput=True):
     """A wrapper to make a cube from reduced RSS files, passed as a filename containing a list of filenames. Only input files that go together - ie have the same objects."""
 
     # Read in the list of all the RSS files input by the user.
@@ -207,16 +270,19 @@ def dithered_cubes_from_rss_files(inlist,
 
         files.append(np.str(cols[0]))
 
-    dithered_cubes_from_rss_list(files,
-                                 objects=objects, 
-                                 clip=clip, plot=plot, write=write, 
-                                 root=root, suffix=suffix, overwrite=overwrite)
+    dithered_cubes_from_rss_list(files, objects=objects, size_of_grid=size_of_grid, 
+                                 output_pix_size_arcsec=output_pix_size_arcsec, clip=clip, plot=plot,
+                                 write=write, root=root, suffix=suffix, nominal=nominal, overwrite=overwrite,
+                                 covar_mode=covar_mode, do_dar_correct=do_dar_correct, drop_factor=drop_factor,
+                                 clip_throughput=clip_throughput)
     return
 
-def dithered_cubes_from_rss_list(files, 
-                                 objects='all', clip=True, plot=True, 
-                                 write=False, suffix='', nominal=False, root='',
-                                 overwrite=False):
+def dithered_cubes_from_rss_list(files, objects='all', size_of_grid=50, 
+                                 output_pix_size_arcsec=0.5, drop_factor=0.5,
+                                 clip=True, plot=True, write=False, suffix='',
+                                 nominal=False, root='', overwrite=False,
+                                 covar_mode='optimal', do_dar_correct=True,
+                                 clip_throughput=True):
     """A wrapper to make a cube from reduced RSS files, passed as a list. Only input files that go together - ie have the same objects."""
         
     start_time = datetime.datetime.now()
@@ -233,8 +299,6 @@ def dithered_cubes_from_rss_list(files,
         object_names=get_object_names(files[0])
     else:
         object_names=objects
-        
-    
     
     print "--------------------------------------------------------------"
     print "The following objects will be cubed:"
@@ -260,12 +324,13 @@ def dithered_cubes_from_rss_list(files,
         if write:
             # First check if the object directory already exists or not.
             directory = os.path.join(root, name)
-            if os.path.isdir(directory):
+            try:
+                os.makedirs(directory)
+            except OSError:
                 print "Directory Exists", directory
                 print "Writing files to the existing directory"
             else:
                 print "Making directory", directory
-                os.mkdir(directory)
 
             # Filename to write to
             arm = ifu_list[0].spectrograph_arm            
@@ -282,18 +347,19 @@ def dithered_cubes_from_rss_list(files,
                     print 'Skipping this object'
                     continue
 
-
         # Call dithered_cube_from_rss to create the flux, variance and weight cubes for the object.
-        
-        # For now, putting in a try/except block to skip over any errors
         try:
-            flux_cube, var_cube, weight_cube, diagnostics = \
-                dithered_cube_from_rss(ifu_list, clip=clip, plot=plot)
+            flux_cube, var_cube, weight_cube, diagnostics, covariance_cube, covar_locs = \
+                       dithered_cube_from_rss(ifu_list, size_of_grid=size_of_grid,
+                                              output_pix_size_arcsec=output_pix_size_arcsec,
+                                              drop_factor=drop_factor,
+                                              clip=clip, plot=plot, covar_mode=covar_mode,
+                                              do_dar_correct=do_dar_correct,
+                                              clip_throughput=clip_throughput)
+
         except Exception:
-            print 'Cubing failed! Skipping to next galaxy.'
-            print 'Object:', name, 'files:', files
+            print "Cubing Failed."
             continue
-            #raise
 
         # Write out FITS files.
         if write==True:
@@ -306,19 +372,19 @@ def dithered_cubes_from_rss_list(files,
                 raise ValueError('Could not identify band. Exiting')
 
             # Equate Positional WCS
-            WCS_pos,WCS_flag = WCS_position(ifu_list[0],flux_cube,name,band,plot,nominal=nominal)   
+            WCS_pos, WCS_flag=wcs.wcs_solve(ifu_list[0], flux_cube, name, band, size_of_grid, output_pix_size_arcsec, plot, nominal=nominal)
             
             # First get some info from one of the headers.
             list1=pf.open(files[0])
             hdr=list1[0].header
     
-            hdr_new = create_primary_header(ifu_list,name,files,WCS_pos,WCS_flag)
+            hdr_new = create_primary_header(ifu_list, name, files, WCS_pos, WCS_flag)
 
             # Define the units for the datacube
             hdr_new['BUNIT'] = ('10**(-16) erg /s /cm**2 /angstrom /pixel', 
                                 'Units')
 
-            # Create HDUs for each cube - note headers generated automatically for now.
+            # Create HDUs for each cube.
             #
             # @NOTE: PyFITS writes axes to FITS files in the reverse of the sense
             # of the axes in Numpy/Python. So a numpy array with dimensions
@@ -328,12 +394,23 @@ def dithered_cubes_from_rss_list(files,
             hdu2=pf.ImageHDU(np.transpose(var_cube, (2,1,0)), name='VARIANCE')
             hdu3=pf.ImageHDU(np.transpose(weight_cube, (2,1,0)), name='WEIGHT')
 
+            if covar_mode != 'none':
+                hdu4 = pf.ImageHDU(np.transpose(covariance_cube,(4,3,2,1,0)),name='COVAR')
+                hdu4.header['COVARMOD'] = (covar_mode, 'Covariance mode')
+                if covar_mode == 'optimal':
+                    hdu4.header['COVAR_N'] = (len(covar_locs), 'Number of covariance locations')
+                    for i in xrange(len(covar_locs)):
+                        hdu4.header['HIERARCH COVARLOC_'+str(i+1)] = covar_locs[i]
+
             # Create HDUs for meta-data
             #metadata_table = create_metadata_table(ifu_list)
             
             # Put individual HDUs into a HDU list
-            hdulist=pf.HDUList([hdu1,hdu2,hdu3]) #,metadata_table])
-        
+            if covar_mode == 'none':
+                hdulist=pf.HDUList([hdu1,hdu2,hdu3]) #,metadata_table])
+            else:
+                hdulist=pf.HDUList([hdu1,hdu2,hdu3,hdu4])
+
             # Write the file
             print "Writing", outfile_name_full
             "--------------------------------------------------------------"
@@ -344,171 +421,9 @@ def dithered_cubes_from_rss_list(files,
             
     print("Time dithered_cubes_from_files wall time: {0}".format(datetime.datetime.now() - start_time))
 
-def create_primary_header(ifu_list,name,files,WCS_pos,WCS_flag):
-    """Create a primary header to attach to each cube from the RSS file headers"""
-
-    hdr = ifu_list[0].primary_header
-    fbr_hdr = ifu_list[0].fibre_table_header
-
-    # Get positional information from WCS_pos
-    #### Do something here!!!
-
-    # Create the wcs.
-    wcs_new=pw.WCS(naxis=3)
-    wcs_new.wcs.crpix = [WCS_pos["CRPIX1"], WCS_pos["CRPIX2"], hdr['CRPIX1']]
-    wcs_new.wcs.cdelt = np.array([WCS_pos["CDELT1"], WCS_pos["CDELT2"], hdr['CDELT1']])
-    wcs_new.wcs.crval = [WCS_pos["CRVAL1"], WCS_pos["CRVAL2"], hdr['CRVAL1']]
-    wcs_new.wcs.ctype = [WCS_pos["CTYPE1"], WCS_pos["CTYPE2"], hdr['CTYPE1']]
-    wcs_new.wcs.equinox = 2000
-            
-    # Create a header
-    hdr_new=wcs_new.to_header()
-    hdr_new.update('WCS_SRC',WCS_flag,'WCS Source')
-            
-    # Add the name to the header
-    hdr_new.update('NAME', name, 'Object ID')
-    # Need to implement a database specific-specific OBSTYPE keyword to indicate galaxies
-    # *NB* This is different to the OBSTYPE keyword already in the header below
-    
-    # Determine total exposure time and add to header
-    total_exptime = 0.
-    for ifu in ifu_list:
-        total_exptime+=ifu.primary_header['EXPOSED']
-    hdr_new.update('TOTALEXP',total_exptime,'Total exposure (seconds)')
-
-    # Add the mercurial changeset ID to the header
-    hdr_new.update('HGCUBING', HG_CHANGESET, 'Hg changeset ID for cubing code')
-    # Need to implement a global version number for the database
-    
-    # Put the RSS files into the header
-    for num in xrange(len(files)):
-        rss_key='HIERARCH RSS_FILE '+str(num+1)
-        rss_string='Input RSS file '+str(num+1)
-        hdr_new.update(rss_key, os.path.basename(files[num]), rss_string)
-
-    # Extract header keywords of interest from the metadata table, check for consistency
-    # then append to the main header
-
-    primary_header_keyword_list = ['DCT_DATE','DCT_VER','DETECXE','DETECXS','DETECYE','DETECYS',
-                                   'DETECTOR','XPIXSIZE','YPIXSIZE','METHOD','SPEED','READAMP','RO_GAIN',
-                                   'RO_NOISE','ORIGIN','TELESCOP','ALT_OBS','LAT_OBS','LONG_OBS',
-                                   'RCT_VER','RCT_DATE','RADECSYS','INSTRUME','SPECTID',
-                                   'GRATID','GRATTILT','GRATLPMM','ORDER','TDFCTVER','TDFCTDAT','DICHROIC',
-                                   'OBSTYPE','TOPEND','AXIS','AXIS_X','AXIS_Y','TRACKING','TDFDRVER']
-
-    primary_header_conditional_keyword_list = ['HGCOORDS','COORDROT','COORDREV']
-
-    for keyword in primary_header_keyword_list:
-        if keyword in ifu.primary_header.keys():
-            val = []
-            for ifu in ifu_list: val.append(ifu.primary_header[keyword])
-            if len(set(val)) == 1: 
-                hdr_new.append(hdr.cards[keyword])
-            else:
-                print 'Non-unique value for keyword:',keyword
-
-    # Extract the couple of relevant keywords from the fibre table header and again
-    # check for consistency of keyword values
-
-    fibre_header_keyword_list = ['PLATEID','LABEL']
-
-    for keyword in fibre_header_keyword_list:
-        val = []
-        for ifu in ifu_list: val.append(ifu.fibre_table_header[keyword])
-        if len(set(val)) == 1:
-            hdr_new.append(ifu_list[0].fibre_table_header.cards[keyword])
-        else:
-            print 'Non-unique valie for keyword:',keyword
-
-    # Append HISTORY from the initial RSS file header, assuming HISTORY is
-    # common for all RSS frames.
-
-    hdr_new.append(hdr.cards['SCRUNCH'])
-    hist_ind = np.where(np.array(hdr.keys()) == 'HISTORY')[0]
-    for i in hist_ind: 
-        hdr_new.append(hdr.cards[i])
-
-    return hdr_new
-
-def create_metadata_table(ifu_list):
-    """Build a FITS binary table HDU containing all the meta data from individual IFU objects."""
-    
-    # List of columns for the meta-data table
-    columns = []
-    
-    # Number of rows to appear in the table (equal to the number of files used to create the cube)
-    n_rows = len(ifu_list)
-    
-    # For now we assume that all files have the same set of keywords, and complain if they don't.
-    
-    first_header = ifu_list[0].primary_header
-    
-    primary_header_keywords = first_header.keys()
-    
-    # We must remove COMMENT and HISTORY keywords, as they must be treated separately.
-    for i in xrange(primary_header_keywords.count('HISTORY')):
-        primary_header_keywords.remove('HISTORY')
-    for i in xrange(primary_header_keywords.count('COMMENT')):
-        primary_header_keywords.remove('COMMENT')
-    for i in xrange(primary_header_keywords.count('SIMPLE')):
-        primary_header_keywords.remove('SIMPLE')
-    for i in xrange(primary_header_keywords.count('EXTEND')):
-        primary_header_keywords.remove('EXTEND')
-    for i in xrange(primary_header_keywords.count('SCRUNCH')):
-        primary_header_keywords.remove('SCRUNCH')
-    
-    # TODO: Test/check that all ifu's have the same keywords and error if not
-
-    # Determine the FITS binary table column types types for each header keyword
-    # and create the corresponding columns. See the documentation here:
-    # 
-    #     https://astropy.readthedocs.org/en/v0.1/io/fits/usage/table.html#creating-a-fits-table
-
-    def get_primary_header_values(keyword, dtype):
-        return np.asarray(map(lambda x: x.primary_header[keyword],ifu_list), dtype)
-
-    for keyword in primary_header_keywords:
-        if (isinstance(first_header[keyword],bool)):
-            # Output type is Logical (boolean)
-            columns.append(pf.Column(
-                name=keyword,
-                format='L',
-                array=get_primary_header_values(keyword,np.bool)
-                )) 
-        elif (isinstance(first_header[keyword],int)):
-            columns.append(pf.Column(
-                name=keyword,
-                format='K',
-                array=get_primary_header_values(keyword,np.int)
-                )) # 64-bit integer
-        elif (isinstance(first_header[keyword],str)):
-            columns.append(pf.Column(
-                name=keyword,
-                format='128A',
-                array=get_primary_header_values(keyword,'|S128')                
-                )) # 128 character string
-        elif (isinstance(first_header[keyword],float)):
-            columns.append(pf.Column(
-                name=keyword,
-                format='E',
-                array=get_primary_header_values(keyword,np.float)
-                )) # single-precision float
-
-    del get_primary_header_values
-    
-    # TODO: Add columns for comments and history information.
-    #
-    # The code below tries to put these in a variable size character array
-    # column in the binary table, but it is very messy. Better might be a
-    # separate ascii table.
-    #
-    #columns.append(pf.Column(name='COMMENTS', format='80PA(100)')) # Up to 100 80-character lines
-    #columns.append(pf.Column(name='HISTORY', format='80PA(100)')) # Up to 100 80-character lines
-   
-    return pf.new_table(columns)
-
-def dithered_cube_from_rss(ifu_list, clip=True, plot=True, offsets='file'):
-        
+def dithered_cube_from_rss(ifu_list, size_of_grid=50, output_pix_size_arcsec=0.5, drop_factor=0.5,
+                           clip=True, plot=True, offsets='file', covar_mode='optimal',
+                           do_dar_correct=True, clip_throughput=True):
     diagnostic_info = {}
 
     n_obs = len(ifu_list)
@@ -522,8 +437,13 @@ def dithered_cube_from_rss(ifu_list, clip=True, plot=True, offsets='file'):
 
     # Create an instance of SAMIDrizzler for use later to create individual overlap maps for each fibre.
     # The attributes of this instance don't change from ifu to ifu.
-    overlap_maps=SAMIDrizzler(size_of_grid, n_obs * n_fibres)
+    overlap_maps=SAMIDrizzler(size_of_grid, output_pix_size_arcsec, drop_factor, n_obs * n_fibres)
 
+    ### RGS 27/2/14 We also need a second copy of this IFF we are clipping the data AND drop_factor != 1
+    if drop_factor != 1 and clip:
+        ### But, check this does not bugger up intermediate calculation elements in the code?
+        overlap_maps_fulldrop=SAMIDrizzler(size_of_grid, output_pix_size_arcsec, 1, n_obs * n_fibres)
+                
     # Empty lists for positions and data. Could be arrays, might be faster? Should test...
     xfibre_all=[]
     yfibre_all=[]
@@ -618,6 +538,13 @@ def dithered_cube_from_rss(ifu_list, clip=True, plot=True, offsets='file'):
             # Hopefully only useful for test purposes. LF 05/06/2013
             xm=galaxy_data.x_microns - np.mean(galaxy_data.x_microns)
             ym=galaxy_data.y_microns - np.mean(galaxy_data.y_microns)
+
+        if clip_throughput:
+            # Clip out fibres that have suspicious throughput values
+            bad_throughput = ((galaxy_data.fibre_throughputs < 0.5) |
+                              (galaxy_data.fibre_throughputs > 1.5))
+            galaxy_data.data[bad_throughput, :] = np.nan
+            galaxy_data.var[bad_throughput, :] = np.nan
     
         xfibre_all.append(xm)
         yfibre_all.append(ym)
@@ -658,7 +585,8 @@ def dithered_cube_from_rss(ifu_list, clip=True, plot=True, offsets='file'):
     #     DAR correction is handled by another function in this module, which
     #     updates the fibre positions in place.
     
-    dar_correct(ifu_list, xfibre_all, yfibre_all)
+    if do_dar_correct:
+        dar_correct(ifu_list, xfibre_all, yfibre_all)
 
     # Reshape the arrays
     #
@@ -675,7 +603,15 @@ def dithered_cube_from_rss(ifu_list, clip=True, plot=True, offsets='file'):
     data_all   = np.reshape(data_all,   (n_obs * n_fibres, n_slices) )
     var_all    = np.reshape(var_all,    (n_obs * n_fibres, n_slices) )
 
-    
+    # Change the units on the input data
+    #
+    # We assume here that the input data is in units of surface brightness,
+    # where the number in each input RSS pixel is the surface brightness in
+    # units of the fibre area (e.g., ergs/s/cm^2/fibre). We want the surface
+    # brightness in units of the output pixel area.
+    fibre_area_pix = np.pi * (fibre_diameter_arcsec/2.0)**2 / output_pix_size_arcsec**2
+    data_all = data_all / fibre_area_pix
+    var_all = var_all / (fibre_area_pix)**2
     
     # We must renormalise the spectra in order to sigma_clip the data.
     #
@@ -688,7 +624,7 @@ def dithered_cube_from_rss(ifu_list, clip=True, plot=True, offsets='file'):
     # data reduction paper for a full description of this reasoning.
     data_norm=np.empty_like(data_all)
     for ii in xrange(n_obs * n_fibres):
-        data_norm[ii,:] = data_all[ii,:] / nanmedian( data_all[ii,:])
+        data_norm[ii,:] = data_all[ii,:]/nanmedian( data_all[ii,:])
         
 
     # Now create a new array to hold the final data cube and build it slice by slice
@@ -712,8 +648,19 @@ def dithered_cube_from_rss(ifu_list, clip=True, plot=True, offsets='file'):
     # and we have confirmed that all RSS files are on the same wavelength
     # solution.
     wavelength_array = ifu_list[0].lambda_range
+
+
+    # Initialise some covariance variables
+    overlap_array = 0
+    overlap_array_old = 0
+    overlap_array_older = 0
+    overlap_array_oldest = 0
+    recompute_tracker = 1
+    recompute_flag = 0
+    covariance_array = []
+    covariance_slice_locs = []
     
-    # This loops over wavelength slices (e.g., 2048). 
+    # This loops over wavelength slices (e.g., 2048).
     for l in xrange(n_slices):
 
         # In this loop, we will map the RSS fluxes from individual fibres
@@ -743,28 +690,116 @@ def dithered_cube_from_rss(ifu_list, clip=True, plot=True, offsets='file'):
 
         # Create pointers to slices of the RSS data for convenience (these are
         # NOT copies)
-        norm_rss_slice = data_norm[:,l]
-        data_rss_slice = data_all[:,l]
-        var_rss_slice = var_all[:,l]
-
+        norm_rss_slice=data_norm[:,l]
+        data_rss_slice=data_all[:,l]
+        var_rss_slice=var_all[:,l]
 
         # Compute drizzle maps for this wavelength slice.
-        overlap_array, weight_grid_slice = overlap_maps.drizzle(xfibre_all[:,l], yfibre_all[:,l])
+        # Store previous slices drizzle map for optimal covariance approach
+        overlap_array_oldest = np.copy(overlap_array_older)
+        overlap_array_older = np.copy(overlap_array_old)
+        overlap_array_old = np.copy(overlap_array)
+        overlap_array = overlap_maps.drizzle(xfibre_all[:,l], yfibre_all[:,l])
+
+        ### RGS 7/2/12 - If a small drop size is being used, AND if clipping is selected
+        ### then we make a second overlap array, which maps the full size fibres to the output array
+        ### we then use this full size mapping in order to make a smoothed version for clipping bad data points
+        ### then we actyally combined only the data on the reduced drop size mapping
+        if drop_factor != 1 and clip:            
+            #print("Clipping with a small drop_factor, so calculating a full size overlap map.")
+            ### This needs a new overlap map instance as that is where the drop size gets set...
+            overlap_array_fulldrop = overlap_maps_fulldrop.drizzle(xfibre_all[:,l], yfibre_all[:,l])
+        
+        #######################################
+        # Determine covariance array at either i) all slices (mode = full)
+        # or ii) either side of DAR corrected slices (mode = optimal)
+        # NB - Code between the #### could be parceled out into a separate function,
+        # but because of the number of variables required I've opted to leave it here
+        if (l == 0) and (covar_mode != 'none'):
+            covariance_array_slice = create_covar_matrix(overlap_array,var_rss_slice)
+            s_covar_slice = np.shape(covariance_array_slice)
+            covariance_array = covariance_array_slice.reshape(np.append(s_covar_slice,1))
+            covariance_slice_locs = [0]
+
+        elif (covar_mode == 'optimal') and (recompute_flag == 1):
+            covariance_array_slice = create_covar_matrix(overlap_array,var_rss_slice)
+            covariance_array_slice = covariance_array_slice.reshape(np.append(s_covar_slice,1))
+            covariance_array_slice_prev = create_covar_matrix(overlap_array_old,var_all[:,l-1])
+            covariance_array_slice_prev = covariance_array_slice_prev.reshape(np.append(s_covar_slice,1))
+            covariance_array_slice_prev2 = create_covar_matrix(overlap_array_older,var_all[:,l-2])
+            covariance_array_slice_prev2 = covariance_array_slice_prev2.reshape(np.append(s_covar_slice,1))
+            covariance_array_slice_prev3 = create_covar_matrix(overlap_array_oldest,var_all[:,l-3])
+            covariance_array_slice_prev3 = covariance_array_slice_prev3.reshape(np.append(s_covar_slice,1))
+            covariance_array = np.append(covariance_array,covariance_array_slice_prev3,axis=len(s_covar_slice))
+            covariance_array = np.append(covariance_array,covariance_array_slice_prev2,axis=len(s_covar_slice))
+            covariance_array = np.append(covariance_array,covariance_array_slice_prev,axis=len(s_covar_slice))
+            covariance_array = np.append(covariance_array,covariance_array_slice,axis=len(s_covar_slice))
+            covariance_slice_locs.append(l-3)
+            covariance_slice_locs.append(l-2)
+            covariance_slice_locs.append(l-1)
+            covariance_slice_locs.append(l)
+            recompute_tracker = overlap_maps.n_drizzle_recompute
+            recompute_flag = 0
+
+        elif (((l%200 == 0) and (l != 0)) or (l == (n_slices-2)) or (l == (n_slices-1))) and (covar_mode != 'none'):
+            covariance_array_slice = create_covar_matrix(overlap_array,var_rss_slice)
+            covariance_array_slice = covariance_array_slice.reshape(np.append(s_covar_slice,1))
+            covariance_array = np.append(covariance_array,covariance_array_slice,axis=len(s_covar_slice))
+            covariance_slice_locs.append(l)
+
+        elif (l == (n_slices-1)) and (covar_mode != 'none'):
+            covariance_array_slice = create_covar_matrix(overlap_array,var_rss_slice)
+            covariance_array_slice = covariance_array_slice.reshape(np.append(s_covar_slice,1))
+            covariance_array = np.append(covariance_array,covariance_array_slice,axis=len(s_covar_slice))
+            covariance_slice_locs.append(l)
+        
+        elif covar_mode == 'full':
+            covariance_array_slice = create_covar_matrix(overlap_array,var_rss_slice)
+            covariance_array_slice = covariance_array_slice.reshape(np.append(s_covar_slice,1))
+            covariance_array = np.append(covariance_array,covariance_array_slice,axis=len(s_covar_slice))
+        
+        if recompute_tracker != overlap_maps.n_drizzle_recompute:
+            recompute_flag = 1
+        ##########################################
         
         # Map RSS slices onto gridded slices
+        ### rgs 7/2/14 - if cosmic ray clipping is set AND a small drop size is used, then we will need an additional 
+        ### map here which shows the the full fibre size mapping in ordero to perform the clipping on that "smoothed data.
         norm_grid_slice_fibres=overlap_array*norm_rss_slice        
         data_grid_slice_fibres=overlap_array*data_rss_slice
         var_grid_slice_fibres=(overlap_array*overlap_array)*var_rss_slice
 
         if clip:
-            # Perform sigma clipping of the data if the clip flag is set.
-            
-            n_unmasked_pixels_before_clipping = np.isfinite(data_grid_slice_fibres).sum()
-        
-            # Sigma clip it - pixel by pixel and make a master mask
-            # array. Current clipping, sigma=5 and 1 iteration.        
-            mask_grid_slice_fibres = sigma_clip_mask_slice_fibres(norm_grid_slice_fibres/weight_grid_slice)
 
+            ### RGS 7/2/14 - I think all that is needed here, to fix the clipping for reduced drop size
+            ### is to run the mask_grid... generation using the FULL drop size overlap_array_FULL
+            ### then apply that mask directly to a "data_grid_slice" which uses the reduced drop size overlap_array
+            ### However, I need to check that the fibre mapping works for that.
+            ### Are the overlap arrays sparse arrays (i.e., full "cubes" with zero where there is no overlap?
+            ### Or are they very specific remappings of "pointer like" elements? 
+
+            if drop_factor != 1:
+            #if 2 != 2: # kludge to turn this off for testing
+            #print("A reduced drop_factor was detected")
+            #print("Cliping using the full size drop mask")
+                
+                # Perform sigma clipping of the data if the clip flag is set.
+                n_unmasked_pixels_before_clipping = np.isfinite(overlap_array_fulldrop*data_rss_slice).sum()
+                
+                # Sigma clip it - pixel by pixel and make a master mask
+                # array. Current clipping, sigma=5 and 1 iteration.        
+                mask_grid_slice_fibres = sigma_clip_mask_slice_fibres(overlap_array_fulldrop*norm_rss_slice/overlap_array_fulldrop)
+                #mask_grid_slice_fibres = sigma_clip_mask_slice_fibres(norm_rss_slice)
+
+            else:
+                # Perform sigma clipping of the data if the clip flag is set.
+                n_unmasked_pixels_before_clipping = np.isfinite(data_grid_slice_fibres).sum()
+            
+                # Sigma clip it - pixel by pixel and make a master mask
+                # array. Current clipping, sigma=5 and 1 iteration.        
+                mask_grid_slice_fibres = sigma_clip_mask_slice_fibres(norm_grid_slice_fibres/overlap_array)
+
+            
             # Below is without the normalised spectra for the clip.
             #mask_grid_slice_fibres = sigma_clip_mask_slice_fibres(data_grid_slice_fibres/weight_grid_slice)
         
@@ -793,15 +828,15 @@ def dithered_cube_from_rss(ifu_list, clip=True, plot=True, offsets='file'):
         # valid_grid_slice_fibres should now be an array of ones and zeros
         # reflecting where there is any valid input data. We multiply this by
         # the fibre weighting to get the final weighting.
-        weight_grid_slice_fibres=weight_grid_slice*valid_grid_slice_fibres
+        weight_grid_slice_fibres=overlap_array*valid_grid_slice_fibres
 
         # Combine (sum) the individual observations. See Section 6.1: "Simple
         # summation" of the data reduction paper. Note that these arrays are
         # "unweighted" cubes C' and V', not the weighted C and V given in the
         # paper.
-        data_grid_slice_final = nansum(data_grid_slice_fibres, axis=2) / n_obs
-        var_grid_slice_final = nansum(var_grid_slice_fibres, axis=2) / (n_obs ** 2)
-        weight_grid_slice_final = nansum(weight_grid_slice_fibres, axis=2) / n_obs
+        data_grid_slice_final = nansum(data_grid_slice_fibres, axis=2) 
+        var_grid_slice_final = nansum(var_grid_slice_fibres, axis=2)
+        weight_grid_slice_final = nansum(weight_grid_slice_fibres, axis=2)
         
         # Where the weight map is within epsilon of zero, set it to NaN to
         # prevent divide by zero errors later.
@@ -813,22 +848,14 @@ def dithered_cube_from_rss(ifu_list, clip=True, plot=True, offsets='file'):
 
     print("Total calls to drizzle: {}, recomputes: {}, ({}%)".format(
                 overlap_maps.n_drizzle, overlap_maps.n_drizzle_recompute,
-                float(overlap_maps.n_drizzle_recompute)/overlap_maps.n_drizzle_recompute))
-
-    # The flux and variance cubes must be rescaled to account for the reduction
-    # in drop size. See Section 9.3: "Flux Scaling" of the data reduction paper.
-    # Note also, that this scaling is immediately nullified by the division by the
-    # weight cube below.
-    flux_cube_scaled = flux_cube / (drop_factor ** 2)
-    var_cube_scaled = var_cube / (drop_factor ** 4)
-    weight_cube_scaled = weight_cube / (drop_factor ** 2)
+                float(overlap_maps.n_drizzle_recompute)/overlap_maps.n_drizzle*100.))
 
     # Finally, divide by the weight cube to remove variations in exposure time
     # (and hence surface brightness sensitivity) from the output data cube.
-    flux_cube_unprimed = flux_cube_scaled / weight_cube_scaled 
-    var_cube_unprimed = var_cube_scaled / (weight_cube_scaled * weight_cube_scaled)
+    flux_cube_unprimed = flux_cube / weight_cube 
+    var_cube_unprimed = var_cube / (weight_cube * weight_cube)
 
-    return flux_cube_unprimed, var_cube_unprimed, weight_cube_scaled, diagnostic_info
+    return flux_cube_unprimed, var_cube_unprimed, weight_cube, diagnostic_info, covariance_array, covariance_slice_locs
 
 def sigma_clip_mask_slice_fibres(grid_slice_fibres):
     """Return a mask with outliers removed."""
@@ -848,11 +875,9 @@ def sigma_clip_mask_slice_fibres(grid_slice_fibres):
           
 class SAMIDrizzler:
     """Make an overlap map for a single fibre. This is the same at all lambda slices for that fibre (neglecting
-    DAR)""" 
+    DAR)"""  
 
-    
-
-    def __init__(self, size_of_grid, n_fibres):
+    def __init__(self, size_of_grid, output_pix_size_arcsec, drop_factor, n_fibres):
         """Construct a new SAMIDrizzler isntance with the necessary information.
         
         Parameters
@@ -876,7 +901,6 @@ class SAMIDrizzler:
         # Drop dimensions in units of output pixels
         self.drop_diameter_pix = self.drop_diameter_arcsec / self.pix_size_arcsec
         self.drop_area_pix = np.pi * (self.drop_diameter_pix / 2.0) ** 2
-
         
         self.drizzle_update_tol = 0.1 * self.pix_size_micron
 
@@ -888,9 +912,6 @@ class SAMIDrizzler:
         self.drop_to_pixel = np.empty((self.output_dimension, self.output_dimension, n_fibres))
         self.pixel_coverage = np.empty((self.output_dimension, self.output_dimension, n_fibres))
 
-        self.drop_to_pixel=np.empty((self.output_dimension, self.output_dimension, n_fibres))
-        self.pixel_coverage=np.empty((self.output_dimension, self.output_dimension, n_fibres))
-        
         # These are used to cache the arguments for the last drizzle.
         self._last_drizzle_x = np.zeros(1)
         self._last_drizzle_y = np.zeros(1)        
@@ -926,25 +947,22 @@ class SAMIDrizzler:
         xfib = (fibre_position_x - self.grid_coordinates_x[0]) / self.pix_size_micron
         yfib = (fibre_position_y - self.grid_coordinates_y[0]) / self.pix_size_micron
 
-        # Create the overlap map from the circ.py code
+        # Create the overlap map from the circ.py code. This returns values in
+        # the range [0,1] that represent the amount by which each output pixel
+        # is covered by the input drop.
         #
         # @NOTE: The circ.py code returns an array which has the x-coodinate in
         # the second index and the y-coordinate in the first index. Therefore,
         # we transpose the result here so that the x-cooridnate (north positive)
         # is in the first index, and y-coordinate (east positive) is in the
         # second index.
-        overlap_map = np.transpose(
+        weight_map = np.transpose(
             utils.circ.resample_circle(
                 self.output_dimension, self.output_dimension, 
                 xfib, yfib,
                 self.drop_diameter_pix / 2.0))
 
-        # Fraction of input drop in each output pixel
-        input_frac_map = overlap_map / self.drop_area_pix
-        # Fraction of each output pixel covered by drop
-        output_frac_map = overlap_map / 1.0
-
-        return input_frac_map, output_frac_map
+        return weight_map
 
     def drizzle(self, xfibre_all, yfibre_all):
         """Compute a mapping from fibre drops to output pixels for all given fibre locations."""
@@ -955,276 +973,257 @@ class SAMIDrizzler:
         if (np.allclose(xfibre_all,self._last_drizzle_x, rtol=0,atol=self.drizzle_update_tol) and
             np.allclose(yfibre_all,self._last_drizzle_y, rtol=0,atol=self.drizzle_update_tol)):
             # We've been asked to recompute an asnwer that is less than the tolerance to recompute
-            return self.drop_to_pixel, self.pixel_coverage
+            return self.drop_to_pixel
         else:
             self.n_drizzle_recompute = self.n_drizzle_recompute + 1
         
         for i_fibre, xfib, yfib in itertools.izip(itertools.count(), xfibre_all, yfibre_all):
     
             # Feed the grid_coordinates_x and grid_coordinates_y fibre positions to the overlap_maps instance.
-            drop_to_pixel_fibre, pixel_coverage_fibre=self.single_overlap_map(xfib, yfib)
+            drop_to_pixel_fibre = self.single_overlap_map(xfib, yfib)
     
             # Padding with NaNs instead of zeros (do I really need to do this? Probably not...)
             drop_to_pixel_fibre[np.where(drop_to_pixel_fibre < epsilon)]=np.nan
-            pixel_coverage_fibre[np.where(pixel_coverage_fibre < epsilon)]=np.nan
     
             self.drop_to_pixel[:,:,i_fibre]=drop_to_pixel_fibre
-            self.pixel_coverage[:,:,i_fibre]=pixel_coverage_fibre
     
         self._last_drizzle_x = xfibre_all
         self._last_drizzle_y = yfibre_all
     
-        return self.drop_to_pixel, self.pixel_coverage
+        return self.drop_to_pixel
 
-def WCS_position(myIFU,object_flux_cube,object_name,band,plot=False,write=False,nominal=False,
-                 remove_thput_file=True):
-    """Wrapper for WCS_position_coords, extracting coords from IFU.
+def create_primary_header(ifu_list,name,files,WCS_pos,WCS_flag):
+    """Create a primary header to attach to each cube from the RSS file headers"""
+
+    hdr = ifu_list[0].primary_header
+    fbr_hdr = ifu_list[0].fibre_table_header
+
+    # Create the wcs.
+    wcs_new=pw.WCS(naxis=3)
+    wcs_new.wcs.crpix = [WCS_pos["CRPIX1"], WCS_pos["CRPIX2"], hdr['CRPIX1']]
+    wcs_new.wcs.cdelt = np.array([WCS_pos["CDELT1"], WCS_pos["CDELT2"], hdr['CDELT1']])
+    wcs_new.wcs.crval = [WCS_pos["CRVAL1"], WCS_pos["CRVAL2"], hdr['CRVAL1']]
+    wcs_new.wcs.ctype = [WCS_pos["CTYPE1"], WCS_pos["CTYPE2"], hdr['CTYPE1']]
+    wcs_new.wcs.equinox = 2000
+            
+    # Create a header
+    hdr_new=wcs_new.to_header()
+    hdr_new.update('WCS_SRC',WCS_flag,'WCS Source')
+            
+    # Add the name to the header
+    hdr_new.update('NAME', name, 'Object ID')
+    # Need to implement a database specific-specific OBSTYPE keyword to indicate galaxies
+    # *NB* This is different to the OBSTYPE keyword already in the header below
     
-    This function cross-correlates a g-band convolved SAMI cube with its
-    respective SDSS g-band image and pins down the positional WCS for the
-    central spaxel of the cube.
-    """
+    # Determine total exposure time and add to header
+    total_exptime = 0.
+    for ifu in ifu_list:
+        total_exptime+=ifu.primary_header['EXPOSED']
+    hdr_new.update('TOTALEXP',total_exptime,'Total exposure (seconds)')
 
-    # Get Object RA + DEC from fibre table (this is the input catalogues RA+DEC in deg)
-    object_RA = np.around(myIFU.obj_ra[myIFU.n == 1][0], decimals=6)
-    object_DEC = np.around(myIFU.obj_dec[myIFU.n == 1][0], decimals=6)
+    # Add the mercurial changeset ID to the header
+    hdr_new.update('HGCUBING', HG_CHANGESET, 'Hg changeset ID for cubing code')
+    # Need to implement a global version number for the database
     
-    # Build wavelength axis.
-    CRVAL3 = myIFU.crval1
-    CDELT3 = myIFU.cdelt1
-    Nwave  = np.shape(object_flux_cube)[0]
+    # Put the RSS files into the header
+    for num in xrange(len(files)):
+        rss_key='HIERARCH RSS_FILE '+str(num+1)
+        rss_string='Input RSS file '+str(num+1)
+        hdr_new.update(rss_key, os.path.basename(files[num]), rss_string)
+
+    # Extract header keywords of interest from the metadata table, check for consistency
+    # then append to the main header
+
+    primary_header_keyword_list = ['DCT_DATE','DCT_VER','DETECXE','DETECXS','DETECYE','DETECYS',
+                                   'DETECTOR','XPIXSIZE','YPIXSIZE','METHOD','SPEED','READAMP','RO_GAIN',
+                                   'RO_NOISE','ORIGIN','TELESCOP','ALT_OBS','LAT_OBS','LONG_OBS',
+                                   'RCT_VER','RCT_DATE','RADECSYS','INSTRUME','SPECTID',
+                                   'GRATID','GRATTILT','GRATLPMM','ORDER','TDFCTVER','TDFCTDAT','DICHROIC',
+                                   'OBSTYPE','TOPEND','AXIS','AXIS_X','AXIS_Y','TRACKING','TDFDRVER']
+
+    primary_header_conditional_keyword_list = ['HGCOORDS','COORDROT','COORDREV']
+
+    for keyword in primary_header_keyword_list:
+        if keyword in ifu.primary_header.keys():
+            val = []
+            for ifu in ifu_list: val.append(ifu.primary_header[keyword])
+            if len(set(val)) == 1: 
+                hdr_new.append(hdr.cards[keyword])
+            else:
+                print 'Non-unique value for keyword:',keyword
+
+    # Extract the couple of relevant keywords from the fibre table header and again
+    # check for consistency of keyword values
+
+    fibre_header_keyword_list = ['PLATEID','LABEL']
+
+    for keyword in fibre_header_keyword_list:
+        val = []
+        for ifu in ifu_list: val.append(ifu.fibre_table_header[keyword])
+        if len(set(val)) == 1:
+            hdr_new.append(ifu_list[0].fibre_table_header.cards[keyword])
+        else:
+            print 'Non-unique value for keyword:', keyword
+
+    # Append HISTORY from the initial RSS file header, assuming HISTORY is
+    # common for all RSS frames.
+
+    hdr_new.append(hdr.cards['SCRUNCH'])
+    hist_ind = np.where(np.array(hdr.keys()) == 'HISTORY')[0]
+    for i in hist_ind: 
+        hdr_new.append(hdr.cards[i])
+
+    # Add catalogue RA & DEC to header
+    hdr_new.set('CATARA', ifu_list[0].obj_ra[0], after='CRVAL3')
+    hdr_new.set('CATADEC', ifu_list[0].obj_dec[0], after='CATARA')
+
+    # Additional header items from random extensions
+    # Each key in `additional` is a FITS extension name
+    # Each value is a list of FITS header keywords to copy from that extension
+    additional = {'FLUX_CALIBRATION': ('STDNAME',)}
+    for extname, key_list in additional.items():
+        try:
+            add_hdr_list = [pf.getheader(f, extname) for f in files]
+        except KeyError:
+            print 'Extension not found:', extname
+            continue
+        for key in key_list:
+            val = []
+            try:
+                for add_hdr in add_hdr_list:
+                    val.append(add_hdr[key])
+            except KeyError:
+                print 'Keyword not found:', key, 'in extension', extname
+                continue
+            if len(set(val)) == 1:
+                hdr_new.append(add_hdr.cards[key])
+            else:
+                print 'Non-unique value for keyword:', key, 'in extension', extension
+
+    return hdr_new
+
+def create_metadata_table(ifu_list):
+    """Build a FITS binary table HDU containing all the meta data from individual IFU objects."""
     
-    # -- crval3 is middle of range and indexing starts at 0.
-    # -- this wave-axis agrees with QFitsView interpretation.
-    CRVAL3a = CRVAL3 - ((Nwave-1)/2)*CDELT3
-    wave = CRVAL3a + CDELT3*np.arange(Nwave)
-        
-    object_flux_cube = np.transpose(object_flux_cube, (2,0,1))
+    # List of columns for the meta-data table
+    columns = []
     
-    return WCS_position_coords(object_RA, object_DEC, wave, object_flux_cube,
-                               object_name, band, plot=plot, write=write,
-                               nominal=nominal)
-
-
-def WCS_position_coords(object_RA, object_DEC, wave, object_flux_cube, object_name, band,
-                        plot=False, write=False, nominal=False, remove_thput_file=True):
-    """Equate the WCS position information from a cross-correlation between a 
-    g-band SAMI cube and a g-band SDSS image."""
-
-    if nominal:
-        img_crval1 = object_RA
-        img_crval2 = object_DEC
-        xcube = size_of_grid
-        ycube = size_of_grid
-        img_cdelt1 = -1.0 * output_pix_size_arcsec / 3600.0
-        img_cdelt2 = output_pix_size_arcsec / 3600.0
-    else:
-
-        # Get SDSS g-band throughput curve
-        if not os.path.isfile("sdss_"+str(band)+".dat"):
-            urllib.urlretrieve("http://www.sdss.org/dr3/instruments/imager/filters/"+str(band)+".dat", "sdss_"+str(band)+".dat")
-        
-        # and convolve with the SDSS throughput
-        sdss = ascii.read("SDSS_"+str(band)+".dat", quotechar="#", names=["wave", "pt_secz=1.3", "ext_secz=1.3", "ext_secz=0.0", "extinction"])
-        
-        # re-grid g["wave"] -> wave
-        thru_regrid = griddata(sdss["wave"], sdss["ext_secz=1.3"], wave, method="cubic", fill_value=0.0)
-        
-        # initialise a 2D simulated g' band flux array.
-        len_axis = np.shape(object_flux_cube)[1]
-        Nwave = len(wave)
-        reconstruct = np.zeros((len_axis,len_axis))
-        tester = np.zeros((len_axis,len_axis))
-        data_bit = np.zeros((Nwave,len_axis,len_axis))
-        
-        # Sum convolved flux:
-        for i in range(Nwave):
-            data_bit[i] = object_flux_cube[i]*thru_regrid[i]
-        
-        reconstruct = np.nansum(data_bit,axis=0) # not absolute right now
-        reconstruct[np.isnan(reconstruct)] = 0. # replacing nan with 0.0
-        reconstruct[reconstruct < 0] = 0.       # replacing negative fluxes with 0.0
-        
-        cube_image = reconstruct
-        xcube = len(cube_image[0])
-        ycube = len(cube_image[1])
-        cube_image_crop = cube_image[(len(cube_image[0])/2)-10:(len(cube_image[0])/2)+10,(len(cube_image[1])/2)-10:(len(cube_image[1])/2)+10]
-        cube_image_crop = sp.ndimage.zoom(cube_image_crop, 5, order=3)
-        cube_image_crop_norm = (cube_image_crop - np.min(cube_image_crop))/np.max(cube_image_crop - np.min(cube_image_crop))
-        
-        # Check if the user supplied a red RSS file, throw exception.
-        if np.array_equal(cube_image, tester):
-            raise SystemExit("All values are zero: please provide the cube corresponding to the requested spectral band of the image!")
-
-    ##########
-        
-        cube_size = np.around((size_of_grid*output_pix_size_arcsec)/3600, decimals=6)
-        
-        # Get SDSS Image
-        if not os.path.isfile(str(object_name)+"_SDSS_"+str(band)+".fits"):
-            getSDSSimage(object_name=object_name, RA=object_RA, DEC=object_DEC, 
-                         band=str(band), size=cube_size, number_of_pixels=size_of_grid)
-        
-        # Open SDSS image and extract data & header information
-        image_file = pf.open(str(object_name)+"_SDSS_"+str(band)+".fits")
-        image_data = image_file['Primary'].data
-
-        
-        image_header = image_file['Primary'].header
-        img_crval1 = float(image_header['CRVAL1']) #RA
-        img_crval2 = float(image_header['CRVAL2']) #DEC
-        img_crpix1 = float(image_header['CRPIX1']) #Reference x-pixel
-        img_crpix2 = float(image_header['CRPIX2']) #Reference y-pixel
-        img_cdelt1 = float(image_header['CDELT1']) #Delta RA
-        img_cdelt2 = float(image_header['CDELT2']) #Delta DEC
-
-        SDSS_image = image_data
-        SDSS_image_crop = SDSS_image[(len(SDSS_image[0])/2)-10:(len(SDSS_image[0])/2)+10,(len(SDSS_image[1])/2)-10:(len(SDSS_image[1])/2)+10]
-        SDSS_image_crop_norm = (SDSS_image_crop - np.min(SDSS_image_crop))/np.max(SDSS_image_crop - np.min(SDSS_image_crop))
-
-        ##########
-
-    if (not nominal) and np.size(np.where(image_data == 0.0)) != 2*np.size(image_data):
-        # Cross-correlate normalised SAMI-cube g-band image and SDSS g-band image
-        WCS_flag = 'SDSS'
-        crosscorr_image = sp.signal.correlate2d(SDSS_image_crop_norm, cube_image_crop_norm)
-
-        # 2D Gauss Fit the cross-correlated cropped image
-        crosscorr_image_1d = np.ravel(crosscorr_image)
-        #use for loops to recover indicies in x and y positions of flux values
-        x_pos = []
-        y_pos = []
-        for i in xrange(np.shape(crosscorr_image)[0]):
-            for j in xrange(np.shape(crosscorr_image)[1]):
-                x_pos.append(i)
-                y_pos.append(j)
-        x_pos=np.array(x_pos)
-        y_pos=np.array(y_pos)
-
-        #define guess parameters for TwoDGaussFitter:
-        amplitude = max(crosscorr_image_1d)
-        mean_x = (np.shape(crosscorr_image)[0])/2
-        mean_y = (np.shape(crosscorr_image)[1])/2
-        sigma_x = 5.0 
-        sigma_y = 6.0 
-        rotation = 60.0 
-        offset = 4.0
-        p0 = [amplitude, mean_x, mean_y, sigma_x, sigma_y, rotation, offset]
-
-        # call SAMI TwoDGaussFitter
-        GF2d = fitting.TwoDGaussFitter(p0, x_pos, y_pos, crosscorr_image_1d)
-        # execute gauss fit using
-        GF2d.fit()
-        GF2d_xpos = GF2d.p[2]
-        GF2d_ypos = GF2d.p[1]
-
-        # reconstruct the fit
-        GF2d_reconstruct=GF2d(x_pos, y_pos)
-
-        x_shape = len(crosscorr_image[0])
-        y_shape = len(crosscorr_image[1])
-        x_offset_pix = GF2d_xpos - x_shape/2
-        y_offset_pix = GF2d_ypos - y_shape/2
-        x_offset_arcsec = -x_offset_pix * output_pix_size_arcsec/5
-        y_offset_arcsec = y_offset_pix * output_pix_size_arcsec/5
-        x_offset_degree = ((x_offset_arcsec/3600)/24)*360
-        y_offset_degree = (y_offset_arcsec/3600)
+    # Number of rows to appear in the table (equal to the number of files used to create the cube)
+    n_rows = len(ifu_list)
     
-    else:
-        WCS_flag = 'Nominal'
-        y_offset_degree = 0.0
-        x_offset_degree = 0.0
-
-        # Create dictionary of positional WCS
-    if isinstance(xcube/2, int):
-            WCS_pos={"CRVAL1":(img_crval1 + x_offset_degree), "CRVAL2":(img_crval2 + y_offset_degree), "CRPIX1":(xcube/2 + 0.5), 
-                     "CRPIX2":(ycube/2 + 0.5), "CDELT1":(img_cdelt1), "CDELT2":(img_cdelt2), "CTYPE1":"DEGREE", "CTYPE2":"DEGREE"}
-    else:
-            WCS_pos={"CRVAL1":(img_crval1 + x_offset_degree), "CRVAL2":(img_crval2 + y_offset_degree), "CRPIX1":(xcube/2), 
-                     "CRPIX2":(ycube/2), "CDELT1":(img_cdelt1), "CDELT2":(img_cdelt2), "CTYPE1":"DEGREE", "CTYPE2":"DEGREE"}
-
-
-##########
-
-    # Remove temporary files
-    if remove_thput_file and os.path.exists("sdss_"+str(band)+".dat"):
-        os.remove("sdss_"+str(band)+".dat")
-    if os.path.exists(str(object_name)+"_SDSS_"+str(band)+".fits"):
-        os.remove(str(object_name)+"_SDSS_"+str(band)+".fits")
+    # For now we assume that all files have the same set of keywords, and complain if they don't.
     
-    return WCS_pos,WCS_flag
-
-
-def update_WCS_coords(filename, nominal=False, remove_thput_file=True):
-    """Recalculate the WCS data in a SAMI datacube."""
-    # Pick out the relevant data
-    header = pf.getheader(filename)
-    ra = (header['CRVAL1'] + 
-          (1 + np.arange(header['NAXIS1']) - header['CRPIX1']) * 
-          header['CDELT1'])
-    dec = (header['CRVAL2'] + 
-           (1 + np.arange(header['NAXIS2']) - header['CRPIX2']) * 
-           header['CDELT2'])
-    wave = (header['CRVAL3'] + 
-            (1 + np.arange(header['NAXIS3']) - header['CRPIX3']) * 
-            header['CDELT3'])
-    object_RA = np.mean(ra)
-    object_DEC = np.mean(dec)
-    object_flux_cube = pf.getdata(filename)
-    object_name = header['NAME']
-    if header['GRATID'] == '580V':
-        band = 'g'
-    elif header['GRATID'] == '1000R':
-        band = 'r'
-    else:
-        raise ValueError('Could not identify band. Exiting')
-    # Calculate the WCS
-    WCS_pos, WCS_flag = WCS_position_coords(
-        object_RA, object_DEC, wave, object_flux_cube, object_name, band,
-        nominal=nominal, remove_thput_file=remove_thput_file)
-    # Update the file
-    hdulist = pf.open(filename, 'update', do_not_scale_image_data=True)
-    header = hdulist[0].header
-    for key, value in WCS_pos.items():
-        header[key] = value
-    header['WCS_SRC'] = WCS_flag
-    hdulist.close()
-    return
-
-def getSDSSimage(object_name="unknown", RA=0, DEC=0, band="g", size=0.006944, 
-                 number_of_pixels=50, projection="Tan", url_show="False"):
-    """This function queries the SDSS surver at skyview.gsfc.nasa.gov and returns an image
-    with a user supplied set of parameters. 
-
-    A full description of the input parameters is given at -
-    http://skyview.gsfc.nasa.gov/docs/batchpage.html
-
-    The parameters that can be set here are:
-
-        name - object name to include in file name for reference
-        RA - in degrees
-        DEC - in degrees
-        band - u,g,r,i,z filters
-        size - size of side of image in degrees
-        number_of_pixels - number of pixels of side of image (i.e 50 will return 50x50)
-        projection - 2D mapping of onsky projection. Tan is standard.
-        url_show - this is a function variable if the user wants the url printed to terminal
-
-    """
+    first_header = ifu_list[0].primary_header
     
-    # Construct URL
-    RA = str(RA).split(".")
-    DEC = str(DEC).split(".")
-    size = str(size).split(".")
+    primary_header_keywords = first_header.keys()
     
-    URL = "http://skyview.gsfc.nasa.gov//cgi-bin/pskcall?position="+(str(RA[0])+"%2e"+str(RA[1])+"%2c"+str(DEC[0])+"%2e"+str(DEC[1])+
-        "&Survey=SDSSdr7"+str(band)+"&size="+str(size[0])+"%2e"+str(size[1])+"&pixels="+str(number_of_pixels)+"&proj="+str(projection))
+    # We must remove COMMENT and HISTORY keywords, as they must be treated separately.
+    for i in xrange(primary_header_keywords.count('HISTORY')):
+        primary_header_keywords.remove('HISTORY')
+    for i in xrange(primary_header_keywords.count('COMMENT')):
+        primary_header_keywords.remove('COMMENT')
+    for i in xrange(primary_header_keywords.count('SIMPLE')):
+        primary_header_keywords.remove('SIMPLE')
+    for i in xrange(primary_header_keywords.count('EXTEND')):
+        primary_header_keywords.remove('EXTEND')
+    for i in xrange(primary_header_keywords.count('SCRUNCH')):
+        primary_header_keywords.remove('SCRUNCH')
     
-    # Get SDSS image
-    urllib.urlretrieve(str(URL), str(object_name)+"_SDSS_"+str(band)+".fits")
+    # TODO: Test/check that all ifu's have the same keywords and error if not
+
+    # Determine the FITS binary table column types types for each header keyword
+    # and create the corresponding columns. See the documentation here:
+    # 
+    #     https://astropy.readthedocs.org/en/v0.1/io/fits/usage/table.html#creating-a-fits-table
+
+    def get_primary_header_values(keyword, dtype):
+        return np.asarray(map(lambda x: x.primary_header[keyword],ifu_list), dtype)
+
+    for keyword in primary_header_keywords:
+        if (isinstance(first_header[keyword],bool)):
+            # Output type is Logical (boolean)
+            columns.append(pf.Column(
+                name=keyword,
+                format='L',
+                array=get_primary_header_values(keyword,np.bool)
+                )) 
+        elif (isinstance(first_header[keyword],int)):
+            columns.append(pf.Column(
+                name=keyword,
+                format='K',
+                array=get_primary_header_values(keyword,np.int)
+                )) # 64-bit integer
+        elif (isinstance(first_header[keyword],str)):
+            columns.append(pf.Column(
+                name=keyword,
+                format='128A',
+                array=get_primary_header_values(keyword,'|S128')                
+                )) # 128 character string
+        elif (isinstance(first_header[keyword],float)):
+            columns.append(pf.Column(
+                name=keyword,
+                format='E',
+                array=get_primary_header_values(keyword,np.float)
+                )) # single-precision float
+
+    del get_primary_header_values
     
-    if url_show=="True":
-        print ("SDSS "+str(band)+"-band image of object "+str(object_name)+" has finished downloading to the working directory with the file name: "
-               +str(object_name)+"_SDSS_"+str(band)+".fits")
-        
-        print "The URL for this object is: ", URL
+    # TODO: Add columns for comments and history information.
+    #
+    # The code below tries to put these in a variable size character array
+    # column in the binary table, but it is very messy. Better might be a
+    # separate ascii table.
+    #
+    #columns.append(pf.Column(name='COMMENTS', format='80PA(100)')) # Up to 100 80-character lines
+    #columns.append(pf.Column(name='HISTORY', format='80PA(100)')) # Up to 100 80-character lines
+   
+    return pf.new_table(columns)
+
+def create_covar_matrix(overlap_array,variances):
+    """Create the covariance matrix for a single wavelength slice. 
+        As input takes the output of the drizzle class, overlap_array, 
+        and the variances of the individual fibres"""
+    
+    covarS = 2 # Radius of sub-region to record covariance information - probably
+               # shouldn't be hard coded, but scaled to drop size in some way
+    
+    s = np.shape(overlap_array)
+    if s[2] != len(variances):
+        raise Exception('Length of variance array must be equal to the number of fibre overlap maps supplied')
+    
+    #Set up the covariance array
+    covariance_array = np.zeros((s[0],s[1],(covarS*2)+1,(covarS*2)+1))
+    if len(np.where(np.isfinite(variances) == True)[0]) == 0:
+        return covariance_array
+    
+    #Set up coordinate arrays for the covariance sub-arrays
+    xB = np.zeros(((covarS*2+1)**2),dtype=np.int)
+    yB = np.zeros(((covarS*2+1)**2),dtype=np.int)
+    for i in range(covarS*2+1):
+        for j in range(covarS*2+1):
+            xB[j+i*(covarS*2+1)] = i
+            yB[j+i*(covarS*2+1)] = j
+    xB = xB - covarS
+    yB = yB - covarS
+    
+    #Pad overlap_array with covarS blank space in the spatial axis
+    
+    overlap_array_padded = np.zeros([s[0]+2*covarS,s[1]+2*covarS,s[2]])
+    overlap_array_padded[covarS:-covarS,covarS:-covarS,:] = overlap_array
+    overlap_array = overlap_array_padded
+
+    #Loop over output pixels
+    for xA in range(s[0]):
+        for yA in range(s[1]):
+            #Loop over each fibre
+            for f in range(len(variances)):
+                if np.isfinite(overlap_array[xA+covarS,yA+covarS,f]):
+                    xC = xA +covarS + xB
+                    yC = yA + covarS + yB
+                    a = overlap_array[xA+covarS,yA+covarS,f]*np.sqrt(variances[f])
+                    b = overlap_array[xC,yC,f]*np.sqrt(variances[f])
+                    b[np.where(np.isfinite(b) == False)] = 0.0
+                    covariance_array[xA,yA,:,:] = covariance_array[xA,yA,:,:] + (a*b).reshape(5,5)
+            covariance_array[xA,yA,:,:] = covariance_array[xA,yA,:,:]/covariance_array[xA,yA,covarS,covarS]
+    
+    return covariance_array

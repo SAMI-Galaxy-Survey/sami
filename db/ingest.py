@@ -171,22 +171,19 @@ import astropy.io.fits as pf
 import astropy.io.ascii as ascii
 import os
 import sys
-import sami
 
 """ 
 For commit message: 
 
-Improved documentation. Deleted deprecated code make_list_old(). 
+Changed the overwrite process of create(). 
 
-- Updated and extended the descriptions of the individual functions. 
-- Removed importation of tables within importMaster (already global). 
-- Got rid of 'debug' argument in make_list(). 
+File access was changed to 'a' at the Nov'13 Busy Week. That isn't what we want though, truncation is the way to go, not appending, as the links are still there. Also got rid of a little print statement that seems to have been left over from debugging.  
 """
 
 # ~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~
 def create(h5file, overwrite=False, verbose=True):
 # ~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~
-    """ Create a SAMI-formatted  HDF5 file """
+    """ Create a SAMI-formatted HDF5 file """
 
     # Check that the 'h5file' string has a .h5 extension
     if not h5file[-3:] == '.h5': h5file = h5file + '.h5'
@@ -194,7 +191,6 @@ def create(h5file, overwrite=False, verbose=True):
     # Check if file already exists, overwite if overwrite==True
     if os.path.isfile(h5file):
         file_already_exists = True
-        print(file_already_exists)
         if not overwrite:
             raise SystemExit("The nominated h5 file ('"+h5file
                              +"') already exists. Please raise the overwrite "
@@ -203,7 +199,7 @@ def create(h5file, overwrite=False, verbose=True):
     
     # Create an h5 file
     if (not os.path.isfile(h5file)) or (overwrite==True):
-        f = h5.File(h5file, 'a')
+        f = h5.File(h5file, 'w')
 
     # And require a SAMI root directory
     root = f.require_group("SAMI")
@@ -224,6 +220,8 @@ def import_cube(blue_cube, red_cube, h5file, version, safe_mode=False,
                 version_confirm=True):
 # ~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~
     """ Import a set of data-cubes and parents to the SAMI Archive. """
+    
+    import sami
     
     # Check if the nominated h5 file exists; prompt for creation if not, exit. 
     if not os.path.isfile(h5file):

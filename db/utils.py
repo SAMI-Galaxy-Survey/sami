@@ -24,7 +24,6 @@ import astropy.io.fits as pf
 import astropy.io.ascii as ascii
 import os
 import sys
-import sami
 
 
 def list_keys(h5file):

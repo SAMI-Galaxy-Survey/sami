@@ -26,10 +26,15 @@ Commit message:
 
 For commit message:
 
-Getting rid of unnecessary module imports: 
- sami
- astropy.io.fits
- astropy.io.ascii
+Wrote new, modular export() code. Fixed bugs in ingest.py. 
+
+export.py: 
+
+Wrote new export() code that calls copyH5() and optionally unpackFITS(). Very lightweight itself. WARNING: fits outputs do not work right now. There is a problem with HDF5 blocks full of external links. Can't be read by unpacking code, "can't open object". 
+
+ingest.py: 
+
+File access in create(overwrite=True) was changed to 'a' at the Nov'13 Busy Week. That isn't what we want though: we need to truncate not append. Also got rid of a little print statement that seems to have been left over from debugging.  
 
 """
 
@@ -160,9 +165,9 @@ def fetchCube(name, h5file, colour=''):
 
 
 # ~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~
-def copyH5(name, h5archive, version, obstype, colour='', 
+def copyH5(name, h5archive, version, colour='', 
            outFile='SAMI_archive_file.h5', outType='fits', 
-           getCube=True, getRSS=False):
+           getCube=True, getRSS=False, overwrite=False):
 # ~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~
     """ Copy or link datasets from the SAMI archive to a new h5 file """
 
@@ -171,10 +176,12 @@ def copyH5(name, h5archive, version, obstype, colour='',
     import random
     import itertools
 
+    # *** NB: This only copies Targets now, not Calibrators. Is that bad? 
+
     def id_generator(size=6, chars=string.ascii_uppercase + string.digits):
         return ''.join(random.choice(chars) for x in range(size))
         
-    # Interpert input. 
+    # Interpert input, turn all names into strings. 
     if name is not isinstance(list, basestring):
         name = [name]
     if any(name) is not str:
@@ -188,10 +195,13 @@ def copyH5(name, h5archive, version, obstype, colour='',
         fname = id_generator()+'.h5'
     if outType == 'h5':
         fname = outFile
+    if (outType != 'fits') & (outType != 'h5'):
+        raise SystemExit("Please define 'outType' as 'fits' or 'h5'.")
+
     
     """There is a slight, but intended inefficiency in the follwoing open-close
     -open process, written to take advantage of the i/o catch in create()."""
-    create(fname)
+    create(fname, overwrite=overwrite)
     hdfOUT = h5.File(fname, 'a')
 
     # Copy the SAMI Target Table. 
@@ -219,7 +229,7 @@ def copyH5(name, h5archive, version, obstype, colour='',
                 
         if getRSS:
             # Diagnose number of RSS parents, append all permutations to list. 
-            myKeys = h5.File(h5archive, 'r')['/SAMI/'+version+'/'+obstype+'/'+\
+            myKeys = h5.File(h5archive, 'r')['/SAMI/'+version+'/Target/'+\
                                              name[thisTarg]].keys()
             if 'B' in colour:
                 nRSS = sum(['B_RSS_Data' in s for s in myKeys])
@@ -241,7 +251,7 @@ def copyH5(name, h5archive, version, obstype, colour='',
 
         # Commence dset loop. 
         for allDsets in range(len(dsets)):
-            thisDset = '/SAMI/'+version+'/'+obstype+'/'+\
+            thisDset = '/SAMI/'+version+'/Target/'+\
                      name[thisTarg]+'/'+dsets[allDsets]
             
             if outType == 'fits':
@@ -432,10 +442,107 @@ def fetch_cube(name, h5file, version='', colour='',
         
     # close h5file and end process
     hdf.close()
+
+def validate_sami_id(candidate_sami_id):
+    """Dummy validation function for SAMI IDs, always returns true."""
+    return True
+
+def interpret_id_list_from_file(filename):
+    """Execute interpret_id_list on the contents of filename."""
     
+    return interpret_id_list(open(filename).read())
+    
+def interpret_id_list(id_list_string):
+    """Extract SAMI IDs and extra information from a string list.
+    
+    Arguments
+    ---------
+    
+        id_list_string (string): A string containing a list of SAMI IDs and 
+            additional information as a white space separated table.
+
+    Returns: a tuple of two lists, the first being the list of SAMI IDs, and
+    the second being the corresponding list of additional information.
+            
+    The input list is expected to be one SAMI ID per line, followed by any
+    additional information provided by the user, such as a cross-
+    identification. This is split up and returned as two lists, one of the
+    SAMI IDs, and one of the corresponding additional information. SAMI IDs
+    are validated with validate_sami_id, and invalid IDs are removed. Blank
+    lines and lines starting with a hash character (#) are treated as comments
+    and removed.
+
+    In reality, this is all accomplished with a regular expression, so the
+    syntax of the input is actually much more forgiving.
+
+    """
+    
+    from re import compile, VERBOSE
+
+    assert isinstance(id_list_string, str)
+    
+    split_re = compile(r"""
+        \A          # Start of line
+        \s*         # White space at start of line (optional)
+        (\d+)       # Digits of SAMI ID (captured)
+        (?:         # Start of non-capturing grouping
+            [,\s+]  # Whitespace and/or comma separator from extra data
+            (.*?)   # Extra data (captured)
+        )?          # End of grouping, contents of group optional
+        \s*         # Whitespace at end of line (optional)
+        \Z          # End of line """,
+                       VERBOSE)
+    
+    lines = id_list_string.splitlines()
+
+    # Remove lines which do not match the pattern:
+    lines = filter(split_re.match, lines)
+        
+    # Split into ID and extra_data, with the empty string for extra_data if
+    # missing:
+    id_info_list = [split_re.match(l).groups("") for l in lines]
+    
+    # Remove rows with invalid SAMI IDs
+    id_info_list = filter(lambda l: validate_sami_id(l[0]), id_info_list)
+    
+    # Convert into separate lists
+    id_list = [l[0] for l in id_info_list]
+    info_list = [l[1] for l in id_info_list]
+
+    assert isinstance(id_list, list)
+    assert isinstance(info_list, list)
+    
+    return id_list, info_list
 
 # ~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~
-def export(name, h5file, get_cube=False, get_rss=False, 
+def export(name, h5file, version='', getCube=True, getRSS=False, 
+           colour='', outType='fits', overwrite=False):
+# ~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~
+    """ The main SAMI_DB .fits export function """
+
+    # Check that some data have been requested. 
+    if (not getCube) and (not getRSS): 
+        raise SystemExit("Please raise at least one of the 'get???' flags.")
+
+    # Open HDF5 archive. This accommodates some access issues, but should be 
+    #  written better... It is only for getVersion(). 
+    hdf = h5.File(h5file, 'r')
+    
+    # Get latest version of data. 
+    if version == '': 
+        version = getVersion(h5file, hdf, version)
+
+    # Run copyH5 and optionally unpack FITS.
+    babyH5 = copyH5(name, h5file, version, colour=colour, 
+                    outType=outType, getCube=getCube, getRSS=getRSS, 
+                    overwrite=overwrite)
+
+    if outType == 'fits':
+        unpackFITS(babyH5, h5file, overwrite=overwrite)
+
+
+# ~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~
+def export_OLD(name, h5file, get_cube=False, get_rss=False, 
            colour='', all_versions=False):
 # ~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~
     """ The main SAMI_DB .fits export function 
@@ -453,7 +560,7 @@ def export(name, h5file, get_cube=False, get_rss=False,
     
     # Check that some data have been requested: 
     if (not get_cube) and (not get_rss): 
-        raise SystemExit("Please raise at least one of the 'get_???' flags.")
+        raise SystemExit("Please raise at least one of the 'get???' flags.")
     
     # Open HDF5 file and run a series of tests and diagnostics. 
     hdf = h5.File(h5file, 'r')
