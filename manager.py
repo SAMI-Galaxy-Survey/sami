@@ -1064,23 +1064,21 @@ class Manager:
                       for fits in file_iterable
                       if (overwrite or 
                           not os.path.exists(self.target_path(fits, tlm=tlm)))]
-        # Send the items out for reducing
-        self.map(run_2dfdr_single_wrapper, input_list)
-        # Delete unwanted reduced files
         reduced_files = [item[0] for item in input_list]
+        # Send the items out for reducing. Keep track of which ones were done.
+        while input_list:
+            print len(input_list), 'files remaining.'
+            finished = np.array(self.map(
+                run_2dfdr_single_wrapper, input_list))
+            input_list = [item for i, item in enumerate(input_list) 
+                          if not finished[i]]
+        # Delete unwanted reduced files
         for fits in reduced_files:
             if (fits.ndf_class == 'MFFFF' and tlm and not leave_reduced and
                 os.path.exists(fits.reduced_path)):
                 os.remove(fits.reduced_path)
         # Return a list of fits objects that were reduced
         return reduced_files
-        # reduced_files = []
-        # for fits in file_iterable:
-        #     reduced = self.reduce_file(fits, overwrite=overwrite, tlm=tlm,
-        #                                leave_reduced=leave_reduced)
-        #     if reduced:
-        #         reduced_files.append(fits)
-        # return reduced_files
 
     def target_path(self, fits, tlm=False):
         """Return the path of the file we want 2dfdr to produce."""
@@ -2753,11 +2751,15 @@ def best_path(fits):
 def run_2dfdr_single_wrapper(group):
     """Run 2dfdr on a single file."""
     fits, idx_file, options, cwd, imp_scratch, scratch_dir = group
-    tdfdr.run_2dfdr_single(
-        fits, idx_file, options=options, return_to=cwd, 
-        unique_imp_scratch=True, restore_to=imp_scratch, 
-        scratch_dir=scratch_dir)
-    return
+    try:
+        tdfdr.run_2dfdr_single(
+            fits, idx_file, options=options, return_to=cwd, 
+            unique_imp_scratch=True, restore_to=imp_scratch, 
+            scratch_dir=scratch_dir)
+    except tdfdr.LockException:
+        print 'Abandoning', fits.filename, 'for now.'
+        return False
+    return True
 
 
 class MatchException(Exception):
