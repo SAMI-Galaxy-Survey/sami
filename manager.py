@@ -195,13 +195,18 @@ CHECK_DATA = {
             'spectrophotometric': None,
             'priority': 6,
             'group_by': ('date', 'ccd', 'field_id')},
-    'CUB': {'name': 'Cubes',
+    'ALI': {'name': 'Alignment',
             'ndf_class': 'MFOBJECT',
             'spectrophotometric': False,
             'priority': 7,
-            'group_by': ('date', 'field_id')}}
+            'group_by': ('field_id',)}
+    'CUB': {'name': 'Cubes',
+            'ndf_class': 'MFOBJECT',
+            'spectrophotometric': False,
+            'priority': 8,
+            'group_by': ('field_id',)}}
 # Extra priority for checking re-reductions
-PRIORITY_RECENT = 10
+PRIORITY_RECENT = 100
 
 class Manager:
     """Object for organising and reducing SAMI data.
@@ -1271,6 +1276,8 @@ class Manager:
                          fits_list_other_arm))
                     break
         self.map(measure_offsets_group, complete_groups)
+        for group in complete_groups:
+            self.update_checks('ALI', group[1], False)
         return
 
     def cube(self, overwrite=False, min_exposure=599.0, name='main', 
@@ -2194,6 +2201,11 @@ class Manager:
     def check_tel(self, fits_list):
         """Check a set of telluric corrections."""
         check_plots.check_tel(fits_list)
+        return
+
+    def check_ali(self, fits_list):
+        """Check the alignment of a set of object frames."""
+        print 'Alignment checks not yet implemented!'
         return
 
     def check_cub(self, fits_list):
