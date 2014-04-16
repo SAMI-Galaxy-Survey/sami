@@ -17,22 +17,35 @@ import astropy.io.fits as pf
 
 """
 This file contains some functions used for recovering the dither pattern of a set of SAMI observations. 
-These revolve around finding the centroid for each source in each IFU and then computing the best cordinate transformation 
-to bring each RSS frame on the coordinate system of a reference one. 
+These revolve around finding the centroid for each source in each IFU and then computing the best cordinate 
+transformation to bring each RSS frame on the coordinate system of a reference one. 
 
-1) align_micron(inlist,reference,centroid=True,inter=False)
+1) find_dither(RSSname,reference,centroid=True,inter=False,plot=False,remove_files=True,do_dar_correct=True,max_shift=350.0)
 
--inlist should be a ASCII file listing all the RSS exposures of the same plate.
--reference should be the RSS fits file to be used as a reference, i.e., all other frames will be aligned to this one. 
--centroid should be set to True if you are running the task for the first time. It calls the module necessary to compute 
- the centroid of each IFU. Once this is done, if adjustments need to be made on the coordinate transformation, this 
- should be put to False as the centroid estimate takes 90% of the time needed to run this module. 
--inter should be False if no interactive check of the astrometric solution is necessary. If set to True, this allows 
- the user to manually play with each coordinate transformation, change fit orders, rejects ifus, etc. All the 
- interaction is done within the IRAF task geomap. For info on how to work interactively, have a look at this link. 
- http://iraf.net/irafhelp.php?val=immatch.geomap&help=Help+Page
+---"RSSname" should be a list containing the names of the RSS fits files to be aligned 
+---"reference" should be the RSS fits file to be used as a reference, i.e., all other frames will be aligned to this one. 
+---"centroid" should be set to True if you are running the task for the first time. It calls the module necessary to compute 
+   the centroid of each IFU. Once this is done, if adjustments need to be made on the coordinate transformation, this 
+   should be put to False as the centroid estimate takes 90% of the time needed to run this module. 
+---"inter" should be False if no interactive check of the astrometric solution is necessary. If set to True, this allows 
+   the user to manually play with each coordinate transformation, change fit orders, rejects ifus, etc. All the 
+   interaction is done within the IRAF task geomap. For info on how to work interactively, have a look at this link. 
+   http://iraf.net/irafhelp.php?val=immatch.geomap&help=Help+Page
+---"plot" should be False if no check of the final dither patterns is necessary.
+    If set True, the module produces a plot where the dither patterns are presented on the 2dF plate. 
+    Note that the size of each pattern has been magnified by x200 to make it visible. The dashed circles show the size 
+    of each fiber (with the same magnification) in order to give an idea of the size of the offset. 
+---"remove_files" should be set True, unless the intermediate steps of the procedure need to be saved (see below for a description 
+    of these intermediate steps). 
+---"do_dar" should be True to apply the DAR correction before the centroid fitting is performed.
+---"max_shift" the maximum initial shift between the centroid position of the same bundle in two different exposures.
+   This makes sure that wrong centroid positions do not contribute to the estimate of the coordinate transformation. 
+   
+   
+The dithern pattern, as well as several useful information on the best fitting coordinate transformation, are 
+saved into a new header of each RSS frame.     
 
-This task will produce a lot of output in forms of ASCII file, on terminal information and dither plot. 
+In case "remove_files" is set to False, this task will produce a lot of output in forms of ASCII file. 
 
 - _dither_solution.txt  The main output of this module: contains for each RSS and ifus the x and y offset (in micron) relative to the reference RSS - the target galaxy name is also provided
 - _centrFIB.txt     contains the coordinates in micron of the central fiber of each IFU 
@@ -82,19 +95,7 @@ This task will produce a lot of output in forms of ASCII file, on terminal infor
                 89784.94  9250.244   89745.29  9214.896   89750.94  9220.627  -5.648438 -5.730469
                 46024.07 -85039.38   46031.81 -85128.83  INDEF     INDEF      INDEF INDEF
                      
-               Two things need to be checked from this output while running this task
-                    1) The rms (5th row from the top)
-                2) How many fibers are given as INDEF in the residual columns. These are fibers 
-                   that have been rejected because larger (>2.5sigma) outliers in the best solution.
-                   If the numbers of outliers is too larger, it means there is a big problem with the data.
-                   
             
-Finally, the module produces a plot where the dither patterns are presented on the 2dF plate. 
-Note that the size of each pattern has been magnified by x200 to make it visible. The dashed circles show the size 
-of each fiber (with the same magnification) in order to give an idea of the size of the offset. 
-
-
-
 
 2) get_centroid(infile) 
 
@@ -114,7 +115,7 @@ def find_dither(RSSname,reference,centroid=True,inter=False,plot=False,remove_fi
                 do_dar_correct=True,max_shift=350.0):
       
       
-      ## For each file in inlist call the get_cetroid module, computes centroid coordinates and stores them 
+      ## For each RSSname call the get_cetroid module, computes centroid coordinates and stores them 
       ## into a txt file.  
 
       if centroid:
@@ -125,17 +126,16 @@ def find_dither(RSSname,reference,centroid=True,inter=False,plot=False,remove_fi
       
       
       ### For the reference frame extracts the position in micron for the central fibers of each IFU
+      ### These positions are stored into "central_data" and saved int the file "file_centralfib" to 
+      ### be used later by the IRAF tasks. 
       ### N.B. The huge assumption here is that the coordinates in micron of each central fibers on the focal 
       ### plane will remain exactly the same in the various exposures!  
       
       file_centralfib=string.join([string.strip(reference,'.fits'), "ref_centrFIB.txt"],'') 
       f=open(file_centralfib,'w')
       
-      
-      # xcent=[] #x coordinates of central fiber of each bundle
-      # ycent=[]  #y coordinates of central fiber of each bundle
+    
       galname=[] #name of the target galaxy
-      # ifu_good=[]
       central_data = []
       object_order = {}
       i = 0
@@ -147,7 +147,7 @@ def find_dither(RSSname,reference,centroid=True,inter=False,plot=False,remove_fi
                 # This probably means it's a dead hexabundle, just skip it
                 continue
             x=np.float(-1*ifu_data.x_microns[np.where(ifu_data.n==1)]) #x coordinate of central fiber (-1x is to have coordinates back on focal plane referenceO)
-            y=np.float(ifu_data.y_microns[np.where(ifu_data.n==1)]) #y coordinate of central fiber
+            y=np.float(ifu_data.y_microns[np.where(ifu_data.n==1)])    #y coordinate of central fiber
             s= str(x)+'  '+str(y)+'\n'
             f.write(s)
             central_data.append({'name': ifu_data.name,
@@ -155,12 +155,10 @@ def find_dither(RSSname,reference,centroid=True,inter=False,plot=False,remove_fi
                                  'xcent': x,
                                  'ycent': y})
             object_order[ifu_data.name] = i
-            # xcent.append(x)
-            # ycent.append(y)
-            # ifu_good.append(ifu)
             galname.append(ifu_data.name)
             i += 1
       f.close() 
+
       n_ifu = len(central_data)
       xcent = np.array([data['xcent'] for data in central_data])
       ycent = np.array([data['ycent'] for data in central_data])
@@ -255,17 +253,37 @@ def find_dither(RSSname,reference,centroid=True,inter=False,plot=False,remove_fi
     
              
              ## Run the IRAF geomap task 
-            
-             iraf.images.immatch.geomap(input=file_geoin,database=file_geodb,xmin="INDEF",ymin="INDEF",xmax="INDEF",ymax="INDEF",results=file_stats,xxorder=2.,yyorder=2.,xyorder=2.,yxorder=2.,
-                         fitgeom='rscale', function='polynomial', interactive=inter, maxiter=10., reject=2.,verbose=0)
-                         
+	     ## geomap is run iteratively. 
+	     ## The main condition is that the RMS in the final solution cannot be larger than 50 micron in the X and Y directions.
+	     ## The starting point is a 2 sigma clippping. If the rms is still to high, the sigma clipping is reduced by 0.1 each time 
+	     ## until it reaches 1.5. This is to take into account very rare cases in which a large number of deviant bundles may 
+	     ## significantly affect the 2 sigma procedure. This happens in less than 1% of the cases. 
+	     
+	     sigma_clip= 2.
+	     
+	     while True: 
+
+             		iraf.images.immatch.geomap(input=file_geoin,database=file_geodb,xmin="INDEF",ymin="INDEF",xmax="INDEF",ymax="INDEF",results=file_stats,xxorder=2.,yyorder=2.,xyorder=2.,yxorder=2.,
+                         		fitgeom='rscale', function='polynomial', interactive=inter, maxiter=10., reject=sigma_clip,verbose=0)
+					
+             		## Show the statistics of each fit on the screen
+             		## The parameters to check are the RMS in X and Y and make sure that not more than 1-2 objects have INDEF on the residual values
+             		## INDEF values are present if the fiber has been rejected during the fit because too deviant from the best solution.  
              
-             ## Show the statistics of each fit on the screen
-             ## The parameters to check are the RMS in X and Y and make sure that not more than 1-2 objects have INDEF on the residual values
-             ## INDEF values are present if the fiber has been rejected during the fit because too deviant from the best solution.  
-             
-             s='head -6'+' '+str(file_stats)
-             os.system(s)            
+             		s='head -6'+' '+str(file_stats)
+             		os.system(s)		
+
+             		# Read back the RMS from one of IRAF's files
+             		xrms, yrms, n_good = read_rms(file_stats)
+                        
+			## Check if the rms in both x and y directions is lower than 50 micron. 
+			## If YES ==> best solution is OK
+			## If NO ==> re-run GEOMAP with a smaller sigma clipping (i.e., at every loop the sigma clipping goes down by 0.1)
+			
+			if (((xrms<50.) & (yrms<50.)) | (sigma_clip<=1.5)):
+						break
+			sigma_clip=sigma_clip - 0.1			
+			os.remove(file_stats)
         
              iraf.images.immatch.geoxytran(input=file_centralfib,output=file_geoxy, transform=file_geoin, database=file_geodb)
                  
@@ -289,8 +307,6 @@ def find_dither(RSSname,reference,centroid=True,inter=False,plot=False,remove_fi
                  yshift[index] = y
                  galID.append(galname[n-1])
 
-             # Read back the RMS from one of IRAF's files
-             xrms, yrms, n_good = read_rms(file_stats)
 
              # Store the results in a handy dictionary
              results.append({'filename': RSSmatch[i],
@@ -303,6 +319,7 @@ def find_dither(RSSname,reference,centroid=True,inter=False,plot=False,remove_fi
                              'yshift': yshift,
                              'xrms': xrms,
                              'yrms': yrms,
+			     'sigma': sigma_clip,
                              'n_good': n_good,
                              'reference': reference})
 
@@ -337,6 +354,7 @@ def find_dither(RSSname,reference,centroid=True,inter=False,plot=False,remove_fi
                           'yshift': np.zeros(n_ifu),
                           'xrms': 0.0,
                           'yrms': 0.0,
+			  'sigma': 0.0,
                           'n_good': n_ifu,
                           'reference': reference,
                           'xref_median': results[0]['xref_median'],
@@ -446,6 +464,7 @@ def save_results(results):
                                    xref_median_col, yref_median_col]))
     hdu.header['X_RMS'] = (results['xrms'], 'RMS of X_SHIFT')
     hdu.header['Y_RMS'] = (results['yrms'], 'RMS of Y_SHIFT')
+    hdu.header['SIGMA'] = (results['sigma'], 'Sigma clipping used in the fit')
     hdu.header['N_GOOD'] = (results['n_good'], 'Number of galaxies used in fit')
     hdu.header['REF_FILE'] = (results['reference'], 'Reference filename')
     hdu.header['HGALIGN'] = (HG_CHANGESET, 'Hg changeset ID for alignment code')
