@@ -1238,9 +1238,10 @@ class Manager:
                 'PS_spec_file': PS_spec_file,
                 'model_name': model_name_out})
         # Now send this list to as many cores as we are using
-        self.map(telluric_correct_pair, inputs_list)
+        done_list = self.map(telluric_correct_pair, inputs_list)
         # Mark telluric corrections as not checked
-        fits_2_list = [inputs['fits_2'] for inputs in inputs_list]
+        fits_2_list = [inputs['fits_2'] for inputs, done in 
+                       zip(inputs_list, done_list) if done]
         self.update_checks('TEL', fits_2_list, False)
         return
 
@@ -2048,6 +2049,8 @@ class Manager:
 
     def list_checks(self, recent_ever='both', *args, **kwargs):
         """Return a list of checks that need to be done."""
+        if 'do_not_use' not in kwargs:
+            kwargs['do_not_use'] = False
         # Each element in the list will be a tuple, where
         # element[0] = key from below
         # element[1] = list of fits objects to be checked
@@ -2694,7 +2697,7 @@ def telluric_correct_pair(inputs):
             # No standard star found; probably a star field
             print err.message
             print 'Skipping telluric correction for file:', fits_2.filename
-            return
+            return False
         else:
             # Some other, unexpected error. Re-raise it.
             raise err
@@ -2703,7 +2706,7 @@ def telluric_correct_pair(inputs):
         os.remove(fits_2.telluric_path)
     telluric.apply_correction(fits_2.fluxcal_path, 
                               fits_2.telluric_path)
-    return
+    return True
 
 def measure_offsets_group(group):
     """Measure offsets between a set of dithered observations."""

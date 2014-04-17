@@ -143,7 +143,7 @@ shape for telluric absorption."""
         wavelength = header['CRVAL1'] + header['CDELT1'] * (
             1 + np.arange(header['NAXIS1']) - header['CRPIX1'])
         spectrum = (
-            1.0 / pf.getdata(fits.fluxcal_path, 'FLUX_CALIBRATION')[-1, :])
+            1.0 / pf.getdata(fits.fluxcal_path, 'FLUX_CALIBRATION')[-2, :])
         plt.plot(wavelength, spectrum)
         plt.ylim((0, 1.1))
     print "When you're ready to move on..."
