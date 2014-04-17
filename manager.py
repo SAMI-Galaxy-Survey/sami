@@ -184,7 +184,7 @@ CHECK_DATA = {
             'ndf_class': 'MFOBJECT',
             'spectrophotometric': None,
             'priority': 4,
-            'group_by': ('date', 'ccd', 'field_id')},
+            'group_by': ('date', 'ccd', 'field_id', 'name')},
     'FLX': {'name': 'Flux calibration',
             'ndf_class': 'MFOBJECT',
             'spectrophotometric': True,
