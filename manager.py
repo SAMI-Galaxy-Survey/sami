@@ -1269,7 +1269,7 @@ class Manager:
                 # This loop checks each fits file and adds the group to the
                 # complete list if *any* of them are missing the ALIGNMENT HDU
                 try:
-                    pf.getheader(fits, 'ALIGNMENT')
+                    pf.getheader(best_path(fits), 'ALIGNMENT')
                 except KeyError:
                     # No previous measurement, so we need to do this group
                     complete_groups.append(
