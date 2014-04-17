@@ -280,7 +280,7 @@ def find_dither(RSSname,reference,centroid=True,inter=False,plot=False,remove_fi
                 ## If YES ==> best solution is OK
                 ## If NO ==> re-run GEOMAP with a smaller sigma clipping (i.e., at every loop the sigma clipping goes down by 0.1)
                 
-                if (((xrms<50.) & (yrms<50.)) | (sigma_clip<=1.5)):
+                if ((np.sqrt(xrms**2 + yrms**2)<50.) | (sigma_clip<=1.5)):
                       break
                 sigma_clip=sigma_clip - 0.1     
                 os.remove(file_stats)
