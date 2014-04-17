@@ -290,7 +290,7 @@ def find_dither(RSSname,reference,centroid=True,inter=False,plot=False,remove_fi
                  galID.append(galname[n-1])
 
              # Read back the RMS from one of IRAF's files
-             xrms, yrms, n_good = read_rms(file_stats)
+             xrms, yrms, n_good, good = read_rms(file_stats)
 
              # Store the results in a handy dictionary
              results.append({'filename': RSSmatch[i],
@@ -304,6 +304,7 @@ def find_dither(RSSname,reference,centroid=True,inter=False,plot=False,remove_fi
                              'xrms': xrms,
                              'yrms': yrms,
                              'n_good': n_good,
+                             'good': good,
                              'reference': reference})
 
              if remove_files:
@@ -338,6 +339,7 @@ def find_dither(RSSname,reference,centroid=True,inter=False,plot=False,remove_fi
                           'xrms': 0.0,
                           'yrms': 0.0,
                           'n_good': n_ifu,
+                          'good': [True for i in xrange(n_ifu)],
                           'reference': reference,
                           'xref_median': results[0]['xref_median'],
                           'yref_median': results[0]['yref_median']}
@@ -441,9 +443,11 @@ def save_results(results):
                                 array=results['xref_median'])
     yref_median_col = pf.Column(name='Y_REFMED', format='E', 
                                 array=results['yref_median'])
+    good_col = pf.Column(name='GOOD', format='B', array=results['good'])
     hdu = pf.new_table(pf.ColDefs([ifus_col, xin_col, yin_col, xref_col, 
                                    yref_col, xshift_col, yshift_col, 
-                                   xref_median_col, yref_median_col]))
+                                   xref_median_col, yref_median_col,
+                                   good_col]))
     hdu.header['X_RMS'] = (results['xrms'], 'RMS of X_SHIFT')
     hdu.header['Y_RMS'] = (results['yrms'], 'RMS of Y_SHIFT')
     hdu.header['N_GOOD'] = (results['n_good'], 'Number of galaxies used in fit')
@@ -465,7 +469,7 @@ def save_results(results):
 def read_rms(filename):
     """Read back the RMS from one of IRAF's results files."""
     with open(filename) as f:
-        n_bad = 0
+        good = []
         line = 'a'
         while line:
             line = f.readline()
@@ -473,10 +477,10 @@ def read_rms(filename):
                 linesplit = line[:-1].split()
                 xrms = float(linesplit[-2])
                 yrms = float(linesplit[-1])
-            elif 'INDEF' in line:
-                n_bad += 1
-    n_good = len(ifus) - n_bad
-    return xrms, yrms, n_good
+            elif not (line.startswith('#') or len(line) <= 1):
+                good.append('INDEF' not in line)
+    n_good = np.sum(good)
+    return xrms, yrms, n_good, good
 
 
 def recalculate_ref(results_list, central_data):

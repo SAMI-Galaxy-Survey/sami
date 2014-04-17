@@ -199,7 +199,7 @@ CHECK_DATA = {
             'ndf_class': 'MFOBJECT',
             'spectrophotometric': False,
             'priority': 7,
-            'group_by': ('field_id',)}
+            'group_by': ('field_id',)},
     'CUB': {'name': 'Cubes',
             'ndf_class': 'MFOBJECT',
             'spectrophotometric': False,
@@ -2205,7 +2205,7 @@ class Manager:
 
     def check_ali(self, fits_list):
         """Check the alignment of a set of object frames."""
-        print 'Alignment checks not yet implemented!'
+        check_plots.check_ali(fits_list)
         return
 
     def check_cub(self, fits_list):
