@@ -156,6 +156,7 @@ def check_ali(fits_list):
     data = []
     x_rms = []
     y_rms = []
+    n_sigma = []
     for fits in fits_list:
         path_list = (fits.telluric_path, fits.fluxcal_path, fits.reduced_path)
         for path in path_list:
@@ -172,6 +173,7 @@ def check_ali(fits_list):
         data.append(data_i)
         x_rms.append(header['X_RMS'])
         y_rms.append(header['Y_RMS'])
+        n_sigma.append(header['SIGMA'])
     data = np.array(data)
     x_rms = np.array(x_rms)
     y_rms = np.array(y_rms)
@@ -218,7 +220,9 @@ def check_ali(fits_list):
             arrowprops=None, 
             color=color)
     plt.title('RMS: ' + ', '.join('{:.1f}'.format(rms) 
-                                  for rms in np.sqrt((x_rms**2 + y_rms**2))))
+                                  for rms in np.sqrt((x_rms**2 + y_rms**2)))
+              + '\nSigma clip: ' + ', '.join('{:.2f}'.format(n) 
+                                             for n in n_sigma))
     print "When you're ready to move on..."
     
 def check_cub(fits_list):
