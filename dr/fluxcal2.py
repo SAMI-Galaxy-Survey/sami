@@ -617,8 +617,8 @@ def match_star_coordinates(ra, dec, max_sep_arcsec=60.0,
         for star in index:
             RAstring = '%sh%sm%ss' % (star[2], star[3], star[4])
             Decstring = '%sd%sm%ss' % (star[5], star[6], star[7])
-            coords_star = coord.ICRSCoordinates(RAstring, Decstring)
             if ASTROPY_VERSION[:2] == (0, 2):
+                coords_star = coord.ICRSCoordinates(RAstring, Decstring)
                 ra_star = coords_star.ra.degrees
                 dec_star = coords_star.dec.degrees
                 ### BUG IN ASTROPY.COORDINATES ###
@@ -630,7 +630,8 @@ def match_star_coordinates(ra, dec, max_sep_arcsec=60.0,
                 sep = coord.angles.AngularSeparation(
                     ra, dec, ra_star, dec_star, units.degree).arcsecs
             else:
-                coords = coord.ICRSCoordinates(
+                coords_star = coord.ICRS(RAstring, Decstring)
+                coords = coord.ICRS(
                     str(ra)+' degree',str(dec)+' degree')
                 sep = coords.separation(coords_star).arcsec
             if sep < max_sep_arcsec:

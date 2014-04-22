@@ -84,6 +84,10 @@ from .dr import fluxcal2, telluric, check_plots, tdfdr
 
 # Get the astropy version as a tuple of integers
 ASTROPY_VERSION = tuple(int(x) for x in ASTROPY_VERSION.split('.'))
+if ASTROPY_VERSION[:2] == (0, 2):
+    ICRS = coord.ICRSCoordinates
+else:
+    ICRS = coord.ICRS
 
 IDX_FILES_SLOW = {'1': 'sami580V_v1_2.idx',
                   '2': 'sami1000R_v1_2.idx',
@@ -2352,7 +2356,7 @@ class FITSFile:
             # config file RA and Dec.
             for pilot_field in PILOT_FIELD_LIST:
                 if (self.cfg_coords.separation(
-                    coord.ICRSCoordinates(pilot_field['coords'])).arcsecs < 1.0
+                    ICRS(pilot_field['coords'])).arcsecs < 1.0
                     and self.plate_id == pilot_field['plate_id']):
                     self.field_no = pilot_field['field_no']
                     break
@@ -2432,15 +2436,13 @@ class FITSFile:
         """Save the RA/Dec and config RA/Dec."""
         if self.ndf_class and self.ndf_class not in ['BIAS', 'DARK', 'LFLAT']:
             header = self.hdulist[self.fibres_extno].header
-            self.cfg_coords = \
-                coord.ICRSCoordinates(ra=header['CFGCENRA'],
-                                      dec=header['CFGCENDE'],
-                                      unit=(units.radian, units.radian))
+            self.cfg_coords = ICRS(ra=header['CFGCENRA'],
+                                   dec=header['CFGCENDE'],
+                                   unit=(units.radian, units.radian))
             if self.ndf_class == 'MFOBJECT':
-                self.coords = \
-                    coord.ICRSCoordinates(ra=header['CENRA'],
-                                          dec=header['CENDEC'],
-                                          unit=(units.radian, units.radian))
+                self.coords = ICRS(ra=header['CENRA'],
+                                   dec=header['CENDEC'],
+                                   unit=(units.radian, units.radian))
             else:
                 self.coords = None
         else:
