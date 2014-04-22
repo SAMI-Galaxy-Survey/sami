@@ -615,18 +615,18 @@ def match_star_coordinates(ra, dec, max_sep_arcsec=60.0,
     for index_path in catalogues:
         index = np.loadtxt(index_path, dtype='S')
         for star in index:
-            RAstring = '%sh%sm%ss' % ( star[2], star[3], star[4] )
-            Decstring= '%sd%sm%ss' % ( star[5], star[6], star[7] )
-            coords_star = coord.ICRSCoordinates( RAstring, Decstring )
-            ra_star = coords_star.ra.degrees
-            dec_star= coords_star.dec.degrees
-            ### BUG IN ASTROPY.COORDINATES ###
-            if ASTROPY_VERSION == (0, 2, 0):
-                print 'Upgrade your version of astropy!!!!'
-                print 'Version 0.2.0 has a major bug in coordinates!!!!'
-                if star[5] == '-' and dec_star > 0:
-                    dec_star *= -1.0
+            RAstring = '%sh%sm%ss' % (star[2], star[3], star[4])
+            Decstring = '%sd%sm%ss' % (star[5], star[6], star[7])
+            coords_star = coord.ICRSCoordinates(RAstring, Decstring)
             if ASTROPY_VERSION[:2] == (0, 2):
+                ra_star = coords_star.ra.degrees
+                dec_star = coords_star.dec.degrees
+                ### BUG IN ASTROPY.COORDINATES ###
+                if ASTROPY_VERSION == (0, 2, 0):
+                    print 'Upgrade your version of astropy!!!!'
+                    print 'Version 0.2.0 has a major bug in coordinates!!!!'
+                    if star[5] == '-' and dec_star > 0:
+                        dec_star *= -1.0
                 sep = coord.angles.AngularSeparation(
                     ra, dec, ra_star, dec_star, units.degree).arcsecs
             else:
