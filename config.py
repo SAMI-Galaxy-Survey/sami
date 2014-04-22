@@ -1,9 +1,11 @@
 import astropy.units as u
 import astropy.coordinates as coords
 import os.path
-from astropy import __version__ as astropy_version
+from astropy import __version__ as ASTROPY_VERSION
 
 # This script contains constants that are used in other SAMI packages.
+
+ASTROPY_VERSION = tuple(int(x) for x in ASTROPY_VERSION.split('.'))
 
 # ----------------------------------------------------------------------------------------
 
@@ -27,10 +29,10 @@ declination_dome_dist=0.0982  # dome radii
 latitude=coords.Angle(-31.3275, unit=u.degree)
 
 # astropy version catch to be backwards compatible
-if float(astropy_version[2]) >= 3.:
-    latitude_radians=latitude.radian
-else:
+if ASTROPY_VERSION[0] == 0 and ASTROPY_VERSION[1] <= 2:
     latitude_radians=latitude.radians
+else:
+    latitude_radians=latitude.radian
 # ----------------------------------------------------------------------------------------
 
 # Pressure conversion factor from millibars to mm of Hg 
