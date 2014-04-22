@@ -37,7 +37,7 @@ from scipy.stats.stats import nanmean
 from astropy import coordinates as coord
 from astropy import units
 from astropy.io import fits as pf
-from astropy import __version__ as astropy_version
+from astropy import __version__ as ASTROPY_VERSION
 
 from ..utils import hg_changeset
 from ..utils.ifu import IFU
@@ -45,6 +45,10 @@ from ..utils.mc_adr import parallactic_angle, adr_r
 from ..utils.other import saturated_partial_pressure_water
 from ..config import millibar_to_mmHg
 from ..utils.fluxcal2_io import read_model_parameters, save_extracted_flux
+
+
+# Get the astropy version as a tuple of integers
+ASTROPY_VERSION = tuple(int(x) for x in ASTROPY_VERSION.split('.'))
 
 HG_CHANGESET = hg_changeset(__file__)
 
@@ -617,12 +621,18 @@ def match_star_coordinates(ra, dec, max_sep_arcsec=60.0,
             ra_star = coords_star.ra.degrees
             dec_star= coords_star.dec.degrees
             ### BUG IN ASTROPY.COORDINATES ###
-            if astropy_version == '0.2.0' and star[5] == '-' and dec_star > 0:
-                dec_star *= -1.0
+            if ASTROPY_VERSION == (0, 2, 0):
                 print 'Upgrade your version of astropy!!!!'
                 print 'Version 0.2.0 has a major bug in coordinates!!!!'
-            sep = coord.angles.AngularSeparation(
-                ra, dec, ra_star, dec_star, units.degree).arcsecs
+                if star[5] == '-' and dec_star > 0:
+                    dec_star *= -1.0
+            if ASTROPY_VERSION[:2] == (0, 2):
+                sep = coord.angles.AngularSeparation(
+                    ra, dec, ra_star, dec_star, units.degree).arcsecs
+            else:
+                coords = coord.ICRSCoordinates(
+                    str(ra)+' degree',str(dec)+' degree')
+                sep = coords.separation(coords_star).arcsec
             if sep < max_sep_arcsec:
                 star_match = {
                     'path': os.path.join(os.path.dirname(index_path), star[0]),

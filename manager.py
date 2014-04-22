@@ -73,6 +73,7 @@ from collections import defaultdict
 import astropy.coordinates as coord
 from astropy import units
 import astropy.io.fits as pf
+from astropy import __version__ as ASTROPY_VERSION
 import numpy as np
 
 from .utils.other import find_fibre_table
@@ -80,6 +81,9 @@ from .general.cubing import dithered_cubes_from_rss_list
 from .general.align_micron import find_dither
 from .dr import fluxcal2, telluric, check_plots, tdfdr
 
+
+# Get the astropy version as a tuple of integers
+ASTROPY_VERSION = tuple(int(x) for x in ASTROPY_VERSION.split('.'))
 
 IDX_FILES_SLOW = {'1': 'sami580V_v1_2.idx',
                   '2': 'sami1000R_v1_2.idx',
@@ -551,8 +555,11 @@ class Manager:
         self.root = root
         self.abs_root = os.path.abspath(root)
         # Match objects within 1'
-        self.matching_radius = \
-            coord.AngularSeparation(0.0, 0.0, 0.0, 1.0, units.arcmin)
+        if ASTROPY_VERSION[0] == 0 and ASTROPY_VERSION[1] == 2:
+            self.matching_radius = coord.AngularSeparation(
+                0.0, 0.0, 0.0, 1.0, units.arcmin)
+        else:
+            self.matching_radius = coord.Angle('0:1:0 degrees')
         self.file_list = []
         self.extra_list = []
         self.dark_exposure_str_list = []
