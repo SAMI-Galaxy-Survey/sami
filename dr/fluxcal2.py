@@ -29,14 +29,15 @@ are completely degenerate with each other and with ZD.
 import os
 
 import numpy as np
-from scipy.optimize import leastsq
+from scipy.optimize import leastsq, curve_fit
+from scipy.interpolate import LSQUnivariateSpline
 from scipy.ndimage.filters import median_filter, gaussian_filter1d
 from scipy.stats.stats import nanmean
 
 from astropy import coordinates as coord
 from astropy import units
 from astropy.io import fits as pf
-from astropy import __version__ as astropy_version
+from astropy import __version__ as ASTROPY_VERSION
 
 from ..utils import hg_changeset
 from ..utils.ifu import IFU
@@ -44,6 +45,10 @@ from ..utils.mc_adr import parallactic_angle, adr_r
 from ..utils.other import saturated_partial_pressure_water
 from ..config import millibar_to_mmHg
 from ..utils.fluxcal2_io import read_model_parameters, save_extracted_flux
+
+
+# Get the astropy version as a tuple of integers
+ASTROPY_VERSION = tuple(int(x) for x in ASTROPY_VERSION.split('.'))
 
 HG_CHANGESET = hg_changeset(__file__)
 
@@ -540,7 +545,7 @@ def dar(wavelength, zenith_distance, temperature=None, pressure=None,
 def derive_transfer_function(path_list, max_sep_arcsec=60.0,
                              catalogues=STANDARD_CATALOGUES,
                              model_name='ref_centre_alpha_dist_circ_hdratm',
-                             n_trim=0):
+                             n_trim=0, smooth='spline'):
     """Derive transfer function and save it in each FITS file."""
     # First work out which star we're looking at, and which hexabundle it's in
     star_match = match_standard_star(
@@ -567,16 +572,19 @@ def derive_transfer_function(path_list, max_sep_arcsec=60.0,
     for path in path_list:
         ifu = IFU(path, star_match['probenum'], flag_name=False)
         remove_atmosphere(ifu)
-        observed_flux, observed_background = extract_total_flux(
-            ifu, psf_parameters, model_name)
+        observed_flux, observed_background, sigma_flux, sigma_background = \
+            extract_total_flux(ifu, psf_parameters, model_name)
         save_extracted_flux(path, observed_flux, observed_background,
+                            sigma_flux, sigma_background,
                             star_match, psf_parameters, model_name,
                             good_psf, HG_CHANGESET)
         transfer_function = take_ratio(
-            standard_data['flux'], 
-            standard_data['wavelength'], 
-            observed_flux, 
-            ifu.lambda_range)
+            standard_data['flux'],
+            standard_data['wavelength'],
+            observed_flux,
+            sigma_flux,
+            ifu.lambda_range,
+            smooth=smooth)
         save_transfer_function(path, transfer_function)
     return
 
@@ -607,18 +615,25 @@ def match_star_coordinates(ra, dec, max_sep_arcsec=60.0,
     for index_path in catalogues:
         index = np.loadtxt(index_path, dtype='S')
         for star in index:
-            RAstring = '%sh%sm%ss' % ( star[2], star[3], star[4] )
-            Decstring= '%sd%sm%ss' % ( star[5], star[6], star[7] )
-            coords_star = coord.ICRSCoordinates( RAstring, Decstring )
-            ra_star = coords_star.ra.degrees
-            dec_star= coords_star.dec.degrees
-            ### BUG IN ASTROPY.COORDINATES ###
-            if astropy_version == '0.2.0' and star[5] == '-' and dec_star > 0:
-                dec_star *= -1.0
-                print 'Upgrade your version of astropy!!!!'
-                print 'Version 0.2.0 has a major bug in coordinates!!!!'
-            sep = coord.angles.AngularSeparation(
-                ra, dec, ra_star, dec_star, units.degree).arcsecs
+            RAstring = '%sh%sm%ss' % (star[2], star[3], star[4])
+            Decstring = '%sd%sm%ss' % (star[5], star[6], star[7])
+            if ASTROPY_VERSION[:2] == (0, 2):
+                coords_star = coord.ICRSCoordinates(RAstring, Decstring)
+                ra_star = coords_star.ra.degrees
+                dec_star = coords_star.dec.degrees
+                ### BUG IN ASTROPY.COORDINATES ###
+                if ASTROPY_VERSION == (0, 2, 0):
+                    print 'Upgrade your version of astropy!!!!'
+                    print 'Version 0.2.0 has a major bug in coordinates!!!!'
+                    if star[5] == '-' and dec_star > 0:
+                        dec_star *= -1.0
+                sep = coord.angles.AngularSeparation(
+                    ra, dec, ra_star, dec_star, units.degree).arcsecs
+            else:
+                coords_star = coord.ICRS(RAstring, Decstring)
+                coords = coord.ICRS(
+                    str(ra)+' degree',str(dec)+' degree')
+                sep = coords.separation(coords_star).arcsec
             if sep < max_sep_arcsec:
                 star_match = {
                     'path': os.path.join(os.path.dirname(index_path), star[0]),
@@ -636,12 +651,15 @@ def extract_total_flux(ifu, psf_parameters, model_name, clip=None):
     n_pixel = len(psf_parameters_array)
     flux = np.zeros(n_pixel)
     background = np.zeros(n_pixel)
+    sigma_flux = np.zeros(n_pixel)
+    sigma_background = np.zeros(n_pixel)
     good_fibre = (ifu.fib_type == 'P')
     for index, psf_parameters_slice in enumerate(psf_parameters_array):
-        flux[index], background[index] = extract_flux_slice(
-            ifu.data[good_fibre, index], ifu.var[good_fibre, index], 
-            ifu.xpos_rel[good_fibre], ifu.ypos_rel[good_fibre],
-            psf_parameters_slice)
+        flux[index], background[index], sigma_flux[index], \
+            sigma_background[index] = extract_flux_slice(
+                ifu.data[good_fibre, index], ifu.var[good_fibre, index], 
+                ifu.xpos_rel[good_fibre], ifu.ypos_rel[good_fibre],
+                psf_parameters_slice)
     if clip is not None:
         # Clip out discrepant data. Wavelength slices are targeted based on
         # their overall deviation from the model, but within a slice only
@@ -665,10 +683,12 @@ def extract_total_flux(ifu, psf_parameters, model_name, clip=None):
                 keep_bool[keep[worst_pixel]] = False
                 keep = np.where(keep_bool)[0]
                 # Re-fit the model to the data
-                flux[bad_pixel], background[bad_pixel] = extract_flux_slice(
-                    ifu.data[keep, bad_pixel], ifu.var[keep, bad_pixel],
-                    ifu.xpos_rel[keep], ifu.ypos_rel[keep], 
-                    psf_parameters_array[bad_pixel])
+                flux[bad_pixel], background[bad_pixel], \
+                    sigma_flux[bad_pixel], sigma_background[bad_pixel] = \
+                    extract_flux_slice(
+                        ifu.data[keep, bad_pixel], ifu.var[keep, bad_pixel],
+                        ifu.xpos_rel[keep], ifu.ypos_rel[keep], 
+                        psf_parameters_array[bad_pixel])
                 # Re-calculate the deviation from the model
                 model_parameters['flux'] = np.array(
                     [flux[bad_pixel]])
@@ -696,9 +716,13 @@ def extract_total_flux(ifu, psf_parameters, model_name, clip=None):
         interp_from = np.where(np.isfinite(flux))[0]
         flux[interp_over] = np.interp(
             interp_over, interp_from, flux[interp_from])
+        sigma_flux[interp_over] = np.interp(
+            interp_over, interp_from , sigma_flux[interp_from])
         background[interp_over] = np.interp(
             interp_over, interp_from, background[interp_from])
-    return flux, background
+        sigma_background[interp_over] = np.interp(
+            interp_over, interp_from, sigma_background[interp_from])
+    return flux, background, sigma_flux, sigma_background
 
 def extract_flux_slice(data, variance, xpos, ypos, psf_parameters_slice):
     """Extract the flux from a single wavelength slice."""
@@ -707,28 +731,46 @@ def extract_flux_slice(data, variance, xpos, ypos, psf_parameters_slice):
     if len(good_data) > 30:
         data = data[good_data]
         variance = variance[good_data]
+        noise = np.sqrt(variance)
         xpos = xpos[good_data]
         ypos = ypos[good_data]
         model = moffat_normalised(psf_parameters_slice, xpos, ypos)
-        args = (model, data, variance)
+        # args = (model, data, variance)
         # Initial guess for flux and background
         guess = [np.sum(data), 0.0]
-        flux_slice, background_slice = leastsq(
-            residual_slice, guess, args=args)[0]
+        fitfunc = lambda x, flux, background: flux * model + background
+        result, covar = curve_fit(
+            fitfunc, np.arange(len(data)), data, guess, noise)
+        flux_slice, background_slice = result
+        reduced_chi2 = (
+            ((fitfunc(None, flux_slice, background_slice) - data) / noise)**2 /
+            (len(data) - 2)).sum()
+        try:
+            sigma_flux_slice, sigma_background_slice = np.sqrt(
+                covar[np.arange(2), np.arange(2)] / reduced_chi2)
+        except TypeError:
+            # covar wasn't returned as an array
+            flux_slice = np.nan
+            background_slice = np.nan
+            sigma_flux_slice = np.nan
+            sigma_background_slice = np.nan
+        # flux_slice, background_slice = leastsq(
+        #     residual_slice, guess, args=args)[0]
     else:
         flux_slice = np.nan
         background_slice = np.nan
-    return flux_slice, background_slice
+        sigma_flux_slice = np.nan
+        sigma_background_slice = np.nan
+    return flux_slice, background_slice, sigma_flux_slice, sigma_background_slice
 
 def residual_slice(flux_background, model, data, variance):
     """Residual of the model flux in a single wavelength slice."""
     flux, background = flux_background
-    # For now, ignoring the variance - it has too many 2dfdr-induced mistakes
-    variance = data.copy()
-    cutoff = 0.05 * data.max()
-    variance[data < cutoff] = cutoff
+    # # For now, ignoring the variance - it has too many 2dfdr-induced mistakes
+    # variance = data.copy()
+    # cutoff = 0.05 * data.max()
+    # variance[data < cutoff] = cutoff
     return ((background + flux * model) - data) / np.sqrt(variance)
-    #return ((background + flux * model) - data) / np.sqrt(variance)
 
 def save_transfer_function(path, transfer_function):
     """Add the transfer function to a pre-existing FLUX_CALIBRATION HDU."""
@@ -736,12 +778,12 @@ def save_transfer_function(path, transfer_function):
     hdulist = pf.open(path, 'update', do_not_scale_image_data=True)
     hdu = hdulist['FLUX_CALIBRATION']
     data = hdu.data
-    if len(data) == 2:
+    if len(data) == 4:
         # No previous transfer function saved; append it to the data
         data = np.vstack((data, transfer_function))
-    elif len(data) == 3:
+    elif len(data) == 5:
         # Previous transfer function to overwrite
-        data[2, :] = transfer_function
+        data[-1, :] = transfer_function
     # Save the data back into the FITS file
     hdu.data = data
     hdulist.close()
@@ -774,17 +816,19 @@ def read_standard_data(star):
     return standard_data
 
 def take_ratio(standard_flux, standard_wavelength, observed_flux, 
-               observed_wavelength, smooth=True):
+               sigma_flux, observed_wavelength, smooth='spline'):
     """Return the ratio of two spectra, after rebinning."""
-    # First some very minor smoothing to take out some spurions
-    observed_flux = median_filter(observed_flux, 5)
     # Rebin the observed spectrum onto the (coarser) scale of the standard
-    observed_flux_rebinned = rebin_flux(
-        standard_wavelength, observed_wavelength, observed_flux)
+    observed_flux_rebinned, sigma_flux_rebinned, count_rebinned = \
+        rebin_flux_noise(standard_wavelength, observed_wavelength,
+                         observed_flux, sigma_flux)
     ratio = standard_flux / observed_flux_rebinned
-    if smooth:
+    if smooth == 'gauss':
+        ratio = smooth_ratio(ratio)
+    elif smooth == 'chebyshev':
         ratio = fit_chebyshev(standard_wavelength, ratio)
-        # ratio = smooth_ratio(ratio)
+    elif smooth == 'spline':
+        ratio = fit_spline(standard_wavelength, ratio)
     # Put the ratio back onto the observed wavelength scale
     ratio = 1.0 / np.interp(observed_wavelength, standard_wavelength, 
                             1.0 / ratio)
@@ -837,6 +881,136 @@ def fit_chebyshev(wavelength, ratio, deg=None):
     fit[:good[0]] = np.nan
     fit[good[-1]+1:] = np.nan
     return fit
+
+def fit_spline(wavelength, ratio):
+    """Fit a smoothing spline to the data, and return the fit."""
+    # Do the fit in terms of 1.0 / ratio, because it seems to give better
+    # results.
+    good = np.where(np.isfinite(ratio) & ~(in_telluric_band(wavelength)))[0]
+    knots = np.linspace(wavelength[good][0], wavelength[good][-1], 8)
+    # Add extra knots around 5500A, where there's a sharp turn
+    extra = knots[(knots > 5000) & (knots < 6000)]
+    if len(extra) > 1:
+        extra = 0.5 * (extra[1:] + extra[:-1])
+        knots = np.sort(np.hstack((knots, extra)))
+    # Remove any knots sitting in a telluric band
+    knots = knots[~in_telluric_band(knots)]
+    spline = LSQUnivariateSpline(
+        wavelength[good], 1.0/ratio[good], knots[1:-1])
+    fit = 1.0 / spline(wavelength)
+    # Mark with NaNs anything outside the fitted wavelength range
+    fit[:good[0]] = np.nan
+    fit[good[-1]+1:] = np.nan
+    return fit
+
+def rebin_flux_noise(target_wavelength, source_wavelength, source_flux,
+                     source_noise, clip=True):
+    """Rebin flux and noise onto a new wavelength grid."""
+    # Interpolate over bad pixels
+    good = np.isfinite(source_flux) & np.isfinite(source_noise)
+    if clip:
+        # Clip points that are a long way from a narrow median filter
+        good = good & ((np.abs(source_flux - median_filter(source_flux, 7)) /
+                        source_noise) < 10.0)
+        # Also clip points where the noise value spikes (changes by more than
+        # 35% relative to the baseline)
+        filtered_noise = median_filter(source_noise, 21)
+        good = good & ((np.abs(source_noise - filtered_noise) / 
+                        filtered_noise) < 0.35)
+    interp_flux, interp_noise = interpolate_flux_noise(
+        source_flux, source_noise, good)
+    interp_good = np.isfinite(interp_flux)
+    interp_flux = interp_flux[interp_good]
+    interp_noise = interp_noise[interp_good]
+    interp_wavelength = source_wavelength[interp_good]
+    interp_variance = interp_noise ** 2
+    # Assume pixel size is fixed
+    target_delta_wave = target_wavelength[1] - target_wavelength[0]
+    interp_delta_wave = interp_wavelength[1] - interp_wavelength[0]
+    # Correct to start/end of pixels instead of centre points
+    target_wave_limits = target_wavelength - 0.5*target_delta_wave
+    interp_wave_limits = interp_wavelength - 0.5*interp_delta_wave
+    n_pix_out = np.size(target_wavelength)
+    bins = np.arange(n_pix_out + 1)    
+    # The output pixel that each input pixel starts/ends in
+    start_pix = np.floor(
+        (interp_wave_limits - target_wave_limits[0]) / 
+        target_delta_wave).astype(int)
+    end_pix = np.floor(
+        (interp_wave_limits + interp_delta_wave - target_wave_limits[0]) / 
+        target_delta_wave).astype(int)
+    # `complete` is True if the input pixel is entirely within one output pixel
+    complete = (start_pix == end_pix)
+    incomplete = ~complete
+    # The fraction of the input pixel that falls in the start_pix output pixel
+    # Only correct for incomplete pixels
+    frac_low = (
+        (target_wave_limits[end_pix] - interp_wave_limits) / interp_delta_wave)
+    # Make output arrays
+    flux_out = np.zeros(n_pix_out)
+    variance_out = np.zeros(n_pix_out)
+    count_out = np.zeros(n_pix_out)
+    # Add the flux from the `complete` pixels
+    flux_out += np.histogram(
+        start_pix[complete], weights=interp_flux[complete], 
+        bins=bins)[0]
+    variance_out += np.histogram(
+        start_pix[complete], weights=interp_variance[complete], 
+        bins=bins)[0]
+    count_out += np.histogram(
+        start_pix[complete],
+        bins=bins)[0]
+    # Add the flux from the `incomplete` pixels
+    flux_out += np.histogram(
+        start_pix[incomplete], 
+        weights=interp_flux[incomplete] * frac_low[incomplete],
+        bins=bins)[0]
+    variance_out += np.histogram(
+        start_pix[incomplete], 
+        weights=interp_variance[incomplete] * frac_low[incomplete]**2,
+        bins=bins)[0]
+    count_out += np.histogram(
+        start_pix[incomplete],
+        weights=frac_low[incomplete],
+        bins=bins)[0]
+    flux_out += np.histogram(
+        end_pix[incomplete],
+        weights=interp_flux[incomplete] * (1 - frac_low[incomplete]),
+        bins=bins)[0]
+    variance_out += np.histogram(
+        end_pix[incomplete],
+        weights=interp_variance[incomplete] * (1 - frac_low[incomplete])**2,
+        bins=bins)[0]
+    count_out += np.histogram(
+        end_pix[incomplete],
+        weights=(1 - frac_low[incomplete]),
+        bins=bins)[0]
+    flux_out /= count_out
+    variance_out /= count_out ** 2
+    zero_input = (count_out == 0)
+    flux_out[zero_input] = np.nan
+    variance_out[zero_input] = np.nan
+    noise_out = np.sqrt(variance_out)
+    return flux_out, noise_out, count_out
+
+def interpolate_flux_noise(flux, noise, good):
+    """Interpolate over bad pixels, fixing the noise for later rebinning."""
+    bad = ~good
+    interp_flux = flux.copy()
+    interp_noise = noise.copy()
+    interp_flux[bad] = np.interp(
+        np.where(bad)[0], np.where(good)[0], flux[good])
+    start_bad = np.where(good[:-1] & bad[1:])[0] + 1
+    end_bad = np.where(bad[:-1] & good[1:])[0] + 1
+    for begin, finish in zip(start_bad, end_bad):
+        n_bad = finish - begin
+        interp_noise[begin:finish] = np.sqrt(
+            ((((1 + 0.5*n_bad)**2) - 1) / n_bad) * 
+            (noise[begin-1]**2 + noise[finish]**2))
+    # Set any bad pixels at the start and end of the spectrum back to nan
+    still_bad = ~np.isfinite(interp_noise)
+    interp_flux[still_bad] = np.nan
+    return interp_flux, interp_noise
 
 def rebin_flux(target_wavelength, source_wavelength, source_flux):
     """Rebin a flux onto a new wavelength grid."""
@@ -1040,6 +1214,7 @@ def read_model(path):
     """Return the model encoded in a FITS file."""
     hdulist = pf.open(path)
     hdu = hdulist['FLUX_CALIBRATION']
+    hdulist.close()
     psf_parameters, model_name = read_model_parameters(hdu)
     ifu = IFU(path, hdu.header['PROBENUM'], flag_name=False)
     xfibre = ifu.xpos_rel
@@ -1116,6 +1291,23 @@ def primary_flux_calibrate(path_in, path_out, path_transfer_function):
                                   'Units')
     hdulist.writeto(path_out)
     return
+
+def median_filter_rotate(array, window):
+    """Median filter with the array extended by rotating the end pieces."""
+    good = np.where(np.isfinite(array))[0]
+    array_ext = array[good[0]:good[-1]+1]
+    end_values = (np.median(array_ext[:5*window]),
+                  np.median(array_ext[-5*window:]))
+    array_ext = np.hstack((2*end_values[0] - array_ext[window:0:-1],
+                           array_ext,
+                           2*end_values[1] - array_ext[-1:-1-window:-1]))
+    result = np.zeros_like(array)
+    result[good[0]:good[-1]+1] = (
+        median_filter(array_ext, window)[window:-window])
+    result[:good[0]] = array[:good[0]]
+    result[good[-1]+1:] = array[good[-1]+1:]
+    return result
+
 
 
 

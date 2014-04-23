@@ -1,6 +1,7 @@
 """Functions relating to quality control of flux calibration."""
 
 from ..manager import Manager
+from ..dr import fluxcal2
 
 import astropy.io.fits as pf
 import numpy as np
@@ -159,8 +160,9 @@ def red_cube_path(blue_path):
 def fit_template(file_pair, model_catalogue):
     """Fit a stellar template to a pair of datacubes and infer the g-r."""
     flux, noise, wavelength = extract_stellar_spectrum(file_pair)
-    flux, noise, wavelength = rebin_spectrum(
-        flux, noise, wavelength, model_catalogue['wavelength'])
+    flux, noise, count = fluxcal2.rebin_flux_noise(
+        model_catalogue['wavelength'], wavelength, flux, noise)
+    wavelength = model_catalogue['wavelength']
     good = np.isfinite(flux) & np.isfinite(noise)
     best_chisq = np.inf
     best_scale = np.nan
@@ -172,7 +174,7 @@ def fit_template(file_pair, model_catalogue):
             # This happens if the model flux is all zeros
             continue
         chisq = np.sum(((flux[good] - scale * model_flux[good]) / 
-                       noise[good])**2)
+                        noise[good])**2)
         if chisq < best_chisq:
             best_chisq = chisq
             best_scale = scale

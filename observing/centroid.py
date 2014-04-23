@@ -11,6 +11,7 @@ import string
 import itertools
 
 from scipy.stats import stats
+from scipy.ndimage.filters import median_filter
 
 # Circular patch.
 from matplotlib.patches import Circle
@@ -141,6 +142,9 @@ def centroid(infile, ifus='all', savefile=True, plot=True):
         
         # Open the text file for writing. Note this will overwrite existing files.
         f=open(out_txt, 'w')
+
+    else:
+        outfile = None
 
     # List for the size of the Gaussian
     fwhm_arr=[]
@@ -608,7 +612,8 @@ def centroid_fit(x,y,data,microns=True, circular=True):
     # Smooth the data spectrally to get rid of cosmics
     data_smooth=np.zeros_like(data)
     for q in xrange(np.shape(data)[0]):
-        data_smooth[q,:]=utils.smooth(data[q,:], 11) #default hanning smooth
+        # data_smooth[q,:]=utils.smooth(data[q,:], 11) #default hanning smooth
+        data_smooth[q,:]=median_filter(data[q,:], 15)
         
     # Now sum the data over a large range to get broad band "image"
     data_sum=np.nansum(data_smooth[:,200:1800],axis=1)

@@ -1,6 +1,7 @@
 from . import fluxcal2
 
 import matplotlib.pyplot as plt
+from matplotlib import cm
 import astropy.io.fits as pf
 import numpy as np
 
@@ -79,6 +80,7 @@ nomalisation is ok."""
     # Load the spectrum of the standard star
     standard_star = fluxcal2.read_standard_data(
         {'path': hdulist_combined_1[1].header['STDFILE']})
+    in_telluric = fluxcal2.in_telluric_band(standard_star['wavelength'])
     # Construct wavelength arrays
     header_1 = pf.getheader(fits_1.reduced_path)
     wavelength_1 = header_1['CRVAL1'] + header_1['CDELT1'] * (
@@ -92,8 +94,8 @@ nomalisation is ok."""
         filename = os.path.basename(hdu_1.header['ORIGFILE'])
         hdu_2 = match_fcal_hdu(hdulist_combined_2, hdu_1)
         color = next(color_cycle)
-        plt.plot(wavelength_1, 1.0 / hdu_1.data[2, :], c=color, label=filename)
-        plt.plot(wavelength_2, 1.0 / hdu_2.data[2, :], c=color)
+        plt.plot(wavelength_1, 1.0 / hdu_1.data[-1, :], c=color, label=filename)
+        plt.plot(wavelength_2, 1.0 / hdu_2.data[-1, :], c=color)
     plt.plot(wavelength_1, 1.0 / hdulist_combined_1[0].data, c='k', linewidth=3,
              label='Combined')
     plt.plot(wavelength_2, 1.0 / hdulist_combined_2[0].data, c='k', linewidth=3)
@@ -104,17 +106,28 @@ nomalisation is ok."""
         hdu_2 = match_fcal_hdu(hdulist_combined_2, hdu_1)
         fig_single = plt.figure(filename, figsize=(16., 6.))
         observed_ratio_1 = (
-            fluxcal2.rebin_flux(standard_star['wavelength'], wavelength_1, 
-                                hdu_1.data[0, :]) / standard_star['flux'])
-        plt.plot(standard_star['wavelength'], observed_ratio_1, 
-                 label='Observed ratio', c='b')
-        plt.plot(wavelength_1, 1.0 / hdu_1.data[2, :], 
-                 label='Fitted ratio', c='g')
+            fluxcal2.rebin_flux_noise(
+                standard_star['wavelength'], wavelength_1, 
+                hdu_1.data[0, :], hdu_1.data[2, :])[0] /
+            standard_star['flux'])
+        observed_ratio_masked_1 = observed_ratio_1.copy()
+        observed_ratio_masked_1[in_telluric] = np.nan
+        plt.plot(standard_star['wavelength'], observed_ratio_1, c='g', 
+                 label='Observed ratio')
+        plt.plot(standard_star['wavelength'], observed_ratio_masked_1, c='b',
+                 label='Observed ratio (masked)')
+        plt.plot(wavelength_1, 1.0 / hdu_1.data[-1, :], c='r', 
+                 label='Fitted ratio')
         observed_ratio_2 = (
-            fluxcal2.rebin_flux(standard_star['wavelength'], wavelength_2, 
-                                hdu_2.data[0, :]) / standard_star['flux'])
-        plt.plot(standard_star['wavelength'], observed_ratio_2, c='b')
-        plt.plot(wavelength_2, 1.0 / hdu_2.data[2, :], c='g')
+            fluxcal2.rebin_flux_noise(
+                standard_star['wavelength'], wavelength_2, 
+                hdu_2.data[0, :], hdu_2.data[2, :])[0] / 
+            standard_star['flux'])
+        observed_ratio_masked_2 = observed_ratio_2.copy()
+        observed_ratio_masked_2[in_telluric] = np.nan
+        plt.plot(standard_star['wavelength'], observed_ratio_2, c='g')
+        plt.plot(standard_star['wavelength'], observed_ratio_masked_2, c='b')
+        plt.plot(wavelength_2, 1.0 / hdu_2.data[-1, :], c='r')
         plt.legend(loc='best')
     print "When you're ready to move on..."
     return
@@ -130,12 +143,88 @@ shape for telluric absorption."""
         wavelength = header['CRVAL1'] + header['CDELT1'] * (
             1 + np.arange(header['NAXIS1']) - header['CRPIX1'])
         spectrum = (
-            1.0 / pf.getdata(fits.fluxcal_path, 'FLUX_CALIBRATION')[-1, :])
+            1.0 / pf.getdata(fits.fluxcal_path, 'FLUX_CALIBRATION')[-2, :])
         plt.plot(wavelength, spectrum)
         plt.ylim((0, 1.1))
     print "When you're ready to move on..."
     return
 
+def check_ali(fits_list):
+    """Plot the results of alignment."""
+    message = """Check that any bad fits have been rejected."""
+    print message
+    data = []
+    x_rms = []
+    y_rms = []
+    n_sigma = []
+    for fits in fits_list:
+        path_list = (fits.telluric_path, fits.fluxcal_path, fits.reduced_path)
+        for path in path_list:
+            try:
+                data_i = np.sort(pf.getdata(path, 'ALIGNMENT'), 
+                                 order='PROBENUM')
+                header = pf.getheader(path, 'ALIGNMENT')
+            except (KeyError, IOError):
+                pass
+            else:
+                break
+        else:
+            continue
+        data.append(data_i)
+        x_rms.append(header['X_RMS'])
+        y_rms.append(header['Y_RMS'])
+        n_sigma.append(header['SIGMA'])
+    data = np.array(data)
+    x_rms = np.array(x_rms)
+    y_rms = np.array(y_rms)
+    scale = 200.0
+    radius_plot = 130000.0
+    radius_field = 125000.0
+    radius_fibre = scale * 105.0 / 2.0
+    x_centroid_plot = (
+        (data['X_CEN'] - data['X_REFMED']) * scale + data['X_REFMED'])
+    y_centroid_plot = (
+        (data['Y_CEN'] - data['Y_REFMED']) * scale + data['Y_REFMED'])
+    x_fit_plot = data['X_SHIFT'] * scale + data['X_REFMED']
+    y_fit_plot = -data['Y_SHIFT'] * scale + data['Y_REFMED']
+    n_ifu = data.shape[1]
+    fig = plt.figure(fits_list[0].field_id, figsize=(12., 12.))
+    axes = fig.add_subplot(111, aspect='equal')
+    plt.xlim((-radius_plot, radius_plot))
+    plt.ylim((-radius_plot, radius_plot))
+    axes.add_patch(plt.Circle((0, 0), radius_field, fill=False, lw=0.5))
+    for ifu, x_cen, y_cen, x_fit, y_fit, good in zip(
+            data[0], x_centroid_plot.T, y_centroid_plot.T, x_fit_plot.T, 
+            y_fit_plot.T, data['GOOD'].T):
+        good = good.astype(bool)
+        color = cm.winter(ifu['PROBENUM'] / float(n_ifu - 1))
+        fibre = plt.Circle(
+            (ifu['X_REFMED'], ifu['Y_REFMED']), 
+            radius_fibre, 
+            fill=False, 
+            ls='dashed', 
+            color=color)
+        axes.add_patch(fibre)
+        plt.scatter(x_cen[good], y_cen[good], color='k')
+        plt.scatter(x_cen[~good], y_cen[~good], color='r')
+        for index in np.where(~good)[0]:
+            plt.plot((x_fit[index], x_cen[index]), 
+                     (y_fit[index], y_cen[index]), ':', color=color)
+        plt.plot(x_fit, y_fit, color=color, lw=2.0)
+        plt.annotate(
+            'IFS'+str(ifu['PROBENUM']), 
+            xy=(ifu['X_REFMED'], ifu['Y_REFMED']+radius_fibre), 
+            xycoords='data', 
+            xytext=None, 
+            textcoords='data', 
+            arrowprops=None, 
+            color=color)
+    plt.title('RMS: ' + ', '.join('{:.1f}'.format(rms) 
+                                  for rms in np.sqrt((x_rms**2 + y_rms**2)))
+              + '\nSigma clip: ' + ', '.join('{:.2f}'.format(n) 
+                                             for n in n_sigma))
+    print "When you're ready to move on..."
+    
 def check_cub(fits_list):
     """Plot the results of cubing."""
     message = """Check that the galaxies appear in the centre in each arm, that
