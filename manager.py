@@ -69,12 +69,18 @@ import multiprocessing
 import tempfile
 from contextlib import contextmanager
 from collections import defaultdict
+from getpass import getpass
 
 import astropy.coordinates as coord
 from astropy import units
 import astropy.io.fits as pf
 from astropy import __version__ as ASTROPY_VERSION
 import numpy as np
+try:
+    import pysftp
+    PYSFTP_AVAILABLE = True
+except ImportError:
+    PYSFTP_AVAILABLE = False
 
 from .utils.other import find_fibre_table
 from .general.cubing import dithered_cubes_from_rss_list
@@ -578,6 +584,8 @@ class Manager:
         self.scratch_dir = None
         self.min_exposure_for_throughput = 900.0
         self.min_exposure_for_sky_wave = 900.0
+        self.aat_username = None
+        self.aat_password = None
         self.inspect_root(copy_files, move_files)
 
     def inspect_root(self, copy_files, move_files, trust_header=True):
@@ -834,6 +842,31 @@ class Manager:
                     self.import_file(self.tmp_dir, filename,
                                      trust_header=trust_header,
                                      copy_files=False, move_files=True)
+        if os.path.exists(self.tmp_dir) and len(os.listdir(self.tmp_dir)) == 0:
+            os.rmdir(self.tmp_dir)
+        return
+
+    def import_aat(self, username=None, password=None, date=None,
+                   server='aatlxa', path='/data_lxy/aatobs/OptDet_data'):
+        """Import from the AAT data disks."""
+        with self.connection(server=server, username=username, 
+                             password=password) as srv:
+            if date is None:
+                date_options = [s for s in srv.listdir(path)
+                                if re.match(r'\d{6}', s)]
+                date = sorted(date_options)[-1]
+            if not os.path.exists(self.tmp_dir):
+                os.makedirs(self.tmp_dir)
+            for ccd in ['ccd_1', 'ccd_2']:
+                dirname = os.path.join(path, date, ccd)
+                filename_list = sorted(srv.listdir(dirname))
+                for filename in filename_list:
+                    if self.file_filter(filename):
+                        srv.get(os.path.join(dirname, filename), 
+                                localpath=os.path.join(self.tmp_dir, filename))
+                        self.import_file(self.tmp_dir, filename,
+                                         trust_header=False, copy_files=False,
+                                         move_files=True)
         if os.path.exists(self.tmp_dir) and len(os.listdir(self.tmp_dir)) == 0:
             os.rmdir(self.tmp_dir)
         return
@@ -2034,6 +2067,29 @@ class Manager:
         self.speed = speed
         self.idx_files = IDX_FILES[self.speed]
         return
+
+    @contextmanager
+    def connection(self, server='aatlxa', username=None, password=None):
+        """Make a secure connection to a remote server."""
+        if not PYSFTP_AVAILABLE:
+            print "You must install the pysftp package to do that!"
+        if username is None:
+            if self.aat_username is None:
+                username = raw_input('Enter AAT username: ')
+                self.aat_username = username
+            else:
+                username = self.aat_username
+        if password is None:
+            if self.aat_password is None:
+                password = getpass('Enter AAT password: ')
+                self.aat_password = password
+            else:
+                password = self.aat_password
+        srv = pysftp.Connection(server, username=username, password=password)
+        try:
+            yield srv
+        finally:
+            srv.close()
 
     def load_2dfdr_gui(self, fits_or_dirname):
         """Load the 2dfdr GUI in the required directory."""
