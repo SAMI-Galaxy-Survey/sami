@@ -73,6 +73,7 @@ from collections import defaultdict
 import astropy.coordinates as coord
 from astropy import units
 import astropy.io.fits as pf
+from astropy import __version__ as ASTROPY_VERSION
 import numpy as np
 
 from .utils.other import find_fibre_table
@@ -80,6 +81,13 @@ from .general.cubing import dithered_cubes_from_rss_list
 from .general.align_micron import find_dither
 from .dr import fluxcal2, telluric, check_plots, tdfdr
 
+
+# Get the astropy version as a tuple of integers
+ASTROPY_VERSION = tuple(int(x) for x in ASTROPY_VERSION.split('.'))
+if ASTROPY_VERSION[:2] == (0, 2):
+    ICRS = coord.ICRSCoordinates
+else:
+    ICRS = coord.ICRS
 
 IDX_FILES_SLOW = {'1': 'sami580V_v1_2.idx',
                   '2': 'sami1000R_v1_2.idx',
@@ -149,17 +157,17 @@ CHECK_DATA = {
             'ndf_class': 'BIAS',
             'spectrophotometric': None,
             'priority': -3,
-            'group_by': ('ccd',)},
+            'group_by': ('ccd', 'date')},
     'DRK': {'name': 'Dark',
             'ndf_class': 'DARK',
             'spectrophotometric': None,
             'priority': -2,
-            'group_by': ('ccd', 'exposure_str')},
+            'group_by': ('ccd', 'exposure_str', 'date')},
     'LFL': {'name': 'Long-slit flat',
             'ndf_class': 'LFLAT',
             'spectrophotometric': None,
             'priority': -1,
-            'group_by': ('ccd',)},
+            'group_by': ('ccd', 'date')},
     'TLM': {'name': 'Tramline map',
             'ndf_class': 'MFFFF',
             'spectrophotometric': None,
@@ -184,7 +192,7 @@ CHECK_DATA = {
             'ndf_class': 'MFOBJECT',
             'spectrophotometric': None,
             'priority': 4,
-            'group_by': ('date', 'ccd', 'field_id')},
+            'group_by': ('date', 'ccd', 'field_id', 'name')},
     'FLX': {'name': 'Flux calibration',
             'ndf_class': 'MFOBJECT',
             'spectrophotometric': True,
@@ -195,13 +203,18 @@ CHECK_DATA = {
             'spectrophotometric': None,
             'priority': 6,
             'group_by': ('date', 'ccd', 'field_id')},
-    'CUB': {'name': 'Cubes',
+    'ALI': {'name': 'Alignment',
             'ndf_class': 'MFOBJECT',
             'spectrophotometric': False,
             'priority': 7,
-            'group_by': ('date', 'field_id')}}
+            'group_by': ('field_id',)},
+    'CUB': {'name': 'Cubes',
+            'ndf_class': 'MFOBJECT',
+            'spectrophotometric': False,
+            'priority': 8,
+            'group_by': ('field_id',)}}
 # Extra priority for checking re-reductions
-PRIORITY_RECENT = 10
+PRIORITY_RECENT = 100
 
 class Manager:
     """Object for organising and reducing SAMI data.
@@ -547,8 +560,11 @@ class Manager:
         self.abs_root = os.path.abspath(root)
         self.tmp_dir = os.path.join(self.abs_root, 'tmp')
         # Match objects within 1'
-        self.matching_radius = \
-            coord.AngularSeparation(0.0, 0.0, 0.0, 1.0, units.arcmin)
+        if ASTROPY_VERSION[0] == 0 and ASTROPY_VERSION[1] == 2:
+            self.matching_radius = coord.AngularSeparation(
+                0.0, 0.0, 0.0, 1.0, units.arcmin)
+        else:
+            self.matching_radius = coord.Angle('0:1:0 degrees')
         self.file_list = []
         self.extra_list = []
         self.dark_exposure_str_list = []
@@ -1097,7 +1113,7 @@ class Manager:
 
     def derive_transfer_function(self, 
             overwrite=False, model_name='ref_centre_alpha_dist_circ_hdratm', 
-            **kwargs):
+            smooth='spline', **kwargs):
         """Derive flux calibration transfer functions and save them."""
         inputs_list = []
         for fits in self.files(ndf_class='MFOBJECT', do_not_use=False,
@@ -1122,7 +1138,7 @@ class Manager:
             else:
                 n_trim = 0
             inputs_list.append({'path_pair': path_pair, 'n_trim': n_trim, 
-                                'model_name': model_name})
+                                'model_name': model_name, 'smooth': smooth})
         self.map(derive_transfer_function_pair, inputs_list)
         return
 
@@ -1238,9 +1254,10 @@ class Manager:
                 'PS_spec_file': PS_spec_file,
                 'model_name': model_name_out})
         # Now send this list to as many cores as we are using
-        self.map(telluric_correct_pair, inputs_list)
+        done_list = self.map(telluric_correct_pair, inputs_list)
         # Mark telluric corrections as not checked
-        fits_2_list = [inputs['fits_2'] for inputs in inputs_list]
+        fits_2_list = [inputs['fits_2'] for inputs, done in 
+                       zip(inputs_list, done_list) if done]
         self.update_checks('TEL', fits_2_list, False)
         return
 
@@ -1268,7 +1285,7 @@ class Manager:
                 # This loop checks each fits file and adds the group to the
                 # complete list if *any* of them are missing the ALIGNMENT HDU
                 try:
-                    pf.getheader(fits, 'ALIGNMENT')
+                    pf.getheader(best_path(fits), 'ALIGNMENT')
                 except KeyError:
                     # No previous measurement, so we need to do this group
                     complete_groups.append(
@@ -1276,6 +1293,8 @@ class Manager:
                          fits_list_other_arm))
                     break
         self.map(measure_offsets_group, complete_groups)
+        for group in complete_groups:
+            self.update_checks('ALI', group[1], False)
         return
 
     def cube(self, overwrite=False, min_exposure=599.0, name='main', 
@@ -2046,6 +2065,8 @@ class Manager:
 
     def list_checks(self, recent_ever='both', *args, **kwargs):
         """Return a list of checks that need to be done."""
+        if 'do_not_use' not in kwargs:
+            kwargs['do_not_use'] = False
         # Each element in the list will be a tuple, where
         # element[0] = key from below
         # element[1] = list of fits objects to be checked
@@ -2201,6 +2222,11 @@ class Manager:
         check_plots.check_tel(fits_list)
         return
 
+    def check_ali(self, fits_list):
+        """Check the alignment of a set of object frames."""
+        check_plots.check_ali(fits_list)
+        return
+
     def check_cub(self, fits_list):
         """Check a set of final datacubes."""
         check_plots.check_cub(fits_list)
@@ -2344,7 +2370,7 @@ class FITSFile:
             # config file RA and Dec.
             for pilot_field in PILOT_FIELD_LIST:
                 if (self.cfg_coords.separation(
-                    coord.ICRSCoordinates(pilot_field['coords'])).arcsecs < 1.0
+                    ICRS(pilot_field['coords'])).arcsecs < 1.0
                     and self.plate_id == pilot_field['plate_id']):
                     self.field_no = pilot_field['field_no']
                     break
@@ -2424,15 +2450,13 @@ class FITSFile:
         """Save the RA/Dec and config RA/Dec."""
         if self.ndf_class and self.ndf_class not in ['BIAS', 'DARK', 'LFLAT']:
             header = self.hdulist[self.fibres_extno].header
-            self.cfg_coords = \
-                coord.ICRSCoordinates(ra=header['CFGCENRA'],
-                                      dec=header['CFGCENDE'],
-                                      unit=(units.radian, units.radian))
+            self.cfg_coords = ICRS(ra=header['CFGCENRA'],
+                                   dec=header['CFGCENDE'],
+                                   unit=(units.radian, units.radian))
             if self.ndf_class == 'MFOBJECT':
-                self.coords = \
-                    coord.ICRSCoordinates(ra=header['CENRA'],
-                                          dec=header['CENDEC'],
-                                          unit=(units.radian, units.radian))
+                self.coords = ICRS(ra=header['CENRA'],
+                                   dec=header['CENDEC'],
+                                   unit=(units.radian, units.radian))
             else:
                 self.coords = None
         else:
@@ -2653,12 +2677,13 @@ def derive_transfer_function_pair(inputs):
     path_pair = inputs['path_pair']
     n_trim = inputs['n_trim']
     model_name = inputs['model_name']
+    smooth = inputs['smooth']
     print ('Deriving transfer function for ' + 
             os.path.basename(path_pair[0]) + ' and ' + 
             os.path.basename(path_pair[1]))
     try:
-        fluxcal2.derive_transfer_function(path_pair, n_trim=n_trim,
-                                          model_name=model_name)
+        fluxcal2.derive_transfer_function(
+            path_pair, n_trim=n_trim, model_name=model_name, smooth=smooth)
     except ValueError:
         print ('Warning: No star found in dataframe, skipping ' + 
                os.path.basename(path_pair[0]))
@@ -2695,7 +2720,7 @@ def telluric_correct_pair(inputs):
             # No standard star found; probably a star field
             print err.message
             print 'Skipping telluric correction for file:', fits_2.filename
-            return
+            return False
         else:
             # Some other, unexpected error. Re-raise it.
             raise err
@@ -2704,7 +2729,7 @@ def telluric_correct_pair(inputs):
         os.remove(fits_2.telluric_path)
     telluric.apply_correction(fits_2.fluxcal_path, 
                               fits_2.telluric_path)
-    return
+    return True
 
 def measure_offsets_group(group):
     """Measure offsets between a set of dithered observations."""
