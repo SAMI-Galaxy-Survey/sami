@@ -69,17 +69,31 @@ import multiprocessing
 import tempfile
 from contextlib import contextmanager
 from collections import defaultdict
+from getpass import getpass
 
 import astropy.coordinates as coord
 from astropy import units
 import astropy.io.fits as pf
+from astropy import __version__ as ASTROPY_VERSION
 import numpy as np
+try:
+    import pysftp
+    PYSFTP_AVAILABLE = True
+except ImportError:
+    PYSFTP_AVAILABLE = False
 
 from .utils.other import find_fibre_table
 from .general.cubing import dithered_cubes_from_rss_list
 from .general.align_micron import find_dither
 from .dr import fluxcal2, telluric, check_plots, tdfdr
 
+
+# Get the astropy version as a tuple of integers
+ASTROPY_VERSION = tuple(int(x) for x in ASTROPY_VERSION.split('.'))
+if ASTROPY_VERSION[:2] == (0, 2):
+    ICRS = coord.ICRSCoordinates
+else:
+    ICRS = coord.ICRS
 
 IDX_FILES_SLOW = {'1': 'sami580V_v1_2.idx',
                   '2': 'sami1000R_v1_2.idx',
@@ -184,7 +198,7 @@ CHECK_DATA = {
             'ndf_class': 'MFOBJECT',
             'spectrophotometric': None,
             'priority': 4,
-            'group_by': ('date', 'ccd', 'field_id')},
+            'group_by': ('date', 'ccd', 'field_id', 'name')},
     'FLX': {'name': 'Flux calibration',
             'ndf_class': 'MFOBJECT',
             'spectrophotometric': True,
@@ -195,13 +209,18 @@ CHECK_DATA = {
             'spectrophotometric': None,
             'priority': 6,
             'group_by': ('date', 'ccd', 'field_id')},
-    'CUB': {'name': 'Cubes',
+    'ALI': {'name': 'Alignment',
             'ndf_class': 'MFOBJECT',
             'spectrophotometric': False,
             'priority': 7,
-            'group_by': ('date', 'field_id')}}
+            'group_by': ('field_id',)},
+    'CUB': {'name': 'Cubes',
+            'ndf_class': 'MFOBJECT',
+            'spectrophotometric': False,
+            'priority': 8,
+            'group_by': ('field_id',)}}
 # Extra priority for checking re-reductions
-PRIORITY_RECENT = 10
+PRIORITY_RECENT = 100
 
 class Manager:
     """Object for organising and reducing SAMI data.
@@ -545,9 +564,13 @@ class Manager:
             self.map = map
         self.root = root
         self.abs_root = os.path.abspath(root)
+        self.tmp_dir = os.path.join(self.abs_root, 'tmp')
         # Match objects within 1'
-        self.matching_radius = \
-            coord.AngularSeparation(0.0, 0.0, 0.0, 1.0, units.arcmin)
+        if ASTROPY_VERSION[0] == 0 and ASTROPY_VERSION[1] == 2:
+            self.matching_radius = coord.AngularSeparation(
+                0.0, 0.0, 0.0, 1.0, units.arcmin)
+        else:
+            self.matching_radius = coord.Angle('0:1:0 degrees')
         self.file_list = []
         self.extra_list = []
         self.dark_exposure_str_list = []
@@ -561,6 +584,8 @@ class Manager:
         self.scratch_dir = None
         self.min_exposure_for_throughput = 900.0
         self.min_exposure_for_sky_wave = 900.0
+        self.aat_username = None
+        self.aat_password = None
         self.inspect_root(copy_files, move_files)
 
     def inspect_root(self, copy_files, move_files, trust_header=True):
@@ -812,9 +837,38 @@ class Manager:
         for dirname, subdirname_list, filename_list in os.walk(source_dir):
             for filename in filename_list:
                 if self.file_filter(filename):
-                    self.import_file(dirname, filename,
+                    self.update_copy(os.path.join(dirname, filename),
+                                     os.path.join(self.tmp_dir, filename))
+                    self.import_file(self.tmp_dir, filename,
                                      trust_header=trust_header,
-                                     copy_files=True, move_files=False)
+                                     copy_files=False, move_files=True)
+        if os.path.exists(self.tmp_dir) and len(os.listdir(self.tmp_dir)) == 0:
+            os.rmdir(self.tmp_dir)
+        return
+
+    def import_aat(self, username=None, password=None, date=None,
+                   server='aatlxa', path='/data_lxy/aatobs/OptDet_data'):
+        """Import from the AAT data disks."""
+        with self.connection(server=server, username=username, 
+                             password=password) as srv:
+            if date is None:
+                date_options = [s for s in srv.listdir(path)
+                                if re.match(r'\d{6}', s)]
+                date = sorted(date_options)[-1]
+            if not os.path.exists(self.tmp_dir):
+                os.makedirs(self.tmp_dir)
+            for ccd in ['ccd_1', 'ccd_2']:
+                dirname = os.path.join(path, date, ccd)
+                filename_list = sorted(srv.listdir(dirname))
+                for filename in filename_list:
+                    if self.file_filter(filename):
+                        srv.get(os.path.join(dirname, filename), 
+                                localpath=os.path.join(self.tmp_dir, filename))
+                        self.import_file(self.tmp_dir, filename,
+                                         trust_header=False, copy_files=False,
+                                         move_files=True)
+        if os.path.exists(self.tmp_dir) and len(os.listdir(self.tmp_dir)) == 0:
+            os.rmdir(self.tmp_dir)
         return
 
     def fits_file(self, filename):
@@ -1231,9 +1285,10 @@ class Manager:
                 'PS_spec_file': PS_spec_file,
                 'model_name': model_name_out})
         # Now send this list to as many cores as we are using
-        self.map(telluric_correct_pair, inputs_list)
+        done_list = self.map(telluric_correct_pair, inputs_list)
         # Mark telluric corrections as not checked
-        fits_2_list = [inputs['fits_2'] for inputs in inputs_list]
+        fits_2_list = [inputs['fits_2'] for inputs, done in 
+                       zip(inputs_list, done_list) if done]
         self.update_checks('TEL', fits_2_list, False)
         return
 
@@ -1261,7 +1316,7 @@ class Manager:
                 # This loop checks each fits file and adds the group to the
                 # complete list if *any* of them are missing the ALIGNMENT HDU
                 try:
-                    pf.getheader(fits, 'ALIGNMENT')
+                    pf.getheader(best_path(fits), 'ALIGNMENT')
                 except KeyError:
                     # No previous measurement, so we need to do this group
                     complete_groups.append(
@@ -1269,6 +1324,8 @@ class Manager:
                          fits_list_other_arm))
                     break
         self.map(measure_offsets_group, complete_groups)
+        for group in complete_groups:
+            self.update_checks('ALI', group[1], False)
         return
 
     def cube(self, overwrite=False, min_exposure=599.0, name='main', 
@@ -2009,6 +2066,29 @@ class Manager:
         self.idx_files = IDX_FILES[self.speed]
         return
 
+    @contextmanager
+    def connection(self, server='aatlxa', username=None, password=None):
+        """Make a secure connection to a remote server."""
+        if not PYSFTP_AVAILABLE:
+            print "You must install the pysftp package to do that!"
+        if username is None:
+            if self.aat_username is None:
+                username = raw_input('Enter AAT username: ')
+                self.aat_username = username
+            else:
+                username = self.aat_username
+        if password is None:
+            if self.aat_password is None:
+                password = getpass('Enter AAT password: ')
+                self.aat_password = password
+            else:
+                password = self.aat_password
+        srv = pysftp.Connection(server, username=username, password=password)
+        try:
+            yield srv
+        finally:
+            srv.close()
+
     def load_2dfdr_gui(self, fits_or_dirname):
         """Load the 2dfdr GUI in the required directory."""
         if isinstance(fits_or_dirname, FITSFile):
@@ -2039,6 +2119,8 @@ class Manager:
 
     def list_checks(self, recent_ever='both', *args, **kwargs):
         """Return a list of checks that need to be done."""
+        if 'do_not_use' not in kwargs:
+            kwargs['do_not_use'] = False
         # Each element in the list will be a tuple, where
         # element[0] = key from below
         # element[1] = list of fits objects to be checked
@@ -2194,6 +2276,11 @@ class Manager:
         check_plots.check_tel(fits_list)
         return
 
+    def check_ali(self, fits_list):
+        """Check the alignment of a set of object frames."""
+        check_plots.check_ali(fits_list)
+        return
+
     def check_cub(self, fits_list):
         """Check a set of final datacubes."""
         check_plots.check_cub(fits_list)
@@ -2251,7 +2338,16 @@ class FITSFile:
                 (hdu.header['EXTNAME'] == 'STRUCT.MORE.NDF_CLASS' or
                  hdu.header['EXTNAME'] == 'NDF_CLASS')):
                 # It has a class
-                self.ndf_class = hdu.data['NAME'][0]
+                ndf_class = hdu.data['NAME'][0]
+                # Change DFLAT to LFLAT
+                if ndf_class == 'DFLAT':
+                    hdulist_write = pf.open(self.source_path, 'update')
+                    hdulist_write[hdu.header['EXTNAME']].data['NAME'][0] = (
+                        'LFLAT')
+                    hdulist_write.flush()
+                    hdulist_write.close()
+                    ndf_class = 'LFLAT'
+                self.ndf_class = ndf_class
                 break
         else:
             self.ndf_class = None
@@ -2328,7 +2424,7 @@ class FITSFile:
             # config file RA and Dec.
             for pilot_field in PILOT_FIELD_LIST:
                 if (self.cfg_coords.separation(
-                    coord.ICRSCoordinates(pilot_field['coords'])).arcsecs < 1.0
+                    ICRS(pilot_field['coords'])).arcsecs < 1.0
                     and self.plate_id == pilot_field['plate_id']):
                     self.field_no = pilot_field['field_no']
                     break
@@ -2408,15 +2504,13 @@ class FITSFile:
         """Save the RA/Dec and config RA/Dec."""
         if self.ndf_class and self.ndf_class not in ['BIAS', 'DARK', 'LFLAT']:
             header = self.hdulist[self.fibres_extno].header
-            self.cfg_coords = \
-                coord.ICRSCoordinates(ra=header['CFGCENRA'],
-                                      dec=header['CFGCENDE'],
-                                      unit=(units.radian, units.radian))
+            self.cfg_coords = ICRS(ra=header['CFGCENRA'],
+                                   dec=header['CFGCENDE'],
+                                   unit=(units.radian, units.radian))
             if self.ndf_class == 'MFOBJECT':
-                self.coords = \
-                    coord.ICRSCoordinates(ra=header['CENRA'],
-                                          dec=header['CENDEC'],
-                                          unit=(units.radian, units.radian))
+                self.coords = ICRS(ra=header['CENRA'],
+                                   dec=header['CENDEC'],
+                                   unit=(units.radian, units.radian))
             else:
                 self.coords = None
         else:
@@ -2680,7 +2774,7 @@ def telluric_correct_pair(inputs):
             # No standard star found; probably a star field
             print err.message
             print 'Skipping telluric correction for file:', fits_2.filename
-            return
+            return False
         else:
             # Some other, unexpected error. Re-raise it.
             raise err
@@ -2689,7 +2783,7 @@ def telluric_correct_pair(inputs):
         os.remove(fits_2.telluric_path)
     telluric.apply_correction(fits_2.fluxcal_path, 
                               fits_2.telluric_path)
-    return
+    return True
 
 def measure_offsets_group(group):
     """Measure offsets between a set of dithered observations."""
