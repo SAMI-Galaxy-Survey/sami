@@ -851,6 +851,8 @@ class Manager:
         """Import from the AAT data disks."""
         with self.connection(server=server, username=username, 
                              password=password) as srv:
+            if srv is None:
+                return
             if date is None:
                 date_options = [s for s in srv.listdir(path)
                                 if re.match(r'\d{6}', s)]
@@ -2083,11 +2085,18 @@ class Manager:
                 self.aat_password = password
             else:
                 password = self.aat_password
-        srv = pysftp.Connection(server, username=username, password=password)
         try:
-            yield srv
-        finally:
-            srv.close()
+            srv = pysftp.Connection(server, username=username, password=password)
+        except pysftp.paramiko.AuthenticationException:
+            print 'Authentication failed! Check username and password.'
+            self.aat_username = None
+            self.aat_password = None
+            yield None
+        else:
+            try:
+                yield srv
+            finally:
+                srv.close()
 
     def load_2dfdr_gui(self, fits_or_dirname):
         """Load the 2dfdr GUI in the required directory."""
