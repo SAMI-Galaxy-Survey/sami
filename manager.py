@@ -2120,6 +2120,13 @@ class Manager:
                        scratch_dir=self.scratch_dir)
         return
 
+    def remove_directory_locks(self):
+        """Remove all 2dfdr locks from directories."""
+        for dirname, subdirname_list, filename_list in os.walk(self.abs_root):
+            if '2dfdrLockDir' in subdirname_list:
+                os.rmdir(os.path.join(dirname, '2dfdrLockDir'))
+        return
+
     def update_checks(self, key, file_iterable, value, force=False):
         """Set flags for whether the files have been manually checked."""
         for fits in file_iterable:
