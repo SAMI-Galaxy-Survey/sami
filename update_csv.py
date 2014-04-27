@@ -286,6 +286,9 @@ class CSV:
 
     def print_contents(self, file_out, set_readwrite=True):
         """Write the contents to a new file."""
+        dir_out = os.path.dirname(file_out)
+        if not os.path.exists(dir_out):
+            os.makedirs(dir_out)
         f_out = open(file_out, 'w')
         f_out.write('\n'.join(self.contents) + '\n')
         f_out.close()
