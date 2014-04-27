@@ -542,6 +542,23 @@ class Manager:
     disabling all unwanted files. Otherwise, you can easily have a tramline
     map go haywire (for example) and wreck everything that follows.
 
+    Parallel processing
+    ===================
+
+    You can make use of multi-core machines by setting the number of CPUs to
+    use when the manager is made, e.g.:
+
+    >>> mngr = sami.manager.Manager('130305_130317', n_cpu=4)
+
+    Note that you cannot run multiple instances of 2dfdr in the same
+    directory, so you wont always be able to use all your cores. To keep
+    track of where 2dfdr is running, the manager makes empty directories
+    called '2dfdrLockDir'. These will normally be cleaned up when 2dfdr
+    completes, but after a bad crash they may be left behind and block
+    any following reductions. In this case, you can force their removal:
+
+    >>> mngr.remove_directory_locks()
+
     Other functions
     ===============
 
