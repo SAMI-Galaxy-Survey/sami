@@ -298,6 +298,25 @@ class Manager:
     spectrophotometric standards for flux calibration; simply enter y or n as
     appropriate.
 
+    Importing at the AAT
+    ====================
+
+    If you're at the AAT and connected to the network there, you can import
+    raw data directly from the data directories there:
+
+    >>> mngr.import_aat()
+
+    The first time you call this function you will be prompted for a username
+    and password, which are saved for future times. By default the data from
+    the latest date is copied; if you want to copy earlier data you can
+    specify the date:
+
+    >>> mngr.import_aat(date='140219')
+
+    Only new files are copied over, so you can use this function to update
+    your manager during the night. An ethernet connection is strongly
+    recommended, as the data transfer is rather slow over wifi.
+
     Reducing bias, dark and lflat frames
     ====================================
 
