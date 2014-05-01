@@ -84,7 +84,7 @@ def run_2dfdr_combine(input_path_list, output_path, return_to=None,
                    ('ExecCombine $task $glist ' + output_filename +
                     ' -success Quit')])
     script_filename = '2dfdr_script.tcl'
-    with visit_dir(output_dir, return_to=return_to):
+    with visit_dir(output_dir, return_to=return_to, lockdir=lockdir):
         # Print the script to file
         with open(script_filename, 'w') as f_script:
             f_script.write('\n'.join(script))
@@ -94,7 +94,7 @@ def run_2dfdr_combine(input_path_list, output_path, return_to=None,
                    script_filename,
                    '-Timeout',
                    timeout]
-        run_2dfdr(output_dir, options, lockdir=lockdir, **kwargs)
+        run_2dfdr(output_dir, options, lockdir=None, **kwargs)
         # Clean up the script file
         os.remove(script_filename)
     return
