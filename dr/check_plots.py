@@ -1,4 +1,5 @@
 from . import fluxcal2
+from ..utils import IFU
 
 import matplotlib.pyplot as plt
 from matplotlib import cm
@@ -161,8 +162,11 @@ def check_ali(fits_list):
         path_list = (fits.telluric_path, fits.fluxcal_path, fits.reduced_path)
         for path in path_list:
             try:
-                data_i = np.sort(pf.getdata(path, 'ALIGNMENT'), 
-                                 order='PROBENUM')
+                data_i = pf.getdata(path, 'ALIGNMENT')
+                order = np.argsort(
+                    IFU(path, probenum, flag_name=False).name
+                    for probenum in data_i['PROBENUM'])
+                date_i = data_i[order]
                 header = pf.getheader(path, 'ALIGNMENT')
             except (KeyError, IOError):
                 pass
@@ -188,7 +192,7 @@ def check_ali(fits_list):
     x_fit_plot = data['X_SHIFT'] * scale + data['X_REFMED']
     y_fit_plot = -data['Y_SHIFT'] * scale + data['Y_REFMED']
     n_ifu = data.shape[1]
-    fig = plt.figure(fits_list[0].field_id, figsize=(12., 12.))
+    fig = plt.figure(fits_list[0].field_id, figsize=(10., 10.))
     axes = fig.add_subplot(111, aspect='equal')
     plt.xlim((-radius_plot, radius_plot))
     plt.ylim((-radius_plot, radius_plot))
