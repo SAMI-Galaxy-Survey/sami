@@ -286,11 +286,17 @@ class CSV:
 
     def print_contents(self, file_out, set_readwrite=True):
         """Write the contents to a new file."""
+        bad_lines = [item['line_no']
+                     for target_type in self.target_type_list
+                     for item in self.target_type_to_list(target_type)
+                     if item['Probe'] == '']
+        output = [line for line_no, line in enumerate(self.contents)
+                  if line_no not in bad_lines]
         dir_out = os.path.dirname(file_out)
-        if not os.path.exists(dir_out):
+        if dir_out != '' and not os.path.exists(dir_out):
             os.makedirs(dir_out)
         f_out = open(file_out, 'w')
-        f_out.write('\n'.join(self.contents) + '\n')
+        f_out.write('\n'.join(output) + '\n')
         f_out.close()
         if set_readwrite:
             os.chmod(file_out, 0666)
