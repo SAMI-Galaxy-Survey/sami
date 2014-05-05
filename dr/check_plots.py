@@ -236,10 +236,10 @@ they look galaxy-like, and the spectra have no obvious artefacts."""
     print message
     # The positions of points to plot
     position_dict = {'Centre': (24.5, 24.5),
-                     'North': (24.5, 34.5),
-                     'East': (14.5, 24.5),
-                     'South': (24.5, 14.5),
-                     'West': (34.5, 24.5)}
+                     'North': (24.5, 31.5),
+                     'East': (17.5, 24.5),
+                     'South': (24.5, 17.5),
+                     'West': (31.5, 24.5)}
     # Construct the list of object names
     # We're assuming that a single field was sent
     fibre_table = pf.getdata(fits_list[0].reduced_path, 'FIBRES_IFU')
@@ -277,26 +277,33 @@ they look galaxy-like, and the spectra have no obvious artefacts."""
             header_red = hdulist_red[0].header
             hdulist_red.close()
         # Set up the figure
-        fig = plt.figure(object_name, figsize=(16., 12.))
+        fig = plt.figure(object_name, figsize=(16., 10.))
         # Show collapsed images of the object
         trim = 100
         if blue_available:
             ax_blue = fig.add_subplot(221)
-            plt.imshow(np.nansum(data_blue[trim:-1*trim, :, :], axis=0), 
-                       origin='lower', interpolation='nearest', cmap='GnBu')
+            image = np.nansum(data_blue[trim:-1*trim, :, :], axis=0)
+            image_sorted = np.sort(image[np.isfinite(image)])
+            vmax = image_sorted[int(0.97*image_sorted.size)]
+            plt.imshow(image, origin='lower', interpolation='nearest',
+                       cmap='GnBu', vmax=vmax, vmin=0)
             ax_blue.set_title('Blue arm')
             wavelength_blue = header_blue['CRVAL3'] + header_blue['CDELT3'] * (
                 1 + np.arange(header_blue['NAXIS3']) - header_blue['CRPIX3'])
         if red_available:
             ax_red = fig.add_subplot(222)
-            plt.imshow(np.nansum(data_red[trim:-1*trim, :, :], axis=0), 
-                       origin='lower', interpolation='nearest', cmap='GnBu')
+            image = np.nansum(data_red[trim:-1*trim, :, :], axis=0)
+            image_sorted = np.sort(image[np.isfinite(image)])
+            vmax = image_sorted[int(0.97*image_sorted.size)]
+            plt.imshow(image, origin='lower', interpolation='nearest',
+                       cmap='GnBu', vmax=vmax, vmin=0)
             ax_red.set_title('Red arm')
             wavelength_red = header_red['CRVAL3'] + header_red['CDELT3'] * (
                 1 + np.arange(header_red['NAXIS3']) - header_red['CRPIX3'])
         # Show the central spectrum and a few others
         color_cycle = itertools.cycle(['r', 'g', 'b', 'c', 'm', 'y', 'k'])
         ax_spec = fig.add_subplot(212)
+        ymax = 0.0
         for name, coords in position_dict.items():
             color = next(color_cycle)
             if blue_available:
@@ -307,6 +314,8 @@ they look galaxy-like, and the spectra have no obvious artefacts."""
                 plt.plot(wavelength_blue, flux_blue, c=color, label=name)
                 # Add location marker to the blue image
                 ax_blue.scatter(coords[0], coords[1], marker='x', c=color)
+                if 2*np.median(flux_blue) > ymax:
+                    ymax = 2*np.median(flux_blue)
             if red_available:
                 flux_red = np.nansum(np.nansum(
                     data_red[:, int(coords[0]):int(coords[0])+2, 
@@ -315,7 +324,10 @@ they look galaxy-like, and the spectra have no obvious artefacts."""
                 plt.plot(wavelength_red, flux_red, c=color)
                 # Add location marker to the red image
                 ax_red.scatter(coords[0], coords[1], marker='x', c=color)
+                if 2*np.median(flux_red) > ymax:
+                    ymax = 2*np.median(flux_red)
             plt.legend()
+        plt.ylim(0, ymax)
     print "When you're ready to move on..."
     return
 
