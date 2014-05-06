@@ -204,6 +204,9 @@ def find_dither(RSSname,reference,centroid=True,inter=False,plot=False,remove_fi
                 os.remove(file_geodb)
 
       results = []                
+
+      # Some pyraf installations appear to require this line to load the images module
+      iraf.images()
      
       for i in xrange(len(RSSmatch)):
          
