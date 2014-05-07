@@ -478,13 +478,8 @@ def fit_transform(p0, coords_in, coords_ref, sigma_clip=None, good=None):
         if sigma_clip is not None:
             residual = plate_scale_model_residuals(fit[0], coords_in, coords_ref)
             rms = np.sqrt(np.mean(residual[good]**2))
-            print 'Residual:', residual
-            print 'RMS:', rms
             new_good = residual < (sigma_clip * rms)
-            print "Old:", good
-            print "New:", new_good
             if np.all(new_good == good):
-                print "Converged!"
                 # Converged!
                 break
             good = new_good
