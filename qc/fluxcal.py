@@ -78,9 +78,9 @@ def stability(mngr):
         data_combined[n_pix_1:, i_combined] = 1.0 / pf.getdata(path_2)
     for i_individual, (path_1, path_2) in enumerate(individual_file_pairs):
         data_individual[:n_pix_1, i_individual] = 1.0 / pf.getdata(
-            path_1, 'FLUX_CALIBRATION')[2, :]
+            path_1, 'FLUX_CALIBRATION')[-1, :]
         data_individual[n_pix_1:, i_individual] = 1.0 / pf.getdata(
-            path_2, 'FLUX_CALIBRATION')[2, :]
+            path_2, 'FLUX_CALIBRATION')[-1, :]
     common = (
         np.sum(np.isfinite(data_combined), axis=1) + 
         np.sum(np.isfinite(data_individual), axis=1)
