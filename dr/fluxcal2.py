@@ -112,7 +112,7 @@ def read_chunked_data(path_list, probenum, n_drop=None, n_chunk=None,
             data = np.hstack((data, data_i))
             variance = np.hstack((variance, variance_i))
             wavelength = np.hstack((wavelength, wavelength_i))
-    xfibre = ifu.xpos_rel
+    xfibre = ifu.xpos_rel * np.cos(np.deg2rad(np.mean(ifu.ypos)))
     yfibre = ifu.ypos_rel
     # Only keep unbroken fibres
     good_fibre = (ifu.fib_type == 'P')
@@ -654,11 +654,13 @@ def extract_total_flux(ifu, psf_parameters, model_name, clip=None):
     sigma_flux = np.zeros(n_pixel)
     sigma_background = np.zeros(n_pixel)
     good_fibre = (ifu.fib_type == 'P')
+    xfibre = ifu.xpos_rel * np.cos(np.deg2rad(np.mean(ifu.ypos)))
+    yfibre = ifu.ypos_rel
     for index, psf_parameters_slice in enumerate(psf_parameters_array):
         flux[index], background[index], sigma_flux[index], \
             sigma_background[index] = extract_flux_slice(
                 ifu.data[good_fibre, index], ifu.var[good_fibre, index], 
-                ifu.xpos_rel[good_fibre], ifu.ypos_rel[good_fibre],
+                xfibre[good_fibre], yfibre[good_fibre],
                 psf_parameters_slice)
     if clip is not None:
         # Clip out discrepant data. Wavelength slices are targeted based on
@@ -668,7 +670,7 @@ def extract_total_flux(ifu, psf_parameters, model_name, clip=None):
         model_parameters['flux'] = flux
         model_parameters['background'] = background
         fit = model_flux(
-            model_parameters, ifu.xpos_rel, ifu.ypos_rel, ifu.lambda_range, 
+            model_parameters, xfibre, yfibre, ifu.lambda_range, 
             model_name)
         rms = np.sqrt(np.nansum((ifu.data - fit)**2, axis=0))
         rms_smoothed = median_filter(rms, 41)
@@ -687,7 +689,7 @@ def extract_total_flux(ifu, psf_parameters, model_name, clip=None):
                     sigma_flux[bad_pixel], sigma_background[bad_pixel] = \
                     extract_flux_slice(
                         ifu.data[keep, bad_pixel], ifu.var[keep, bad_pixel],
-                        ifu.xpos_rel[keep], ifu.ypos_rel[keep], 
+                        xfibre[keep], yfibre[keep], 
                         psf_parameters_array[bad_pixel])
                 # Re-calculate the deviation from the model
                 model_parameters['flux'] = np.array(
@@ -695,7 +697,7 @@ def extract_total_flux(ifu, psf_parameters, model_name, clip=None):
                 model_parameters['background'] = np.array(
                     [background[bad_pixel]])
                 fit_pixel = model_flux(
-                    model_parameters, ifu.xpos_rel, ifu.ypos_rel, 
+                    model_parameters, xfibre, yfibre, 
                     np.array([ifu.lambda_range[bad_pixel]]), model_name)[:,0]
                 rms_pixel = np.sqrt(np.nansum((ifu.data[keep, bad_pixel] - 
                                                fit_pixel[keep])**2))
@@ -1214,10 +1216,10 @@ def read_model(path):
     """Return the model encoded in a FITS file."""
     hdulist = pf.open(path)
     hdu = hdulist['FLUX_CALIBRATION']
-    hdulist.close()
     psf_parameters, model_name = read_model_parameters(hdu)
     ifu = IFU(path, hdu.header['PROBENUM'], flag_name=False)
-    xfibre = ifu.xpos_rel
+    hdulist.close()
+    xfibre = ifu.xpos_rel * np.cos(np.deg2rad(np.mean(ifu.ypos)))
     yfibre = ifu.ypos_rel
     wavelength = ifu.lambda_range
     model = model_flux(psf_parameters, xfibre, yfibre, wavelength, model_name)
@@ -1238,7 +1240,7 @@ def set_fixed_parameters(path_list, model_name, probenum=None):
         model_name == 'ref_centre_alpha_circ_hdratm'):
         header = pf.getheader(path_list[0])
         ifu = IFU(path_list[0], probenum, flag_name=False)
-        ha_offset = ifu.ra - ifu.meanra  # The offset from the HA of the field centre
+        ha_offset = ifu.xpos[0] - ifu.meanra  # The offset from the HA of the field centre
         ha_start = header['HASTART'] + ha_offset
         # The header includes HAEND, but this goes very wrong if the telescope
         # slews during readout. The equation below goes somewhat wrong if the
