@@ -256,7 +256,7 @@ def dar_correct(ifu_list, xfibre_all, yfibre_all, method='simple',update_rss=Fal
 
 def dithered_cubes_from_rss_files(inlist, objects='all', size_of_grid=50, 
                                   output_pix_size_arcsec=0.5, drop_factor=0.5,
-                                  clip=True, plot=True, write=False, suffix='',
+                                  clip=True, plot=True, write=True, suffix='',
                                   nominal=False, root='', overwrite=False, offsets='file',
                                   covar_mode='optimal', do_dar_correct=True,
                                   clip_throughput=True):
@@ -279,7 +279,7 @@ def dithered_cubes_from_rss_files(inlist, objects='all', size_of_grid=50,
 
 def dithered_cubes_from_rss_list(files, objects='all', size_of_grid=50, 
                                  output_pix_size_arcsec=0.5, drop_factor=0.5,
-                                 clip=True, plot=True, write=False, suffix='',
+                                 clip=True, plot=True, write=True, suffix='',
                                  nominal=False, root='', overwrite=False, offsets='file',
                                  covar_mode='optimal', do_dar_correct=True,
                                  clip_throughput=True):
