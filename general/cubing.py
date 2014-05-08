@@ -257,7 +257,7 @@ def dar_correct(ifu_list, xfibre_all, yfibre_all, method='simple',update_rss=Fal
 def dithered_cubes_from_rss_files(inlist, objects='all', size_of_grid=50, 
                                   output_pix_size_arcsec=0.5, drop_factor=0.5,
                                   clip=True, plot=True, write=False, suffix='',
-                                  nominal=False, root='', overwrite=False, 
+                                  nominal=False, root='', overwrite=False, offsets='file',
                                   covar_mode='optimal', do_dar_correct=True,
                                   clip_throughput=True):
     """A wrapper to make a cube from reduced RSS files, passed as a filename containing a list of filenames. Only input files that go together - ie have the same objects."""
@@ -272,7 +272,7 @@ def dithered_cubes_from_rss_files(inlist, objects='all', size_of_grid=50,
 
     dithered_cubes_from_rss_list(files, objects=objects, size_of_grid=size_of_grid, 
                                  output_pix_size_arcsec=output_pix_size_arcsec, clip=clip, plot=plot,
-                                 write=write, root=root, suffix=suffix, nominal=nominal, overwrite=overwrite,
+                                 write=write, root=root, suffix=suffix, nominal=nominal, overwrite=overwrite, offsets=offsets,
                                  covar_mode=covar_mode, do_dar_correct=do_dar_correct, drop_factor=drop_factor,
                                  clip_throughput=clip_throughput)
     return
@@ -280,7 +280,7 @@ def dithered_cubes_from_rss_files(inlist, objects='all', size_of_grid=50,
 def dithered_cubes_from_rss_list(files, objects='all', size_of_grid=50, 
                                  output_pix_size_arcsec=0.5, drop_factor=0.5,
                                  clip=True, plot=True, write=False, suffix='',
-                                 nominal=False, root='', overwrite=False,
+                                 nominal=False, root='', overwrite=False, offsets='file',
                                  covar_mode='optimal', do_dar_correct=True,
                                  clip_throughput=True):
     """A wrapper to make a cube from reduced RSS files, passed as a list. Only input files that go together - ie have the same objects."""
@@ -353,7 +353,7 @@ def dithered_cubes_from_rss_list(files, objects='all', size_of_grid=50,
                        dithered_cube_from_rss(ifu_list, size_of_grid=size_of_grid,
                                               output_pix_size_arcsec=output_pix_size_arcsec,
                                               drop_factor=drop_factor,
-                                              clip=clip, plot=plot, covar_mode=covar_mode,
+                                              clip=clip, plot=plot, offsets=offsets, covar_mode=covar_mode,
                                               do_dar_correct=do_dar_correct,
                                               clip_throughput=clip_throughput)
 
