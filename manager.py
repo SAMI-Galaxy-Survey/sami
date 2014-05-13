@@ -1470,6 +1470,8 @@ class Manager:
             if fits.exposure >= self.min_exposure_for_sky_wave:
                 # Adjust wavelength calibration of red frames using sky lines
                 options.extend(['-SKYSCRUNCH', '1'])
+            else:
+                options.extend(['-SKYSCRUNCH', '0'])
             # Turn off bias and dark subtraction
             options.extend(['-USEBIASIM', '0', '-USEDARKIM', '0'])
         if fits.ndf_class == 'BIAS':
