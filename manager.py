@@ -1393,21 +1393,22 @@ class Manager:
             ['field_id', 'ccd'], ndf_class='MFOBJECT', do_not_use=False,
             reduced=True, min_exposure=min_exposure, name=name, **kwargs)
         input_list = []
-        for (field_id, ccd), path_list in groups.items():
+        for (field_id, ccd), fits_list in groups.items():
             if ccd == 'ccd_1':
                 arm = 'blue'
             else:
                 arm = 'red'
             if star_only:
-                objects = [pf.getval(path_list[0], 'STDNAME', 'FLUX_CALIBRATION')]
+                objects = [pf.getval(fits_list[0].fcal_path, 'STDNAME', 
+                                     'FLUX_CALIBRATION')]
             else:
-                table = pf.getdata(path_list[0], 'FIBRES_IFU')
+                table = pf.getdata(fits_list[0].reduced_path, 'FIBRES_IFU')
                 objects = table['NAME'][table['TYPE'] == 'P']
                 objects = np.unique(objects).tolist()
             for obj in objects:
                 input_path = os.path.join(
                     self.abs_root, 'cubed', obj,
-                    obj+'_'+arm+'_'+str(len(path_list))+'_'+field_id+'.fits')
+                    obj+'_'+arm+'_'+str(len(fits_list))+'_'+field_id+'.fits')
                 if os.path.exists(input_path):
                     output_path = input_path + '.gz'
                     if os.path.exists(output_path) and overwrite:
