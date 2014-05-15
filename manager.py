@@ -2912,10 +2912,15 @@ def cube_group(group):
         objects = [pf.getval(path_list[0], 'STDNAME', 'FLUX_CALIBRATION')]
     else:
         objects = 'all'
-    dithered_cubes_from_rss_list(path_list, suffix='_'+field[0], size_of_grid=50,
-                                 write=True, nominal=True, root=root,
-                                 overwrite=overwrite, do_dar_correct=True,
-                                 objects=objects, clip=True)
+    if fits_list[0].epoch < 2013.0:
+        # Large pitch of pilot data requires a larger drop size
+        drop_factor = 0.75
+    else:
+        drop_factor = 0.5
+    dithered_cubes_from_rss_list(
+        path_list, suffix='_'+field[0], size_of_grid=50, write=True,
+        nominal=True, root=root, overwrite=overwrite, do_dar_correct=True,
+        objects=objects, clip=True, drop_factor=drop_factor)
     return
 
 def best_path(fits):
