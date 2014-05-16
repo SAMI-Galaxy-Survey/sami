@@ -46,7 +46,7 @@ def derive_transfer_function(frame_list, PS_spec_file=None, use_PS=False,
 
         if scale_PS_by_airmass:
             # Use the theoretical scaling based on airmass
-            scale = ((1.0 / np.cos(np.deg2rad(header['ZDSTART']))) / 
+            scale = ((1.0 / np.cos(np.deg2rad(pf.getval(frame_list[1], 'ZDSTART', 'FLUX_CALIBRATION')))) / 
                      (1.0 / np.cos(np.deg2rad(pf.getval(PS_spec_file, 'MEANZD')))))
         else:
             # find least squares fit on scalar
