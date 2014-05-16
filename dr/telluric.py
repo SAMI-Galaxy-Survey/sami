@@ -39,29 +39,6 @@ def derive_transfer_function(frame_list, PS_spec_file=None, use_PS=False,
     # extension and copy atmospheric parameters across
     extract_secondary_standard(frame_list, model_name=model_name, n_trim=n_trim, use_probe=use_probe)
 
-    # Get data
-    hdulist = pf.open(frame_list[1])
-    hdu_name = 'FLUX_CALIBRATION'
-    hdu = hdulist[hdu_name]
-   
-    # Load in SS flux data
-    SS_flux_data_raw = hdu.data[0, :]
-    SS_sigma_flux = hdu.data[2, :]
-    # Might put in an interpolation over NaNs; for now just taking a straight copy
-    SS_flux_data = SS_flux_data_raw.copy()
-    header = hdulist[0].header
-    crval1 = header['CRVAL1']
-    cdelt1 = header['CDELT1']
-    naxis1 = header['NAXIS1']
-    crpix1 = header['CRPIX1']
-    SS_wave_axis = crval1 + cdelt1 * (np.arange(naxis1) + 1 - crpix1)
-
-    # Done with the file for now; will re-open in update mode later
-    hdulist.close()
-    
-    # create transfer function for secondary standard
-    SS_transfer_function, SS_sigma_transfer, linear_fit = create_transfer_function(SS_flux_data,SS_sigma_flux,SS_wave_axis,naxis1)
-    
     # if user defines, use a scaled primary standard telluric correction
     if use_PS:
         # get primary standard transfer function
@@ -84,6 +61,29 @@ def derive_transfer_function(frame_list, PS_spec_file=None, use_PS=False,
         sigma_transfer = PS_sigma_transfer
     
     else:
+        # Get data
+        hdulist = pf.open(frame_list[1])
+        hdu_name = 'FLUX_CALIBRATION'
+        hdu = hdulist[hdu_name]
+       
+        # Load in SS flux data
+        SS_flux_data_raw = hdu.data[0, :]
+        SS_sigma_flux = hdu.data[2, :]
+        # Might put in an interpolation over NaNs; for now just taking a straight copy
+        SS_flux_data = SS_flux_data_raw.copy()
+        header = hdulist[0].header
+        crval1 = header['CRVAL1']
+        cdelt1 = header['CDELT1']
+        naxis1 = header['NAXIS1']
+        crpix1 = header['CRPIX1']
+        SS_wave_axis = crval1 + cdelt1 * (np.arange(naxis1) + 1 - crpix1)
+
+        # Done with the file for now; will re-open in update mode later
+        hdulist.close()
+        
+        # create transfer function for secondary standard
+        SS_transfer_function, SS_sigma_transfer, linear_fit = create_transfer_function(SS_flux_data,SS_sigma_flux,SS_wave_axis,naxis1)
+    
         transfer_function = SS_transfer_function
         sigma_transfer = SS_sigma_transfer
 
