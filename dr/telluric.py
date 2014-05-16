@@ -42,7 +42,7 @@ def derive_transfer_function(frame_list, PS_spec_file=None, use_PS=False,
     # if user defines, use a scaled primary standard telluric correction
     if use_PS:
         # get primary standard transfer function
-        PS_transfer_function, PS_sigma_transfer, PS_wave_axis = primary_standard_transfer_function(PS_spec_file)
+        PS_transfer_function, PS_sigma_transfer, linear_fit, PS_wave_axis = primary_standard_transfer_function(PS_spec_file)
 
         if scale_PS_by_airmass:
             # Use the theoretical scaling based on airmass
@@ -148,7 +148,7 @@ def primary_standard_transfer_function(PS_spec_file):
     # get transfer function for primary standard
     PS_transfer_function, PS_sigma_factor, linear_fit = create_transfer_function(PS_spec_median,PS_spec_noise,PS_wave_axis,naxis1)
     
-    return PS_transfer_function, PS_sigma_factor, PS_wave_axis
+    return PS_transfer_function, PS_sigma_factor, linear_fit, PS_wave_axis
 
 def create_transfer_function(standard_spectrum,sigma,wave_axis,naxis1):
 
