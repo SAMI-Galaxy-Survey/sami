@@ -86,6 +86,7 @@ from .utils.other import find_fibre_table, gzip
 from .general.cubing import dithered_cubes_from_rss_list
 from .general.align_micron import find_dither
 from .dr import fluxcal2, telluric, check_plots, tdfdr
+from .dr.throughput import make_clipped_thput_files
 
 
 # Get the astropy version as a tuple of integers
@@ -1129,6 +1130,8 @@ class Manager:
             min_exposure=self.min_exposure_for_throughput, **kwargs)
         reduced_files = self.reduce_file_iterable(
             file_iterable_long, overwrite=overwrite)
+        # Correct any bad throughput measurements
+        self.correct_bad_throughput(overwrite=overwrite, **kwargs)
         # Now reduce the short exposures, which might need the long
         # exposure reduced above
         upper_limit = (self.min_exposure_for_throughput - 
@@ -1142,14 +1145,16 @@ class Manager:
         self.update_checks('OBJ', reduced_files, False)
         return
 
-    def reduce_file_iterable(self, file_iterable, overwrite=False, tlm=False,
-                             leave_reduced=True):
+    def reduce_file_iterable(self, file_iterable, external_throughput=False, 
+                             overwrite=False, tlm=False, leave_reduced=True):
         """Reduce all files in the iterable."""
         # First establish the 2dfdr options for all files that need reducing
         # Would be more memory-efficient to construct a generator
         input_list = [(fits, 
                        self.idx_files[fits.ccd],
-                       tuple(self.tdfdr_options(fits, tlm=tlm)),
+                       tuple(self.tdfdr_options(
+                           fits, external_throughput=external_throughput,
+                           tlm=tlm)),
                        self.cwd,
                        self.imp_scratch,
                        self.scratch_dir)
@@ -1179,6 +1184,23 @@ class Manager:
         else:
             target = fits.reduced_path
         return target
+
+    def correct_bad_throughput(self, overwrite=False, **kwargs):
+        """Create thput files with bad values replaced by mean over field."""
+        rereduce = []
+        for group in self.group_files_by(
+                ('date', 'field_id'), ndf_class='MFOBJECT', do_not_use=False,
+                min_exposure=self.min_exposure_for_throughput, reduced=True,
+                **kwargs).values():
+            path_list = [fits.reduced_path for fits in group]
+            edited_list = make_clipped_thput_files(
+                path_list, overwrite=overwrite)
+            for fits, edited in zip(group, edited_list):
+                if edited:
+                    rereduce.append(fits)
+        self.reduce_file_iterable(rereduce, external_throughput=True, 
+                                  overwrite=True)
+        return
 
     def derive_transfer_function(self, 
             overwrite=False, model_name='ref_centre_alpha_dist_circ_hdratm', 
@@ -1462,7 +1484,7 @@ class Manager:
             os.remove(fits.reduced_path)
         return True
 
-    def tdfdr_options(self, fits, tlm=False):
+    def tdfdr_options(self, fits, external_throughput=False, tlm=False):
         """Set the 2dfdr reduction options for this file."""
         options = []
         # For now, setting all files to use GAUSS extraction
@@ -1497,7 +1519,8 @@ class Manager:
             files_to_match = ['bias', 'dark', 'lflat', 'tlmap', 'wavel',
                               'fflat']
         elif fits.ndf_class == 'MFOBJECT':
-            if fits.exposure < self.min_exposure_for_throughput:
+            if (fits.exposure < self.min_exposure_for_throughput and 
+                    not external_throughput):
                 files_to_match = ['bias', 'dark', 'lflat', 'tlmap', 'wavel',
                                   'fflat', 'thput']
                 options.extend(['-TPMETH', 'OFFSKY'])
@@ -1630,6 +1653,9 @@ class Manager:
                     match_class = 'tlmap'
                 options.extend(['-'+match_class.upper()+'_FILENAME',
                                 filename_match])
+        if external_throughput:
+            options.extend(['-TPMETH', 'OFFSKY'])
+            options.extend(['-THPUT_FILENAME', 'thput_'+fits.reduced_filename])
         return options        
 
     def run_2dfdr_auto(self, dirname):
