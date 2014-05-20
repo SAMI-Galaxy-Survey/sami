@@ -1121,7 +1121,8 @@ class Manager:
         self.update_checks('SKY', reduced_files, False)
         return
 
-    def reduce_object(self, overwrite=False, **kwargs):
+    def reduce_object(self, overwrite=False, recalculate_throughput=True,
+                      **kwargs):
         """Reduce all object frames matching given criteria."""
         # Reduce long exposures first, to make sure that any required
         # throughput measurements are available
@@ -1130,8 +1131,9 @@ class Manager:
             min_exposure=self.min_exposure_for_throughput, **kwargs)
         reduced_files = self.reduce_file_iterable(
             file_iterable_long, overwrite=overwrite)
-        # Correct any bad throughput measurements
-        self.correct_bad_throughput(overwrite=overwrite, **kwargs)
+        if recalculate_throughput:
+            # Correct any bad throughput measurements
+            self.correct_bad_throughput(overwrite=overwrite, **kwargs)
         # Now reduce the short exposures, which might need the long
         # exposure reduced above
         upper_limit = (self.min_exposure_for_throughput - 
