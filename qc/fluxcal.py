@@ -25,10 +25,10 @@ def fluxcal_files(mngr):
         mngr_list = [mngr]
     else:
         mngr_list = mngr
-    result = []
+    ccd_list = ['ccd_1', 'ccd_2']
+    result = [{} for ccd in ccd_list]
     for mngr in mngr_list:
-        for ccd in ['ccd_1', 'ccd_2']:
-            result_ccd = {}
+        for index, ccd in enumerate(ccd_list):
             groups = mngr.group_files_by(('date', 'field_id', 'ccd', 'name'),
                 ndf_class='MFOBJECT', do_not_use=False,
                 spectrophotometric=True, ccd=ccd)
@@ -36,8 +36,7 @@ def fluxcal_files(mngr):
                 combined = os.path.join(
                     group[0].reduced_dir, 'TRANSFERcombined.fits')
                 if os.path.exists(combined):
-                    result_ccd[combined] = [f.reduced_path for f in group]
-            result.append(result_ccd)
+                    result[index][combined] = [f.reduced_path for f in group]
     return tuple(result)
 
 def stability(mngr):
