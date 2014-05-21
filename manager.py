@@ -1194,6 +1194,9 @@ class Manager:
                 ('date', 'field_id'), ndf_class='MFOBJECT', do_not_use=False,
                 min_exposure=self.min_exposure_for_throughput, reduced=True,
                 **kwargs).values():
+            if len(group) == 1:
+                # Can't do anything if there's only one file available
+                continue
             path_list = [fits.reduced_path for fits in group]
             edited_list = make_clipped_thput_files(
                 path_list, overwrite=overwrite)
