@@ -16,22 +16,28 @@ def fluxcal_files(mngr):
     is a list of individual files that contributed.
 
     The input can be a Manager object or a path, from which a Manager will
-    be created.
+    be created. Or a list of managers, in which case the results are
+    concatenated. A list of paths will not work.
     """
     if isinstance(mngr, str):
         mngr = Manager(mngr)
+    if isinstance(mngr, Manager):
+        mngr_list = [mngr]
+    else:
+        mngr_list = mngr
     result = []
-    for ccd in ['ccd_1', 'ccd_2']:
-        result_ccd = {}
-        groups = mngr.group_files_by(('date', 'field_id', 'ccd', 'name'),
-            ndf_class='MFOBJECT', do_not_use=False,
-            spectrophotometric=True, ccd=ccd)
-        for group in groups.values():
-            combined = os.path.join(
-                group[0].reduced_dir, 'TRANSFERcombined.fits')
-            if os.path.exists(combined):
-                result_ccd[combined] = [f.reduced_path for f in group]
-        result.append(result_ccd)
+    for mngr in mngr_list:
+        for ccd in ['ccd_1', 'ccd_2']:
+            result_ccd = {}
+            groups = mngr.group_files_by(('date', 'field_id', 'ccd', 'name'),
+                ndf_class='MFOBJECT', do_not_use=False,
+                spectrophotometric=True, ccd=ccd)
+            for group in groups.values():
+                combined = os.path.join(
+                    group[0].reduced_dir, 'TRANSFERcombined.fits')
+                if os.path.exists(combined):
+                    result_ccd[combined] = [f.reduced_path for f in group]
+            result.append(result_ccd)
     return tuple(result)
 
 def stability(mngr):
@@ -140,15 +146,23 @@ def stellar_colours(mngr):
 
 def list_star_files(mngr):
     """Return a list of tuples of paths to star datacubes, blue and red."""
+    if isinstance(mngr, str):
+        mngr = Manager(mngr)
+    if isinstance(mngr, Manager):
+        mngr_list = [mngr]
+    else:
+        mngr_list = mngr
     result = []
-    blue_list = (
-        glob(os.path.join(mngr.abs_root, 'cubed', '*', '*blue*.fits')) +
-        glob(os.path.join(mngr.abs_root, 'cubed', '*', '*blue*.fits.gz')))
-    for blue_path in blue_list:
-        red_path = red_cube_path(blue_path)
-        if os.path.exists(red_path):
-            if pf.getval(blue_path, 'NAME') == pf.getval(blue_path, 'STDNAME'):
-                result.append((blue_path, red_path))
+    for mngr in mngr_list:
+        blue_list = (
+            glob(os.path.join(mngr.abs_root, 'cubed', '*', '*blue*.fits')) +
+            glob(os.path.join(mngr.abs_root, 'cubed', '*', '*blue*.fits.gz')))
+        for blue_path in blue_list:
+            red_path = red_cube_path(blue_path)
+            if os.path.exists(red_path):
+                if (pf.getval(blue_path, 'NAME') == 
+                        pf.getval(blue_path, 'STDNAME')):
+                    result.append((blue_path, red_path))
     return result
 
 def red_cube_path(blue_path):
