@@ -166,12 +166,14 @@ def temp_imp_scratch(restore_to=None, scratch_dir=None, do_not_delete=False):
         if not do_not_delete:
             # Remove the temporary directory and all its contents
             shutil.rmtree(imp_scratch)
-            # Remove any parent directories that are empty
-            try:
-                os.removedirs(os.path.dirname(imp_scratch))
-            except OSError:
-                # It wasn't empty; never mind
-                pass
+            # No longer remove parent directories, as it can screw things up
+            # next time around
+            # # Remove any parent directories that are empty
+            # try:
+            #     os.removedirs(os.path.dirname(imp_scratch))
+            # except OSError:
+            #     # It wasn't empty; never mind
+            #     pass
     return
 
 class TdfdrException(Exception):
