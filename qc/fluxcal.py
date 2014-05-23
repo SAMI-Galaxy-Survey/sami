@@ -5,6 +5,7 @@ from ..dr import fluxcal2
 
 import astropy.io.fits as pf
 import numpy as np
+from scipy.ndimage.filters import median_filter
 
 import os
 from glob import glob
@@ -284,7 +285,81 @@ def measure_band(band, flux, wavelength, sdss_dir='./sdss/'):
     flux_wm3 = flux * 1e-16 * 1e-7 * (1e2)**2 * 1e10
     # AB magnitudes are zero for flux of 3631 Jy
     flux_zero = 3631.0 * 1.0e-26 * 2.99792458e8 / (wl_m**2)
-    flux_band = (np.sum(wl_m * filter_interpolated * flux_wm3) / 
-                 np.sum(wl_m * filter_interpolated * flux_zero))
+    # Get the wavelength bin sizes - don't assume constant!
+    delta_wl = np.hstack((
+        wl_m[1] - wl_m[0],
+        0.5 * (wl_m[2:] - wl_m[:-2]),
+        wl_m[-1] - wl_m[-2]))
+    flux_band = (np.sum(delta_wl * wl_m * filter_interpolated * flux_wm3) / 
+                 np.sum(delta_wl * wl_m * filter_interpolated * flux_zero))
     return -2.5 * np.log10(flux_band)
+
+def clip_spectrum(flux, noise, wavelength):
+    """Return a "good" array, clipping mostly based on discrepant noise."""
+    filter_width = 21
+    limit = 0.35
+    filtered_noise = median_filter(noise, filter_width)
+    # Only clipping positive deviations - negative deviations are mostly due
+    # to absorption lines so should be left in
+    noise_ratio = (noise - filtered_noise) / filtered_noise
+    good = (np.isfinite(flux) &
+            np.isfinite(noise) &
+            (noise_ratio < limit))
+    return good
+
+def interpolate_arms(flux, noise, wavelength, good=None, n_pix_fit=300):
+    """Interpolate between the red and blue arms."""
+    # Establish basic facts about which pixels we should look at
+    n_pix = len(wavelength)
+    if good is None:
+        good = np.arange(n_pix)
+    middle = n_pix / 2
+    good_blue = good & (np.arange(n_pix) < middle)
+    good_red = good & (np.arange(n_pix) >= middle)
+    wavelength_middle = 0.5 * (wavelength[middle-1] + wavelength[middle])
+    delta_wave_blue = wavelength[1] - wavelength[0]
+    delta_wave_red = wavelength[-1] - wavelength[-2]
+    # Get the flux from the red end of the blue and the blue end of the red,
+    # and fit a straight line between them
+    index_blue = np.where(good_blue)[0][-n_pix_fit:]
+    index_red = np.where(good_red)[0][:n_pix_fit]
+    index_fit = np.hstack((index_blue, index_red))
+    poly_params = np.polyfit(wavelength[index_fit], flux[index_fit], 1,
+                             w=1.0/noise[index_fit]**2)
+    wavelength_start = wavelength[middle-1] + delta_wave_blue
+    n_pix_insert_blue = int(np.round(
+        (wavelength_middle - wavelength_start) / delta_wave_blue))
+    wavelength_end = wavelength[middle]
+    n_pix_insert_red = int(np.round(
+        (wavelength_end - wavelength_middle) / delta_wave_red))
+    n_pix_insert = n_pix_insert_red + n_pix_insert_blue
+    wavelength_insert = np.hstack((
+        np.linspace(wavelength_start, wavelength_middle, n_pix_insert_blue,
+                    endpoint=False),
+        np.linspace(wavelength_middle, wavelength_end, n_pix_insert_red,
+                    endpoint=False)))
+    wavelength_out = np.hstack(
+        (wavelength[:middle], wavelength_insert, wavelength[middle:]))
+    flux_out = np.hstack(
+        (flux[:middle], np.zeros(n_pix_insert), flux[middle:]))
+    noise_out = np.hstack(
+        (noise[:middle], np.zeros(n_pix_insert), noise[middle:]))
+    insert = ((wavelength_out > wavelength[index_blue[-1]]) &
+              (wavelength_out < wavelength[index_red[0]]))
+    flux_out[insert] = np.polyval(poly_params, wavelength_out[insert])
+    noise_out[insert] = np.nan
+    interp = (~np.isfinite(flux_out) | ~np.isfinite(noise_out)) & ~insert
+    flux_out[interp] = np.interp(
+        wavelength_out[interp], wavelength_out[~interp], flux_out[~interp])
+    noise_out[interp] = np.nan
+    return flux_out, noise_out, wavelength_out
+
+
+
+
+
+
+
+
+
 
