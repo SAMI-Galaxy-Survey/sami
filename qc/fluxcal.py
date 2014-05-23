@@ -282,8 +282,9 @@ def measure_band(band, flux, wavelength, sdss_dir='./sdss/'):
     # Convert to SI units. Wavelength was in A, flux was in 1e-16 erg/s/cm^2/A
     wl_m = wavelength * 1e-10
     flux_wm3 = flux * 1e-16 * 1e-7 * (1e2)**2 * 1e10
+    # AB magnitudes are zero for flux of 3631 Jy
     flux_zero = 3631.0 * 1.0e-26 * 2.99792458e8 / (wl_m**2)
-    flux_band = (np.sum(wavelength * filter_interpolated * flux) / 
-                 np.sum(filter_interpolated / wavelength))
+    flux_band = (np.sum(wl_m * filter_interpolated * flux_wm3) / 
+                 np.sum(wl_m * filter_interpolated * flux_zero))
     return -2.5 * np.log10(flux_band)
 
