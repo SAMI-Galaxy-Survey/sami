@@ -39,37 +39,14 @@ def derive_transfer_function(frame_list, PS_spec_file=None, use_PS=False,
     # extension and copy atmospheric parameters across
     extract_secondary_standard(frame_list, model_name=model_name, n_trim=n_trim, use_probe=use_probe)
 
-    # Get data
-    hdulist = pf.open(frame_list[1])
-    hdu_name = 'FLUX_CALIBRATION'
-    hdu = hdulist[hdu_name]
-   
-    # Load in SS flux data
-    SS_flux_data_raw = hdu.data[0, :]
-    SS_sigma_flux = hdu.data[2, :]
-    # Might put in an interpolation over NaNs; for now just taking a straight copy
-    SS_flux_data = SS_flux_data_raw.copy()
-    header = hdulist[0].header
-    crval1 = header['CRVAL1']
-    cdelt1 = header['CDELT1']
-    naxis1 = header['NAXIS1']
-    crpix1 = header['CRPIX1']
-    SS_wave_axis = crval1 + cdelt1 * (np.arange(naxis1) + 1 - crpix1)
-
-    # Done with the file for now; will re-open in update mode later
-    hdulist.close()
-    
-    # create transfer function for secondary standard
-    SS_transfer_function, SS_sigma_transfer, linear_fit = create_transfer_function(SS_flux_data,SS_sigma_flux,SS_wave_axis,naxis1)
-    
     # if user defines, use a scaled primary standard telluric correction
     if use_PS:
         # get primary standard transfer function
-        PS_transfer_function, PS_wave_axis = primary_standard_transfer_function(PS_spec_file)
+        PS_transfer_function, PS_sigma_transfer, linear_fit, PS_wave_axis = primary_standard_transfer_function(PS_spec_file)
 
         if scale_PS_by_airmass:
             # Use the theoretical scaling based on airmass
-            scale = ((1.0 / np.cos(np.deg2rad(header['ZDSTART']))) / 
+            scale = ((1.0 / np.cos(np.deg2rad(pf.getval(frame_list[1], 'ZDSTART')))) / 
                      (1.0 / np.cos(np.deg2rad(pf.getval(PS_spec_file, 'MEANZD')))))
         else:
             # find least squares fit on scalar
@@ -77,11 +54,36 @@ def derive_transfer_function(frame_list, PS_spec_file=None, use_PS=False,
             best_scalar = optimize.leastsq(residual,A,args=(SS_transfer_function,PS_transfer_function,PS_wave_axis),full_output=1)
             scale = best_scalar[0][0]
 
-        PS_transfer_function_scaled = PS_transfer_function.copy() ** scale
+        PS_transfer_function_scaled = PS_transfer_function ** scale
+        PS_sigma_factor_scaled = PS_sigma_transfer * scale * PS_transfer_function**(scale-1)
 
         transfer_function = PS_transfer_function_scaled
+        sigma_transfer = PS_sigma_transfer
     
     else:
+        # Get data
+        hdulist = pf.open(frame_list[1])
+        hdu_name = 'FLUX_CALIBRATION'
+        hdu = hdulist[hdu_name]
+       
+        # Load in SS flux data
+        SS_flux_data_raw = hdu.data[0, :]
+        SS_sigma_flux = hdu.data[2, :]
+        # Might put in an interpolation over NaNs; for now just taking a straight copy
+        SS_flux_data = SS_flux_data_raw.copy()
+        header = hdulist[0].header
+        crval1 = header['CRVAL1']
+        cdelt1 = header['CDELT1']
+        naxis1 = header['NAXIS1']
+        crpix1 = header['CRPIX1']
+        SS_wave_axis = crval1 + cdelt1 * (np.arange(naxis1) + 1 - crpix1)
+
+        # Done with the file for now; will re-open in update mode later
+        hdulist.close()
+        
+        # create transfer function for secondary standard
+        SS_transfer_function, SS_sigma_transfer, linear_fit = create_transfer_function(SS_flux_data,SS_sigma_flux,SS_wave_axis,naxis1)
+    
         transfer_function = SS_transfer_function
         sigma_transfer = SS_sigma_transfer
 
@@ -124,21 +126,29 @@ def primary_standard_transfer_function(PS_spec_file):
     
     # extract PSS spectra and create a median spectrum that has be shape corrected
     PS_spec_list = []
+    PS_noise_list = []
     for i in xrange(len(PS_spec_data)):
         if i == 0:
             pass
         else:
-            shape = PS_spec_data[i].data[2]
+            shape = PS_spec_data[i].data[-1]
             spectrum = PS_spec_data[i].data[0]
+            noise = PS_spec_data[i].data[2]
             PS_spec_corrected = spectrum*shape
+            PS_spec_noise_corrected = noise*shape
             PS_spec_list.append(PS_spec_corrected)
+            PS_noise_list.append(PS_spec_noise_corrected)
     PS_spec_array = np.asarray(PS_spec_list)
+    PS_noise_array = np.asarray(PS_noise_list)
     PS_spec_median = np.median(PS_spec_array,axis=0)
+    # This is very approximate. A better approach would be to use a
+    # sigma-clipped mean, which has better noise properties
+    PS_spec_noise = 1.25 * np.median(PS_noise_array,axis=0) / np.sqrt(len(PS_noise_list))
     
     # get transfer function for primary standard
-    PS_transfer_function, linear_fit = create_transfer_function(PS_spec_median,PS_wave_axis,naxis1)
+    PS_transfer_function, PS_sigma_factor, linear_fit = create_transfer_function(PS_spec_median,PS_spec_noise,PS_wave_axis,naxis1)
     
-    return PS_transfer_function, PS_wave_axis
+    return PS_transfer_function, PS_sigma_factor, linear_fit, PS_wave_axis
 
 def create_transfer_function(standard_spectrum,sigma,wave_axis,naxis1):
 
