@@ -1191,7 +1191,8 @@ class Manager:
         """Create thput files with bad values replaced by mean over field."""
         rereduce = []
         for group in self.group_files_by(
-                ('date', 'field_id'), ndf_class='MFOBJECT', do_not_use=False,
+                ('date', 'field_id', 'ccd'), ndf_class='MFOBJECT',
+                do_not_use=False,
                 min_exposure=self.min_exposure_for_throughput, reduced=True,
                 **kwargs).values():
             if len(group) == 1:
