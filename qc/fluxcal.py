@@ -176,6 +176,7 @@ def list_star_files(mngr):
         blue_list = (
             glob(os.path.join(mngr.abs_root, 'cubed', '*', '*blue*.fits')) +
             glob(os.path.join(mngr.abs_root, 'cubed', '*', '*blue*.fits.gz')))
+            # [])
         for blue_path in blue_list:
             red_path = red_cube_path(blue_path)
             if os.path.exists(red_path):
@@ -236,7 +237,7 @@ def extract_stellar_spectrum(file_pair):
     """Return the spectrum of a star, assumed to be at the centre."""
     # Replace the hard-coded numbers with something smarter
     x, y = np.meshgrid(0.5*(np.arange(50)-24.5), 0.5*(np.arange(50)-24.5))
-    keep_x, keep_y = np.where(x**2 + y**2 < 2.0**2)
+    keep_x, keep_y = np.where(x**2 + y**2 < 5.0**2)
     flux_cube = np.vstack((pf.getdata(file_pair[0]), pf.getdata(file_pair[1])))
     variance_cube = np.vstack((pf.getdata(file_pair[0], 'VARIANCE'), 
                                pf.getdata(file_pair[1], 'VARIANCE')))
@@ -363,7 +364,10 @@ def clip_spectrum(flux, noise, wavelength):
     filtered_noise = median_filter(noise, filter_width)
     # Only clipping positive deviations - negative deviations are mostly due
     # to absorption lines so should be left in
-    noise_ratio = (noise - filtered_noise) / filtered_noise
+    # noise_ratio = (noise - filtered_noise) / filtered_noise
+    # Clipping both negative and positive values, even though this means
+    # clipping out several absorption lines
+    noise_ratio = np.abs((noise - filtered_noise) / filtered_noise)
     good = (np.isfinite(flux) &
             np.isfinite(noise) &
             (noise_ratio < limit))
