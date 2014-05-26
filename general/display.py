@@ -106,7 +106,7 @@ def display(infile, ifus='all', log=True):
             
             #fibre.set_facecolor(mycolormap(dataval))
 
-        allpatches=PatchCollection(fibres, cmap=mycolormap) 
+        allpatches=PatchCollection(fibres, cmap=mycolormap, ec='none') 
         allpatches.set_array(data_norm)
 
         ax.add_collection(allpatches)
