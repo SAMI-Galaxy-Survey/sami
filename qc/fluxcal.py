@@ -5,6 +5,7 @@ from ..dr import fluxcal2
 
 import astropy.io.fits as pf
 import numpy as np
+from scipy.ndimage.filters import median_filter
 
 import os
 from glob import glob
@@ -16,22 +17,27 @@ def fluxcal_files(mngr):
     is a list of individual files that contributed.
 
     The input can be a Manager object or a path, from which a Manager will
-    be created.
+    be created. Or a list of managers, in which case the results are
+    concatenated. A list of paths will not work.
     """
     if isinstance(mngr, str):
         mngr = Manager(mngr)
-    result = []
-    for ccd in ['ccd_1', 'ccd_2']:
-        result_ccd = {}
-        groups = mngr.group_files_by(('date', 'field_id', 'ccd', 'name'),
-            ndf_class='MFOBJECT', do_not_use=False,
-            spectrophotometric=True, ccd=ccd)
-        for group in groups.values():
-            combined = os.path.join(
-                group[0].reduced_dir, 'TRANSFERcombined.fits')
-            if os.path.exists(combined):
-                result_ccd[combined] = [f.reduced_path for f in group]
-        result.append(result_ccd)
+    if isinstance(mngr, Manager):
+        mngr_list = [mngr]
+    else:
+        mngr_list = mngr
+    ccd_list = ['ccd_1', 'ccd_2']
+    result = [{} for ccd in ccd_list]
+    for mngr in mngr_list:
+        for index, ccd in enumerate(ccd_list):
+            groups = mngr.group_files_by(('date', 'field_id', 'ccd', 'name'),
+                ndf_class='MFOBJECT', do_not_use=False,
+                spectrophotometric=True, ccd=ccd)
+            for group in groups.values():
+                combined = os.path.join(
+                    group[0].reduced_dir, 'TRANSFERcombined.fits')
+                if os.path.exists(combined):
+                    result[index][combined] = [f.reduced_path for f in group]
     return tuple(result)
 
 def stability(mngr):
@@ -78,9 +84,9 @@ def stability(mngr):
         data_combined[n_pix_1:, i_combined] = 1.0 / pf.getdata(path_2)
     for i_individual, (path_1, path_2) in enumerate(individual_file_pairs):
         data_individual[:n_pix_1, i_individual] = 1.0 / pf.getdata(
-            path_1, 'FLUX_CALIBRATION')[2, :]
+            path_1, 'FLUX_CALIBRATION')[-1, :]
         data_individual[n_pix_1:, i_individual] = 1.0 / pf.getdata(
-            path_2, 'FLUX_CALIBRATION')[2, :]
+            path_2, 'FLUX_CALIBRATION')[-1, :]
     common = (
         np.sum(np.isfinite(data_combined), axis=1) + 
         np.sum(np.isfinite(data_individual), axis=1)
@@ -121,35 +127,81 @@ def stability(mngr):
     return result
 
 
-def stellar_colours(mngr):
+# def stellar_colours(mngr):
+#     """
+#     Return stellar colours as measured by SAMI (via a template fit) compared
+#     to the SDSS imaging.
+#     """
+#     file_pair_list = list_star_files(mngr)
+#     model_catalogue = read_stellar_models()
+#     model_list = [fit_template(file_pair, model_catalogue)[-1]
+#                   for file_pair in file_pair_list]
+#     observed_colours = [measure_colour(model, model_catalogue['wavelength']) 
+#                         for model in model_list]
+#     return file_pair_list, observed_colours
+
+
+def stellar_mags(mngr):
     """
-    Return stellar colours as measured by SAMI (via a template fit) compared
-    to the SDSS imaging.
+    Return stellar magnitudes as measured by SAMI (via interpolation), for
+    the datacubes and the input files.
     """
-    file_pair_list = list_star_files(mngr)
-    model_catalogue = read_stellar_models()
-    model_list = [fit_template(file_pair, model_catalogue)[-1]
-                  for file_pair in file_pair_list]
-    observed_colours = [measure_colour(model, model_catalogue['wavelength']) 
-                        for model in model_list]
-    return file_pair_list, observed_colours
-
-
-
-
+    file_pair_list, frame_pair_list_list = list_star_files(mngr)
+    mag_cube = []
+    mag_frame = []
+    for file_pair, frame_pair_list in zip(
+            file_pair_list, frame_pair_list_list):
+        flux, noise, wavelength = extract_stellar_spectrum(file_pair)
+        mag_cube.append(measure_mags(flux, noise, wavelength))
+        mag_frame.append([])
+        for frame_pair in frame_pair_list:
+            flux, noise, wavelength = read_stellar_spectrum(frame_pair)
+            mag_frame[-1].append(measure_mags(flux, noise, wavelength))
+    return file_pair_list, frame_pair_list_list, mag_cube, mag_frame
 
 def list_star_files(mngr):
-    """Return a list of tuples of paths to star datacubes, blue and red."""
+    """
+    Return a list of tuples of paths to star datacubes, blue and red,
+    as well as a list of lists of tuples of paths to individual frames.
+    """
+    if isinstance(mngr, str):
+        mngr = Manager(mngr)
+    if isinstance(mngr, Manager):
+        mngr_list = [mngr]
+    else:
+        mngr_list = mngr
     result = []
-    blue_list = (
-        glob(os.path.join(mngr.abs_root, 'cubed', '*', '*blue*.fits')) +
-        glob(os.path.join(mngr.abs_root, 'cubed', '*', '*blue*.fits.gz')))
-    for blue_path in blue_list:
-        red_path = red_cube_path(blue_path)
-        if os.path.exists(red_path):
-            if pf.getval(blue_path, 'NAME') == pf.getval(blue_path, 'STDNAME'):
-                result.append((blue_path, red_path))
-    return result
+    frame = []
+    for mngr in mngr_list:
+        blue_list = (
+            glob(os.path.join(mngr.abs_root, 'cubed', '*', '*blue*.fits')) +
+            glob(os.path.join(mngr.abs_root, 'cubed', '*', '*blue*.fits.gz')))
+            # [])
+        for blue_path in blue_list:
+            red_path = red_cube_path(blue_path)
+            if os.path.exists(red_path):
+                blue_header = pf.getheader(blue_path)
+                if blue_header['NAME'] == blue_header['STDNAME']:
+                    print blue_path
+                    result.append((blue_path, red_path))
+                    i = 0
+                    frame.append([])
+                    red_header = pf.getheader(red_path)
+                    while True:
+                        i += 1
+                        try:
+                            blue_filename = blue_header['RSS_FILE ' + str(i)]
+                            red_filename = red_header['RSS_FILE ' + str(i)]
+                        except KeyError:
+                            break
+                        blue_frame_path = glob(
+                            mngr.abs_root+'/reduced/*/*/*/*/*/'+
+                            blue_filename)[0]
+                        red_frame_path = glob(
+                            mngr.abs_root+'/reduced/*/*/*/*/*/'+
+                            red_filename)[0]
+                        frame[-1].append((blue_frame_path, red_frame_path))
+    return result, frame
 
 def red_cube_path(blue_path):
     """Return the corresponding red cube path matched to a blue cube path."""
@@ -185,7 +237,7 @@ def extract_stellar_spectrum(file_pair):
     """Return the spectrum of a star, assumed to be at the centre."""
     # Replace the hard-coded numbers with something smarter
     x, y = np.meshgrid(0.5*(np.arange(50)-24.5), 0.5*(np.arange(50)-24.5))
-    keep_x, keep_y = np.where(x**2 + y**2 < 2.0**2)
+    keep_x, keep_y = np.where(x**2 + y**2 < 5.0**2)
     flux_cube = np.vstack((pf.getdata(file_pair[0]), pf.getdata(file_pair[1])))
     variance_cube = np.vstack((pf.getdata(file_pair[0], 'VARIANCE'), 
                                pf.getdata(file_pair[1], 'VARIANCE')))
@@ -196,6 +248,22 @@ def extract_stellar_spectrum(file_pair):
     noise *= 2.0
     wavelength = np.hstack((get_coords(pf.getheader(file_pair[0]), 3),
                             get_coords(pf.getheader(file_pair[1]), 3)))
+    return flux, noise, wavelength
+
+def read_stellar_spectrum(file_pair):
+    """Read and return the measured spectrum of a star from a single frame."""
+    flux = []
+    noise = []
+    wavelength = []
+    for path in file_pair:
+        hdulist = pf.open(path)
+        flux.append(hdulist['FLUX_CALIBRATION'].data[0, :])
+        noise.append(hdulist['FLUX_CALIBRATION'].data[2, :])
+        header = hdulist[0].header
+        wavelength.append(get_coords(header, 1))
+    flux = np.hstack(flux)
+    noise = np.hstack(noise)
+    wavelength = np.hstack(wavelength)
     return flux, noise, wavelength
 
 def get_coords(header, axis):
@@ -266,7 +334,98 @@ def measure_band(band, flux, wavelength, sdss_dir='./sdss/'):
     filter_response, filter_wavelength = read_filter(band, sdss_dir=sdss_dir)
     filter_interpolated = np.interp(
         wavelength, filter_wavelength, filter_response)
-    flux_band = (np.sum(wavelength * filter_interpolated * flux) / 
-                 np.sum(filter_interpolated / wavelength))
+    # Convert to SI units. Wavelength was in A, flux was in 1e-16 erg/s/cm^2/A
+    wl_m = wavelength * 1e-10
+    flux_wm3 = flux * 1e-16 * 1e-7 * (1e2)**2 * 1e10
+    # AB magnitudes are zero for flux of 3631 Jy
+    flux_zero = 3631.0 * 1.0e-26 * 2.99792458e8 / (wl_m**2)
+    # Get the wavelength bin sizes - don't assume constant!
+    delta_wl = np.hstack((
+        wl_m[1] - wl_m[0],
+        0.5 * (wl_m[2:] - wl_m[:-2]),
+        wl_m[-1] - wl_m[-2]))
+    flux_band = (np.sum(delta_wl * wl_m * filter_interpolated * flux_wm3) / 
+                 np.sum(delta_wl * wl_m * filter_interpolated * flux_zero))
     return -2.5 * np.log10(flux_band)
+
+def measure_mags(flux, noise, wavelength):
+    """Do clipping and interpolation, then return g and r band mags."""
+    good = clip_spectrum(flux, noise, wavelength)
+    flux, noise, wavelength = interpolate_arms(
+        flux, noise, wavelength, good)
+    mag_g = measure_band('g', flux, wavelength)
+    mag_r = measure_band('r', flux, wavelength)
+    return (mag_g, mag_r)
+
+def clip_spectrum(flux, noise, wavelength):
+    """Return a "good" array, clipping mostly based on discrepant noise."""
+    filter_width = 21
+    limit = 0.35
+    filtered_noise = median_filter(noise, filter_width)
+    # Only clipping positive deviations - negative deviations are mostly due
+    # to absorption lines so should be left in
+    # noise_ratio = (noise - filtered_noise) / filtered_noise
+    # Clipping both negative and positive values, even though this means
+    # clipping out several absorption lines
+    noise_ratio = np.abs((noise - filtered_noise) / filtered_noise)
+    good = (np.isfinite(flux) &
+            np.isfinite(noise) &
+            (noise_ratio < limit))
+    return good
+
+def interpolate_arms(flux, noise, wavelength, good=None, n_pix_fit=300):
+    """Interpolate between the red and blue arms."""
+    # Establish basic facts about which pixels we should look at
+    n_pix = len(wavelength)
+    if good is None:
+        good = np.arange(n_pix)
+    middle = n_pix / 2
+    good_blue = good & (np.arange(n_pix) < middle)
+    good_red = good & (np.arange(n_pix) >= middle)
+    wavelength_middle = 0.5 * (wavelength[middle-1] + wavelength[middle])
+    delta_wave_blue = wavelength[1] - wavelength[0]
+    delta_wave_red = wavelength[-1] - wavelength[-2]
+    # Get the flux from the red end of the blue and the blue end of the red,
+    # and fit a straight line between them
+    index_blue = np.where(good_blue)[0][-n_pix_fit:]
+    index_red = np.where(good_red)[0][:n_pix_fit]
+    index_fit = np.hstack((index_blue, index_red))
+    poly_params = np.polyfit(wavelength[index_fit], flux[index_fit], 1,
+                             w=1.0/noise[index_fit]**2)
+    wavelength_start = wavelength[middle-1] + delta_wave_blue
+    n_pix_insert_blue = int(np.round(
+        (wavelength_middle - wavelength_start) / delta_wave_blue))
+    wavelength_end = wavelength[middle]
+    n_pix_insert_red = int(np.round(
+        (wavelength_end - wavelength_middle) / delta_wave_red))
+    n_pix_insert = n_pix_insert_red + n_pix_insert_blue
+    wavelength_insert = np.hstack((
+        np.linspace(wavelength_start, wavelength_middle, n_pix_insert_blue,
+                    endpoint=False),
+        np.linspace(wavelength_middle, wavelength_end, n_pix_insert_red,
+                    endpoint=False)))
+    wavelength_out = np.hstack(
+        (wavelength[:middle], wavelength_insert, wavelength[middle:]))
+    flux_out = np.hstack(
+        (flux[:middle], np.zeros(n_pix_insert), flux[middle:]))
+    noise_out = np.hstack(
+        (noise[:middle], np.zeros(n_pix_insert), noise[middle:]))
+    insert = ((wavelength_out > wavelength[index_blue[-1]]) &
+              (wavelength_out < wavelength[index_red[0]]))
+    flux_out[insert] = np.polyval(poly_params, wavelength_out[insert])
+    noise_out[insert] = np.nan
+    interp = (~np.isfinite(flux_out) | ~np.isfinite(noise_out)) & ~insert
+    flux_out[interp] = np.interp(
+        wavelength_out[interp], wavelength_out[~interp], flux_out[~interp])
+    noise_out[interp] = np.nan
+    return flux_out, noise_out, wavelength_out
+
+
+
+
+
+
+
+
+
 
