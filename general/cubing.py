@@ -1221,6 +1221,11 @@ def create_covar_matrix(overlap_array,variances):
                     xC = xA +covarS + xB
                     yC = yA + covarS + yB
                     a = overlap_array[xA+covarS,yA+covarS,f]*np.sqrt(variances[f])
+                    if np.isfinite(a) == False:
+                        a = 1.0
+                    #except:
+                    #    code.interact(local=locals())
+
                     b = overlap_array[xC,yC,f]*np.sqrt(variances[f])
                     b[np.where(np.isfinite(b) == False)] = 0.0
                     covariance_array[xA,yA,:,:] = covariance_array[xA,yA,:,:] + (a*b).reshape(5,5)
