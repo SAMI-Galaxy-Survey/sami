@@ -2,6 +2,7 @@
 
 from ..manager import Manager
 from ..dr import fluxcal2
+from ..utils import IFU
 
 import astropy.io.fits as pf
 import numpy as np
@@ -235,9 +236,17 @@ def fit_template(file_pair, model_catalogue):
 
 def extract_stellar_spectrum(file_pair):
     """Return the spectrum of a star, assumed to be at the centre."""
+    return sum_spectrum_from_cube(file_pair, 5.0)
+
+def extract_galaxy_spectrum(file_pair):
+    """Return the spectrum of a galaxy, assumed to cover the IFU."""
+    return sum_spectrum_from_cube(file_pair, 7.0)
+
+def sum_spectrum_from_cube(file_pair, radius):
+    """Return the summed spectrum from spaxels in the centre of a cube."""
     # Replace the hard-coded numbers with something smarter
     x, y = np.meshgrid(0.5*(np.arange(50)-24.5), 0.5*(np.arange(50)-24.5))
-    keep_x, keep_y = np.where(x**2 + y**2 < 5.0**2)
+    keep_x, keep_y = np.where(x**2 + y**2 < radius**2)
     flux_cube = np.vstack((pf.getdata(file_pair[0]), pf.getdata(file_pair[1])))
     variance_cube = np.vstack((pf.getdata(file_pair[0], 'VARIANCE'), 
                                pf.getdata(file_pair[1], 'VARIANCE')))
@@ -261,6 +270,22 @@ def read_stellar_spectrum(file_pair):
         noise.append(hdulist['FLUX_CALIBRATION'].data[2, :])
         header = hdulist[0].header
         wavelength.append(get_coords(header, 1))
+    flux = np.hstack(flux)
+    noise = np.hstack(noise)
+    wavelength = np.hstack(wavelength)
+    return flux, noise, wavelength
+
+def read_galaxy_spectrum(file_pair, name):
+    """Read and return the summed spectrum of a galaxy from a single frame."""
+    # Just sums over the fibres, which misses ~25% of the light
+    flux = []
+    noise = []
+    wavelength = []
+    for path in file_pair:
+        ifu = IFU(path, name)
+        flux.append(np.nansum(ifu.data, 0))
+        noise.append(np.sqrt(np.nansum(ifu.var, 0)))
+        wavelength.append(ifu.lambda_range)
     flux = np.hstack(flux)
     noise = np.hstack(noise)
     wavelength = np.hstack(wavelength)
