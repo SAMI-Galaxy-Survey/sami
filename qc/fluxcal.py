@@ -445,7 +445,33 @@ def interpolate_arms(flux, noise, wavelength, good=None, n_pix_fit=300):
     noise_out[interp] = np.nan
     return flux_out, noise_out, wavelength_out
 
-
+def collapse_cube(flux, noise, wavelength, good=None, n_band=1):
+    """Collapse a cube into a 2-d image, or a series of images."""
+    # Be careful about sending in mixed red+blue cubes - in this case
+    # n_band should be even
+    n_pix = len(wavelength)
+    if good is None:
+        good = np.arange(flux.size)
+        good.shape = flux.shape
+    flux_out = np.zeros((n_band, flux.shape[1], flux.shape[2]))
+    noise_out = np.zeros((n_band, flux.shape[1], flux.shape[2]))
+    wavelength_out = np.zeros(n_band)
+    for i_band in xrange(n_band):
+        start = i_band * n_pix / n_band
+        finish = (i_band+1) * n_pix / n_band
+        flux_out[i_band, :, :] = (
+            np.nansum(flux[start:finish, :, :] * good[start:finish, :, :], 0) /
+            np.sum(good[start:finish, :, :], 0))
+        noise_out[i_band, :, :] = (
+            np.sqrt(np.nansum(noise[start:finish, :, :]**2 * 
+                              good[start:finish, :, :], 0)) /
+            np.sum(good[start:finish, :, :], 0))
+        wavelength_out[i_band] = (
+            0.5 * (wavelength[start] + wavelength[finish-1]))
+    flux_out = np.squeeze(flux_out)
+    noise_out = np.squeeze(noise_out)
+    wavelength_out = np.squeeze(wavelength_out)
+    return flux_out, noise_out, wavelength_out
 
 
 
