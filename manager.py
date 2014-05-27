@@ -66,7 +66,8 @@ import os
 import re
 import subprocess
 import multiprocessing
-import tempfile
+import signal
+from functools import wraps
 from contextlib import contextmanager
 from collections import defaultdict
 from getpass import getpass
@@ -594,11 +595,6 @@ class Manager:
         self.idx_files = IDX_FILES[self.speed]
         self.gratlpmm = gratlpmm
         self.n_cpu = n_cpu
-        if n_cpu > 1:
-            self.pool = multiprocessing.Pool(n_cpu)
-            self.map = self.pool.map
-        else:
-            self.map = map
         self.root = root
         self.abs_root = os.path.abspath(root)
         self.tmp_dir = os.path.join(self.abs_root, 'tmp')
@@ -617,13 +613,23 @@ class Manager:
             self.imp_scratch = os.environ['IMP_SCRATCH']
         else:
             self.imp_scratch = None
-        # self.scratch_dir = os.path.join(self.abs_root, 'imp_scratch')
         self.scratch_dir = None
         self.min_exposure_for_throughput = 900.0
         self.min_exposure_for_sky_wave = 900.0
         self.aat_username = None
         self.aat_password = None
         self.inspect_root(copy_files, move_files)
+
+    def map(self, function, input_list):
+        """Map inputs to a function, using built-in map or multiprocessing."""
+        if self.n_cpu == 1:
+            result_list = map(function, input_list)
+        else:
+            pool = multiprocessing.Pool(self.n_cpu)
+            result_list = pool.map(function, input_list)
+            pool.close()
+            pool.join()
+        return result_list
 
     def inspect_root(self, copy_files, move_files, trust_header=True):
         """Add details of existing files to internal lists."""
@@ -2844,6 +2850,7 @@ class FITSFile:
         return
 
 
+@safe_for_multiprocessing
 def derive_transfer_function_pair(inputs):
     """Derive transfer function for a pair of fits files."""
     path_pair = inputs['path_pair']
@@ -2867,6 +2874,7 @@ def derive_transfer_function_pair(inputs):
                '; will skip this one in combining.')
     return
 
+@safe_for_multiprocessing
 def telluric_correct_pair(inputs):
     """Telluric correct a pair of fits files."""
     fits_1 = inputs['fits_1']
@@ -2903,6 +2911,7 @@ def telluric_correct_pair(inputs):
                               fits_2.telluric_path)
     return True
 
+@safe_for_multiprocessing
 def measure_offsets_group(group):
     """Measure offsets between a set of dithered observations."""
     field, fits_list, copy_to_other_arm, fits_list_other_arm = group
@@ -2932,6 +2941,7 @@ def measure_offsets_group(group):
             hdulist_this_arm.close()
     return
 
+@safe_for_multiprocessing
 def cube_group(group):
     """Cube a set of RSS files."""
     field, fits_list, root, overwrite, star_only = group
@@ -2965,6 +2975,7 @@ def best_path(fits):
         path = fits.reduced_path
     return path    
 
+@safe_for_multiprocessing
 def run_2dfdr_single_wrapper(group):
     """Run 2dfdr on a single file."""
     fits, idx_file, options, cwd, imp_scratch, scratch_dir = group
@@ -2980,11 +2991,36 @@ def run_2dfdr_single_wrapper(group):
         return False
     return True
 
+@safe_for_multiprocessing
 def gzip_wrapper(path):
     """Gzip a single file."""
     print 'Gzipping file: ' + path
     gzip(path)
     return
+
+def safe_for_multiprocessing(function):
+    @wraps(function)
+    def safe_function(*args, **kwargs):
+        try:
+            result = function(*args, **kwargs)
+        except KeyboardInterrupt:
+            print "Handling KeyboardInterrupt in worker process"
+            print "You many need to press Ctrl-C multiple times"
+            result = None
+        return result
+    return safe_function
+
+# @safe_for_multiprocessing
+# def test_function(variable):
+#     import time
+#     print "starting", variable
+#     start_time = time.time()
+#     current_time = time.time()
+#     while current_time < (start_time + 5):
+#         print "waiting..."
+#         time.sleep(1); current_time = time.time()
+#     print "finishing", variable
+
 
 
 class MatchException(Exception):
