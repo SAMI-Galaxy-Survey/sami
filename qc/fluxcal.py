@@ -7,6 +7,7 @@ from ..utils import IFU
 import astropy.io.fits as pf
 import numpy as np
 from scipy.ndimage.filters import median_filter
+from scipy.optimize import leastsq
 
 import os
 from glob import glob
@@ -473,7 +474,69 @@ def collapse_cube(flux, noise, wavelength, good=None, n_band=1):
     wavelength_out = np.squeeze(wavelength_out)
     return flux_out, noise_out, wavelength_out
 
+def fit_moffat_to_image(image, noise, elliptical=True):
+    """Fit a Moffat profile to an image, optionally allowing ellipticity."""
+    fit_pix = np.isfinite(image) & np.isfinite(noise)
+    coords = np.meshgrid(np.arange(image.shape[0]), 
+                         np.arange(image.shape[1]))
+    x00 = 0.5 * (image.shape[0] - 1)
+    y00 = 0.5 * (image.shape[1] - 1)
+    alpha0 = 4.0
+    beta0 = 4.0
+    intensity0 = np.nansum(image)
+    if elliptical:
+        p0 = [alpha0, alpha0, 0.0, beta0, x00, y00, intensity0]
+    else:
+        p0 = [alpha0, beta0, x00, y00, intensity0]
+    def fit_function(params):
+        model = moffat_integrated(
+            coords[0], coords[1], params, elliptical=elliptical, good=fit_pix)
+        return ((model - image[fit_pix]) / noise[fit_pix])
+    params = leastsq(fit_function, p0, full_output=True)
+    return params
 
+
+def moffat_integrated(x, y, params, elliptical=True, good=None, pix_size=1.0,
+                      n_sub=10):
+    """Return a Moffat profile, integrated over pixels."""
+    if good is None:
+        good = np.ones(x.size, bool)
+        good.shape = x.shape
+    n_pix = np.sum(good)
+    x_flat = x[good]
+    y_flat = y[good]
+    delta = pix_size * (np.arange(float(n_sub)) / n_sub)
+    delta -= np.mean(delta)
+    x_sub = (np.outer(x_flat, np.ones(n_sub**2)) + 
+             np.outer(np.ones(n_pix), np.outer(delta, np.ones(n_sub))))
+    y_sub = (np.outer(y_flat, np.ones(n_sub**2)) + 
+             np.outer(np.ones(n_pix), np.outer(np.ones(n_sub), delta)))
+    if elliptical:
+        moffat_sub = moffat_elliptical(x_sub, y_sub, *params)
+    else:
+        moffat_sub = moffat_circular(x_sub, y_sub, *params)
+    moffat = np.mean(moffat_sub, 1)
+    return moffat
+
+
+def moffat_elliptical(x, y, alpha_x, alpha_y, rho, beta, x0, y0, intensity):
+    """Return an elliptical Moffat profile."""
+    norm = (beta - 1) / (np.pi * alpha_x * alpha_y * np.sqrt(1 - rho**2))
+    norm = norm * intensity
+    x_term = (x - x0) / alpha_x
+    y_term = (y - y0) / alpha_y
+    moffat = norm * (1 + (x_term**2 + y_term**2 - 2*rho*x_term*y_term) /
+                         (1 - rho**2))**(-beta)
+    return moffat
+
+def moffat_circular(x, y, alpha, beta, x0, y0, intensity):
+    """Return a circular Moffat profile."""
+    norm = (beta - 1) / (np.pi * alpha**2)
+    norm = norm * intensity
+    x_term = (x - x0) / alpha
+    y_term = (y - y0) / alpha
+    moffat = norm * (1 + (x_term**2 + y_term**2))**(-beta)
+    return moffat
 
 
 
