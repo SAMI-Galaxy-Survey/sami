@@ -248,12 +248,11 @@ def extract_stellar_spectrum(file_pair):
                             get_coords(pf.getheader(file_pair[1]), 3)))
     psf_params = fit_moffat_to_image(image, noise_im)
     flux = np.zeros(len(wavelength))
+    noise = np.zeros(len(wavelength))
     for i_pix, (image_slice, noise_slice) in enumerate(
             zip(flux_cube, noise_cube)):
-        flux[i_pix] = scale_moffat_to_image(
+        flux[i_pix], noise[i_pix] = scale_moffat_to_image(
             image_slice, noise_slice, psf_params)
-    # FIX THIS!
-    noise = np.ones(len(wavelength))
     return flux, noise, wavelength, psf_params
 
 def extract_galaxy_spectrum(file_pair):
@@ -516,7 +515,7 @@ def scale_moffat_to_image(image, noise, params, elliptical=True):
     """Scale a Moffat profile to fit the provided image."""
     fit_pix = np.isfinite(image) & np.isfinite(noise)
     if np.sum(fit_pix) == 0:
-        return np.nan
+        return np.nan, np.nan
     coords = np.meshgrid(np.arange(image.shape[0]), 
                          np.arange(image.shape[1]))
     params_norm = params.copy()
@@ -527,8 +526,11 @@ def scale_moffat_to_image(image, noise, params, elliptical=True):
     def fit_function(p):
         model = p[0] * model_norm
         return ((model - image[fit_pix]) / noise[fit_pix])
-    intensity = leastsq(fit_function, p0, full_output=True)[0][0]
-    return intensity
+    result = leastsq(fit_function, p0, full_output=True)
+    intensity = result[0][0]
+    reduced_chi2 = np.sum(fit_function(result[0])**2 / (np.sum(fit_pix) - 1))
+    sigma = np.sqrt(result[1][0, 0] / reduced_chi2)
+    return intensity, sigma
 
 def moffat_integrated(x, y, params, elliptical=True, good=None, pix_size=1.0,
                       n_sub=10):
