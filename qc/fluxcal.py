@@ -237,7 +237,24 @@ def fit_template(file_pair, model_catalogue):
 
 def extract_stellar_spectrum(file_pair):
     """Return the spectrum of a star, assumed to be at the centre."""
-    return sum_spectrum_from_cube(file_pair, 5.0)
+    flux_cube = np.vstack((pf.getdata(file_pair[0]), pf.getdata(file_pair[1])))
+    variance_cube = np.vstack((pf.getdata(file_pair[0], 'VARIANCE'), 
+                               pf.getdata(file_pair[1], 'VARIANCE')))
+    noise_cube = np.sqrt(variance_cube)
+    good = np.isfinite(flux_cube) & np.isfinite(variance_cube)
+    image = np.nansum(flux_cube * good, 0) / np.sum(good, 0)
+    noise_im = np.sqrt(np.nansum(variance_cube * good, 0)) / np.sum(good, 0)
+    wavelength = np.hstack((get_coords(pf.getheader(file_pair[0]), 3),
+                            get_coords(pf.getheader(file_pair[1]), 3)))
+    psf_params = fit_moffat_to_image(image, noise_im)
+    flux = np.zeros(len(wavelength))
+    for i_pix, (image_slice, noise_slice) in enumerate(
+            zip(flux_cube, noise_cube)):
+        flux[i_pix] = scale_moffat_to_image(
+            image_slice, noise_slice, psf_params)
+    # FIX THIS!
+    noise = np.ones(len(wavelength))
+    return flux, noise, wavelength, psf_params
 
 def extract_galaxy_spectrum(file_pair):
     """Return the spectrum of a galaxy, assumed to cover the IFU."""
@@ -488,13 +505,30 @@ def fit_moffat_to_image(image, noise, elliptical=True):
         p0 = [alpha0, alpha0, 0.0, beta0, x00, y00, intensity0]
     else:
         p0 = [alpha0, beta0, x00, y00, intensity0]
-    def fit_function(params):
+    def fit_function(p):
         model = moffat_integrated(
-            coords[0], coords[1], params, elliptical=elliptical, good=fit_pix)
+            coords[0], coords[1], p, elliptical=elliptical, good=fit_pix)
         return ((model - image[fit_pix]) / noise[fit_pix])
-    params = leastsq(fit_function, p0, full_output=True)
+    params = leastsq(fit_function, p0, full_output=True)[0]
     return params
 
+def scale_moffat_to_image(image, noise, params, elliptical=True):
+    """Scale a Moffat profile to fit the provided image."""
+    fit_pix = np.isfinite(image) & np.isfinite(noise)
+    if np.sum(fit_pix) == 0:
+        return np.nan
+    coords = np.meshgrid(np.arange(image.shape[0]), 
+                         np.arange(image.shape[1]))
+    params_norm = params.copy()
+    params_norm[-1] = 1.0
+    model_norm = moffat_integrated(
+        coords[0], coords[1], params_norm, elliptical=elliptical, good=fit_pix)
+    p0 = [np.nansum(image)]
+    def fit_function(p):
+        model = p[0] * model_norm
+        return ((model - image[fit_pix]) / noise[fit_pix])
+    intensity = leastsq(fit_function, p0, full_output=True)[0][0]
+    return intensity
 
 def moffat_integrated(x, y, params, elliptical=True, good=None, pix_size=1.0,
                       n_sub=10):
