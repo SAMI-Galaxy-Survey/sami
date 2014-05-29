@@ -2850,6 +2850,18 @@ class FITSFile:
         return
 
 
+def safe_for_multiprocessing(function):
+    @wraps(function)
+    def safe_function(*args, **kwargs):
+        try:
+            result = function(*args, **kwargs)
+        except KeyboardInterrupt:
+            print "Handling KeyboardInterrupt in worker process"
+            print "You many need to press Ctrl-C multiple times"
+            result = None
+        return result
+    return safe_function
+
 @safe_for_multiprocessing
 def derive_transfer_function_pair(inputs):
     """Derive transfer function for a pair of fits files."""
@@ -2997,18 +3009,6 @@ def gzip_wrapper(path):
     print 'Gzipping file: ' + path
     gzip(path)
     return
-
-def safe_for_multiprocessing(function):
-    @wraps(function)
-    def safe_function(*args, **kwargs):
-        try:
-            result = function(*args, **kwargs)
-        except KeyboardInterrupt:
-            print "Handling KeyboardInterrupt in worker process"
-            print "You many need to press Ctrl-C multiple times"
-            result = None
-        return result
-    return safe_function
 
 # @safe_for_multiprocessing
 # def test_function(variable):
