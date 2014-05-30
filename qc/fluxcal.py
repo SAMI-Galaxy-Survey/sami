@@ -141,7 +141,40 @@ def stability(mngr):
 #     observed_colours = [measure_colour(model, model_catalogue['wavelength']) 
 #                         for model in model_list]
 #     return file_pair_list, observed_colours
-
+def get_sdss_mags(mngr):
+    """Get magnitudes for stars from SDSS, with a little help from the user."""
+    file_pair_list, frame_pair_list_list = list_star_files(mngr)
+    name_list = []
+    coords_list = []
+    for file_pair in file_pair_list:
+        header = pf.getheader(file_pair[0])
+        name = header['NAME']
+        if name not in name_list:
+            name_list.append(name)
+            coords_list.append((header['CATARA'], header['CATADEC']))
+    print 'Go to:'
+    print
+    print 'http://cas.sdss.org/dr7/en/tools/crossid/crossid.asp'
+    print
+    print 'Copy-paste the following into the upload list box:'
+    print
+    for name, coords in zip(name_list, coords_list):
+        print name, coords[0], coords[1]
+    print
+    print 'And the following into the SQL query box:'
+    print
+    print """SELECT 
+   p.objID, p.ra, p.dec,
+   dbo.fPhotoTypeN(p.type) as type,
+   p.psfMag_u, p.psfMagErr_u, p.psfMag_g, p.psfMagErr_g, p.psfMag_r,
+   p.psfMagErr_r, p.psfMag_i, p.psfMagErr_i, p.psfMag_z, p.psfMagErr_z 
+FROM #x x, #upload u, PhotoTag p
+WHERE u.up_id = x.up_id and x.objID=p.objID 
+ORDER BY x.up_id"""
+    print
+    print 'Change output format to CSV, then hit submit.'
+    print 'Put the result somewhere safe.'
+    return
 
 def stellar_mags(mngr):
     """
@@ -184,7 +217,6 @@ def list_star_files(mngr):
             if os.path.exists(red_path):
                 blue_header = pf.getheader(blue_path)
                 if blue_header['NAME'] == blue_header['STDNAME']:
-                    print blue_path
                     result.append((blue_path, red_path))
                     i = 0
                     frame.append([])
