@@ -186,7 +186,8 @@ def stellar_mags(mngr):
     mag_frame = []
     for file_pair, frame_pair_list in zip(
             file_pair_list, frame_pair_list_list):
-        flux, noise, wavelength = extract_stellar_spectrum(file_pair)
+        flux, noise, wavelength, psf_params, sigma_params = (
+            extract_stellar_spectrum(file_pair))
         mag_cube.append(measure_mags(flux, noise, wavelength))
         mag_frame.append([])
         for frame_pair in frame_pair_list:
