@@ -2,10 +2,12 @@
 
 from ..manager import Manager
 from ..dr import fluxcal2
+from ..utils import IFU
 
 import astropy.io.fits as pf
 import numpy as np
 from scipy.ndimage.filters import median_filter
+from scipy.optimize import leastsq
 
 import os
 from glob import glob
@@ -139,7 +141,40 @@ def stability(mngr):
 #     observed_colours = [measure_colour(model, model_catalogue['wavelength']) 
 #                         for model in model_list]
 #     return file_pair_list, observed_colours
-
+def get_sdss_mags(mngr):
+    """Get magnitudes for stars from SDSS, with a little help from the user."""
+    file_pair_list, frame_pair_list_list = list_star_files(mngr)
+    name_list = []
+    coords_list = []
+    for file_pair in file_pair_list:
+        header = pf.getheader(file_pair[0])
+        name = header['NAME']
+        if name not in name_list:
+            name_list.append(name)
+            coords_list.append((header['CATARA'], header['CATADEC']))
+    print 'Go to:'
+    print
+    print 'http://cas.sdss.org/dr7/en/tools/crossid/crossid.asp'
+    print
+    print 'Copy-paste the following into the upload list box:'
+    print
+    for name, coords in zip(name_list, coords_list):
+        print name, coords[0], coords[1]
+    print
+    print 'And the following into the SQL query box:'
+    print
+    print """SELECT 
+   p.objID, p.ra, p.dec,
+   dbo.fPhotoTypeN(p.type) as type,
+   p.psfMag_u, p.psfMagErr_u, p.psfMag_g, p.psfMagErr_g, p.psfMag_r,
+   p.psfMagErr_r, p.psfMag_i, p.psfMagErr_i, p.psfMag_z, p.psfMagErr_z 
+FROM #x x, #upload u, PhotoTag p
+WHERE u.up_id = x.up_id and x.objID=p.objID 
+ORDER BY x.up_id"""
+    print
+    print 'Change output format to CSV, then hit submit.'
+    print 'Put the result somewhere safe.'
+    return
 
 def stellar_mags(mngr):
     """
@@ -182,7 +217,6 @@ def list_star_files(mngr):
             if os.path.exists(red_path):
                 blue_header = pf.getheader(blue_path)
                 if blue_header['NAME'] == blue_header['STDNAME']:
-                    print blue_path
                     result.append((blue_path, red_path))
                     i = 0
                     frame.append([])
@@ -235,9 +269,33 @@ def fit_template(file_pair, model_catalogue):
 
 def extract_stellar_spectrum(file_pair):
     """Return the spectrum of a star, assumed to be at the centre."""
+    flux_cube = np.vstack((pf.getdata(file_pair[0]), pf.getdata(file_pair[1])))
+    variance_cube = np.vstack((pf.getdata(file_pair[0], 'VARIANCE'), 
+                               pf.getdata(file_pair[1], 'VARIANCE')))
+    noise_cube = np.sqrt(variance_cube)
+    good = np.isfinite(flux_cube) & np.isfinite(variance_cube)
+    image = np.nansum(flux_cube * good, 0) / np.sum(good, 0)
+    noise_im = np.sqrt(np.nansum(variance_cube * good, 0)) / np.sum(good, 0)
+    wavelength = np.hstack((get_coords(pf.getheader(file_pair[0]), 3),
+                            get_coords(pf.getheader(file_pair[1]), 3)))
+    psf_params, sigma_params = fit_moffat_to_image(image, noise_im)
+    flux = np.zeros(len(wavelength))
+    noise = np.zeros(len(wavelength))
+    for i_pix, (image_slice, noise_slice) in enumerate(
+            zip(flux_cube, noise_cube)):
+        flux[i_pix], noise[i_pix] = scale_moffat_to_image(
+            image_slice, noise_slice, psf_params)
+    return flux, noise, wavelength, psf_params, sigma_params
+
+def extract_galaxy_spectrum(file_pair):
+    """Return the spectrum of a galaxy, assumed to cover the IFU."""
+    return sum_spectrum_from_cube(file_pair, 7.0)
+
+def sum_spectrum_from_cube(file_pair, radius):
+    """Return the summed spectrum from spaxels in the centre of a cube."""
     # Replace the hard-coded numbers with something smarter
     x, y = np.meshgrid(0.5*(np.arange(50)-24.5), 0.5*(np.arange(50)-24.5))
-    keep_x, keep_y = np.where(x**2 + y**2 < 5.0**2)
+    keep_x, keep_y = np.where(x**2 + y**2 < radius**2)
     flux_cube = np.vstack((pf.getdata(file_pair[0]), pf.getdata(file_pair[1])))
     variance_cube = np.vstack((pf.getdata(file_pair[0], 'VARIANCE'), 
                                pf.getdata(file_pair[1], 'VARIANCE')))
@@ -261,6 +319,22 @@ def read_stellar_spectrum(file_pair):
         noise.append(hdulist['FLUX_CALIBRATION'].data[2, :])
         header = hdulist[0].header
         wavelength.append(get_coords(header, 1))
+    flux = np.hstack(flux)
+    noise = np.hstack(noise)
+    wavelength = np.hstack(wavelength)
+    return flux, noise, wavelength
+
+def read_galaxy_spectrum(file_pair, name):
+    """Read and return the summed spectrum of a galaxy from a single frame."""
+    # Just sums over the fibres, which misses ~25% of the light
+    flux = []
+    noise = []
+    wavelength = []
+    for path in file_pair:
+        ifu = IFU(path, name)
+        flux.append(np.nansum(ifu.data, 0))
+        noise.append(np.sqrt(np.nansum(ifu.var, 0)))
+        wavelength.append(ifu.lambda_range)
     flux = np.hstack(flux)
     noise = np.hstack(noise)
     wavelength = np.hstack(wavelength)
@@ -420,9 +494,122 @@ def interpolate_arms(flux, noise, wavelength, good=None, n_pix_fit=300):
     noise_out[interp] = np.nan
     return flux_out, noise_out, wavelength_out
 
+def collapse_cube(flux, noise, wavelength, good=None, n_band=1):
+    """Collapse a cube into a 2-d image, or a series of images."""
+    # Be careful about sending in mixed red+blue cubes - in this case
+    # n_band should be even
+    n_pix = len(wavelength)
+    if good is None:
+        good = np.arange(flux.size)
+        good.shape = flux.shape
+    flux_out = np.zeros((n_band, flux.shape[1], flux.shape[2]))
+    noise_out = np.zeros((n_band, flux.shape[1], flux.shape[2]))
+    wavelength_out = np.zeros(n_band)
+    for i_band in xrange(n_band):
+        start = i_band * n_pix / n_band
+        finish = (i_band+1) * n_pix / n_band
+        flux_out[i_band, :, :] = (
+            np.nansum(flux[start:finish, :, :] * good[start:finish, :, :], 0) /
+            np.sum(good[start:finish, :, :], 0))
+        noise_out[i_band, :, :] = (
+            np.sqrt(np.nansum(noise[start:finish, :, :]**2 * 
+                              good[start:finish, :, :], 0)) /
+            np.sum(good[start:finish, :, :], 0))
+        wavelength_out[i_band] = (
+            0.5 * (wavelength[start] + wavelength[finish-1]))
+    flux_out = np.squeeze(flux_out)
+    noise_out = np.squeeze(noise_out)
+    wavelength_out = np.squeeze(wavelength_out)
+    return flux_out, noise_out, wavelength_out
+
+def fit_moffat_to_image(image, noise, elliptical=True):
+    """Fit a Moffat profile to an image, optionally allowing ellipticity."""
+    fit_pix = np.isfinite(image) & np.isfinite(noise)
+    coords = np.meshgrid(np.arange(image.shape[0]), 
+                         np.arange(image.shape[1]))
+    x00 = 0.5 * (image.shape[0] - 1)
+    y00 = 0.5 * (image.shape[1] - 1)
+    alpha0 = 4.0
+    beta0 = 4.0
+    intensity0 = np.nansum(image)
+    if elliptical:
+        p0 = [alpha0, alpha0, 0.0, beta0, x00, y00, intensity0]
+    else:
+        p0 = [alpha0, beta0, x00, y00, intensity0]
+    def fit_function(p):
+        model = moffat_integrated(
+            coords[0], coords[1], p, elliptical=elliptical, good=fit_pix)
+        return ((model - image[fit_pix]) / noise[fit_pix])
+    result = leastsq(fit_function, p0, full_output=True)
+    params = result[0]
+    reduced_chi2 = np.sum(fit_function(params)**2 / (np.sum(fit_pix) - 1))
+    n_params = len(params)
+    sigma = np.sqrt(result[1][np.arange(n_params), np.arange(n_params)] /
+                    reduced_chi2)
+    return params, sigma
+
+def scale_moffat_to_image(image, noise, params, elliptical=True):
+    """Scale a Moffat profile to fit the provided image."""
+    fit_pix = np.isfinite(image) & np.isfinite(noise)
+    if np.sum(fit_pix) == 0:
+        return np.nan, np.nan
+    coords = np.meshgrid(np.arange(image.shape[0]), 
+                         np.arange(image.shape[1]))
+    params_norm = params.copy()
+    params_norm[-1] = 1.0
+    model_norm = moffat_integrated(
+        coords[0], coords[1], params_norm, elliptical=elliptical, good=fit_pix)
+    p0 = [np.nansum(image)]
+    def fit_function(p):
+        model = p[0] * model_norm
+        return ((model - image[fit_pix]) / noise[fit_pix])
+    result = leastsq(fit_function, p0, full_output=True)
+    intensity = result[0][0]
+    reduced_chi2 = np.sum(fit_function(result[0])**2 / (np.sum(fit_pix) - 1))
+    sigma = np.sqrt(result[1][0, 0] / reduced_chi2)
+    return intensity, sigma
+
+def moffat_integrated(x, y, params, elliptical=True, good=None, pix_size=1.0,
+                      n_sub=10):
+    """Return a Moffat profile, integrated over pixels."""
+    if good is None:
+        good = np.ones(x.size, bool)
+        good.shape = x.shape
+    n_pix = np.sum(good)
+    x_flat = x[good]
+    y_flat = y[good]
+    delta = pix_size * (np.arange(float(n_sub)) / n_sub)
+    delta -= np.mean(delta)
+    x_sub = (np.outer(x_flat, np.ones(n_sub**2)) + 
+             np.outer(np.ones(n_pix), np.outer(delta, np.ones(n_sub))))
+    y_sub = (np.outer(y_flat, np.ones(n_sub**2)) + 
+             np.outer(np.ones(n_pix), np.outer(np.ones(n_sub), delta)))
+    if elliptical:
+        moffat_sub = moffat_elliptical(x_sub, y_sub, *params)
+    else:
+        moffat_sub = moffat_circular(x_sub, y_sub, *params)
+    moffat = np.mean(moffat_sub, 1)
+    return moffat
 
 
+def moffat_elliptical(x, y, alpha_x, alpha_y, rho, beta, x0, y0, intensity):
+    """Return an elliptical Moffat profile."""
+    norm = (beta - 1) / (np.pi * alpha_x * alpha_y * np.sqrt(1 - rho**2))
+    norm = norm * intensity
+    x_term = (x - x0) / alpha_x
+    y_term = (y - y0) / alpha_y
+    moffat = norm * (1 + (x_term**2 + y_term**2 - 2*rho*x_term*y_term) /
+                         (1 - rho**2))**(-beta)
+    return moffat
 
+def moffat_circular(x, y, alpha, beta, x0, y0, intensity):
+    """Return a circular Moffat profile."""
+    norm = (beta - 1) / (np.pi * alpha**2)
+    norm = norm * intensity
+    x_term = (x - x0) / alpha
+    y_term = (y - y0) / alpha
+    moffat = norm * (1 + (x_term**2 + y_term**2))**(-beta)
+    return moffat
 
 
 
