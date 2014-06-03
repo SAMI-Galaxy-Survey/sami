@@ -268,24 +268,49 @@ def fit_template(file_pair, model_catalogue):
             best_model = model_flux
     return flux, noise, wavelength, best_chisq, best_scale, best_model
 
+class IFUDuck(object):
+    def __init__(self, file_pair):
+        hdulist_0 = pf.open(file_pair[0])
+        hdulist_1 = pf.open(file_pair[1])
+        self.data = np.vstack((hdulist_0[0].data, hdulist_1[0].data))
+        self.var = np.vstack((hdulist_0['VARIANCE'].data,
+                              hdulist_1['VARIANCE'].data))
+        self.dim = self.data.shape
+        self.data.shape = (self.dim[0], self.dim[1]*self.dim[2])
+        self.data = self.data.T
+        self.var.shape = (self.dim[0], self.dim[1]*self.dim[2])
+        self.var = self.var.T
+        self.lambda_range = np.hstack((get_coords(hdulist_0[0].header, 3),
+                                       get_coords(hdulist_1[0].header, 3)))
+        self.naxis1 = len(self.lambda_range)
+
 def extract_stellar_spectrum(file_pair):
     """Return the spectrum of a star, assumed to be at the centre."""
+    flux_chunked, variance_chunked, wavelength_chunked = (
+        fluxcal2.chunk_data(IFUDuck(file_pair)))
+    flux_chunked = flux_chunked.T
+    variance_chunked = variance_chunked.T
+    n_pix = int(np.sqrt(flux_chunked.shape[1]))
+    n_wave = flux_chunked.shape[0]
+    flux_chunked.shape = (n_wave, n_pix, n_pix)
+    variance_chunked.shape = (n_wave, n_pix, n_pix)
+    noise_chunked = np.sqrt(variance_chunked)
+    psf_params, sigma_params = fit_moffat_to_chunks(
+        flux_chunked, variance_chunked, wavelength_chunked)
     flux_cube = np.vstack((pf.getdata(file_pair[0]), pf.getdata(file_pair[1])))
     variance_cube = np.vstack((pf.getdata(file_pair[0], 'VARIANCE'), 
                                pf.getdata(file_pair[1], 'VARIANCE')))
     noise_cube = np.sqrt(variance_cube)
-    good = np.isfinite(flux_cube) & np.isfinite(variance_cube)
-    image = np.nansum(flux_cube * good, 0) / np.sum(good, 0)
-    noise_im = np.sqrt(np.nansum(variance_cube * good, 0)) / np.sum(good, 0)
     wavelength = np.hstack((get_coords(pf.getheader(file_pair[0]), 3),
                             get_coords(pf.getheader(file_pair[1]), 3)))
-    psf_params, sigma_params = fit_moffat_to_image(image, noise_im)
     flux = np.zeros(len(wavelength))
     noise = np.zeros(len(wavelength))
-    for i_pix, (image_slice, noise_slice) in enumerate(
-            zip(flux_cube, noise_cube)):
+    for i_pix, (image_slice, noise_slice, wavelength_slice) in enumerate(zip(
+            flux_cube, noise_cube, wavelength)):
         flux[i_pix], noise[i_pix] = scale_moffat_to_image(
-            image_slice, noise_slice, psf_params)
+            image_slice, noise_slice,
+            psf_params_at_slice(psf_params, i_pix, wavelength_slice,
+                                copy_intensity=False))
     return flux, noise, wavelength, psf_params, sigma_params
 
 def extract_galaxy_spectrum(file_pair):
@@ -548,6 +573,62 @@ def fit_moffat_to_image(image, noise, elliptical=True):
     sigma = np.sqrt(result[1][np.arange(n_params), np.arange(n_params)] /
                     reduced_chi2)
     return params, sigma
+    
+def fit_moffat_to_chunks(flux, noise, wavelength, elliptical=True):
+    """Fit a Moffat profile to a chunked datacube"""
+    fit_pix = np.isfinite(flux) & np.isfinite(noise)
+    coords = np.meshgrid(np.arange(flux.shape[1]), 
+                         np.arange(flux.shape[2]))
+    x00 = 0.5 * (flux.shape[1] - 1)
+    y00 = 0.5 * (flux.shape[2] - 1)
+    alpha0 = 4.0
+    beta0 = 4.0
+    intensity0 = [np.nansum(image) for image in flux]
+    if elliptical:
+        p0 = [alpha0, alpha0, 0.0, beta0, x00, y00]
+    else:
+        p0 = [alpha0, beta0, x00, y00]
+    p0.extend(intensity0)
+    p0 = np.array(p0)
+    def fit_function(p):
+        model = np.array([moffat_integrated(
+            coords[0], coords[1],
+            psf_params_at_slice(p, i_slice, wavelength_slice,
+                                elliptical=elliptical),
+            elliptical=elliptical)
+            for i_slice, wavelength_slice
+            in enumerate(wavelength)])
+        model.shape = flux.shape
+        return ((model[fit_pix] - flux[fit_pix]) / noise[fit_pix])
+    result = leastsq(fit_function, p0, full_output=True)
+    params = result[0]
+    reduced_chi2 = np.sum(fit_function(params)**2 / (np.sum(fit_pix) - 1))
+    n_params = len(params)
+    sigma = np.sqrt(result[1][np.arange(n_params), np.arange(n_params)] /
+                    reduced_chi2)
+    return params, sigma
+    
+def psf_params_at_slice(params, i_slice, wavelength, elliptical=True,
+                        copy_intensity=True):
+    """Return the PSF parameters at a particular wavelength."""
+    reference_wavelength = 5000.0
+    factor = (wavelength / reference_wavelength) ** (-0.2)
+    if elliptical:
+        n_basic = 6
+    else:
+        n_basic = 4
+    params_slice = np.zeros(n_basic + 1)
+    params_slice[:n_basic] = params[:n_basic].copy()
+    if copy_intensity:
+        params_slice[-1] = params[n_basic + i_slice]
+    else:
+        params_slice[-1] = 1.0
+    if elliptical:
+        params_slice[0] = params[0] * factor
+        params_slice[1] = params[1] * factor
+    else:
+        params_slice[0] = params[0] * factor
+    return params_slice
 
 def scale_moffat_to_image(image, noise, params, elliptical=True):
     """Scale a Moffat profile to fit the provided image."""
