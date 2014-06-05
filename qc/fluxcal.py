@@ -11,6 +11,7 @@ from scipy.optimize import leastsq
 
 import os
 from glob import glob
+import multiprocessing
 
 def fluxcal_files(mngr):
     """
@@ -141,7 +142,7 @@ def stability(mngr):
 #     observed_colours = [measure_colour(model, model_catalogue['wavelength']) 
 #                         for model in model_list]
 #     return file_pair_list, observed_colours
-def get_sdss_mags(mngr):
+def get_sdss_stellar_mags(mngr):
     """Get magnitudes for stars from SDSS, with a little help from the user."""
     file_pair_list, frame_pair_list_list = list_star_files(mngr)
     name_list = []
@@ -176,24 +177,103 @@ ORDER BY x.up_id"""
     print 'Put the result somewhere safe.'
     return
 
-def stellar_mags(mngr):
+def get_sdss_galaxy_mags(galaxy_file_pair_list):
+    """Get magnitudes for galaxies from SDSS, with a little help from the user."""
+    name_list = []
+    coords_list = []
+    for file_pair in galaxy_file_pair_list:
+        header = pf.getheader(file_pair[0])
+        name = header['NAME']
+        if name not in name_list:
+            name_list.append(name)
+            coords_list.append((header['CATARA'], header['CATADEC']))
+    print 'Go to:'
+    print
+    print 'http://cas.sdss.org/dr7/en/tools/crossid/crossid.asp'
+    print
+    print 'Copy-paste the following into the upload list box:'
+    print
+    for name, coords in zip(name_list, coords_list):
+        print name, coords[0], coords[1]
+    print
+    print 'And the following into the SQL query box:'
+    print
+    print """SELECT 
+   p.objID, p.ra, p.dec,
+   dbo.fPhotoTypeN(p.type) as type,
+   p.psfMag_u, p.psfMagErr_u, p.psfMag_g, p.psfMagErr_g, p.psfMag_r,
+   p.psfMagErr_r, p.psfMag_i, p.psfMagErr_i, p.psfMag_z, p.psfMagErr_z 
+FROM #x x, #upload u, PhotoTag p
+WHERE u.up_id = x.up_id and x.objID=p.objID 
+ORDER BY x.up_id"""
+    print
+    print 'Change output format to CSV, then hit submit.'
+    print 'Put the result somewhere safe.'
+    return
+
+def stellar_mags_cubes(file_pair_list, n_cpu=1):
     """
-    Return stellar magnitudes as measured by SAMI (via interpolation), for
-    the datacubes and the input files.
+    Return stellar magnitudes as measured by SAMI (via interpolation),
+    for the datacubes.
     """
-    file_pair_list, frame_pair_list_list = list_star_files(mngr)
-    mag_cube = []
+    if n_cpu == 1:
+        _map = map
+    else:
+        pool = multiprocessing.Pool(n_cpu)
+        _map = pool.map
+    mag_cube = _map(stellar_mags_cube_pair, file_pair_list)
+    if n_cpu != 1:
+        pool.close()
+    return mag_cube
+    
+def stellar_mags_frames(frame_pair_list_list):
+    """
+    Return stellar magnitudes as measured by SAMI (via interpolation),
+    for the input files.
+    """
     mag_frame = []
-    for file_pair, frame_pair_list in zip(
-            file_pair_list, frame_pair_list_list):
-        flux, noise, wavelength, psf_params, sigma_params = (
-            extract_stellar_spectrum(file_pair))
-        mag_cube.append(measure_mags(flux, noise, wavelength))
+    for frame_pair_list in frame_pair_list_list:
         mag_frame.append([])
         for frame_pair in frame_pair_list:
             flux, noise, wavelength = read_stellar_spectrum(frame_pair)
             mag_frame[-1].append(measure_mags(flux, noise, wavelength))
+    return mag_frame
+
+def stellar_mags(mngr, n_cpu=1, verbose=True):
+    """
+    Return stellar magnitudes as measured by SAMI (via interpolation), for
+    the datacubes and the input files.
+    """
+    if n_cpu == 1:
+        _map = map
+    else:
+        pool = multiprocessing.Pool(n_cpu)
+        _map = pool.map
+    file_pair_list, frame_pair_list_list = list_star_files(mngr)
+    mag_cube = _map(stellar_mags_cube_pair, file_pair_list)
+    mag_frame = []
+    for file_pair, frame_pair_list in zip(
+            file_pair_list, frame_pair_list_list):
+        # flux, noise, wavelength, psf_params, sigma_params = (
+        #     extract_stellar_spectrum(file_pair))
+        # mag_cube.append(measure_mags(flux, noise, wavelength))
+        mag_frame.append([])
+        for frame_pair in frame_pair_list:
+            flux, noise, wavelength = read_stellar_spectrum(frame_pair)
+            mag_frame[-1].append(measure_mags(flux, noise, wavelength))
+    if n_cpu != 1:
+        pool.close()
     return file_pair_list, frame_pair_list_list, mag_cube, mag_frame
+    
+def stellar_mags_cube_pair(file_pair, sum_cubes=True):
+    """Return stellar mags for a single pair of datacubes."""
+    if sum_cubes:
+        flux, noise, wavelength = (
+            extract_galaxy_spectrum(file_pair))
+    else:
+        flux, noise, wavelength, psf_params, sigma_params = (
+            extract_stellar_spectrum(file_pair))
+    return measure_mags(flux, noise, wavelength)
 
 def list_star_files(mngr):
     """
@@ -221,14 +301,14 @@ def list_star_files(mngr):
                     result.append((blue_path, red_path))
                     i = 0
                     frame.append([])
-                    red_header = pf.getheader(red_path)
                     while True:
                         i += 1
                         try:
                             blue_filename = blue_header['RSS_FILE ' + str(i)]
-                            red_filename = red_header['RSS_FILE ' + str(i)]
                         except KeyError:
                             break
+                        red_filename = (blue_filename[:5] + '2' + 
+                                        blue_filename[6:10] + 'sci.fits')
                         blue_frame_path = glob(
                             mngr.abs_root+'/reduced/*/*/*/*/*/'+
                             blue_filename)[0]
@@ -236,6 +316,49 @@ def list_star_files(mngr):
                             mngr.abs_root+'/reduced/*/*/*/*/*/'+
                             red_filename)[0]
                         frame[-1].append((blue_frame_path, red_frame_path))
+    return result, frame
+    
+def list_galaxy_files(mngr, name_list):
+    """
+    Return a list of tuples of paths to galaxy datacubes, blue and red,
+    as well as a list of lists of tuples of paths to individual frames.
+    """
+    if isinstance(mngr, str):
+        mngr = Manager(mngr)
+    if isinstance(mngr, Manager):
+        mngr_list = [mngr]
+    else:
+        mngr_list = mngr
+    result = []
+    frame = []
+    for mngr in mngr_list:
+        blue_list = (
+            glob(os.path.join(mngr.abs_root, 'cubed', '*', '*blue*.fits')) +
+            glob(os.path.join(mngr.abs_root, 'cubed', '*', '*blue*.fits.gz')))
+            # [])
+        for blue_path in blue_list:
+            name = os.path.basename(os.path.dirname(blue_path))
+            red_path = red_cube_path(blue_path)
+            if name in name_list and os.path.exists(red_path):
+                blue_header = pf.getheader(blue_path)
+                result.append((blue_path, red_path))
+                i = 0
+                frame.append([])
+                while True:
+                    i += 1
+                    try:
+                        blue_filename = blue_header['RSS_FILE ' + str(i)]
+                    except KeyError:
+                        break
+                    red_filename = (blue_filename[:5] + '2' + 
+                                    blue_filename[6:10] + 'sci.fits')
+                    blue_frame_path = glob(
+                        mngr.abs_root+'/reduced/*/*/*/*/*/'+
+                        blue_filename)[0]
+                    red_frame_path = glob(
+                        mngr.abs_root+'/reduced/*/*/*/*/*/'+
+                        red_filename)[0]
+                    frame[-1].append((blue_frame_path, red_frame_path))
     return result, frame
 
 def red_cube_path(blue_path):
@@ -320,18 +443,24 @@ def extract_galaxy_spectrum(file_pair):
 def sum_spectrum_from_cube(file_pair, radius):
     """Return the summed spectrum from spaxels in the centre of a cube."""
     # Replace the hard-coded numbers with something smarter
+    hdulist_pair = [pf.open(path) for path in file_pair]
     x, y = np.meshgrid(0.5*(np.arange(50)-24.5), 0.5*(np.arange(50)-24.5))
     keep_x, keep_y = np.where(x**2 + y**2 < radius**2)
-    flux_cube = np.vstack((pf.getdata(file_pair[0]), pf.getdata(file_pair[1])))
-    variance_cube = np.vstack((pf.getdata(file_pair[0], 'VARIANCE'), 
-                               pf.getdata(file_pair[1], 'VARIANCE')))
+    flux_cube = np.vstack((hdulist_pair[0][0].data, hdulist_pair[1][0].data))
+    variance_cube = np.vstack((hdulist_pair[0]['VARIANCE'].data,
+                               hdulist_pair[1]['VARIANCE'].data))
+    # flux_cube = np.vstack((pf.getdata(file_pair[0]), pf.getdata(file_pair[1])))
+    # variance_cube = np.vstack((pf.getdata(file_pair[0], 'VARIANCE'), 
+    #                            pf.getdata(file_pair[1], 'VARIANCE')))
     flux = np.nansum(flux_cube[:, keep_x, keep_y], axis=1)
     # Doesn't include co-variance - Nic will provide code
     noise = np.sqrt(np.nansum(variance_cube[:, keep_x, keep_y], axis=1))
     # Fudge for co-variance
     noise *= 2.0
-    wavelength = np.hstack((get_coords(pf.getheader(file_pair[0]), 3),
-                            get_coords(pf.getheader(file_pair[1]), 3)))
+    wavelength = np.hstack((get_coords(hdulist_pair[0][0].header, 3),
+                            get_coords(hdulist_pair[1][0].header, 3)))
+    # wavelength = np.hstack((get_coords(pf.getheader(file_pair[0]), 3),
+    #                         get_coords(pf.getheader(file_pair[1]), 3)))
     return flux, noise, wavelength
 
 def read_stellar_spectrum(file_pair):
@@ -459,18 +588,23 @@ def measure_mags(flux, noise, wavelength):
 
 def clip_spectrum(flux, noise, wavelength):
     """Return a "good" array, clipping mostly based on discrepant noise."""
-    filter_width = 21
-    limit = 0.35
-    filtered_noise = median_filter(noise, filter_width)
+    filter_width_noise = 21
+    filter_width_flux = 21
+    limit_noise = 0.35
+    limit_flux = 5.0
+    filtered_noise = median_filter(noise, filter_width_noise)
     # Only clipping positive deviations - negative deviations are mostly due
     # to absorption lines so should be left in
     # noise_ratio = (noise - filtered_noise) / filtered_noise
     # Clipping both negative and positive values, even though this means
     # clipping out several absorption lines
     noise_ratio = np.abs((noise - filtered_noise) / filtered_noise)
+    filtered_flux = median_filter(flux, filter_width_flux)
+    flux_ratio = np.abs((flux - filtered_flux) / filtered_flux)
     good = (np.isfinite(flux) &
             np.isfinite(noise) &
-            (noise_ratio < limit))
+            (noise_ratio < limit_noise) &
+            (flux_ratio < limit_flux))
     return good
 
 def interpolate_arms(flux, noise, wavelength, good=None, n_pix_fit=300):
@@ -514,7 +648,9 @@ def interpolate_arms(flux, noise, wavelength, good=None, n_pix_fit=300):
               (wavelength_out < wavelength[index_red[0]]))
     flux_out[insert] = np.polyval(poly_params, wavelength_out[insert])
     noise_out[insert] = np.nan
-    interp = (~np.isfinite(flux_out) | ~np.isfinite(noise_out)) & ~insert
+    good_extended = np.hstack(
+        (good[:middle], np.zeros(n_pix_insert, bool), good[middle:]))
+    interp = ~good_extended & ~insert
     flux_out[interp] = np.interp(
         wavelength_out[interp], wavelength_out[~interp], flux_out[~interp])
     noise_out[interp] = np.nan
