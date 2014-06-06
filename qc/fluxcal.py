@@ -1,8 +1,8 @@
 """Functions relating to quality control of flux calibration."""
 
-from ..manager import Manager
 from ..dr import fluxcal2
 from ..utils import IFU
+from ..utils.other import clip_spectrum
 
 import astropy.io.fits as pf
 import numpy as np
@@ -19,16 +19,14 @@ def fluxcal_files(mngr):
     The keys are the paths to the combined calibration files, and each item
     is a list of individual files that contributed.
 
-    The input can be a Manager object or a path, from which a Manager will
-    be created. Or a list of managers, in which case the results are
-    concatenated. A list of paths will not work.
+    The input can be a Manager object or 
+    a list of managers, in which case the results are
+    concatenated.
     """
-    if isinstance(mngr, str):
-        mngr = Manager(mngr)
-    if isinstance(mngr, Manager):
-        mngr_list = [mngr]
-    else:
+    if isinstance(mngr, list):
         mngr_list = mngr
+    else:
+        mngr_list = [mngr]
     ccd_list = ['ccd_1', 'ccd_2']
     result = [{} for ccd in ccd_list]
     for mngr in mngr_list:
@@ -265,7 +263,7 @@ def stellar_mags(mngr, n_cpu=1, verbose=True):
         pool.close()
     return file_pair_list, frame_pair_list_list, mag_cube, mag_frame
     
-def stellar_mags_cube_pair(file_pair, sum_cubes=True):
+def stellar_mags_cube_pair(file_pair, sum_cubes=True, save=False):
     """Return stellar mags for a single pair of datacubes."""
     if sum_cubes:
         flux, noise, wavelength = (
@@ -273,19 +271,25 @@ def stellar_mags_cube_pair(file_pair, sum_cubes=True):
     else:
         flux, noise, wavelength, psf_params, sigma_params = (
             extract_stellar_spectrum(file_pair))
-    return measure_mags(flux, noise, wavelength)
+    mag_g, mag_r = measure_mags(flux, noise, wavelength)
+    if save:
+        for path in file_pair:
+            hdulist = pf.open(path, 'update')
+            hdulist[0].header['MAGG'] = (mag_g, 'g mag from summed cube')
+            hdulist[1].header['MAGR'] = (mag_r, 'r mag from summed cube')
+            hdulist.flush()
+            hdulist.close()
+    return mag_g, mag_r
 
 def list_star_files(mngr):
     """
     Return a list of tuples of paths to star datacubes, blue and red,
     as well as a list of lists of tuples of paths to individual frames.
     """
-    if isinstance(mngr, str):
-        mngr = Manager(mngr)
-    if isinstance(mngr, Manager):
-        mngr_list = [mngr]
-    else:
+    if isinstance(mngr, list):
         mngr_list = mngr
+    else:
+        mngr_list = [mngr]
     result = []
     frame = []
     for mngr in mngr_list:
@@ -323,12 +327,10 @@ def list_galaxy_files(mngr, name_list):
     Return a list of tuples of paths to galaxy datacubes, blue and red,
     as well as a list of lists of tuples of paths to individual frames.
     """
-    if isinstance(mngr, str):
-        mngr = Manager(mngr)
-    if isinstance(mngr, Manager):
-        mngr_list = [mngr]
-    else:
+    if isinstance(mngr, list):
         mngr_list = mngr
+    else:
+        mngr_list = [mngr]
     result = []
     frame = []
     for mngr in mngr_list:
@@ -579,33 +581,12 @@ def measure_band(band, flux, wavelength, sdss_dir='./sdss/'):
 
 def measure_mags(flux, noise, wavelength):
     """Do clipping and interpolation, then return g and r band mags."""
-    good = clip_spectrum(flux, noise, wavelength)
+    good = clip_spectrum(flux, noise, wavelength, limit_flux=20.0)
     flux, noise, wavelength = interpolate_arms(
         flux, noise, wavelength, good)
     mag_g = measure_band('g', flux, wavelength)
     mag_r = measure_band('r', flux, wavelength)
     return (mag_g, mag_r)
-
-def clip_spectrum(flux, noise, wavelength):
-    """Return a "good" array, clipping mostly based on discrepant noise."""
-    filter_width_noise = 21
-    filter_width_flux = 21
-    limit_noise = 0.35
-    limit_flux = 5.0
-    filtered_noise = median_filter(noise, filter_width_noise)
-    # Only clipping positive deviations - negative deviations are mostly due
-    # to absorption lines so should be left in
-    # noise_ratio = (noise - filtered_noise) / filtered_noise
-    # Clipping both negative and positive values, even though this means
-    # clipping out several absorption lines
-    noise_ratio = np.abs((noise - filtered_noise) / filtered_noise)
-    filtered_flux = median_filter(flux, filter_width_flux)
-    flux_ratio = np.abs((flux - filtered_flux) / filtered_flux)
-    good = (np.isfinite(flux) &
-            np.isfinite(noise) &
-            (noise_ratio < limit_noise) &
-            (flux_ratio < limit_flux))
-    return good
 
 def interpolate_arms(flux, noise, wavelength, good=None, n_pix_fit=300):
     """Interpolate between the red and blue arms."""

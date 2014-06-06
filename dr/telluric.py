@@ -6,6 +6,7 @@ from .fluxcal2 import extract_total_flux, save_extracted_flux, trim_chunked_data
 
 from .. import utils
 from ..utils.ifu import IFU
+from ..utils.other import clip_spectrum
 
 import astropy.io.fits as pf
 import numpy as np
@@ -164,8 +165,13 @@ def create_transfer_function(standard_spectrum,sigma,wave_axis,naxis1):
     in_clean[~(np.isfinite(standard_spectrum))] = False
     wave_axis_cut = wave_axis[in_clean]
     standard_spectrum_cut = standard_spectrum[in_clean]
-    # Mild smoothing so that one bad pixel doesn't screw up the linear fit
-    standard_spectrum_cut = median_filter(standard_spectrum_cut, 5)
+    sigma_cut = sigma[in_clean]
+    # Clip out bad pixels
+    # standard_spectrum_cut = median_filter(standard_spectrum_cut, 5)
+    good = clip_spectrum(standard_spectrum_cut, sigma_cut, wave_axis_cut)
+    standard_spectrum_cut = standard_spectrum_cut[good]
+    sigma_cut = sigma_cut[good]
+    wave_axis_cut = wave_axis_cut[good]
                 
     # Fit linear slope to wavelength cut data
     p = np.polyfit(wave_axis_cut, standard_spectrum_cut, 1)
@@ -247,13 +253,8 @@ def identify_secondary_standard(path, use_probe=None):
     fibre_table = pf.getdata(path, 'FIBRES_IFU')
     if use_probe is None:
         unique_names = np.unique(fibre_table['NAME'])
-        pilot_star = '([0-9]{15,})'
-        gama_star = '(1000[0-9]{4})'
-        abell_star = '(Abell[0-9]+_SS[0-9]+)'
-        cluster_star = '(((999)|(888))[0-9]{9})'
-        star_re = '|'.join((pilot_star, gama_star, abell_star, cluster_star))
         for name in unique_names:
-            if re.match(star_re, name):
+            if is_star(name):
                 break
         else:
             raise ValueError('No star identified in file: ' + path)
@@ -265,6 +266,15 @@ def identify_secondary_standard(path, use_probe=None):
         name = name[0]
     star_match = {'name': name, 'probenum': probenum}
     return star_match
+    
+def is_star(name):
+    """Return True if the name provided is for a star"""
+    pilot_star = '([0-9]{15,})'
+    gama_star = '(1000[0-9]{4})'
+    abell_star = '(Abell[0-9]+_SS[0-9]+)'
+    cluster_star = '(((999)|(888))[0-9]{9})'
+    star_re = '|'.join((pilot_star, gama_star, abell_star, cluster_star))
+    return bool(re.match(star_re, name))
 
 def apply_correction(path_in, path_out):
     """Apply an already-derived correction to the file."""

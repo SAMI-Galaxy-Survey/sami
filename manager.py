@@ -85,10 +85,11 @@ except ImportError:
 
 from .utils.other import find_fibre_table, gzip
 from .general.cubing import dithered_cubes_from_rss_list
+from .general.cubing import scale_cube_pair, scale_cube_pair_to_mag
 from .general.align_micron import find_dither
 from .dr import fluxcal2, telluric, check_plots, tdfdr
 from .dr.throughput import make_clipped_thput_files
-
+from .qc.fluxcal import stellar_mags_cube_pair
 
 # Get the astropy version as a tuple of integers
 ASTROPY_VERSION = tuple(int(x) for x in ASTROPY_VERSION.split('.'))
@@ -223,6 +224,8 @@ CHECK_DATA = {
             'group_by': ('field_id',)}}
 # Extra priority for checking re-reductions
 PRIORITY_RECENT = 100
+
+SDSS_STELLAR_MAGS_PATH = './sdss_stellar_mags.csv'
 
 class Manager:
     """Object for organising and reducing SAMI data.
@@ -1419,7 +1422,54 @@ class Manager:
         for fits_list in [item[1] for item in groups]:
             self.update_checks('CUB', [fits_list[0]], False)
         return
-
+        
+    def scale_cubes(self, overwrite=False, min_exposure=599.0, name='main',
+                    **kwargs):
+        """Scale datacubes based on the stellar g magnitudes."""
+        groups = self.group_files_by(
+            'field_id', ccd='ccd_1', ndf_class='MFOBJECT', do_not_use=False,
+            reduced=True, min_exposure=min_exposure, name=name, **kwargs)
+        input_list = []
+        for (field_id, ), fits_list in groups.items():
+            table = pf.getdata(fits_list[0].reduced_path, 'FIBRES_IFU')
+            objects = table['NAME'][table['TYPE'] == 'P']
+            objects = np.unique(objects).tolist()
+            for name in objects:
+                if telluric.is_star(name):
+                    break
+            else:
+                raise ValueError('No star found in field: ' + field_id)
+            star = name
+            objects.remove(star)
+            star_path_pair = [
+                self.cubed_path(star, arm, len(fits_list), field_id,
+                                exists=True)
+                for arm in ('blue', 'red')]
+            if star_path_pair[0] is None or star_path_pair[1] is None:
+                continue
+            if not overwrite:
+                # Need to check if the scaling has already been done
+                try:
+                    [pf.getval(path, 'RESCALE') for path in star_path_pair]
+                except KeyError:
+                    pass
+                else:
+                    continue
+            object_path_pair_list = [
+                [self.cubed_path(name, arm, len(fits_list), field_id,
+                                 exists=True)
+                 for arm in ('blue', 'red')]
+                for name in objects]
+            object_path_pair_list = [
+                pair for pair in object_path_pair_list if None not in pair]
+            stellar_mags_cube_pair(star_path_pair, save=True)
+            found = assign_true_mag(star_path_pair, star)
+            if found:
+                scale = scale_cube_pair_to_mag(star_path_pair)
+                for object_path_pair in object_path_pair_list:
+                    scale_cube_pair(object_path_pair, scale)
+        return
+            
     def gzip_cubes(self, overwrite=False, min_exposure=599.0, name='main',
                    star_only=False, **kwargs):
         """Gzip the final datacubes."""
@@ -1499,9 +1549,8 @@ class Manager:
     def tdfdr_options(self, fits, external_throughput=False, tlm=False):
         """Set the 2dfdr reduction options for this file."""
         options = []
-        # No longer using GAUSS extraction! Optex set in idx file.
-        # # For now, setting all files to use GAUSS extraction
-        # options.extend(['-EXTR_OPERATION', 'GAUSS'])
+        # For now, setting all files to use GAUSS extraction
+        options.extend(['-EXTR_OPERATION', 'GAUSS'])
         if fits.ccd == 'ccd_2':
             if fits.exposure >= self.min_exposure_for_sky_wave:
                 # Adjust wavelength calibration of red frames using sky lines
@@ -1867,6 +1916,22 @@ class Manager:
         other_filename = fits.filename[:5] + other_number + fits.filename[6:]
         other_fits = self.fits_file(other_filename)
         return other_fits
+        
+    def cubed_path(self, name, arm, n_file, field_id, gzipped=False,
+                   exists=False):
+        """Return the path to the cubed file."""
+        path = os.path.join(
+            self.abs_root, 'cubed', name,
+            name+'_'+arm+'_'+str(n_file)+'_'+field_id+'.fits')
+        if gzipped:
+            path = path + '.gz'
+        if exists:
+            if not os.path.exists(path):
+                path = self.cubed_path(name, arm, n_file, field_id,
+                                       gzipped=(not gzipped), exists=False)
+                if not os.path.exists(path):
+                    return None
+        return path
 
     @contextmanager
     def visit_dir(self, dir_path, cleanup_2dfdr=False):
@@ -3022,7 +3087,32 @@ def gzip_wrapper(path):
 #         time.sleep(1); current_time = time.time()
 #     print "finishing", variable
 
-
+def assign_true_mag(path_pair, name):
+    """Find the magnitudes in a catalogue and save them to the header."""
+    sdss_catalogue = read_sdss_mags()
+    if name in sdss_catalogue:
+        mag_g = sdss_catalogue[name]['g']
+        mag_r = sdss_catalogue[name]['r']
+    else:
+        return False
+    for path in path_pair:
+        hdulist = pf.open(path, 'update')
+        hdulist[0].header['CATMAGG'] = (mag_g, 'g mag from catalogue')
+        hdulist[0].header['CATMAGR'] = (mag_r, 'r mag from catalogue')
+        hdulist.flush()
+        hdulist.close()
+    return True
+    
+def read_sdss_mags(path=SDSS_STELLAR_MAGS_PATH):
+    """Read SDSS magnitudes from a CSV file."""
+    names = ('name', 'obj_id', 'ra', 'dec', 'type', 'u', 'sig_u',
+             'g', 'sig_g', 'r', 'sig_r', 'i', 'sig_i', 'z', 'sig_z')
+    formats = ('S20', 'S30', 'f8', 'f8', 'S10', 'f8', 'f8',
+               'f8', 'f8', 'f8', 'f8', 'f8', 'f8', 'f8', 'f8')
+    data = np.loadtxt(path, skiprows=1, delimiter=',',
+                      dtype={'names': names, 'formats': formats})
+    data_dict = {line['name']: line for line in data}
+    return data_dict
 
 class MatchException(Exception):
     """Exception raised when no matching calibrator is found."""

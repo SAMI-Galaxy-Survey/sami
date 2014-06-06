@@ -1232,3 +1232,30 @@ def create_covar_matrix(overlap_array,variances):
             covariance_array[xA,yA,:,:] = covariance_array[xA,yA,:,:]/covariance_array[xA,yA,covarS,covarS]
     
     return covariance_array
+    
+def scale_cube_pair(file_pair, scale):
+    """Scale both blue and red cubes by a given value."""
+    for path in file_pair:
+        scale_cube(path, scale)
+
+def scale_cube(path, scale):
+    """Scale a single cube by a given value."""
+    hdulist = pf.open(path, 'update')
+    try:
+        old_scale = hdulist['PRIMARY'].header['RESCALE']
+    except KeyError:
+        old_scale = 1.0
+    hdulist['PRIMARY'].data *= (scale / old_scale)
+    hdulist['VARIANCE'].data *= (scale / old_scale)**2
+    hdulist['PRIMARY'].header['RESCALE'] = (scale, 'Scaling applied to data')
+    hdulist.flush()
+    hdulist.close()
+
+def scale_cube_pair_to_mag(file_pair):
+    """Scale both cubes according to their pre-measured g-band mags."""
+    header = pf.getheader(file_pair[0])
+    measured_mag = header['MAGG']
+    catalogue_mag = header['CATMAGG']
+    scale = 10.0 ** ((measured_mag - catalogue_mag) / 2.5)
+    scale_cube_pair(file_pair, scale)
+    return scale
