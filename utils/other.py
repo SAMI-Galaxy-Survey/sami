@@ -1,4 +1,5 @@
 import numpy as np
+from scipy.ndimage.filters import median_filter
 
 import os
 import subprocess
@@ -555,3 +556,23 @@ def replace_all_xsym_link(directory='.'):
                 # first place
                 pass
     return
+
+def clip_spectrum(flux, noise, wavelength, limit_noise=0.35, limit_flux=10.0):
+    """Return a "good" array, clipping mostly based on discrepant noise."""
+    filter_width_noise = 21
+    filter_width_flux = 21
+    filtered_noise = median_filter(noise, filter_width_noise)
+    # Only clipping positive deviations - negative deviations are mostly due
+    # to absorption lines so should be left in
+    # noise_ratio = (noise - filtered_noise) / filtered_noise
+    # Clipping both negative and positive values, even though this means
+    # clipping out several absorption lines
+    noise_ratio = np.abs((noise - filtered_noise) / filtered_noise)
+    filtered_flux = median_filter(flux, filter_width_flux)
+    flux_ratio = np.abs((flux - filtered_flux) / filtered_noise)
+    good = (np.isfinite(flux) &
+            np.isfinite(noise) &
+            (noise_ratio < limit_noise) &
+            (flux_ratio < limit_flux))
+    return good
+
