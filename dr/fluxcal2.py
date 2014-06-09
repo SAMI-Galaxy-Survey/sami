@@ -248,6 +248,7 @@ def first_guess_parameters(datatube, vartube, xfibre, yfibre, wavelength,
     par_0 = {}
     #weighted_data = np.sum(datatube / vartube, axis=1)
     weighted_data = np.nansum(datatube, axis=1)
+    weighted_data[weighted_data < 0] = 0.0
     weighted_data /= np.sum(weighted_data)
     if model_name == 'ref_centre_alpha_angle':
         par_0['flux'] = np.nansum(datatube, axis=0)
