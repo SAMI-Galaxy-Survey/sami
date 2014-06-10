@@ -22,8 +22,8 @@ def measure_position_at_wavelength(cube, variance, wavelength_array,
     cube_cut = cube[in_range, :, :]
     variance_cut = variance[in_range, :, :]
     good_cut = good[in_range, :, :]
-    image = np.sum(cube_cut[good_cut, :, :], axis=0)
-    noise = np.sqrt(np.sum(variance_cut[good_cut, :, :], axis=0))
+    image = np.nansum(cube_cut * good_cut, axis=0)
+    noise = np.sqrt(np.nansum(variance_cut * good_cut, axis=0))
     psf_params, sigma_psf_params = fit_moffat_to_image(image, noise)
     x, y = psf_params[2], psf_params[3]
     sigma_x, sigma_y = sigma_psf_params[2], sigma_psf_params[3]
@@ -51,4 +51,3 @@ def measure_dar(file_pair, wavelength=(4200.0, 7100.0), n_pix=100):
         (2*(y_0 - y_1))**2 * (sigma_y_0**2 + sigma_y_1**2)
         ) / (2 * delta)
     return delta, sigma_delta
-    
