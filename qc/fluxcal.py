@@ -685,10 +685,13 @@ def fit_moffat_to_image(image, noise, elliptical=True):
         return ((model - image[fit_pix]) / noise[fit_pix])
     result = leastsq(fit_function, p0, full_output=True)
     params = result[0]
-    reduced_chi2 = np.sum(fit_function(params)**2 / (np.sum(fit_pix) - 1))
-    n_params = len(params)
-    sigma = np.sqrt(result[1][np.arange(n_params), np.arange(n_params)] /
-                    reduced_chi2)
+    if result[1] is None:
+        sigma = None
+    else:
+        reduced_chi2 = np.sum(fit_function(params)**2 / (np.sum(fit_pix) - 1))
+        n_params = len(params)
+        sigma = np.sqrt(result[1][np.arange(n_params), np.arange(n_params)] /
+                        reduced_chi2)
     return params, sigma
     
 def fit_moffat_to_chunks(flux, noise, wavelength, elliptical=True):
