@@ -27,7 +27,8 @@ def snr_in_all_tellurics(mngr_list):
     central = 31 + 63*np.arange(13)
     for mngr in mngr_list:
         for fits in mngr.files(ndf_class='MFOBJECT', telluric_corrected=True,
-                               min_exposure=900.0, ccd='ccd_2', name='main'):
+                               min_exposure=900.0, ccd='ccd_2', name='main',
+                               do_not_use=False):
             telluric_data = pf.getdata(fits.telluric_path, 'FLUX_CALIBRATION')
             corrected_data = pf.getdata(fits.telluric_path)
             corrected_noise = np.sqrt(
