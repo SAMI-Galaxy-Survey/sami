@@ -26,7 +26,8 @@ def measure_position_at_wavelength(cube, variance, wavelength_array,
     noise = np.sqrt(np.nansum(variance_cut * good_cut, axis=0))
     image[noise == 0] = np.nan
     noise[noise == 0] = np.nan
-    psf_params, sigma_psf_params = fit_moffat_to_image(image, noise)
+    psf_params, sigma_psf_params = fit_moffat_to_image(
+        image, noise, elliptical=False)
     x, y = psf_params[2], psf_params[3]
     sigma_x, sigma_y = sigma_psf_params[2], sigma_psf_params[3]
     return x, y, sigma_x, sigma_y
