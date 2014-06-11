@@ -40,13 +40,12 @@ def header_translate_inverse(header_name):
 def save_extracted_flux(path, observed_flux, observed_background,
                         sigma_flux, sigma_background,
                         star_match, psf_parameters, model_name,
-                        good_psf, hg_changeset):
+                        good_psf, hg_changeset, hdu_name='FLUX_CALIBRATION'):
     """Add the extracted flux to the specified FITS file."""
     # Turn the data into a single array
     data = np.vstack((observed_flux, observed_background, 
                       sigma_flux, sigma_background))
     # Make the new HDU
-    hdu_name = 'FLUX_CALIBRATION'
     new_hdu = pf.ImageHDU(data, name=hdu_name)
     # Add info to the header
     header_item_list = [

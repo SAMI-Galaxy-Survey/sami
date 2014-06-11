@@ -21,7 +21,7 @@ HG_CHANGESET = utils.hg_changeset(__file__)
 def derive_transfer_function(frame_list, PS_spec_file=None, use_PS=False,
                              scale_PS_by_airmass=False, 
                              model_name='ref_centre_alpha_dist_circ_hdratm',
-                             n_trim=0, use_probe=None):
+                             n_trim=0, use_probe=None, hdu_name='FLUX_CALIBRATION'):
     """
     Finds the telluric correction factor to multiply object data by. The factor 
     as a function of wavelength is saved into the red frame under the extension 
@@ -38,7 +38,7 @@ def derive_transfer_function(frame_list, PS_spec_file=None, use_PS=False,
     # NB: when use_PS is True and scale_PS_by_airmass is False, we don't
     # actually need to extract it, but we do still need to create the
     # extension and copy atmospheric parameters across
-    extract_secondary_standard(frame_list, model_name=model_name, n_trim=n_trim, use_probe=use_probe)
+    extract_secondary_standard(frame_list, model_name=model_name, n_trim=n_trim, use_probe=use_probe, hdu_name=hdu_name)
 
     # if user defines, use a scaled primary standard telluric correction
     if use_PS:
@@ -64,7 +64,6 @@ def derive_transfer_function(frame_list, PS_spec_file=None, use_PS=False,
     else:
         # Get data
         hdulist = pf.open(frame_list[1])
-        hdu_name = 'FLUX_CALIBRATION'
         hdu = hdulist[hdu_name]
        
         # Load in SS flux data
@@ -96,7 +95,6 @@ def derive_transfer_function(frame_list, PS_spec_file=None, use_PS=False,
     # Update the file to include telluric correction factor
     hdulist = pf.open(frame_list[1], 'update', do_not_scale_image_data=True)
     hdulist[0].header['HGTELLUR'] = (HG_CHANGESET,'Hg changeset ID for telluric code')
-    hdu_name = 'FLUX_CALIBRATION'
     hdu = hdulist[hdu_name]
     # Arrange the data into a single array
     data = np.vstack((hdu.data[:4, :], model_flux, transfer_function, sigma_transfer))
@@ -216,7 +214,7 @@ def create_transfer_function(standard_spectrum,sigma,wave_axis,naxis1):
     
     return transfer_function, sigma_factor, fit
 
-def extract_secondary_standard(path_list,model_name='ref_centre_alpha_dist_circ_hdratm',n_trim=0,use_probe=None):
+def extract_secondary_standard(path_list,model_name='ref_centre_alpha_dist_circ_hdratm',n_trim=0,use_probe=None,hdu_name='FLUX_CALIBRATION'):
     """Identify and extract the secondary standard in a reduced RSS file."""
     
     # First check which hexabundle we need to look at
@@ -245,7 +243,7 @@ def extract_secondary_standard(path_list,model_name='ref_centre_alpha_dist_circ_
         save_extracted_flux(path, observed_flux, observed_background,
                             sigma_flux, sigma_background,
                             star_match, psf_parameters, model_name,
-                            good_psf, HG_CHANGESET)
+                            good_psf, HG_CHANGESET, hdu_name=hdu_name)
     return
 
 def identify_secondary_standard(path, use_probe=None):
