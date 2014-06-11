@@ -29,7 +29,10 @@ def measure_position_at_wavelength(cube, variance, wavelength_array,
     psf_params, sigma_psf_params = fit_moffat_to_image(
         image, noise, elliptical=False)
     x, y = psf_params[2], psf_params[3]
-    sigma_x, sigma_y = sigma_psf_params[2], sigma_psf_params[3]
+    if sigma_psf_params is None:
+        sigma_x = sigma_y = None
+    else:
+        sigma_x, sigma_y = sigma_psf_params[2], sigma_psf_params[3]
     return x, y, sigma_x, sigma_y
 
 def measure_dar(file_pair, wavelength=(4200.0, 7100.0), n_pix=100):
