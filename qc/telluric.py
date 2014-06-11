@@ -3,6 +3,8 @@ from ..dr import telluric
 import astropy.io.fits as pf
 import numpy as np
 
+import shutil
+
 def compare_star_field(path_pair, output=None):
     """Compare measurements between all stars in a field."""
     n_hexa = 13
@@ -66,3 +68,13 @@ def snr_in_all_tellurics(mngr_list):
             snr_output.append(np.median(corrected_data / corrected_noise,
                                         axis=1))
     return np.array(snr_telluric), np.array(snr_input), np.array(snr_output)
+
+def process_star_field(path_pair_in, path_pair_out):
+    """Measure telluric correction on each star in a field of 13."""
+    for path_in, path_out in zip(path_pair_in, path_pair_out):
+        shutil.copy2(path_in, path_out)
+    for i in xrange(1, 14):
+        hdu_name = 'FLUX_CALIBRATION_{:02d}'.format(i)
+        telluric.derive_transfer_function(path_pair_out, use_probe=i,
+                                          hdu_name=hdu_name)
+    
