@@ -291,7 +291,7 @@ def stellar_mags_cube_pair(file_pair, sum_cubes=True, save=False):
             hdulist.close()
     return mag_g, mag_r
 
-def list_star_files(mngr):
+def list_star_files(mngr, gzip=True):
     """
     Return a list of tuples of paths to star datacubes, blue and red,
     as well as a list of lists of tuples of paths to individual frames.
@@ -303,10 +303,13 @@ def list_star_files(mngr):
     result = []
     frame = []
     for mngr in mngr_list:
-        blue_list = (
-            glob(os.path.join(mngr.abs_root, 'cubed', '*', '*blue*.fits')) +
-            glob(os.path.join(mngr.abs_root, 'cubed', '*', '*blue*.fits.gz')))
-            # [])
+        if gzip:
+            pattern = os.path.join(
+                mngr.abs_root, 'cubed', '*', '*blue*.fits.gz')
+        else:
+            pattern = os.path.join(
+                mngr.abs_root, 'cubed', '*', '*blue*.fits')
+        blue_list = glob(pattern)
         for blue_path in blue_list:
             red_path = red_cube_path(blue_path)
             if os.path.exists(red_path):
@@ -332,7 +335,7 @@ def list_star_files(mngr):
                         frame[-1].append((blue_frame_path, red_frame_path))
     return result, frame
     
-def list_galaxy_files(mngr, name_list):
+def list_galaxy_files(mngr, name_list, gzip=True):
     """
     Return a list of tuples of paths to galaxy datacubes, blue and red,
     as well as a list of lists of tuples of paths to individual frames.
@@ -344,10 +347,13 @@ def list_galaxy_files(mngr, name_list):
     result = []
     frame = []
     for mngr in mngr_list:
-        blue_list = (
-            glob(os.path.join(mngr.abs_root, 'cubed', '*', '*blue*.fits')) +
-            glob(os.path.join(mngr.abs_root, 'cubed', '*', '*blue*.fits.gz')))
-            # [])
+        if gzip:
+            pattern = os.path.join(
+                mngr.abs_root, 'cubed', '*', '*blue*.fits.gz')
+        else:
+            pattern = os.path.join(
+                mngr.abs_root, 'cubed', '*', '*blue*.fits')
+        blue_list = glob(pattern)
         for blue_path in blue_list:
             name = os.path.basename(os.path.dirname(blue_path))
             red_path = red_cube_path(blue_path)
