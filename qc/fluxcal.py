@@ -335,7 +335,7 @@ def list_star_files(mngr, gzip=True):
                         frame[-1].append((blue_frame_path, red_frame_path))
     return result, frame
     
-def list_galaxy_files(mngr, name_list, gzip=True):
+def list_galaxy_files(mngr, gzip=True):
     """
     Return a list of tuples of paths to galaxy datacubes, blue and red,
     as well as a list of lists of tuples of paths to individual frames.
@@ -355,28 +355,28 @@ def list_galaxy_files(mngr, name_list, gzip=True):
                 mngr.abs_root, 'cubed', '*', '*blue*.fits')
         blue_list = glob(pattern)
         for blue_path in blue_list:
-            name = os.path.basename(os.path.dirname(blue_path))
             red_path = red_cube_path(blue_path)
-            if name in name_list and os.path.exists(red_path):
+            if os.path.exists(red_path):
                 blue_header = pf.getheader(blue_path)
-                result.append((blue_path, red_path))
-                i = 0
-                frame.append([])
-                while True:
-                    i += 1
-                    try:
-                        blue_filename = blue_header['RSS_FILE ' + str(i)]
-                    except KeyError:
-                        break
-                    red_filename = (blue_filename[:5] + '2' + 
-                                    blue_filename[6:10] + 'sci.fits')
-                    blue_frame_path = glob(
-                        mngr.abs_root+'/reduced/*/*/*/*/*/'+
-                        blue_filename)[0]
-                    red_frame_path = glob(
-                        mngr.abs_root+'/reduced/*/*/*/*/*/'+
-                        red_filename)[0]
-                    frame[-1].append((blue_frame_path, red_frame_path))
+                if blue_header['NAME'] != blue_header['STDNAME']:
+                    result.append((blue_path, red_path))
+                    i = 0
+                    frame.append([])
+                    while True:
+                        i += 1
+                        try:
+                            blue_filename = blue_header['RSS_FILE ' + str(i)]
+                        except KeyError:
+                            break
+                        red_filename = (blue_filename[:5] + '2' + 
+                                        blue_filename[6:10] + 'sci.fits')
+                        blue_frame_path = glob(
+                            mngr.abs_root+'/reduced/*/*/*/*/*/'+
+                            blue_filename)[0]
+                        red_frame_path = glob(
+                            mngr.abs_root+'/reduced/*/*/*/*/*/'+
+                            red_filename)[0]
+                        frame[-1].append((blue_frame_path, red_frame_path))
     return result, frame
 
 def red_cube_path(blue_path):
