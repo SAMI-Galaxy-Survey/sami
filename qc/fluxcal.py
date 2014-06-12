@@ -199,8 +199,8 @@ def get_sdss_galaxy_mags(galaxy_file_pair_list):
     print """SELECT 
    p.objID, p.ra, p.dec,
    dbo.fPhotoTypeN(p.type) as type,
-   p.psfMag_u, p.psfMagErr_u, p.psfMag_g, p.psfMagErr_g, p.psfMag_r,
-   p.psfMagErr_r, p.psfMag_i, p.psfMagErr_i, p.psfMag_z, p.psfMagErr_z 
+   p.modelMag_u, p.modelMagErr_u, p.modelMag_g, p.modelMagErr_g, p.modelMag_r,
+   p.modelMagErr_r, p.modelMag_i, p.modelMagErr_i, p.modelMag_z, p.modelMagErr_z 
 FROM #x x, #upload u, PhotoTag p
 WHERE u.up_id = x.up_id and x.objID=p.objID 
 ORDER BY x.up_id"""
@@ -223,8 +223,18 @@ def stellar_mags_cubes(file_pair_list, n_cpu=1):
     if n_cpu != 1:
         pool.close()
     return mag_cube
-    
-def stellar_mags_frames(frame_pair_list_list):
+
+def read_stellar_mags_cubes(file_pair_list):
+    """
+    Return pre-measured stellar magnitudes from SAMI datacubes.
+    """
+    mag_cube = []
+    for file_pair in file_pair_list:
+        header = pf.getheader(file_pair[0])
+        mag_cube.append((header['MAGG'], header['MAGR']))
+    return mag_cube
+
+def read_stellar_mags_frames(frame_pair_list_list):
     """
     Return stellar magnitudes as measured by SAMI (via interpolation),
     for the input files.
