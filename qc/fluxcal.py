@@ -234,8 +234,14 @@ def read_stellar_mags_cubes(file_pair_list, verbose=True):
     for file_pair in file_pair_list:
         if verbose:
             print 'Reading magnitudes from', os.path.basename(file_pair[0])
-        header = pf.getheader(file_pair[0])
-        mag_cube.append((header['MAGG'], header['MAGR']))
+        hdulist = pf.open(file_pair[0])
+        magg = hdulist[0].header['MAGG']
+        # Early versions wrote MAGR to the wrong header, so have to check both
+        try:
+            magr = hdulist[0].header['MAGR']
+        except KeyError:
+            magr = hdulist[1].header['MAGR']
+        mag_cube.append((magg, magr))
     return mag_cube
 
 def read_stellar_mags_frames(frame_pair_list_list, verbose=True):
@@ -292,7 +298,7 @@ def stellar_mags_cube_pair(file_pair, sum_cubes=True, save=False):
         for path in file_pair:
             hdulist = pf.open(path, 'update')
             hdulist[0].header['MAGG'] = (mag_g, 'g mag from summed cube')
-            hdulist[1].header['MAGR'] = (mag_r, 'r mag from summed cube')
+            hdulist[0].header['MAGR'] = (mag_r, 'r mag from summed cube')
             hdulist.flush()
             hdulist.close()
     return mag_g, mag_r
