@@ -17,7 +17,7 @@ def compare_star_field(path_pair, output=None):
         pf.PrimaryHDU(result).writeto(output)
     return result
 
-def snr_in_all_tellurics(mngr_list):
+def snr_in_all_tellurics(mngr_list, verbose=True):
     """Return array of S/N in telluric region in star in each frame."""
     telluric_limits = [[6850, 6960],
                        [7130, 7360],
@@ -31,6 +31,8 @@ def snr_in_all_tellurics(mngr_list):
         for fits in mngr.files(ndf_class='MFOBJECT', telluric_corrected=True,
                                min_exposure=900.0, ccd='ccd_2', name='main',
                                do_not_use=False):
+            if verbose:
+                print 'Measuring telluric SNR in', fits.filename
             telluric_data = pf.getdata(fits.telluric_path, 'FLUX_CALIBRATION')
             corrected_data = pf.getdata(fits.telluric_path)
             corrected_noise = np.sqrt(
@@ -77,4 +79,3 @@ def process_star_field(path_pair_in, path_pair_out):
         hdu_name = 'FLUX_CALIBRATION_{:02d}'.format(i)
         telluric.derive_transfer_function(path_pair_out, use_probe=i,
                                           hdu_name=hdu_name)
-    
