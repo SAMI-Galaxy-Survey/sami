@@ -225,7 +225,16 @@ CHECK_DATA = {
 # Extra priority for checking re-reductions
 PRIORITY_RECENT = 100
 
-SDSS_STELLAR_MAGS_PATH = './sdss_stellar_mags.csv'
+STELLAR_MAGS_FILES = [
+    ('standards/secondary/APMCC_0917_STARS.txt', 'ATLAS'),
+    ('standards/secondary/Abell_3880_STARS.txt', 'ATLAS'),
+    ('standards/secondary/Abell_4038_STARS.txt', 'ATLAS'),
+    ('standards/secondary/EDCC_0442_STARS.txt', 'ATLAS'),
+    ('standards/secondary/Abell_0085.fstarcat.txt', 'SDSS_cluster'),
+    ('standards/secondary/Abell_0119.fstarcat.txt', 'SDSS_cluster'),
+    ('standards/secondary/Abell_0168.fstarcat.txt', 'SDSS_cluster'),
+    ('standards/secondary/Abell_2399.fstarcat.txt', 'SDSS_cluster'),
+    ('standards/secondary/sdss_stellar_mags.csv', 'SDSS_GAMA')]
 
 class Manager:
     """Object for organising and reducing SAMI data.
@@ -1463,11 +1472,14 @@ class Manager:
             object_path_pair_list = [
                 pair for pair in object_path_pair_list if None not in pair]
             stellar_mags_cube_pair(star_path_pair, save=True)
-            found = assign_true_mag(star_path_pair, star)
+            catalogue = read_stellar_mags()
+            found = assign_true_mag(star_path_pair, star, catalogue=catalogue)
             if found:
                 scale = scale_cube_pair_to_mag(star_path_pair)
                 for object_path_pair in object_path_pair_list:
                     scale_cube_pair(object_path_pair, scale)
+            else:
+                print 'No photometric data found for', star
         return
             
     def gzip_cubes(self, overwrite=False, min_exposure=599.0, name='main',
@@ -3087,12 +3099,13 @@ def gzip_wrapper(path):
 #         time.sleep(1); current_time = time.time()
 #     print "finishing", variable
 
-def assign_true_mag(path_pair, name):
+def assign_true_mag(path_pair, name, catalogue=None):
     """Find the magnitudes in a catalogue and save them to the header."""
-    sdss_catalogue = read_sdss_mags()
-    if name in sdss_catalogue:
-        mag_g = sdss_catalogue[name]['g']
-        mag_r = sdss_catalogue[name]['r']
+    if catalogue is None:
+        catalogue = read_stellar_mags()
+    if name in catalogue:
+        mag_g = catalogue[name]['g']
+        mag_r = catalogue[name]['r']
     else:
         return False
     for path in path_pair:
@@ -3103,15 +3116,37 @@ def assign_true_mag(path_pair, name):
         hdulist.close()
     return True
     
-def read_sdss_mags(path=SDSS_STELLAR_MAGS_PATH):
-    """Read SDSS magnitudes from a CSV file."""
-    names = ('name', 'obj_id', 'ra', 'dec', 'type', 'u', 'sig_u',
-             'g', 'sig_g', 'r', 'sig_r', 'i', 'sig_i', 'z', 'sig_z')
-    formats = ('S20', 'S30', 'f8', 'f8', 'S10', 'f8', 'f8',
-               'f8', 'f8', 'f8', 'f8', 'f8', 'f8', 'f8', 'f8')
-    data = np.loadtxt(path, skiprows=1, delimiter=',',
-                      dtype={'names': names, 'formats': formats})
-    data_dict = {line['name']: line for line in data}
+def read_stellar_mags():
+    """Read stellar magnitudes from the various catalogues available."""
+    data_dict = {}
+    for (path, catalogue_type) in STELLAR_MAGS_FILES:
+        if catalogue_type == 'ATLAS':
+            names = ('PHOT_ID', 'ra', 'dec', 'u', 'g', 'r', 'i', 'z',
+                     'sigma', 'radius')
+            formats = ('S20', 'f8', 'f8', 'f8', 'f8', 'f8', 'f8', 'f8',
+                       'f8', 'f8')
+            skiprows = 2
+            delimiter = None
+            name_func = lambda d: d['PHOT_ID']
+        elif catalogue_type == 'SDSS_cluster':
+            names = ('obj_id', 'ra', 'dec', 'u', 'g', 'r', 'i', 'z',
+                     'priority')
+            formats = ('S30', 'f8', 'f8', 'f8', 'f8', 'f8', 'f8', 'f8', 'i')
+            skiprows = 0
+            delimiter = None
+            name_func = lambda d: '888' + d['obj_id'][-9:]
+        elif catalogue_type == 'SDSS_GAMA':
+            names = ('name', 'obj_id', 'ra', 'dec', 'type', 'u', 'sig_u',
+                     'g', 'sig_g', 'r', 'sig_r', 'i', 'sig_i', 'z', 'sig_z')
+            formats = ('S20', 'S30', 'f8', 'f8', 'S10', 'f8', 'f8',
+                       'f8', 'f8', 'f8', 'f8', 'f8', 'f8', 'f8', 'f8')
+            skiprows = 1
+            delimiter = ','
+            name_func = lambda d: d['name']
+        data = np.loadtxt(path, skiprows=skiprows, delimiter=delimiter,
+                          dtype={'names': names, 'formats': formats})
+        new_data_dict = {name_func(line): line for line in data}
+        data_dict.update(new_data_dict)
     return data_dict
 
 class MatchException(Exception):
