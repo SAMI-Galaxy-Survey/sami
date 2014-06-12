@@ -209,7 +209,7 @@ ORDER BY x.up_id"""
     print 'Put the result somewhere safe.'
     return
 
-def stellar_mags_cubes(file_pair_list, n_cpu=1):
+def stellar_mags_cubes(file_pair_list, n_cpu=None, verbose=True):
     """
     Return stellar magnitudes as measured by SAMI (via interpolation),
     for the datacubes.
@@ -219,22 +219,26 @@ def stellar_mags_cubes(file_pair_list, n_cpu=1):
     else:
         pool = multiprocessing.Pool(n_cpu)
         _map = pool.map
+    if verbose:
+        print 'Measuring magnitudes for all files'
     mag_cube = _map(stellar_mags_cube_pair, file_pair_list)
     if n_cpu != 1:
         pool.close()
     return mag_cube
 
-def read_stellar_mags_cubes(file_pair_list):
+def read_stellar_mags_cubes(file_pair_list, verbose=True):
     """
     Return pre-measured stellar magnitudes from SAMI datacubes.
     """
     mag_cube = []
     for file_pair in file_pair_list:
+        if verbose:
+            print 'Reading magnitudes from', os.path.basename(file_pair[0])
         header = pf.getheader(file_pair[0])
         mag_cube.append((header['MAGG'], header['MAGR']))
     return mag_cube
 
-def read_stellar_mags_frames(frame_pair_list_list):
+def read_stellar_mags_frames(frame_pair_list_list, verbose=True):
     """
     Return stellar magnitudes as measured by SAMI (via interpolation),
     for the input files.
@@ -243,11 +247,13 @@ def read_stellar_mags_frames(frame_pair_list_list):
     for frame_pair_list in frame_pair_list_list:
         mag_frame.append([])
         for frame_pair in frame_pair_list:
+            if verbose:
+                print 'Reading magnitudes from', os.path.basename(frame_pair[0])
             flux, noise, wavelength = read_stellar_spectrum(frame_pair)
             mag_frame[-1].append(measure_mags(flux, noise, wavelength))
     return mag_frame
 
-def stellar_mags(mngr, n_cpu=1, verbose=True):
+def stellar_mags(mngr, n_cpu=1):
     """
     Return stellar magnitudes as measured by SAMI (via interpolation), for
     the datacubes and the input files.
@@ -291,7 +297,7 @@ def stellar_mags_cube_pair(file_pair, sum_cubes=True, save=False):
             hdulist.close()
     return mag_g, mag_r
 
-def list_star_files(mngr, gzip=True):
+def list_star_files(mngr, gzip=True, verbose=True):
     """
     Return a list of tuples of paths to star datacubes, blue and red,
     as well as a list of lists of tuples of paths to individual frames.
@@ -315,6 +321,8 @@ def list_star_files(mngr, gzip=True):
             if os.path.exists(red_path):
                 blue_header = pf.getheader(blue_path)
                 if blue_header['NAME'] == blue_header['STDNAME']:
+                    if verbose:
+                        print 'Found star file:', os.path.basename(blue_path)
                     result.append((blue_path, red_path))
                     i = 0
                     frame.append([])
@@ -335,7 +343,7 @@ def list_star_files(mngr, gzip=True):
                         frame[-1].append((blue_frame_path, red_frame_path))
     return result, frame
     
-def list_galaxy_files(mngr, gzip=True):
+def list_galaxy_files(mngr, gzip=True, verbose=True):
     """
     Return a list of tuples of paths to galaxy datacubes, blue and red,
     as well as a list of lists of tuples of paths to individual frames.
@@ -359,6 +367,8 @@ def list_galaxy_files(mngr, gzip=True):
             if os.path.exists(red_path):
                 blue_header = pf.getheader(blue_path)
                 if blue_header['NAME'] != blue_header['STDNAME']:
+                    if verbose:
+                        print 'Found galaxy file:', os.path.basename(blue_path)
                     result.append((blue_path, red_path))
                     i = 0
                     frame.append([])
