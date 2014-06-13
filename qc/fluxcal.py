@@ -479,7 +479,11 @@ def sum_spectrum_from_cube(file_pair, radius):
     # Replace the hard-coded numbers with something smarter
     hdulist_pair = [pf.open(path) for path in file_pair]
     x, y = np.meshgrid(0.5*(np.arange(50)-24.5), 0.5*(np.arange(50)-24.5))
-    keep_x, keep_y = np.where(x**2 + y**2 < radius**2)
+    weight_map = np.nansum(np.array((hdulist_pair[0]['WEIGHT'].data,
+                                     hdulist_pair[1]['WEIGHT'].data)), (0, 1))
+    cen_x = np.nansum(x * weight_map) / np.nansum(weight_map)
+    cen_y = np.nansum(y * weight_map) / np.nansum(weight_map)
+    keep_x, keep_y = np.where((x - cen_x)**2 + (y - cen_y)**2 < radius**2)
     flux_cube = np.vstack((hdulist_pair[0][0].data, hdulist_pair[1][0].data))
     variance_cube = np.vstack((hdulist_pair[0]['VARIANCE'].data,
                                hdulist_pair[1]['VARIANCE'].data))
