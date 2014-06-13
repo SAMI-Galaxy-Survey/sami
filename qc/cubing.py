@@ -53,7 +53,8 @@ def measure_dar(file_pair, wavelength=(4200.0, 7100.0), n_pix=100):
     x_1, y_1, sigma_x_1, sigma_y_1 = measure_position_at_wavelength(
         cube, variance, wavelength_array, wavelength[1], n_pix)
     delta = np.sqrt((x_0 - x_1)**2 + (y_0 - y_1)**2)
-    if sigma_x_0 is None or sigma_y_0 is None:
+    if (sigma_x_0 is None or sigma_x_1 is None or
+            sigma_y_0 is None or sigma_y_1 is None):
         sigma_delta = None
     else:
         sigma_delta = (
