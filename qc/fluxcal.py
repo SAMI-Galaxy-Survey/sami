@@ -463,7 +463,7 @@ def extract_stellar_spectrum(file_pair, variable_psf=False, elliptical=False):
         wavelength = np.hstack((get_coords(pf.getheader(file_pair[0]), 3),
                                 get_coords(pf.getheader(file_pair[1]), 3)))
     else:
-        hdulist_pair = [pf.open(path) for path in path_pair]
+        hdulist_pair = [pf.open(path) for path in file_pair]
         flux_cube = np.vstack([
             hdulist[0].data for hdulist in hdulist_pair])
         noise_cube = np.sqrt(np.vstack([
