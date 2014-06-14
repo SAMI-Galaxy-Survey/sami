@@ -454,7 +454,8 @@ def extract_stellar_spectrum(file_pair, variable_psf=False, elliptical=False):
         variance_chunked.shape = (n_wave, n_pix, n_pix)
         noise_chunked = np.sqrt(variance_chunked)
         psf_params, sigma_params = fit_moffat_to_chunks(
-            flux_chunked, variance_chunked, wavelength_chunked)
+            flux_chunked, variance_chunked, wavelength_chunked,
+            elliptical=elliptical)
         flux_cube = np.vstack((pf.getdata(file_pair[0]),
                                pf.getdata(file_pair[1])))
         variance_cube = np.vstack((pf.getdata(file_pair[0], 'VARIANCE'), 
@@ -484,7 +485,7 @@ def extract_stellar_spectrum(file_pair, variable_psf=False, elliptical=False):
         else:
             psf_params_i = psf_params
         flux[i_pix], noise[i_pix] = scale_moffat_to_image(
-            image_slice, noise_slice, psf_params_i)
+            image_slice, noise_slice, psf_params_i, elliptical=elliptical)
     return flux, noise, wavelength, psf_params, sigma_params
 
 def extract_galaxy_spectrum(file_pair):
