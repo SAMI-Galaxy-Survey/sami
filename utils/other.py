@@ -557,7 +557,8 @@ def replace_all_xsym_link(directory='.'):
                 pass
     return
 
-def clip_spectrum(flux, noise, wavelength, limit_noise=0.35, limit_flux=10.0):
+def clip_spectrum(flux, noise, wavelength, limit_noise=0.35, limit_flux=10.0,
+                  limit_noise_abs=100.0):
     """Return a "good" array, clipping mostly based on discrepant noise."""
     filter_width_noise = 21
     filter_width_flux = 21
@@ -570,9 +571,13 @@ def clip_spectrum(flux, noise, wavelength, limit_noise=0.35, limit_flux=10.0):
     noise_ratio = np.abs((noise - filtered_noise) / filtered_noise)
     filtered_flux = median_filter(flux, filter_width_flux)
     flux_ratio = np.abs((flux - filtered_flux) / filtered_noise)
+    # This is mostly to get rid of very bad pixels at edges of good regions
+    # The presence of NaNs is screwing up the median filter in theses places
+    median_noise = np.median(noise)
     good = (np.isfinite(flux) &
             np.isfinite(noise) &
             (noise_ratio < limit_noise) &
-            (flux_ratio < limit_flux))
+            (flux_ratio < limit_flux) &
+            (noise < (limit_noise_abs * median_noise)))
     return good
 
