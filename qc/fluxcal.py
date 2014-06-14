@@ -471,7 +471,7 @@ def extract_stellar_spectrum(file_pair, variable_psf=False, elliptical=False):
         wavelength = np.hstack([
             get_coords(hdulist[0].header, 3) for hdulist in hdulist_pair])
         flux_image, noise_image, wavelength_image = collapse_cube(
-            flux, noise, wavelength)
+            flux_cube, noise_cube, wavelength)
         psf_params, psf_sigma = fit_moffat_to_image(
             flux_image, noise_image, elliptical=elliptical)
     flux = np.zeros(len(wavelength))
