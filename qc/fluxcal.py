@@ -441,33 +441,50 @@ class IFUDuck(object):
                                        get_coords(hdulist_1[0].header, 3)))
         self.naxis1 = len(self.lambda_range)
 
-def extract_stellar_spectrum(file_pair):
+def extract_stellar_spectrum(file_pair, variable_psf=False, elliptical=False):
     """Return the spectrum of a star, assumed to be at the centre."""
-    flux_chunked, variance_chunked, wavelength_chunked = (
-        fluxcal2.chunk_data(IFUDuck(file_pair)))
-    flux_chunked = flux_chunked.T
-    variance_chunked = variance_chunked.T
-    n_pix = int(np.sqrt(flux_chunked.shape[1]))
-    n_wave = flux_chunked.shape[0]
-    flux_chunked.shape = (n_wave, n_pix, n_pix)
-    variance_chunked.shape = (n_wave, n_pix, n_pix)
-    noise_chunked = np.sqrt(variance_chunked)
-    psf_params, sigma_params = fit_moffat_to_chunks(
-        flux_chunked, variance_chunked, wavelength_chunked)
-    flux_cube = np.vstack((pf.getdata(file_pair[0]), pf.getdata(file_pair[1])))
-    variance_cube = np.vstack((pf.getdata(file_pair[0], 'VARIANCE'), 
-                               pf.getdata(file_pair[1], 'VARIANCE')))
-    noise_cube = np.sqrt(variance_cube)
-    wavelength = np.hstack((get_coords(pf.getheader(file_pair[0]), 3),
-                            get_coords(pf.getheader(file_pair[1]), 3)))
+    if variable_psf:
+        flux_chunked, variance_chunked, wavelength_chunked = (
+            fluxcal2.chunk_data(IFUDuck(file_pair)))
+        flux_chunked = flux_chunked.T
+        variance_chunked = variance_chunked.T
+        n_pix = int(np.sqrt(flux_chunked.shape[1]))
+        n_wave = flux_chunked.shape[0]
+        flux_chunked.shape = (n_wave, n_pix, n_pix)
+        variance_chunked.shape = (n_wave, n_pix, n_pix)
+        noise_chunked = np.sqrt(variance_chunked)
+        psf_params, sigma_params = fit_moffat_to_chunks(
+            flux_chunked, variance_chunked, wavelength_chunked)
+        flux_cube = np.vstack((pf.getdata(file_pair[0]),
+                               pf.getdata(file_pair[1])))
+        variance_cube = np.vstack((pf.getdata(file_pair[0], 'VARIANCE'), 
+                                   pf.getdata(file_pair[1], 'VARIANCE')))
+        noise_cube = np.sqrt(variance_cube)
+        wavelength = np.hstack((get_coords(pf.getheader(file_pair[0]), 3),
+                                get_coords(pf.getheader(file_pair[1]), 3)))
+    else:
+        hdulist_pair = [pf.open(path) for path in path_pair]
+        flux_cube = np.vstack([
+            hdulist[0].data for hdulist in hdulist_pair])
+        noise_cube = np.sqrt(np.vstack([
+            hdulist['VARIANCE'].data for hdulist in hdulist_pair]))
+        wavelength = np.hstack([
+            get_coords(hdulist[0].header, 3) for hdulist in hdulist_pair])
+        flux_image, noise_image, wavelength_image = collapse_cube(
+            flux, noise, wavelength)
+        psf_params, psf_sigma = fit_moffat_to_image(
+            flux_image, noise_image, elliptical=elliptical)
     flux = np.zeros(len(wavelength))
     noise = np.zeros(len(wavelength))
     for i_pix, (image_slice, noise_slice, wavelength_slice) in enumerate(zip(
             flux_cube, noise_cube, wavelength)):
+        if variable_psf:
+            psf_params_i = psf_params_at_slice(
+                psf_params, i_pix, wavelength_slice, copy_intensity=False)
+        else:
+            psf_params_i = psf_params
         flux[i_pix], noise[i_pix] = scale_moffat_to_image(
-            image_slice, noise_slice,
-            psf_params_at_slice(psf_params, i_pix, wavelength_slice,
-                                copy_intensity=False))
+            image_slice, noise_slice, psf_params_i)
     return flux, noise, wavelength, psf_params, sigma_params
 
 def extract_galaxy_spectrum(file_pair):
