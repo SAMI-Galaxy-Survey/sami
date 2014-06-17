@@ -285,7 +285,7 @@ def stellar_mags(mngr, n_cpu=1):
         pool.close()
     return file_pair_list, frame_pair_list_list, mag_cube, mag_frame
     
-def stellar_mags_cube_pair(file_pair, sum_cubes=True, save=False):
+def stellar_mags_cube_pair(file_pair, sum_cubes=False, save=False):
     """Return stellar mags for a single pair of datacubes."""
     if sum_cubes:
         flux, noise, wavelength = (
@@ -293,12 +293,21 @@ def stellar_mags_cube_pair(file_pair, sum_cubes=True, save=False):
     else:
         flux, noise, wavelength, psf_params, sigma_params = (
             extract_stellar_spectrum(file_pair))
+    try:
+        old_scale = pf.getval(file_pair[0], 'RESCALE')
+    except KeyError:
+        old_scale = 1
+    flux /= old_scale
+    noise /= old_scale
     mag_g, mag_r = measure_mags(flux, noise, wavelength)
     if save:
         for path in file_pair:
             hdulist = pf.open(path, 'update')
-            hdulist[0].header['MAGG'] = (mag_g, 'g mag from summed cube')
-            hdulist[0].header['MAGR'] = (mag_r, 'r mag from summed cube')
+            hdulist[0].header['MAGG'] = (mag_g, 'g mag before scaling')
+            hdulist[0].header['MAGR'] = (mag_r, 'r mag before scaling')
+            if 'MAGR' in hdulist[1].header:
+                # Covering an old bug that was putting MAGR in the wrong place
+                del hdulist[1].header['MAGR']
             hdulist.flush()
             hdulist.close()
     return mag_g, mag_r
