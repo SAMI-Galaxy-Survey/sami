@@ -719,7 +719,7 @@ def collapse_cube(flux, noise, wavelength, good=None, n_band=1):
     wavelength_out = np.squeeze(wavelength_out)
     return flux_out, noise_out, wavelength_out
 
-def fit_moffat_to_image(image, noise, elliptical=True):
+def fit_moffat_to_image(image, noise, elliptical=True, background=False):
     """Fit a Moffat profile to an image, optionally allowing ellipticity."""
     fit_pix = np.isfinite(image) & np.isfinite(noise)
     coords = np.meshgrid(np.arange(image.shape[0]), 
@@ -733,9 +733,12 @@ def fit_moffat_to_image(image, noise, elliptical=True):
         p0 = [alpha0, alpha0, 0.0, beta0, x00, y00, intensity0]
     else:
         p0 = [alpha0, beta0, x00, y00, intensity0]
+    if background:
+        p0.append(0.0)
     def fit_function(p):
         model = moffat_integrated(
-            coords[0], coords[1], p, elliptical=elliptical, good=fit_pix)
+            coords[0], coords[1], p, elliptical=elliptical, 
+            background=background, good=fit_pix)
         return ((model - image[fit_pix]) / noise[fit_pix])
     result = leastsq(fit_function, p0, full_output=True)
     params = result[0]
@@ -825,8 +828,8 @@ def scale_moffat_to_image(image, noise, params, elliptical=True):
     sigma = np.sqrt(result[1][0, 0] / reduced_chi2)
     return intensity, sigma
 
-def moffat_integrated(x, y, params, elliptical=True, good=None, pix_size=1.0,
-                      n_sub=10):
+def moffat_integrated(x, y, params, elliptical=True, background=False,
+                      good=None, pix_size=1.0, n_sub=10):
     """Return a Moffat profile, integrated over pixels."""
     if good is None:
         good = np.ones(x.size, bool)
@@ -840,11 +843,17 @@ def moffat_integrated(x, y, params, elliptical=True, good=None, pix_size=1.0,
              np.outer(np.ones(n_pix), np.outer(delta, np.ones(n_sub))))
     y_sub = (np.outer(y_flat, np.ones(n_sub**2)) + 
              np.outer(np.ones(n_pix), np.outer(np.ones(n_sub), delta)))
-    if elliptical:
-        moffat_sub = moffat_elliptical(x_sub, y_sub, *params)
+    if background:
+        params_sub = params[:-1]
     else:
-        moffat_sub = moffat_circular(x_sub, y_sub, *params)
+        params_sub = params
+    if elliptical:
+        moffat_sub = moffat_elliptical(x_sub, y_sub, *params_sub)
+    else:
+        moffat_sub = moffat_circular(x_sub, y_sub, *params_sub)
     moffat = np.mean(moffat_sub, 1)
+    if background:
+        moffat += params[-1]
     return moffat
 
 
