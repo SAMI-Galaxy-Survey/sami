@@ -56,6 +56,6 @@ def compare_variance(path):
     var_wrong = np.zeros(len(radii))
     for i_rad, radius in enumerate(radii):
         x_keep, y_keep = np.where((x**2 + y**2) < radius**2)
-        var_right[i] = np.median(sum_variance(var, covar, x_keep, y_keep))
-        var_wrong[i] = np.median(np.nansum(var[:, x_keep, y_keep], 1))
+        var_right[i_rad] = np.median(sum_variance(var, covar, x_keep, y_keep))
+        var_wrong[i_rad] = np.median(np.nansum(var[:, x_keep, y_keep], 1))
     return var_right, var_wrong
