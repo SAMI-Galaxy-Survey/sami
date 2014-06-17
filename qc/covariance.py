@@ -41,3 +41,21 @@ def sum_variance(variance, covariance, x=None, y=None):
                 good = np.isfinite(variance_extra)
                 variance_out[good] += variance_extra[good]
     return variance_out
+
+def compare_variance_list(path_pair_list):
+    return np.array([[compare_variance(path) for path in path_pair]
+                     for path_pair in path_pair_list])
+
+def compare_variance(path):
+    """Compare variance with and without accounting for covariance."""
+    var = pf.getdata(path, 'VARIANCE')
+    covar = read_full_covariance(path)
+    x, y = np.meshgrid(0.5*(np.arange(50)-24.5), 0.5*(np.arange(50)-24.5))
+    radii = 0.5 * (np.arange(15) + 1)
+    var_right = np.zeros(len(radii))
+    var_wrong = np.zeros(len(radii))
+    for i_rad, radius in enumerate(radii):
+        x_keep, y_keep = np.where((x**2 + y**2) < radius**2)
+        var_right[i] = np.median(sum_variance(var, covar, x_keep, y_keep))
+        var_wrong[i] = np.median(np.nansum(var[:, x_keep, y_keep], 1))
+    return var_right, var_wrong
