@@ -1369,7 +1369,12 @@ class Manager:
                 'PS_spec_file': PS_spec_file,
                 'model_name': model_name_out})
         # Now send this list to as many cores as we are using
+        # Limit this to 10, because of semaphore issues I don't understand
+        old_n_cpu = self.n_cpu
+        if old_n_cpu > 10:
+            self.n_cpu = 10
         done_list = self.map(telluric_correct_pair, inputs_list)
+        self.n_cpu = old_n_cpu
         # Mark telluric corrections as not checked
         fits_2_list = [inputs['fits_2'] for inputs, done in 
                        zip(inputs_list, done_list) if done]
