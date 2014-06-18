@@ -308,8 +308,6 @@ def stellar_mags_cube_pair(file_pair, sum_cubes=False, save=False):
             if 'MAGR' in hdulist[1].header:
                 # Covering an old bug that was putting MAGR in the wrong place
                 del hdulist[1].header['MAGR']
-            hdulist.flush()
-            hdulist.close()
             if not sum_cubes:
                 alpha = 0.5 * psf_params[0]
                 beta = psf_params[1]
@@ -320,6 +318,8 @@ def stellar_mags_cube_pair(file_pair, sum_cubes=False, save=False):
                     beta, 'PSF parameter: beta')
                 hdulist[0].header['PSFFWHM'] = (
                     fwhm, 'FWHM (arcsec) of PSF')
+            hdulist.flush()
+            hdulist.close()
     return mag_g, mag_r
 
 def list_star_files(mngr, gzip=True, verbose=True):
