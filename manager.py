@@ -1444,6 +1444,7 @@ class Manager:
             'field_id', ccd='ccd_1', ndf_class='MFOBJECT', do_not_use=False,
             reduced=True, min_exposure=min_exposure, name=name, **kwargs)
         input_list = []
+        catalogue = read_stellar_mags()
         for (field_id, ), fits_list in groups.items():
             table = pf.getdata(fits_list[0].reduced_path, 'FIBRES_IFU')
             objects = table['NAME'][table['TYPE'] == 'P']
@@ -1476,15 +1477,9 @@ class Manager:
                 for name in objects]
             object_path_pair_list = [
                 pair for pair in object_path_pair_list if None not in pair]
-            stellar_mags_cube_pair(star_path_pair, save=True)
-            catalogue = read_stellar_mags()
-            found = assign_true_mag(star_path_pair, star, catalogue=catalogue)
-            if found:
-                scale = scale_cube_pair_to_mag(star_path_pair)
-                for object_path_pair in object_path_pair_list:
-                    scale_cube_pair(object_path_pair, scale)
-            else:
-                print 'No photometric data found for', star
+            input_list.append((star_path_pair, object_path_pair_list, star,
+                               catalogue))
+        self.map(scale_cubes_field, input_list)
         return
             
     def gzip_cubes(self, overwrite=False, min_exposure=599.0, name='main',
@@ -3083,6 +3078,21 @@ def run_2dfdr_single_wrapper(group):
         print message
         return False
     return True
+
+@safe_for_multiprocessing
+def scale_cubes_field(group):
+    """Scale a field to the correct magnitude."""
+    star_path_pair, object_path_pair_list, star, catalogue = group
+    print 'Scaling field with star', star
+    stellar_mags_cube_pair(star_path_pair, save=True)
+    found = assign_true_mag(star_path_pair, star, catalogue=catalogue)
+    if found:
+        scale = scale_cube_pair_to_mag(star_path_pair)
+        for object_path_pair in object_path_pair_list:
+            scale_cube_pair(object_path_pair, scale)
+    else:
+        print 'No photometric data found for', star
+    return
 
 @safe_for_multiprocessing
 def gzip_wrapper(path):
