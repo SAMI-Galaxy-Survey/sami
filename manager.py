@@ -1561,8 +1561,6 @@ class Manager:
     def tdfdr_options(self, fits, external_throughput=False, tlm=False):
         """Set the 2dfdr reduction options for this file."""
         options = []
-        # For now, setting all files to use GAUSS extraction
-        options.extend(['-EXTR_OPERATION', 'GAUSS'])
         if fits.ccd == 'ccd_2':
             if fits.exposure >= self.min_exposure_for_sky_wave:
                 # Adjust wavelength calibration of red frames using sky lines
