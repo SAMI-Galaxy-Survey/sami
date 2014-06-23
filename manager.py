@@ -1640,7 +1640,9 @@ class Manager:
                     continue
                 elif match_class == 'thput':
                     # Try to find a suitable object frame instead
-                    filename_match = self.match_link(fits, 'thput_object')
+                    # filename_match = self.match_link(fits, 'thput_object')
+                    # Try to find a suitable twilight frame instead
+                    filename_match = self.match_link(fits, 'thput_sky')
                     if filename_match is None:
                         # Still nothing
                         print ('Warning: Offsky (or substitute) frame not '
@@ -1977,8 +1979,8 @@ class Manager:
         fflat_loose      -- As fflat, but with less strict criteria
         fflat_flap       -- As fflat, but from the flap lamp
         fflat_flap_loose -- As fflat_flap, but with less strict criteria
-        thput            -- Find a reduced offset sky (twilight) file
-        thput_object     -- As thput, but find a suitable object frame
+        thput            -- Find a reduced long-exposure object file
+        thput_sky        -- As thput, but find an offset sky (twilight) file
         bias             -- Find a combined bias frame
         dark             -- Find a combined dark frame
         lflat            -- Find a combined long-slit flat frame
@@ -2103,7 +2105,7 @@ class Manager:
             reduced = True
             lamp = 'Flap'
             fom = time_difference
-        elif match_class.lower() == 'thput':
+        elif match_class.lower() == 'thput_sky':
             # Find a reduced offset sky field
             ndf_class = 'MFSKY'
             date = fits.date
@@ -2112,7 +2114,7 @@ class Manager:
             ccd = fits.ccd
             reduced = True
             fom = recent_reduction
-        elif match_class.lower() == 'thput_object':
+        elif match_class.lower() == 'thput':
             # Find a reduced object field to take the throughput from
             ndf_class = 'MFOBJECT'
             date = fits.date
