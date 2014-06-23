@@ -1218,7 +1218,7 @@ class Manager:
                 continue
             path_list = [fits.reduced_path for fits in group]
             edited_list = make_clipped_thput_files(
-                path_list, overwrite=overwrite)
+                path_list, overwrite=overwrite, edit_all=True)
             for fits, edited in zip(group, edited_list):
                 if edited:
                     rereduce.append(fits)
