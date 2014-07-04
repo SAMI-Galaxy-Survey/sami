@@ -460,6 +460,10 @@ class IFUDuck(object):
         self.lambda_range = np.hstack((get_coords(hdulist_0[0].header, 3),
                                        get_coords(hdulist_1[0].header, 3)))
         self.naxis1 = len(self.lambda_range)
+        hdulist_0.close()
+        hdulist_1.close()
+        del hdulist_0
+        del hdulist_1
 
 def extract_stellar_spectrum(file_pair, variable_psf=False, elliptical=False,
                              background=False):
@@ -477,13 +481,13 @@ def extract_stellar_spectrum(file_pair, variable_psf=False, elliptical=False,
         psf_params, sigma_params = fit_moffat_to_chunks(
             flux_chunked, variance_chunked, wavelength_chunked,
             elliptical=elliptical)
-        flux_cube = np.vstack((pf.getdata(file_pair[0]),
-                               pf.getdata(file_pair[1])))
-        variance_cube = np.vstack((pf.getdata(file_pair[0], 'VARIANCE'), 
-                                   pf.getdata(file_pair[1], 'VARIANCE')))
-        noise_cube = np.sqrt(variance_cube)
-        wavelength = np.hstack((get_coords(pf.getheader(file_pair[0]), 3),
-                                get_coords(pf.getheader(file_pair[1]), 3)))
+        hdulist_pair = [pf.open(path) for path in file_pair]
+        flux_cube = np.vstack([
+            hdulist[0].data for hdulist in hdulist_pair])
+        noise_cube = np.sqrt(np.vstack([
+            hdulist['VARIANCE'].data for hdulist in hdulist_pair]))
+        wavelength = np.hstack([
+            get_coords(hdulist[0].header, 3) for hdulist in hdulist_pair])
     else:
         hdulist_pair = [pf.open(path) for path in file_pair]
         flux_cube = np.vstack([
@@ -502,6 +506,7 @@ def extract_stellar_spectrum(file_pair, variable_psf=False, elliptical=False,
     if background:
         back = np.zeros(len(wavelength))
         noise_back = np.zeros(len(wavelength))
+    print 'Getting slice-by-slice flux from', os.path.basename(file_pair[0])
     for i_pix, (image_slice, noise_slice, wavelength_slice) in enumerate(zip(
             flux_cube, noise_cube, wavelength)):
         if variable_psf:
