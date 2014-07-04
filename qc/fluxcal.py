@@ -292,7 +292,8 @@ def stellar_mags_cube_pair(file_pair, sum_cubes=False, save=False):
             extract_galaxy_spectrum(file_pair))
     else:
         flux, noise, back, noise_back, wavelength, psf_params, sigma_params = (
-            extract_stellar_spectrum(file_pair, background=True))
+            extract_stellar_spectrum(file_pair, background=True,
+                                     variable_psf=True))
     try:
         old_scale = pf.getval(file_pair[0], 'RESCALE')
     except KeyError:
