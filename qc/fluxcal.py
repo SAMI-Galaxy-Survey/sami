@@ -506,6 +506,8 @@ def extract_stellar_spectrum(file_pair, variable_psf=False, elliptical=False,
         if variable_psf:
             psf_params_i = psf_params_at_slice(
                 psf_params, i_pix, wavelength_slice, copy_intensity=False)
+            if background:
+                psf_params_i.append(0.0)
         else:
             psf_params_i = psf_params
         result = scale_moffat_to_image(
