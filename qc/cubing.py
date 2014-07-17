@@ -62,3 +62,20 @@ def measure_dar(file_pair, wavelength=(4200.0, 7100.0), n_pix=100):
             (2*(y_0 - y_1))**2 * (sigma_y_0**2 + sigma_y_1**2)
             ) / (2 * delta)
     return delta, sigma_delta
+
+def measure_sn_continuum(path, radius=1.0):
+    """
+    Return the mean continuum S/N across the fibres within the radius.
+
+    Radius is given in arcseconds. In each fibre the S/N is defined as the
+    median value across all pixels."""
+    hdulist = pf.open(path)
+    flux = hdulist[0].data
+    noise = np.sqrt(hdulist['VARIANCE'].data)
+    n_x = flux.shape[2]
+    n_y = flux.shape[1]
+    x, y = np.meshgrid(0.5*(np.arange(n_x)-0.5*(n_x-1)),
+                       0.5*(np.arange(n_y)-0.5*(n_y-1)))
+    x_ind, y_ind = np.where((x**2 + y**2) <= radius**2)
+    return np.mean(np.median(flux[:, y_ind, x_ind] /
+                             noise[:, y_ind, x_ind], axis=0))
