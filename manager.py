@@ -226,15 +226,24 @@ CHECK_DATA = {
 PRIORITY_RECENT = 100
 
 STELLAR_MAGS_FILES = [
-    ('standards/secondary/APMCC_0917_STARS.txt', 'ATLAS'),
-    ('standards/secondary/Abell_3880_STARS.txt', 'ATLAS'),
-    ('standards/secondary/Abell_4038_STARS.txt', 'ATLAS'),
-    ('standards/secondary/EDCC_0442_STARS.txt', 'ATLAS'),
-    ('standards/secondary/Abell_0085.fstarcat.txt', 'SDSS_cluster'),
-    ('standards/secondary/Abell_0119.fstarcat.txt', 'SDSS_cluster'),
-    ('standards/secondary/Abell_0168.fstarcat.txt', 'SDSS_cluster'),
-    ('standards/secondary/Abell_2399.fstarcat.txt', 'SDSS_cluster'),
-    ('standards/secondary/sdss_stellar_mags.csv', 'SDSS_GAMA')]
+    ('standards/secondary/APMCC_0917_STARS.txt', 'ATLAS',
+        (0.076, 0.059, 0.041, 0.030, 0.023)),
+    ('standards/secondary/Abell_3880_STARS.txt', 'ATLAS',
+        (0.064, 0.050, 0.034, 0.025, 0.019)),
+    ('standards/secondary/Abell_4038_STARS.txt', 'ATLAS',
+        (0.081, 0.063, 0.044, 0.033, 0.024)),
+    ('standards/secondary/EDCC_0442_STARS.txt', 'ATLAS',
+        (0.071, 0.052, 0.038, 0.029, 0.020)),
+    ('standards/secondary/Abell_0085.fstarcat.txt', 'SDSS_cluster',
+        (0.0, 0.0, 0.0, 0.0, 0.0)),
+    ('standards/secondary/Abell_0119.fstarcat.txt', 'SDSS_cluster',
+        (0.0, 0.0, 0.0, 0.0, 0.0)),
+    ('standards/secondary/Abell_0168.fstarcat.txt', 'SDSS_cluster',
+        (0.0, 0.0, 0.0, 0.0, 0.0)),
+    ('standards/secondary/Abell_2399.fstarcat.txt', 'SDSS_cluster',
+        (0.0, 0.0, 0.0, 0.0, 0.0)),
+    ('standards/secondary/sdss_stellar_mags.csv', 'SDSS_GAMA',
+        (0.0, 0.0, 0.0, 0.0, 0.0))]
 
 class Manager:
     """Object for organising and reducing SAMI data.
@@ -3134,7 +3143,7 @@ def assign_true_mag(path_pair, name, catalogue=None):
 def read_stellar_mags():
     """Read stellar magnitudes from the various catalogues available."""
     data_dict = {}
-    for (path, catalogue_type) in STELLAR_MAGS_FILES:
+    for (path, catalogue_type, extinction) in STELLAR_MAGS_FILES:
         if catalogue_type == 'ATLAS':
             names = ('PHOT_ID', 'ra', 'dec', 'u', 'g', 'r', 'i', 'z',
                      'sigma', 'radius')
@@ -3160,6 +3169,11 @@ def read_stellar_mags():
             name_func = lambda d: d['name']
         data = np.loadtxt(path, skiprows=skiprows, delimiter=delimiter,
                           dtype={'names': names, 'formats': formats})
+        data['u'] += extinction[0]
+        data['g'] += extinction[1]
+        data['r'] += extinction[2]
+        data['i'] += extinction[3]
+        data['z'] += extinction[4]
         new_data_dict = {name_func(line): line for line in data}
         data_dict.update(new_data_dict)
     return data_dict
