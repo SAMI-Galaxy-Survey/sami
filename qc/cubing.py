@@ -77,5 +77,5 @@ def measure_sn_continuum(path, radius=1.0):
     x, y = np.meshgrid(0.5*(np.arange(n_x)-0.5*(n_x-1)),
                        0.5*(np.arange(n_y)-0.5*(n_y-1)))
     x_ind, y_ind = np.where((x**2 + y**2) <= radius**2)
-    return np.mean(np.median(flux[:, y_ind, x_ind] /
-                             noise[:, y_ind, x_ind], axis=0))
+    return np.nanmean(np.median(flux[:, y_ind, x_ind] /
+                                noise[:, y_ind, x_ind], axis=0))
