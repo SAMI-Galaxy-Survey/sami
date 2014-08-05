@@ -172,7 +172,7 @@ import h5py as h5
 import tables
 import astropy.io.fits as pf
 import astropy.io.ascii as ascii
-import os,code
+import os
 import sys
 import astropy.table as astro_table
 
