@@ -7,6 +7,9 @@ Description:
 
 Written: 
   08.10.2013, Iraklis Konstantopoulos. Based on 'db.database'.
+  
+Updated:
+  03.04.2014, Nic Scott - added import_table()
 
 Contact: 
   iraklis@aao.gov.au
@@ -169,8 +172,9 @@ import h5py as h5
 import tables
 import astropy.io.fits as pf
 import astropy.io.ascii as ascii
-import os
+import os,code
 import sys
+import astropy.table as astro_table
 
 """ 
 For commit message: 
@@ -671,6 +675,167 @@ def make_list(dataroot='./', tableout='SAMI_input.lis',
     writeAll = [writeLine(str_in) for str_in in nameList]
 
     f.close()
+
+
+# ~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~
+def import_manytables(inlist,indescription,h5file,version,
+                 overwrite=False,confirm_version=True,verbose=True):
+# ~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~
+    """ Import many tables into the SAMI archive from a list of files."""
+
+
+    # Inlist must contain a list of files and SAMI IDs
+
+    f_list = open(inlist,'r')
+    for line in f_list:
+        infile,id = line.split()
+        try:
+            import_table(infile,indescription,h5file,version,target=id,
+                     overwrite=overwrite,confirm_version=confirm_version,
+                     verbose=verbose)
+        except Exception as e:
+            print e
+            print 'Import failed for '+infile
+            print
+            continue
+        except SystemExit as e:
+            print e
+            print 'Import failed for '+infile
+            print
+            continue
+
+    print
+    print 'Import complete'
+
+# ~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~
+def import_table(infile,indescription,h5file,version,target='',
+               overwrite=False,confirm_version=True,verbose=True):
+# ~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~
+    """ Import a table into the SAMI archive."""
+
+    # Check the hdf5 file exists (else exit)
+    if not os.path.isfile(h5file):
+        raise Exception("Cannot find the nominated HDF5 file ('"+h5file+"'). "+
+                     "Please create a file using the 'create' function")
+
+    # Check both the infile and indescription exist.
+    # Check that the indescription is a valid .txt file (else skip)
+    if not os.path.isfile(infile):
+        raise SystemExit("Cannot find the DMU file ('"+infile+"').")
+    if not os.path.isfile(indescription):
+        raise SystemExit("Cannot find the description file ('"
+                         +indescription+"').")
+    ext = os.path.splitext(indescription)[1]
+    if ext != ".txt":
+        raise SystemExit("Description file ('"+indescription+
+                         "') is not a valid .txt file.")
+
+    # Check h5file is a SAMI DB file
+
+    hdf = h5.File(h5file,'r+')
+
+    if "SAMI" not in hdf.keys():
+        hdf.close()
+        raise SystemExit("The nominated HDF5 file ('"+h5file+"') "+
+                     "is not properly formatted. Please initialise the "+
+                     "filesystem using 'SAMI_DB.format'")
+
+    # Check whether a valid version ID has been specified
+
+    if type(version) is str:  v_numeric = float(version)
+    if type(version) is float: v_numeric = version
+    if not version in hdf['SAMI'].keys():
+        hdf.close()
+        raise SystemExit("An invalid version was specified.")
+
+    # Check whether a SAMI target ID has been specified, otherwise
+    # assume a table of (sub)sample properties has been supplied.
+    # If a SAMI target ID has been specified, check that a group
+    # exists for this target already (else skip)
+    # Set ingroup to the appropriate group
+
+    if target != '':
+        if not target in hdf['SAMI/'+version+'/Target/'].keys():
+            hdf.close()
+            raise SystemExit("No version " + version + " data exists for SAMI ID:"+target+
+                             ". Target-specific data products must be associated with a"+
+                             " target whose SAMI data already exists in the archive.")
+        target_path = '/SAMI/'+version+'/Target/'+target+'/'
+    else:
+        target_path = '/SAMI/'+version+'/tables/'
+
+
+    # Read in contents of indescription into a long
+    # description string and a short description string
+
+    f_desc = open(indescription,'r')
+    title = f_desc.readline()
+    title = title.strip()
+    author = f_desc.readline()
+    author = author.strip()
+    contact = f_desc.readline()
+    contact = contact.strip()
+    reference = f_desc.readline()
+    reference = reference.strip()
+    short_description = f_desc.readline()
+    short_description = short_description.strip()
+    # NS Modify this to allow for formatting in long description
+    long_description = f_desc.readline()
+    long_description = long_description.strip()
+
+
+    # Check whether dataset exists.
+    # Skip if exists and overwrite=False
+    dataset,extension = os.path.splitext(infile)
+
+
+    # Identify type of input data - fits image, fits table, ascii table
+    # Check file to see if it's a .fits image, .fits table or ascii table
+    if extension == '.fits':
+        hdu = pf.open(infile)
+        if (hdu[1].is_image == True):
+            raise SystemExit("You have supplied a fits image rather than a fits"+
+                             " binary table. Either supply a binary table or upload"+
+                             " using import_fitsimage().")
+        else:
+            # File is a fits binary table
+            table = astro_table.Table.read(infile,format='fits')
+            table_header = hdu[1].header
+    else:
+        # File is an ascii table
+        
+        raise SystemExit("Ascii table import is not yet supported.")
+        #table = astro_table.read(infile,format='ascii')
+        #table_header =
+
+
+    # Create new dataset of the appropriate size and type and add initial attributes
+
+    table.write(hdf,path=target_path+dataset)
+    dset = hdf[target_path+dataset]
+
+    dset.attrs.create('Title',title)
+    dset.attrs.create('Author',author)
+    dset.attrs.create('Contact',contact)
+    dset.attrs.create('Reference',reference)
+    dset.attrs.create('Short description',short_description)
+    dset.attrs.create('Long description',long_description)
+
+    # Write header information as attributes
+    # Each attribute is a 2 element array, with the attribute name
+    # being the same as that of the corresponding fits header item.
+    # The 1st element of the attribute is its value, the second
+    # is the fits comment, which should only exist for the TTYPE items.
+
+    if extension == '.fits':
+        for n_hdr in range(len(table_header)):
+            dset.attrs.create(table_header.keys()[n_hdr],(table_header[n_hdr],table_header.comments[n_hdr]))
+
+    else:
+        print "Ascii not supported, but you can't be here yet"
+
+
+    hdf.close()
 
 
 """ THE END """
