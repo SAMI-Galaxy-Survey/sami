@@ -282,7 +282,7 @@ class TwoDGaussFitter:
 
     def fit(self):
 
-        print np.shape(self.x), np.shape(self.y), np.shape(self.z)
+        #print np.shape(self.x), np.shape(self.y), np.shape(self.z)
 
         self.p, self.cov_x, self.infodict, self.mesg, self.success = \
         leastsq(self.errfunc, self.p, \
