@@ -26,7 +26,7 @@ as free parameters too. Note, however, that the atmospheric parameters
 are completely degenerate with each other and with ZD.
 """
 
-import os,code
+import os
 
 import numpy as np
 from scipy.optimize import leastsq, curve_fit
