@@ -9,7 +9,8 @@ Written:
   08.10.2013, Iraklis Konstantopoulos. Based on 'db.database'.
   
 Updated:
-  03.04.2014, Nic Scott - added import_table()
+  03.04.2014, Nic Scott - added import_table() and import_manytables()
+  05.08.2014, Nic Scott - modified to import_hlsp() and import_manyhlsps()
 
 Contact: 
   iraklis@aao.gov.au
@@ -678,7 +679,7 @@ def make_list(dataroot='./', tableout='SAMI_input.lis',
 
 
 # ~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~
-def import_manytables(inlist,indescription,h5file,version,
+def import_manyhlsps(inlist,indescription,h5file,version,
                  overwrite=False,confirm_version=True,verbose=True):
 # ~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~
     """ Import many tables into the SAMI archive from a list of files."""
@@ -690,7 +691,7 @@ def import_manytables(inlist,indescription,h5file,version,
     for line in f_list:
         infile,id = line.split()
         try:
-            import_table(infile,indescription,h5file,version,target=id,
+            import_hlsp(infile,indescription,h5file,version,target=id,
                      overwrite=overwrite,confirm_version=confirm_version,
                      verbose=verbose)
         except Exception as e:
@@ -708,7 +709,7 @@ def import_manytables(inlist,indescription,h5file,version,
     print 'Import complete'
 
 # ~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~
-def import_table(infile,indescription,h5file,version,target='',
+def import_hlsp(infile,indescription,h5file,version,target='',
                overwrite=False,confirm_version=True,verbose=True):
 # ~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~
     """ Import a table into the SAMI archive."""
@@ -779,7 +780,7 @@ def import_table(infile,indescription,h5file,version,target='',
     reference = reference.strip()
     short_description = f_desc.readline()
     short_description = short_description.strip()
-    # NS Modify this to allow for formatting in long description
+    # NS Modify this to allow for formatting in long description?
     long_description = f_desc.readline()
     long_description = long_description.strip()
 
@@ -793,25 +794,30 @@ def import_table(infile,indescription,h5file,version,target='',
     # Check file to see if it's a .fits image, .fits table or ascii table
     if extension == '.fits':
         hdu = pf.open(infile)
-        if (hdu[1].is_image == True):
-            raise SystemExit("You have supplied a fits image rather than a fits"+
-                             " binary table. Either supply a binary table or upload"+
-                             " using import_fitsimage().")
-        else:
+        if ((len(hdu) == 1) and (hdu[0].is_image == True)):
+            # File is a fits image
+            map = hdu[0].data
+            header = hdu[0].header
+            hdf[target_path].create_dataset(dataset,data=map)
+        
+        elif ((len(hdu) == 2) and (hdu[1].is_image == False)):
             # File is a fits binary table
             table = astro_table.Table.read(infile,format='fits')
-            table_header = hdu[1].header
+            header = hdu[1].header
+            table.write(hdf,path=target_path+dataset)
+        else:
+            raise SystemExit("Please supply either a single-extension fits image "+
+                             "or a two-extension fits binary table.")
     else:
         # File is an ascii table
         
-        raise SystemExit("Ascii table import is not yet supported.")
+        raise SystemExit("Ascii table import is not yet supported. Please supply a .fits file.")
         #table = astro_table.read(infile,format='ascii')
         #table_header =
 
 
     # Create new dataset of the appropriate size and type and add initial attributes
 
-    table.write(hdf,path=target_path+dataset)
     dset = hdf[target_path+dataset]
 
     dset.attrs.create('Title',title)
@@ -825,11 +831,11 @@ def import_table(infile,indescription,h5file,version,target='',
     # Each attribute is a 2 element array, with the attribute name
     # being the same as that of the corresponding fits header item.
     # The 1st element of the attribute is its value, the second
-    # is the fits comment, which should only exist for the TTYPE items.
+    # is the fits comment.
 
     if extension == '.fits':
-        for n_hdr in range(len(table_header)):
-            dset.attrs.create(table_header.keys()[n_hdr],(table_header[n_hdr],table_header.comments[n_hdr]))
+        for n_hdr in range(len(header)):
+            dset.attrs.create(header.keys()[n_hdr],(header[n_hdr],header.comments[n_hdr]))
 
     else:
         print "Ascii not supported, but you can't be here yet"
