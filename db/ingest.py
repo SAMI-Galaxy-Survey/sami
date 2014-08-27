@@ -427,6 +427,8 @@ def import_cube(blue_cube, red_cube, h5file, version, safe_mode=False,
                              HDU[1].data, hdr=HDU[1].header)
         cube_wht  = eat_data(g_target, colour[thisHDU]+"_Cube_Weight", 
                              HDU[2].data, hdr=HDU[2].header)
+        cube_covar = eat_data(g_target, colour[thisHDU]+"_Cube_Covar",
+                              HDU[3].data,hdr=HDU[3].header)
 
         # IMPORT RSS
         # ----------
