@@ -348,8 +348,8 @@ def dithered_cubes_from_rss_list(files, objects='all', size_of_grid=50,
                     continue
 
         # Call dithered_cube_from_rss to create the flux, variance and weight cubes for the object.
-        try:
-            flux_cube, var_cube, weight_cube, diagnostics, covariance_cube, covar_locs = \
+        #try:
+        flux_cube, var_cube, weight_cube, diagnostics, covariance_cube, covar_locs = \
                        dithered_cube_from_rss(ifu_list, size_of_grid=size_of_grid,
                                               output_pix_size_arcsec=output_pix_size_arcsec,
                                               drop_factor=drop_factor,
@@ -357,9 +357,9 @@ def dithered_cubes_from_rss_list(files, objects='all', size_of_grid=50,
                                               do_dar_correct=do_dar_correct,
                                               clip_throughput=clip_throughput)
 
-        except Exception:
-            print "Cubing Failed."
-            continue
+        #except Exception:
+        #    print "Cubing Failed."
+        #    continue
 
         # Write out FITS files.
         if write==True:
@@ -1184,7 +1184,7 @@ def create_covar_matrix(overlap_array,variances):
         As input takes the output of the drizzle class, overlap_array, 
         and the variances of the individual fibres"""
     
-    covarS = 2 # Radius of sub-region to record covariance information - probably
+    covarS = 3 # Radius of sub-region to record covariance information - probably
                # shouldn't be hard coded, but scaled to drop size in some way
     
     s = np.shape(overlap_array)
@@ -1228,7 +1228,7 @@ def create_covar_matrix(overlap_array,variances):
 
                     b = overlap_array[xC,yC,f]*np.sqrt(variances[f])
                     b[np.where(np.isfinite(b) == False)] = 0.0
-                    covariance_array[xA,yA,:,:] = covariance_array[xA,yA,:,:] + (a*b).reshape(5,5)
+                    covariance_array[xA,yA,:,:] = covariance_array[xA,yA,:,:] + (a*b).reshape(covarS*2+1,covarS*2+1)
             covariance_array[xA,yA,:,:] = covariance_array[xA,yA,:,:]/covariance_array[xA,yA,covarS,covarS]
     
     return covariance_array
