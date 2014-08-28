@@ -99,6 +99,7 @@ def full_covar(hdulist):
     
     #Reconstruct the covariance array
     norm_covar = read_norm_covariance(hdulist)
+    var = hdulist['VARIANCE'].data
     covar = np.zeros(norm_covar.shape)
     for i in range(0,2048):
         for j in range(0,50):
