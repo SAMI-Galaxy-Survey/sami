@@ -98,7 +98,7 @@ def full_covar(hdulist):
     """Return the full covariance array, after multiplying by variance."""
     
     #Reconstruct the covariance array
-    norm_covar = read_full_covariance(hdulist)
+    norm_covar = read_norm_covariance(hdulist)
     covar = np.zeros(norm_covar.shape)
     for i in range(0,2048):
         for j in range(0,50):
