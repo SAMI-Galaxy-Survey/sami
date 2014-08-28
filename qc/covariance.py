@@ -89,7 +89,7 @@ def bin_hdulist(hdulist, mask):
     spec_data_w, spec_var_w = bin_data(
         c_data_w*(mask), c_var_f_w*(mask**2), bin_x, bin_y)
 
-    sum_weight = np.nansum(c_weight, axis=1)
+    sum_weight = np.nansum(c_weight[:, bin_x, bin_y], axis=1)
     spec_data = spec_data_w / sum_weight
     spec_var = spec_var_w / sum_weight**2
     
