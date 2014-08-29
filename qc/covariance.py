@@ -49,17 +49,19 @@ def compare_variance(path):
     """Compare variance with and without accounting for covariance."""
     hdulist = pf.open(path)
     var = hdulist['VARIANCE'].data
-    # covar = read_norm_covariance(hdulist)
+    weight = hdulist['WEIGHT'].data
     x, y = np.meshgrid(0.5*(np.arange(50)-24.5), 0.5*(np.arange(50)-24.5))
     radii = 0.5 * (np.arange(15) + 1)
-    var_right = np.zeros(len(radii))
+    mask_list = [(x**2 + y**2) < radius**2 for radius in radii]
+    var_right = [np.median(var) for spec, var in 
+                 bin_hdulist_multi(hdulist, mask_list)]
     var_wrong = np.zeros(len(radii))
-    for i_rad, radius in enumerate(radii):
-        mask = (x**2 + y**2) < radius**2
+    for i_mask, mask in enumerate(mask_list):
         x_keep, y_keep = np.where(mask)
-        # var_right[i_rad] = np.median(sum_variance(var, covar, x_keep, y_keep))
-        var_right[i_rad] = np.median(bin_hdulist(hdulist, mask)[1])
-        var_wrong[i_rad] = np.median(np.nansum(var[:, x_keep, y_keep], 1))
+        var_wrong_spec = (
+            np.nansum(var[:, x_keep, y_keep] * weight[:, x_keep, y_keep], 1) /
+            np.nansum(weight[:, x_keep, y_keep], 1))
+        var_wrong[i_mask] = np.median(var_wrong_spec)
     hdulist.close()
     return var_right, var_wrong
 
