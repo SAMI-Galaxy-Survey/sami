@@ -62,7 +62,7 @@ def compare_variance(path):
         var_wrong_spec = (
             np.nansum(variance[:, x_keep, y_keep] * 
                       weight[:, x_keep, y_keep]**2, 1) /
-            np.nansum(weight[:, x_keep, y_keep]**2, 1))
+            np.nansum(weight[:, x_keep, y_keep], 1)**2)
         var_wrong[i_mask] = np.median(var_wrong_spec)
     hdulist.close()
     return var_right, var_wrong
