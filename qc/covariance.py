@@ -72,42 +72,59 @@ def bin_hdulist(hdulist, mask):
 
     The inputs are an open HDUList object and a pixel mask of 0s and 1s.
     """
-    c_data      = hdulist['Primary'].data
-    # c_hdr       = hdulist['Primary'].header
-    # c_var       = hdulist['VARIANCE'].data
-    c_weight    = hdulist['WEIGHT'].data
-    # c_covar     = hdulist['COVAR'].data
-    # c_covar_hdr = hdulist['COVAR'].header
-    
-    # c_var_w = c_var*(c_weight**2)
+    c_data = hdulist['PRIMARY'].data
+    c_weight = hdulist['WEIGHT'].data
     c_var_f_w = full_covar(hdulist)
     
-    c_data_w = c_data*(c_weight**1)
-    
-    bin_x, bin_y = np.where(mask != 0)
-    
-    spec_data_w, spec_var_w = bin_data(
-        c_data_w*(mask), c_var_f_w*(mask**2), bin_x, bin_y)
+    bin_x, bin_y = np.where(mask)    
+    spec_data, spec_var = bin_data_weights(
+        c_data, c_var_f_w, c_weight, bin_x, bin_y)
 
-    sum_weight = np.nansum(c_weight[:, bin_x, bin_y], axis=1)
-    spec_data = spec_data_w / sum_weight
-    spec_var = spec_var_w / sum_weight**2
-    
     return spec_data, spec_var
 
+def bin_hdulist_multi(hdulist, mask_list):
+    """
+    Return a list of binned spectra and variances, one for each mask.
+    """
+    c_data = hdulist['PRIMARY'].data
+    c_weight = hdulist['WEIGHT'].data
+    c_var_f_w = full_covar(hdulist)
+    
+    result = []
+    for mask in mask_list:
+        bin_x, bin_y = np.where(mask)    
+        spec_data, spec_var = bin_data_weights(
+            c_data, c_var_f_w, c_weight, bin_x, bin_y)
+    result.append(spec_data, spec_var)
+
+    return result
+
 def full_covar(hdulist):
-    """Return the full covariance array, after multiplying by variance."""
+    """
+    Return the full covariance array, after multiplying by weighted
+    variance.
+    """
     
     #Reconstruct the covariance array
     norm_covar = read_norm_covariance(hdulist)
     var = hdulist['VARIANCE'].data
+    weight = hdulist['WEIGHT'].data
     covar = np.zeros(norm_covar.shape)
     for i in range(0,2048):
         for j in range(0,50):
             for k in range(0,50):
-                covar[i,:,:,j,k] = var[i,j,k] * norm_covar[i,:,:,j,k]
-    
+                covar[i,:,:,j,k] = (var[i,j,k] * norm_covar[i,:,:,j,k] *
+                                    weight[i,j,k]**2)
     return covar
+
+def bin_data_weights(data, covar, weight, bin_x, bin_y):
+    """Bin the data in a weighted fashion."""
+    data_w = data * weight
+    spec_data_w, spec_var_w = bin_data(data_w, covar, bin_x, bin_y)
+    sum_weight = np.nansum(weight[:, bin_x, bin_y], axis=1)
+    spec_data = spec_data_w / sum_weight
+    spec_var = spec_var_w / sum_weight**2
+    return spec_data, spec_var
 
 def bin_data(data, covar, binx, biny):
     
