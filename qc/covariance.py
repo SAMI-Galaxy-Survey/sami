@@ -48,7 +48,7 @@ def compare_variance_list(path_pair_list):
 def compare_variance(path):
     """Compare variance with and without accounting for covariance."""
     hdulist = pf.open(path)
-    var = hdulist['VARIANCE'].data
+    variance = hdulist['VARIANCE'].data
     weight = hdulist['WEIGHT'].data
     x, y = np.meshgrid(0.5*(np.arange(50)-24.5), 0.5*(np.arange(50)-24.5))
     radii = 0.5 * (np.arange(15) + 1)
@@ -59,7 +59,8 @@ def compare_variance(path):
     for i_mask, mask in enumerate(mask_list):
         x_keep, y_keep = np.where(mask)
         var_wrong_spec = (
-            np.nansum(var[:, x_keep, y_keep] * weight[:, x_keep, y_keep], 1) /
+            np.nansum(variance[:, x_keep, y_keep] * 
+                      weight[:, x_keep, y_keep], 1) /
             np.nansum(weight[:, x_keep, y_keep], 1))
         var_wrong[i_mask] = np.median(var_wrong_spec)
     hdulist.close()
