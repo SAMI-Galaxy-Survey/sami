@@ -97,7 +97,7 @@ def bin_hdulist_multi(hdulist, mask_list):
         bin_x, bin_y = np.where(mask)    
         spec_data, spec_var = bin_data_weights(
             c_data, c_var_f_w, c_weight, bin_x, bin_y)
-    result.append(spec_data, spec_var)
+    result.append((spec_data, spec_var))
 
     return result
 
