@@ -3009,11 +3009,12 @@ def telluric_correct_pair(inputs):
         else:
             # Some other, unexpected error. Re-raise it.
             raise err
-    print 'Telluric correcting file:', fits_2.filename
-    if os.path.exists(fits_2.telluric_path):
-        os.remove(fits_2.telluric_path)
-    telluric.apply_correction(fits_2.fluxcal_path, 
-                              fits_2.telluric_path)
+    for fits in (fits_1, fits_2):
+        print 'Telluric correcting file:', fits.filename
+        if os.path.exists(fits.telluric_path):
+            os.remove(fits.telluric_path)
+        telluric.apply_correction(fits.fluxcal_path, 
+                                  fits.telluric_path)
     return True
 
 @safe_for_multiprocessing
