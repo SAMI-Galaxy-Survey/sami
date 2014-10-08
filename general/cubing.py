@@ -1233,29 +1233,31 @@ def create_covar_matrix(overlap_array,variances):
     
     return covariance_array
     
-def scale_cube_pair(file_pair, scale):
+def scale_cube_pair(file_pair, scale, hdu='PRIMARY'):
     """Scale both blue and red cubes by a given value."""
     for path in file_pair:
-        scale_cube(path, scale)
+        scale_cube(path, scale, hdu=hdu)
 
-def scale_cube(path, scale):
+def scale_cube(path, scale, hdu='PRIMARY'):
     """Scale a single cube by a given value."""
     hdulist = pf.open(path, 'update')
     try:
-        old_scale = hdulist['PRIMARY'].header['RESCALE']
+        old_scale = hdulist[hdu].header['RESCALE']
+        print 'De-applying old scaling from header:', old_scale
     except KeyError:
         old_scale = 1.0
+        print 'No old scaling found'
     hdulist['PRIMARY'].data *= (scale / old_scale)
     hdulist['VARIANCE'].data *= (scale / old_scale)**2
-    hdulist['PRIMARY'].header['RESCALE'] = (scale, 'Scaling applied to data')
+    hdulist[hdu].header['RESCALE'] = (scale, 'Scaling applied to data')
     hdulist.flush()
     hdulist.close()
 
-def scale_cube_pair_to_mag(file_pair):
+def scale_cube_pair_to_mag(file_pair, hdu='PRIMARY'):
     """Scale both cubes according to their pre-measured g-band mags."""
-    header = pf.getheader(file_pair[0])
+    header = pf.getheader(file_pair[0], hdu)
     measured_mag = header['MAGG']
     catalogue_mag = header['CATMAGG']
     scale = 10.0 ** ((measured_mag - catalogue_mag) / 2.5)
-    scale_cube_pair(file_pair, scale)
+    scale_cube_pair(file_pair, scale, hdu=hdu)
     return scale

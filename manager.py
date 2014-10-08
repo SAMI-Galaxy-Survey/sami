@@ -89,7 +89,7 @@ from .general.cubing import scale_cube_pair, scale_cube_pair_to_mag
 from .general.align_micron import find_dither
 from .dr import fluxcal2, telluric, check_plots, tdfdr
 from .dr.throughput import make_clipped_thput_files
-from .qc.fluxcal import stellar_mags_cube_pair
+from .qc.fluxcal import stellar_mags_cube_pair, stellar_mags_frame_pair
 
 # Get the astropy version as a tuple of integers
 ASTROPY_VERSION = tuple(int(x) for x in ASTROPY_VERSION.split('.'))
@@ -3106,6 +3106,22 @@ def scale_cubes_field(group):
     return
 
 @safe_for_multiprocessing
+def scale_frame_pair(group):
+    """Scale a pair of RSS frames to the correct magnitude."""
+    path_pair, catalogue = group
+    print 'Scaling RSS files to give star correct magnitude:', \
+        os.path.basename(path_pair[0]), os.path.basename(path_pair[1])
+    stellar_mags_frame_pair(path_pair, save=True)
+    star = pf.getval(path_pair[0], 'STDNAME', 'FLUX_CALIBRATION')
+    found = assign_true_mag(path_pair, star, catalogue=catalogue,
+                            hdu='FLUX_CALIBRATION')
+    if found:
+        scale_cube_pair_to_mag(path_pair, hdu='FLUX_CALIBRATION')
+    else:
+        print 'No photometric data found for', star
+    return
+
+@safe_for_multiprocessing
 def gzip_wrapper(path):
     """Gzip a single file."""
     print 'Gzipping file: ' + path
@@ -3123,7 +3139,7 @@ def gzip_wrapper(path):
 #         time.sleep(1); current_time = time.time()
 #     print "finishing", variable
 
-def assign_true_mag(path_pair, name, catalogue=None):
+def assign_true_mag(path_pair, name, catalogue=None, hdu=0):
     """Find the magnitudes in a catalogue and save them to the header."""
     if catalogue is None:
         catalogue = read_stellar_mags()
@@ -3134,8 +3150,8 @@ def assign_true_mag(path_pair, name, catalogue=None):
         return False
     for path in path_pair:
         hdulist = pf.open(path, 'update')
-        hdulist[0].header['CATMAGG'] = (mag_g, 'g mag from catalogue')
-        hdulist[0].header['CATMAGR'] = (mag_r, 'r mag from catalogue')
+        hdulist[hdu].header['CATMAGG'] = (mag_g, 'g mag from catalogue')
+        hdulist[hdu].header['CATMAGR'] = (mag_r, 'r mag from catalogue')
         hdulist.flush()
         hdulist.close()
     return True
