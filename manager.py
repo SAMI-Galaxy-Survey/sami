@@ -1388,6 +1388,12 @@ class Manager:
         fits_2_list = [inputs['fits_2'] for inputs, done in 
                        zip(inputs_list, done_list) if done]
         self.update_checks('TEL', fits_2_list, False)
+        # Also run scaling of the individual RSS frames
+        catalogue = read_stellar_mags()
+        scale_inputs = [
+            ((i['fits_1'].fluxcal_path, i['fits_2'].telluric_path), catalogue)
+            for i in inputs_list]
+        self.map(scale_frame_pair, scale_inputs)
         return
 
     def measure_offsets(self, overwrite=False, min_exposure=599.0, name='main',
