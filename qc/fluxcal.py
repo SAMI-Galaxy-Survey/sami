@@ -323,6 +323,24 @@ def stellar_mags_cube_pair(file_pair, sum_cubes=False, save=False):
             hdulist.close()
     return mag_g, mag_r
 
+def stellar_mags_frame_pair(file_pair, save=False):
+    """Return stellar mags for a single pair of flux calibrated RSS files."""
+    # Unlike in stellar_mags_cube_pair the old scaling is not taken into
+    # account, because it is never applied to the FLUX_CALIBRATION HDU
+    # from which these measurements are made.
+    flux, noise, wavelength = read_stellar_spectrum(file_pair)
+    mag_g, mag_r = measure_mags(flux, noise, wavelength)
+    if save:
+        for path in file_pair:
+            hdulist = pf.open(path, 'update')
+            hdulist['FLUX_CALIBRATION'].header['MAGG'] = (
+                mag_g, 'g mag before scaling')
+            hdulist['FLUX_CALIBRATION'].header['MAGR'] = (
+                mag_r, 'r mag before scaling')
+            hdulist.flush()
+            hdulist.close()
+    return mag_g, mag_r
+
 def list_star_files(mngr, gzip=True, verbose=True):
     """
     Return a list of tuples of paths to star datacubes, blue and red,
