@@ -1243,10 +1243,8 @@ def scale_cube(path, scale, hdu='PRIMARY'):
     hdulist = pf.open(path, 'update')
     try:
         old_scale = hdulist[hdu].header['RESCALE']
-        print 'De-applying old scaling from header:', old_scale
     except KeyError:
         old_scale = 1.0
-        print 'No old scaling found'
     hdulist['PRIMARY'].data *= (scale / old_scale)
     hdulist['VARIANCE'].data *= (scale / old_scale)**2
     hdulist[hdu].header['RESCALE'] = (scale, 'Scaling applied to data')

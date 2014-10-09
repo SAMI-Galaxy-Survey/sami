@@ -1388,12 +1388,24 @@ class Manager:
         fits_2_list = [inputs['fits_2'] for inputs, done in 
                        zip(inputs_list, done_list) if done]
         self.update_checks('TEL', fits_2_list, False)
-        # Also run scaling of the individual RSS frames
+        return
+
+    def scale_frames(self, overwrite=False, **kwargs):
+        """Scale individual RSS frames to the secondary standard flux."""
         catalogue = read_stellar_mags()
-        scale_inputs = [
-            ((i['fits_1'].fluxcal_path, i['fits_2'].telluric_path), catalogue)
-            for i in inputs_list]
-        self.map(scale_frame_pair, scale_inputs)
+        # First make the list of file pairs to scale
+        inputs_list = []
+        for fits_2 in self.files(ndf_class='MFOBJECT', do_not_use=False,
+                                 spectrophotometric=False, ccd='ccd_2', 
+                                 **kwargs):
+            if (not overwrite and 'RESCALE' in 
+                    pf.getheader(fits_2.telluric_path, 'FLUX_CALIBRATION')):
+                # Already been done; skip to the next file
+                continue
+            fits_1 = self.other_arm(fits_2)
+            inputs_list.append(((fits_1.telluric_path, fits_2.telluric_path),
+                                catalogue))
+        self.map(scale_frame_pair, inputs_list)
         return
 
     def measure_offsets(self, overwrite=False, min_exposure=599.0, name='main',
@@ -3116,8 +3128,8 @@ def scale_cubes_field(group):
 def scale_frame_pair(group):
     """Scale a pair of RSS frames to the correct magnitude."""
     path_pair, catalogue = group
-    print 'Scaling RSS files to give star correct magnitude:', \
-        os.path.basename(path_pair[0]), os.path.basename(path_pair[1])
+    print 'Scaling RSS files to give star correct magnitude:'
+    print os.path.basename(path_pair[0]), os.path.basename(path_pair[1])
     stellar_mags_frame_pair(path_pair, save=True)
     star = pf.getval(path_pair[0], 'STDNAME', 'FLUX_CALIBRATION')
     found = assign_true_mag(path_pair, star, catalogue=catalogue,
