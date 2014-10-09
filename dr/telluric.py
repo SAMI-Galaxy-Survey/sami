@@ -92,15 +92,19 @@ def derive_transfer_function(frame_list, PS_spec_file=None, use_PS=False,
     
     model_flux = linear_fit / transfer_function
 
-    # Update the file to include telluric correction factor
-    hdulist = pf.open(frame_list[1], 'update', do_not_scale_image_data=True)
-    hdulist[0].header['HGTELLUR'] = (HG_CHANGESET,'Hg changeset ID for telluric code')
-    hdu = hdulist[hdu_name]
-    # Arrange the data into a single array
-    data = np.vstack((hdu.data[:4, :], model_flux, transfer_function, sigma_transfer))
-    # Save the data back into the FITS file
-    hdu.data = data
-    hdulist.close()
+    # Update the files to include telluric correction factor
+    n_pix = len(transfer_function)
+    data_1 = np.vstack((np.zeros(n_pix), np.ones(n_pix), np.zeros(n_pix)))
+    data_2 = np.vstack((model_flux, transfer_function, sigma_transfer))
+    for path, data_new in zip(frame_list, (data_1, data_2)):
+        hdulist = pf.open(path, 'update', do_not_scale_image_data=True)
+        hdulist[0].header['HGTELLUR'] = (HG_CHANGESET,'Hg changeset ID for telluric code')
+        hdu = hdulist[hdu_name]
+        # Arrange the data into a single array
+        data = np.vstack((hdu.data[:4, :], data_new))
+        # Save the data back into the FITS file
+        hdu.data = data
+        hdulist.close()
     
     return
 
