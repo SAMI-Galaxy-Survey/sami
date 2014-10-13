@@ -306,8 +306,8 @@ def stellar_mags_cube_pair(file_pair, sum_cubes=False, save=False):
     if save:
         for path in file_pair:
             hdulist = pf.open(path, 'update')
-            hdulist[0].header['MAGG'] = (mag_g, 'g mag before scaling')
-            hdulist[0].header['MAGR'] = (mag_r, 'r mag before scaling')
+            hdulist[0].header['MAGG'] = (mag_g_header, 'g mag before scaling')
+            hdulist[0].header['MAGR'] = (mag_r_header, 'r mag before scaling')
             if 'MAGR' in hdulist[1].header:
                 # Covering an old bug that was putting MAGR in the wrong place
                 del hdulist[1].header['MAGR']
@@ -338,9 +338,9 @@ def stellar_mags_frame_pair(file_pair, save=False):
         for path in file_pair:
             hdulist = pf.open(path, 'update')
             hdulist['FLUX_CALIBRATION'].header['MAGG'] = (
-                mag_g, 'g mag before scaling')
+                mag_g_header, 'g mag before scaling')
             hdulist['FLUX_CALIBRATION'].header['MAGR'] = (
-                mag_r, 'r mag before scaling')
+                mag_r_header, 'r mag before scaling')
             hdulist.flush()
             hdulist.close()
     return mag_g, mag_r
