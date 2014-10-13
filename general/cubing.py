@@ -1257,5 +1257,8 @@ def scale_cube_pair_to_mag(file_pair, hdu='PRIMARY'):
     measured_mag = header['MAGG']
     catalogue_mag = header['CATMAGG']
     scale = 10.0 ** ((measured_mag - catalogue_mag) / 2.5)
+    if measured_mag == -99999:
+        # No valid magnitude found
+        scale = 1.0
     scale_cube_pair(file_pair, scale, hdu=hdu)
     return scale
