@@ -330,6 +330,8 @@ def stellar_mags_frame_pair(file_pair, save=False):
     # from which these measurements are made.
     flux, noise, wavelength = read_stellar_spectrum(file_pair)
     mag_g, mag_r = measure_mags(flux, noise, wavelength)
+    mag_g_header = mag_g if np.isfinite(mag_g) else -99999
+    mag_r_header = mag_r if np.isfinite(mag_r) else -99999
     if save:
         for path in file_pair:
             hdulist = pf.open(path, 'update')
