@@ -301,6 +301,8 @@ def stellar_mags_cube_pair(file_pair, sum_cubes=False, save=False):
     flux /= old_scale
     noise /= old_scale
     mag_g, mag_r = measure_mags(flux, noise, wavelength)
+    mag_g_header = mag_g if np.isfinite(mag_g) else -99999
+    mag_r_header = mag_r if np.isfinite(mag_r) else -99999
     if save:
         for path in file_pair:
             hdulist = pf.open(path, 'update')
