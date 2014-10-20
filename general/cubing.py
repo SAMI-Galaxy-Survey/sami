@@ -87,6 +87,18 @@ dithered_cubes_from_rss_list.
 
 """
 
+
+import itertools
+import os
+import sys
+import datetime
+
+# Set up logging
+from .. import slogging
+log = slogging.getLogger(__name__)
+log.setLevel(slogging.DEBUG)
+
+
 import pylab as py
 import numpy as np
 import scipy as sp
@@ -96,10 +108,6 @@ from scipy import integrate
 import astropy.io.fits as pf
 import astropy.wcs as pw
 
-import itertools
-import os
-import sys
-import datetime
 
 # Cross-correlation function from scipy.signal (slow)
 from scipy.signal import correlate
@@ -442,15 +450,15 @@ def dithered_cube_from_rss(ifu_list, size_of_grid=50, output_pix_size_arcsec=0.5
     ### RGS 27/2/14 We also need a second copy of this IFF we are clipping the data AND drop_factor != 1
     if drop_factor != 1 and clip:
         ### But, check this does not bugger up intermediate calculation elements in the code?
-        overlap_maps_fulldrop=SAMIDrizzler(size_of_grid, output_pix_size_arcsec, 1, n_obs * n_fibres)
-                
-    # Empty lists for positions and data. Could be arrays, might be faster? Should test...
-    xfibre_all=[]
-    yfibre_all=[]
-    data_all=[]
-    var_all=[]
+        overlap_maps_fulldrop = SAMIDrizzler(size_of_grid, output_pix_size_arcsec, 1, n_obs * n_fibres)
 
-    ifus_all=[]
+    # Empty lists for positions and data. Could be arrays, might be faster? Should test...
+    xfibre_all = []
+    yfibre_all = []
+    data_all = []
+    var_all = []
+
+    ifus_all = []
 
     # The following loop:
     #
@@ -461,83 +469,97 @@ def dithered_cube_from_rss(ifu_list, size_of_grid=50, output_pix_size_arcsec=0.5
     #      the same coordiante system.
     #
 
-    for j in xrange(n_obs):
-
-        # Get the data.
-        galaxy_data=ifu_list[j]
-        
-        # Smooth the spectra and median.
-        data_smoothed=np.zeros_like(galaxy_data.data)
-        for p in xrange(np.shape(galaxy_data.data)[0]):
-            data_smoothed[p,:]=utils.smooth(galaxy_data.data[p,:], 10) #default hanning
-
-        # Collapse the smoothed data over a large wavelength range to get continuum data
-        data_med=nanmedian(data_smoothed[:,300:1800], axis=1)
-
-        # Pick out only good fibres (i.e. those allocated as P)
-        #
-        # @TODO: This will break the subsequent code when we actually break a
-        # fibre, as subsequent code assumes 61 fibres. This needs to be fixed.
-        goodfibres=np.where(galaxy_data.fib_type=='P')
-        x_good=galaxy_data.x_microns[goodfibres]
-        y_good=galaxy_data.y_microns[goodfibres]
-        data_good=data_med[goodfibres]
-    
-        # First try to get rid of the bias level in the data, by subtracting a median
-        data_bias=np.median(data_good)
-        if data_bias<0.0:
-            data_good=data_good-data_bias
-            
-        # Mask out any "cold" spaxels - defined as negative, due to poor
-        # throughtput calibration from CR taking out 5577.
-        msk_notcold=np.where(data_good>0.0)
-    
-        # Apply the mask to x,y,data
-        x_good=x_good[msk_notcold]
-        y_good=y_good[msk_notcold]
-        data_good=data_good[msk_notcold]
-
-        # Below is a diagnostic print out.
-        #print("data_good.shape: ",np.shape(data_good))
+    for galaxy_data in ifu_list:
 
         # Check that we're not trying to use data that isn't there
         # Change the offsets method if necessary
         if offsets == 'file' and not hasattr(galaxy_data, 'x_refmed'):
-            print 'Offsets have not been pre-measured! Fitting them now.'
+            log.warn('Offsets have not been pre-measured! Fitting them now.')
             offsets = 'fit'
 
         if (offsets == 'fit'):
+            # FIXME: This section is designed to work in microns.
+
+            # Smooth the spectra and median.
+            data_smoothed = np.zeros_like(galaxy_data.data)
+            for p in xrange(np.shape(galaxy_data.data)[0]):
+                data_smoothed[p,:] = utils.smooth(galaxy_data.data[p,:], 10) #default hanning
+
+            # Collapse the smoothed data over a large wavelength range to get
+            # continuum data
+            data_med = nanmedian(data_smoothed[:,300:1800], axis=1)
+    
+            # Pick out only good fibres (i.e. those allocated as P)
+            #
+            # @TODO: This will break the subsequent code when we actually
+            # break a fibre, as subsequent code assumes 61 fibres. This needs
+            # to be fixed.
+            goodfibres = np.where(galaxy_data.fib_type == 'P')
+            x_good = galaxy_data.x_microns[goodfibres]
+            y_good = galaxy_data.y_microns[goodfibres]
+            data_good = data_med[goodfibres]
+
+            # First try to get rid of the bias level in the data, by
+            # subtracting a median
+            data_bias = np.median(data_good)
+            if data_bias < 0.0:
+                data_good = data_good - data_bias
+
+            # Mask out any "cold" spaxels - defined as negative, due to poor
+            # throughtput calibration from CR taking out 5577.
+            msk_notcold = np.where(data_good > 0.0)
+
+            # Apply the mask to x,y,data
+            x_good = x_good[msk_notcold]
+            y_good = y_good[msk_notcold]
+            data_good = data_good[msk_notcold]
+
+            # Below is a diagnostic print out.
+            #print("data_good.shape: ",np.shape(data_good))
+
+
             # Fit parameter estimates from a crude centre of mass
-            com_distr=utils.comxyz(x_good,y_good,data_good)
-        
+            com_distr = utils.comxyz(x_good, y_good, data_good)
+
             # First guess sigma
-            sigx=100.0
-        
+            sigx = 100.0
+
             # Peak height guess could be closest fibre to com position.
-            dist=(x_good-com_distr[0])**2+(y_good-com_distr[1])**2 # distance between com and all fibres.
-        
+            # distance between com and all fibres.
+            dist = (x_good - com_distr[0]) ** 2 + (y_good - com_distr[1]) ** 2
+
             # First guess Gaussian parameters.
-            p0=[data_good[np.sum(np.where(dist==np.min(dist)))], com_distr[0], com_distr[1], sigx, sigx, 45.0, 0.0]
-       
-            gf1=fitting.TwoDGaussFitter(p0, x_good, y_good, data_good)
+            p0 = [data_good[np.sum(np.where(dist==np.min(dist)))], 
+                    com_distr[0], 
+                    com_distr[1], 
+                    sigx, 
+                    sigx, 
+                    45.0, 
+                    0.0]
+
+            gf1 = fitting.TwoDGaussFitter(p0, x_good, y_good, data_good)
             gf1.fit()
-            
+
             # Adjust the micron positions of the fibres - for use in making final cubes.
-            xm=galaxy_data.x_microns-gf1.p[1]
-            ym=galaxy_data.y_microns-gf1.p[2]
+            file_fibre_pos_ra = galaxy_data.x_microns - gf1.p[1]
+            file_fibre_pos_dec = galaxy_data.y_microns - gf1.p[2]
 
         elif (offsets == 'file'):
+            # FIXME: This designed to work in microns
             # Use pre-measured offsets saved in the file itself
             x_shift_full = galaxy_data.x_refmed + galaxy_data.x_shift
             y_shift_full = galaxy_data.y_refmed - galaxy_data.y_shift
-            xm=galaxy_data.x_microns-x_shift_full
-            ym=galaxy_data.y_microns-y_shift_full
+            file_fibre_pos_ra = galaxy_data.x_microns - x_shift_full
+            file_fibre_pos_dec = galaxy_data.y_microns - y_shift_full
+
+        elif (offsets == 'given'):
+            pass
 
         else:
             # Perhaps use this place to allow definition of the offsets manually??
             # Hopefully only useful for test purposes. LF 05/06/2013
-            xm=galaxy_data.x_microns - np.mean(galaxy_data.x_microns)
-            ym=galaxy_data.y_microns - np.mean(galaxy_data.y_microns)
+            file_fibre_pos_ra = galaxy_data.x_microns - np.mean(galaxy_data.x_microns)
+            file_fibre_pos_dec = galaxy_data.y_microns - np.mean(galaxy_data.y_microns)
 
         if clip_throughput:
             # Clip out fibres that have suspicious throughput values
@@ -546,8 +568,8 @@ def dithered_cube_from_rss(ifu_list, size_of_grid=50, output_pix_size_arcsec=0.5
             galaxy_data.data[bad_throughput, :] = np.nan
             galaxy_data.var[bad_throughput, :] = np.nan
     
-        xfibre_all.append(xm)
-        yfibre_all.append(ym)
+        xfibre_all.append(file_fibre_pos_ra)
+        yfibre_all.append(file_fibre_pos_dec)
 
         data_all.append(galaxy_data.data)
         var_all.append(galaxy_data.var)
@@ -555,25 +577,24 @@ def dithered_cube_from_rss(ifu_list, size_of_grid=50, output_pix_size_arcsec=0.5
         ifus_all.append(galaxy_data.ifu)
 
 
-    xfibre_all=np.asanyarray(xfibre_all)
-    yfibre_all=np.asanyarray(yfibre_all)
+    xfibre_all = np.asanyarray(xfibre_all)
+    yfibre_all = np.asanyarray(yfibre_all)
 
     # Scale these up to have a wavelength axis as well
-    xfibre_all = xfibre_all.reshape(n_obs, n_fibres, 1).repeat(n_slices,2)
-    yfibre_all = yfibre_all.reshape(n_obs, n_fibres, 1).repeat(n_slices,2)
-    
-    
-    data_all=np.asanyarray(data_all)
-    var_all=np.asanyarray(var_all)
+    xfibre_all = xfibre_all.reshape(n_obs, n_fibres, 1).repeat(n_slices, 2)
+    yfibre_all = yfibre_all.reshape(n_obs, n_fibres, 1).repeat(n_slices, 2)
 
-    ifus_all=np.asanyarray(ifus_all)
+
+    data_all = np.asanyarray(data_all)
+    var_all = np.asanyarray(var_all)
+
+    ifus_all = np.asanyarray(ifus_all)
 
     # @TODO: Rescaling between observations.
     #
     #     This may be done here (_before_ the reshaping below). There also may
     #     be a case to do it for whole files, although that may have other
     #     difficulties.
-
 
     # DAR Correction
     #
@@ -584,7 +605,7 @@ def dithered_cube_from_rss(ifu_list, size_of_grid=50, output_pix_size_arcsec=0.5
     #
     #     DAR correction is handled by another function in this module, which
     #     updates the fibre positions in place.
-    
+
     if do_dar_correct:
         dar_correct(ifu_list, xfibre_all, yfibre_all)
 
@@ -612,7 +633,7 @@ def dithered_cube_from_rss(ifu_list, size_of_grid=50, output_pix_size_arcsec=0.5
     fibre_area_pix = np.pi * (fibre_diameter_arcsec/2.0)**2 / output_pix_size_arcsec**2
     data_all = data_all / fibre_area_pix
     var_all = var_all / (fibre_area_pix)**2
-    
+
     # We must renormalise the spectra in order to sigma_clip the data.
     #
     # Because the data is undersampled, there is an aliasing effect when making
@@ -622,16 +643,16 @@ def dithered_cube_from_rss(ifu_list, size_of_grid=50, output_pix_size_arcsec=0.5
     # to clip devient pixels purely because of this variation. Renormalising the
     # spectra first allow us to flag devient pixels in a sensible way. See the
     # data reduction paper for a full description of this reasoning.
-    data_norm=np.empty_like(data_all)
+    data_norm = np.empty_like(data_all)
     for ii in xrange(n_obs * n_fibres):
-        data_norm[ii,:] = data_all[ii,:]/nanmedian( data_all[ii,:])
-        
+        data_norm[ii, :] = data_all[ii, :] / nanmedian(data_all[ii, :])
+
 
     # Now create a new array to hold the final data cube and build it slice by slice
-    flux_cube=np.zeros((size_of_grid, size_of_grid, np.shape(data_all)[1]))
-    var_cube=np.zeros((size_of_grid, size_of_grid, np.shape(data_all)[1]))
-    weight_cube=np.empty((size_of_grid, size_of_grid, np.shape(data_all)[1]))
-    
+    flux_cube = np.zeros((size_of_grid, size_of_grid, np.shape(data_all)[1]))
+    var_cube = np.zeros((size_of_grid, size_of_grid, np.shape(data_all)[1]))
+    weight_cube = np.empty((size_of_grid, size_of_grid, np.shape(data_all)[1]))
+
     print("data_all.shape: ", np.shape(data_all))
 
     if clip:
@@ -640,8 +661,8 @@ def dithered_cube_from_rss(ifu_list, size_of_grid=50, output_pix_size_arcsec=0.5
         diagnostic_info['unmasked_pixels_before_sigma_clip'] = 0
 
         diagnostic_info['n_pixels_sigma_clipped'] = []
-           
-            
+
+
     # Load the wavelength solution for the datacubes. 
     #
     # TODO: This should change when the header keyword propagation is improved
@@ -690,9 +711,9 @@ def dithered_cube_from_rss(ifu_list, size_of_grid=50, output_pix_size_arcsec=0.5
 
         # Create pointers to slices of the RSS data for convenience (these are
         # NOT copies)
-        norm_rss_slice=data_norm[:,l]
-        data_rss_slice=data_all[:,l]
-        var_rss_slice=var_all[:,l]
+        norm_rss_slice = data_norm[:, l]
+        data_rss_slice = data_all[:, l]
+        var_rss_slice = var_all[:, l]
 
         # Compute drizzle maps for this wavelength slice.
         # Store previous slices drizzle map for optimal covariance approach
