@@ -65,6 +65,12 @@ def save_extracted_flux(path, observed_flux, observed_background,
     for key, value in psf_parameters.items():
         header_item_list.append((header_translate(key), value, 
                                  'PSF model parameter'))
+    if 'alpha_ref' in psf_parameters and 'beta' in psf_parameters:
+        alpha = psf_parameters['alpha_ref']
+        beta = psf_parameters['beta']
+        fwhm = alpha * 2.0 * np.sqrt(2.0**(1.0/beta) - 1)
+        header_item_list.append(
+            ('FWHM', fwhm, 'PSF FWHM (arcsec) at reference wavelength'))
     for key, value, comment in header_item_list:
         try:
             new_hdu.header[key] = (value, comment)
