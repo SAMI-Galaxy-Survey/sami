@@ -1267,17 +1267,20 @@ def scale_cube_pair_to_mag(file_pair, hdu='PRIMARY'):
 
 def create_qc_hdu(file_list, name):
     """Create and return an HDU of QC information."""
-    scale = []
+    # The name of the object is passed, so that information specific to that
+    # object can be included, but at the moment it is not used.
+    rel_transp = []
     fwhm = []
     for path in file_list:
         hdulist = pf.open(path)
-        # Fill in scale and fwhm here
+        rel_transp.append(1.0 / hdulist['FLUX_CALIBRATION'].header['RESCALE'])
+        fwhm.append(hdulist['FLUX_CALIBRATION'].header['FWHM'])
         hdulist.close()
     filename_list = [os.path.basename(f) for f in file_list]
     hdu = pf.BinTableHDU.from_columns(
         [pf.Column(name='filename', format='20A', array=filename_list),
-         pf.Column(name='scale', format='E', array=scale),
-         pf.Column(name='psf_fwhm', format='E', array=fwhm)])
+         pf.Column(name='rel_transp', format='E', array=rel_transp),
+         pf.Column(name='fwhm', format='E', array=fwhm)])
     return hdu
 
 
