@@ -385,14 +385,16 @@ def dithered_cubes_from_rss_list(files, objects='all', size_of_grid=50,
                                 'Units')
 
             # Create HDUs for each cube.
-            #
+            
+            list_of_hdus = []
+
             # @NOTE: PyFITS writes axes to FITS files in the reverse of the sense
             # of the axes in Numpy/Python. So a numpy array with dimensions
             # (5,10,20) will produce a FITS cube with x-dimension 20,
             # y-dimension 10, and the cube (wavelength) dimension 5.  --AGreen
-            hdu1=pf.PrimaryHDU(np.transpose(flux_cube, (2,1,0)), hdr_new)
-            hdu2=pf.ImageHDU(np.transpose(var_cube, (2,1,0)), name='VARIANCE')
-            hdu3=pf.ImageHDU(np.transpose(weight_cube, (2,1,0)), name='WEIGHT')
+            list_of_hdus.append(pf.PrimaryHDU(np.transpose(flux_cube, (2,1,0)), hdr_new))
+            list_of_hdus.append(pf.ImageHDU(np.transpose(var_cube, (2,1,0)), name='VARIANCE'))
+            list_of_hdus.append(pf.ImageHDU(np.transpose(weight_cube, (2,1,0)), name='WEIGHT'))
 
             if covar_mode != 'none':
                 hdu4 = pf.ImageHDU(np.transpose(covariance_cube,(4,3,2,1,0)),name='COVAR')
@@ -401,15 +403,15 @@ def dithered_cubes_from_rss_list(files, objects='all', size_of_grid=50,
                     hdu4.header['COVAR_N'] = (len(covar_locs), 'Number of covariance locations')
                     for i in xrange(len(covar_locs)):
                         hdu4.header['HIERARCH COVARLOC_'+str(i+1)] = covar_locs[i]
+                list_of_hdus.append(hdu4)
 
             # Create HDUs for meta-data
             #metadata_table = create_metadata_table(ifu_list)
+
+            list_of_hdus.append(create_qc_hdu(files, name))
             
             # Put individual HDUs into a HDU list
-            if covar_mode == 'none':
-                hdulist=pf.HDUList([hdu1,hdu2,hdu3]) #,metadata_table])
-            else:
-                hdulist=pf.HDUList([hdu1,hdu2,hdu3,hdu4])
+            hdulist = pf.HDUList(list_of_hdus)
 
             # Write the file
             print "Writing", outfile_name_full
@@ -1262,3 +1264,24 @@ def scale_cube_pair_to_mag(file_pair, hdu='PRIMARY'):
         scale = 1.0
     scale_cube_pair(file_pair, scale, hdu=hdu)
     return scale
+
+def create_qc_hdu(file_list, name):
+    """Create and return an HDU of QC information."""
+    scale = []
+    fwhm = []
+    for path in file_list:
+        hdulist = pf.open(path)
+        # Fill in scale and fwhm here
+        hdulist.close()
+    filename_list = [os.path.basename(f) for f in file_list]
+    hdu = pf.BinTableHDU.from_columns(
+        [pf.Column(name='filename', format='20A', array=filename_list),
+         pf.Column(name='scale', format='E', array=scale),
+         pf.Column(name='psf_fwhm', format='E', array=fwhm)])
+    return hdu
+
+
+
+
+
+
