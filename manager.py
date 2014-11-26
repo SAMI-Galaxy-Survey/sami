@@ -447,6 +447,15 @@ class Manager:
     As before, keywords can be set to restrict which files are processed,
     and overwrite=True can be set to force re-processing of files that
     have already been done.
+
+    Scaling frames
+    ==============
+
+    To take into account variations in atmospheric transmission over the
+    course of a night (or between nights), the flux level in each frame is
+    scaled to set the standard star flux to the catalogue level:
+
+    >>> mngr.scale_frames()
     
     Cubing
     ======
@@ -456,10 +465,20 @@ class Manager:
 
     >>> mngr.measure_offsets()
 
-    The final step in the data reduction is to turn the individual
-    calibrated spectra into datacubes:
+    The individual calibrated spectra can then be turned into datacubes:
 
     >>> mngr.cube()
+
+    A final rescaling is done, to make sure everything is on the correct
+    flux scale:
+
+    >>> mngr.scale_cubes()
+
+    Finally, the cubes can be gzipped to save space/bandwidth. You might
+    want to leave this until after the output checking (see below), to
+    improve read times.
+
+    >>> mngr.gzip_cubes()
 
     Checking outputs
     ================
