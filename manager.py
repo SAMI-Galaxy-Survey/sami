@@ -3270,7 +3270,7 @@ def fake_run_2dfdr_single(demo_data_source):
         """Pretend to reduce a data file."""
         fits = args[0]
         print 'Reducing file: ' + fits.filename
-        suffixes = ('im', 'ex', 'red')
+        suffixes = ('im', 'tlm', 'ex', 'red')
         filename_list = [
             fits.filename.replace('.', suff+'.') for suff in suffixes]
         for filename in filename_list:
