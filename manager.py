@@ -1301,7 +1301,10 @@ class Manager:
                 n_trim = 0
             inputs_list.append({'path_pair': path_pair, 'n_trim': n_trim, 
                                 'model_name': model_name, 'smooth': smooth})
-        self.map(derive_transfer_function_pair, inputs_list)
+        with self.patch_if_demo(
+                'sami.dr.fluxcal2.derive_transfer_function',
+                fake_derive_transfer_function):
+            self.map(derive_transfer_function_pair, inputs_list)
         return
 
     def combine_transfer_function(self, overwrite=False, **kwargs):
@@ -1420,7 +1423,10 @@ class Manager:
         old_n_cpu = self.n_cpu
         if old_n_cpu > 10:
             self.n_cpu = 10
-        done_list = self.map(telluric_correct_pair, inputs_list)
+        with self.patch_if_demo(
+                'sami.dr.telluric.derive_transfer_function',
+                fake_derive_transfer_function):
+            done_list = self.map(telluric_correct_pair, inputs_list)
         self.n_cpu = old_n_cpu
         # Mark telluric corrections as not checked
         fits_2_list = [inputs['fits_2'] for inputs, done in 
@@ -3266,15 +3272,26 @@ def read_stellar_mags():
 
 def fake_run_2dfdr_single(demo_data_source):
     """Return a function that pretends to reduce a data file."""
-    def inner(*args, **kwargs):
+    source = os.path.join(demo_data_source, 'tdfdr')
+    def inner(fits, *args, **kwargs):
         """Pretend to reduce a data file."""
-        fits = args[0]
         print 'Reducing file: ' + fits.filename
         suffixes = ('im', 'tlm', 'ex', 'red')
         filename_list = [
             fits.filename.replace('.', suff+'.') for suff in suffixes]
         for filename in filename_list:
-            copy_demo_data(filename, demo_data_source, fits.reduced_dir)
+            copy_demo_data(filename, source, fits.reduced_dir)
+    return inner
+
+def fake_derive_transfer_function(demo_data_source):
+    """Return a function that pretends to derive a transfer function."""
+    source = os.path.join(demo_data_source, 'transfer_function')
+    def inner(path_pair, *args, **kwargs):
+        """Pretend to derive a transfer function."""
+        for path in path_pair:
+            filename = os.path.basename(path)
+            destination = os.path.dirname(path)
+            copy_demo_data(filename, source, destination)
     return inner
 
 def copy_demo_data(filename, source, destination, skip_missing=True):
