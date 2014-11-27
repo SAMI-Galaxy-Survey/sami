@@ -71,6 +71,7 @@ from functools import wraps
 from contextlib import contextmanager
 from collections import defaultdict
 from getpass import getpass
+from time import sleep
 
 import astropy.coordinates as coord
 from astropy import units
@@ -82,6 +83,11 @@ try:
     PYSFTP_AVAILABLE = True
 except ImportError:
     PYSFTP_AVAILABLE = False
+try:
+    from mock import patch
+    PATCH_AVAILABLE = True
+except ImportError:
+    PATCH_AVAILABLE = False
 
 from .utils.other import find_fibre_table, gzip
 from .general.cubing import dithered_cubes_from_rss_list
@@ -627,7 +633,8 @@ class Manager:
     """
 
     def __init__(self, root, copy_files=False, move_files=False, fast=False,
-                 gratlpmm=GRATLPMM, n_cpu=1):
+                 gratlpmm=GRATLPMM, n_cpu=1, demo=False,
+                 demo_data_source='demo'):
         if fast:
             self.speed = 'fast'
         else:
@@ -659,6 +666,16 @@ class Manager:
         self.aat_username = None
         self.aat_password = None
         self.inspect_root(copy_files, move_files)
+        if demo:
+            if PATCH_AVAILABLE:
+                print 'WARNING: Manager is in demo mode.'
+                print 'No actual data reduction will take place!'
+            else:
+                print 'You must install the mock module to use the demo mode.'
+                print 'Continuing in normal mode.'
+                demo = False
+        self.demo = demo
+        self.demo_data_source = demo_data_source
 
     def map(self, function, input_list):
         """Map inputs to a function, using built-in map or multiprocessing."""
@@ -1213,8 +1230,10 @@ class Manager:
         # Send the items out for reducing. Keep track of which ones were done.
         while input_list:
             print len(input_list), 'files remaining.'
-            finished = np.array(self.map(
-                run_2dfdr_single_wrapper, input_list))
+            with self.patch_if_demo(
+                    'sami.dr.tdfdr.run_2dfdr_single', fake_run_2dfdr_single):
+                finished = np.array(self.map(
+                    run_2dfdr_single_wrapper, input_list))
             input_list = [item for i, item in enumerate(input_list) 
                           if not finished[i]]
         # Delete unwanted reduced files
@@ -2534,6 +2553,19 @@ class Manager:
         check_plots.check_cub(fits_list)
         return
 
+    @contextmanager
+    def patch_if_demo(self, target, new, requires_data=True):
+        """If in demo mode, patch the target, otherwise do nothing."""
+        if self.demo:
+            if requires_data:
+                func = new(self.demo_data_source)
+            else:
+                func = new
+            with patch(target, func):
+                yield
+        else:
+            yield
+
 
 
 
@@ -3231,6 +3263,34 @@ def read_stellar_mags():
         new_data_dict = {name_func(line): line for line in data}
         data_dict.update(new_data_dict)
     return data_dict
+
+def fake_run_2dfdr_single(demo_data_source):
+    """Return a function that pretends to reduce a data file."""
+    def inner(*args, **kwargs):
+        """Pretend to reduce a data file."""
+        fits = args[0]
+        print 'Reducing file: ' + fits.filename
+        suffixes = ('im', 'ex', 'red')
+        filename_list = [
+            fits.filename.replace('.', suff+'.') for suff in suffixes]
+        for filename in filename_list:
+            copy_demo_data(filename, demo_data_source, fits.reduced_dir)
+    return inner
+
+def copy_demo_data(filename, source, destination, skip_missing=True):
+    """Find and copy demo data from source dir to destination dir."""
+    for root, dirs, files in os.walk(source):
+        if filename in files:
+            path = os.path.join(root, filename)
+            if os.path.isfile(path) and not os.path.islink(path):
+                dest_path = os.path.join(destination, filename)
+                shutil.copy2(path, dest_path)
+                sleep(1)
+                break
+    else:
+        # No file found. Raise an error if skip_missing set to False
+        if not skip_missing:
+            raise IOError('File not found: ' + filename)
 
 class MatchException(Exception):
     """Exception raised when no matching calibrator is found."""
