@@ -1602,8 +1602,10 @@ class Manager:
         self.combine_transfer_function(overwrite, **kwargs)
         self.flux_calibrate(overwrite, **kwargs)
         self.telluric_correct(overwrite, **kwargs)
+        self.scale_frames(overwrite, **kwargs)
         self.measure_offsets(overwrite, **kwargs)
         self.cube(overwrite, **kwargs)
+        self.scale_cubes(overwrite, **kwargs)
         return
 
     def reduce_file(self, fits, overwrite=False, tlm=False,
