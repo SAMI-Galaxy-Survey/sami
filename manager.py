@@ -90,7 +90,8 @@ except ImportError:
     PATCH_AVAILABLE = False
 
 from .utils.other import find_fibre_table, gzip
-from .general.cubing import dithered_cubes_from_rss_list
+from .utils import IFU
+from .general.cubing import dithered_cubes_from_rss_list, get_object_names
 from .general.cubing import scale_cube_pair, scale_cube_pair_to_mag
 from .general.align_micron import find_dither
 from .dr import fluxcal2, telluric, check_plots, tdfdr
@@ -1483,7 +1484,8 @@ class Manager:
                         (key, fits_list, copy_to_other_arm, 
                          fits_list_other_arm))
                     break
-        self.map(measure_offsets_group, complete_groups)
+        with self.patch_if_demo('sami.manager.find_dither', fake_find_dither):
+            self.map(measure_offsets_group, complete_groups)
         for group in complete_groups:
             self.update_checks('ALI', group[1], False)
         return
@@ -1500,7 +1502,9 @@ class Manager:
         groups = [(key, fits_list, cubed_root, overwrite, star_only) 
                   for key, fits_list in groups.items()]
         # Send the cubing tasks off to multiple CPUs
-        self.map(cube_group, groups)
+        with self.patch_if_demo('sami.manager.dithered_cubes_from_rss_list',
+                                fake_dithered_cubes_from_rss_list):
+            self.map(cube_group, groups)
         # Mark all cubes as not checked. Ideally would only mark those that
         # actually exist. Maybe set dithered_cubes_from_rss_list to return a 
         # list of those it created?
@@ -1550,7 +1554,9 @@ class Manager:
                 pair for pair in object_path_pair_list if None not in pair]
             input_list.append((star_path_pair, object_path_pair_list, star,
                                catalogue))
-        self.map(scale_cubes_field, input_list)
+        with self.patch_if_demo('sami.manager.stellar_mags_cube_pair',
+                                fake_stellar_mags_cube_pair):
+            self.map(scale_cubes_field, input_list)
         return
             
     def gzip_cubes(self, overwrite=False, min_exposure=599.0, name='main',
@@ -1582,7 +1588,8 @@ class Manager:
                         os.remove(output_path)
                     if not os.path.exists(output_path):
                         input_list.append(input_path)
-        self.map(gzip_wrapper, input_list)
+        with self.patch_if_demo('sami.manager.gzip', fake_gzip):
+            self.map(gzip_wrapper, input_list)
         return
 
     def reduce_all(self, overwrite=False, **kwargs):
@@ -3296,6 +3303,72 @@ def fake_derive_transfer_function(demo_data_source):
             copy_demo_data(filename, source, destination)
     return inner
 
+def fake_find_dither(demo_data_source):
+    """Return a function that pretends to find a dither pattern."""
+    source = os.path.join(demo_data_source, 'offset')
+    def inner(path_list, *args, **kwargs):
+        """Pretend to find a dither pattern."""
+        for path in path_list:
+            filename = os.path.basename(path)
+            destination = os.path.dirname(path)
+            copy_demo_data(filename, source, destination)
+    return inner
+
+def fake_dithered_cubes_from_rss_list(demo_data_source):
+    """Return a function that pretends to make datacubes."""
+    source = os.path.join(demo_data_source, 'cubes')
+    def inner(path_list, suffix='', root='', overwrite='', *args, **kwargs):
+        """Pretend to make datacubes."""
+        object_names = get_object_names(path_list[0])
+        for name in object_names:
+            ifu_list = [IFU(path, name, flag_name=True) for path in path_list]
+            directory = os.path.join(root, name)
+            try:
+                os.makedirs(directory)
+            except OSError:
+                print "Directory Exists", directory
+                print "Writing files to the existing directory"
+            else:
+                print "Making directory", directory
+            # Filename to write to
+            arm = ifu_list[0].spectrograph_arm            
+            outfile_name = (
+                str(name)+'_'+str(arm)+'_'+str(len(path_list))+suffix+'.fits')
+            outfile_name_full = os.path.join(directory, outfile_name)
+            # Check if the filename already exists
+            if os.path.exists(outfile_name_full):
+                if overwrite:
+                    os.remove(outfile_name_full)
+                else:
+                    print 'Output file already exists:'
+                    print outfile_name_full
+                    print 'Skipping this object'
+                    continue
+            copy_demo_data(outfile_name, source, directory)
+    return inner
+
+def fake_stellar_mags_cube_pair(demo_data_source):
+    """Return a function that pretends to measure and scale stellar mags."""
+    source = os.path.join(demo_data_source, 'scaled_cubes')
+    def inner(star_path_pair, *args, **kwargs):
+        """Pretend to measure and scale stellar magnitudes."""
+        for path in star_path_pair:
+            filename = os.path.basename(path)
+            destination = os.path.dirname(path)
+            copy_demo_data(filename, source, destination)
+    return inner
+
+def fake_gzip(demo_data_source):
+    """Return a function that pretends to gzip files."""
+    source = os.path.join(demo_data_source, 'gzipped_cubes')
+    def inner(path, *args, **kwargs):
+        """Pretend to gzip a file."""
+        filename = os.path.basename(path) + '.gz'
+        destination = os.path.dirname(path)
+        copy_demo_data(filename, source, destination)
+        os.remove(path)
+    return inner
+
 def copy_demo_data(filename, source, destination, skip_missing=True):
     """Find and copy demo data from source dir to destination dir."""
     for root, dirs, files in os.walk(source):
@@ -3304,7 +3377,7 @@ def copy_demo_data(filename, source, destination, skip_missing=True):
             if os.path.isfile(path) and not os.path.islink(path):
                 dest_path = os.path.join(destination, filename)
                 shutil.copy2(path, dest_path)
-                sleep(1)
+                sleep(0.5)
                 break
     else:
         # No file found. Raise an error if skip_missing set to False
