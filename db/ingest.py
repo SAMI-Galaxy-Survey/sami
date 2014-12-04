@@ -11,7 +11,9 @@ Written:
 Updated:
   03.04.2014, Nic Scott - added import_table() and import_manytables()
   05.08.2014, Nic Scott - modified to import_hlsp() and import_manyhlsps()
-
+  03.12.2014, Nic Scott - added wrappers to import LZIFU and stellar kinematics data
+  04.12.2014, Nic Scott - added function to auto-update the value added table
+  
 Contact: 
   iraklis@aao.gov.au
 
@@ -176,6 +178,7 @@ import astropy.io.ascii as ascii
 import os
 import sys
 import astropy.table as astro_table
+import code
 
 """ 
 For commit message: 
@@ -765,7 +768,7 @@ def import_hlsp(infile,indescription,h5file,version,target='',
                              " target whose SAMI data already exists in the archive.")
         target_path = '/SAMI/'+version+'/Target/'+target+'/'
     else:
-        target_path = '/SAMI/'+version+'/tables/'
+        target_path = '/SAMI/'+version+'/Table/'
 
 
     # Read in contents of indescription into a long
@@ -837,13 +840,248 @@ def import_hlsp(infile,indescription,h5file,version,target='',
 
     if extension == '.fits':
         for n_hdr in range(len(header)):
-            dset.attrs.create(header.keys()[n_hdr],(header[n_hdr],header.comments[n_hdr]))
+            dset.attrs.create(header.keys()[n_hdr],(header[n_hdr]))
+            if not header.comments[n_hdr] == '':
+                dset.attrs.create(header.keys()[n_hdr]+'_COMMENT',(header.comments[n_hdr]))
 
     else:
         print "Ascii not supported, but you can't be here yet"
 
+    update_value_added(dataset,hdf,version)
+
 
     hdf.close()
+
+# ~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~
+def import_lzifu(lzifu_file,h5file,indescription,version,overwrite=False):
+# ~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~
+    """ Wrapper for the import of standard LZIFU data products
+    into the SAMI hdf5 archive. Essentially just unpacks the
+    multi-extension fits files and imports each extension 
+    individually.
+    """
+    
+    # Check the hdf5 file exists (else exit)
+    if not os.path.isfile(h5file):
+        raise Exception("Cannot find the nominated HDF5 file ('"+h5file+"'). "+
+                        "Please create a file using the 'create' function")
+    
+    # Check both the infile and indescription exist.
+    # Check that the indescription is a valid .txt file (else skip)
+    if not os.path.isfile(lzifu_file):
+        raise SystemExit("Cannot find the DMU file ('"+lzifu_file+"').")
+    if not os.path.isfile(indescription):
+        raise SystemExit("Cannot find the description file ('"
+                         +indescription+"').")
+    ext = os.path.splitext(indescription)[1]
+    if ext != ".txt":
+        raise SystemExit("Description file ('"+indescription+
+                         "') is not a valid .txt file.")
+    
+    # Check h5file is a SAMI DB file
+    
+    hdf = h5.File(h5file,'r+')
+    
+    if "SAMI" not in hdf.keys():
+        hdf.close()
+        raise SystemExit("The nominated HDF5 file ('"+h5file+"') "+
+                         "is not properly formatted. Please initialise the "+
+                         "filesystem using 'SAMI_DB.format'")
+    
+    # Check whether a valid version ID has been specified
+    
+    if type(version) is str:  v_numeric = float(version)
+    if type(version) is float: v_numeric = version
+    if not version in hdf['SAMI'].keys():
+        hdf.close()
+        raise SystemExit("An invalid version was specified.")
+
+    hdu = pf.open(lzifu_file)
+    try:
+        hdu[0].header['Z_LZIFU']
+    except:
+        raise SystemExit("Please supply a valid LZIFU file")
+
+    object = hdu[0].header['OBJECT']
+    lzifu_v = hdu[0].header['VERSION']
+    ncomp = str(hdu[0].header['NCOMP'])
+
+    if not object in hdf['SAMI/'+version+'/Target/'].keys():
+        hdf.close()
+        raise SystemExit("No version " + version + " data exists for SAMI ID:"+target+
+                         ". Target-specific data products must be associated with a"+
+                         " target whose SAMI data already exists in the archive.")
+    target_path = '/SAMI/'+version+'/Target/'+object+'/'
+
+    f_desc = open(indescription,'r')
+    title = f_desc.readline()
+    title = title.strip()
+    author = f_desc.readline()
+    author = author.strip()
+    contact = f_desc.readline()
+    contact = contact.strip()
+    reference = f_desc.readline()
+    reference = reference.strip()
+    short_description = f_desc.readline()
+    short_description = short_description.strip()
+    long_description = f_desc.readline()
+    long_description = long_description.strip()
+
+    hdr_items = hdu[0].header.keys()
+    for h in hdr_items:
+        if (h[:3] == 'EXT') and (h != 'EXTEND'):
+            ext = hdu[0].header[h]
+            dataset = hdu[0].header[h]+'_NC'+ncomp+'_'+lzifu_v
+            
+            map = hdu[ext].data
+            hdr = hdu[ext].header
+            hdf[target_path].create_dataset(dataset,data=map)
+
+            dset = hdf[target_path+dataset]
+
+            dset.attrs.create('Title',dataset)
+            dset.attrs.create('Author',author)
+            dset.attrs.create('Contact',contact)
+            dset.attrs.create('Reference',reference)
+            dset.attrs.create('Short description',short_description)
+            dset.attrs.create('Long description',long_description)
+
+            for n_hdr in range(len(hdr)):
+                dset.attrs.create(hdr.keys()[n_hdr],(hdr[n_hdr]))
+                if not hdr.comments[n_hdr] == '':
+                    dset.attrs.create(hdr.keys()[n_hdr]+'_COMMENT',(hdr.comments[n_hdr]))
+
+            update_value_added(dataset,hdf,version)
+
+    hdf.close()
+    hdu.close()
+
+# ~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~
+def import_stellar_kin(kin_file,h5file,indescription,version,kin_version='1.0',overwrite=False):
+    # ~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~
+    """ Wrapper for the import of standard LZIFU data products
+        into the SAMI hdf5 archive. Essentially just unpacks the
+        multi-extension fits files and imports each extension
+        individually.
+        """
+
+    # Check the hdf5 file exists (else exit)
+    if not os.path.isfile(h5file):
+        raise Exception("Cannot find the nominated HDF5 file ('"+h5file+"'). "+
+                    "Please create a file using the 'create' function")
+
+    # Check both the infile and indescription exist.
+    # Check that the indescription is a valid .txt file (else skip)
+    if not os.path.isfile(kin_file):
+        raise SystemExit("Cannot find the DMU file ('"+kin_file+"').")
+    if not os.path.isfile(indescription):
+        raise SystemExit("Cannot find the description file ('"
+                     +indescription+"').")
+    ext = os.path.splitext(indescription)[1]
+    if ext != ".txt":
+        raise SystemExit("Description file ('"+indescription+
+                     "') is not a valid .txt file.")
+
+    # Check h5file is a SAMI DB file
+
+    hdf = h5.File(h5file,'r+')
+
+    if "SAMI" not in hdf.keys():
+        hdf.close()
+        raise SystemExit("The nominated HDF5 file ('"+h5file+"') "+
+                     "is not properly formatted. Please initialise the "+
+                     "filesystem using 'SAMI_DB.format'")
+
+    # Check whether a valid version ID has been specified
+
+    if type(version) is str:  v_numeric = float(version)
+    if type(version) is float: v_numeric = version
+    if not version in hdf['SAMI'].keys():
+        hdf.close()
+        raise SystemExit("An invalid version was specified.")
+
+    hdu = pf.open(kin_file)
+    try:
+        hdu[0].header['Z_PPXF']
+    except:
+        raise SystemExit("Please supply a valid stellar kinematics file")
+    header = hdu[0].header
+    object = header['NAME']
+
+    if not object in hdf['SAMI/'+version+'/Target/'].keys():
+        hdf.close()
+        raise SystemExit("No version " + version + " data exists for SAMI ID:"+target+
+                     ". Target-specific data products must be associated with a"+
+                     " target whose SAMI data already exists in the archive.")
+    target_path = '/SAMI/'+version+'/Target/'+object+'/'
+
+    f_desc = open(indescription,'r')
+    title = f_desc.readline()
+    title = title.strip()
+    author = f_desc.readline()
+    author = author.strip()
+    contact = f_desc.readline()
+    contact = contact.strip()
+    reference = f_desc.readline()
+    reference = reference.strip()
+    short_description = f_desc.readline()
+    short_description = short_description.strip()
+    long_description = f_desc.readline()
+    long_description = long_description.strip()
+
+    ext_list = hdu.info(output=False)
+    n_ext = len(ext)
+
+    for ext in ext_list:
+        dataset = ext[1]+'_'+kin_version
+        if ext[1] == 'PRIMARY':
+                dataset = 'FLUX_'+kin_version
+        
+        map = hdu[ext[1]].data
+        hdr = hdu[ext[1]].header
+        hdf[target_path].create_dataset(dataset,data=map)
+        
+        dset = hdf[target_path+dataset]
+        
+        dset.attrs.create('Title',dataset)
+        dset.attrs.create('Author',author)
+        dset.attrs.create('Contact',contact)
+        dset.attrs.create('Reference',reference)
+        dset.attrs.create('Short description',short_description)
+        dset.attrs.create('Long description',long_description)
+
+        dset.attrs.create('VERSION',version)
+        
+        for n_hdr in range(len(header)):
+            dset.attrs.create(header.keys()[n_hdr],(header[n_hdr]))
+            if not header.comments[n_hdr] == '':
+                dset.attrs.create(header.keys()[n_hdr]+'_COMMENT',(header.comments[n_hdr]))
+
+
+        update_value_added(dataset,hdf,version)
+
+    hdf.close()
+    hdu.close()
+
+def update_value_added(dset,hdf,version):
+
+    """
+       When ingesting an hlsp, check the value added table to see if the hlsp
+       is already recorded, and if not add it to the table
+    """
+    
+    try:
+        va = hdf['SAMI/'+version+'/Table']['SAMI_VALUE_ADDED']
+        #code.interact(local=dict(globals(),**locals()))
+        if not np.any(va.value == dset):
+            va.resize([len(va)+1])
+            va[-1] = dset
+    except:
+        print 'Value added table does not exist. Creating.'
+        target_path = 'SAMI/'+version+'/Table/'
+        hdf[target_path].create_dataset('SAMI_VALUE_ADDED',data=[dset],
+                                        maxshape=([None]),chunks=True)
+
 
 
 """ THE END """
