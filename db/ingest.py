@@ -1063,24 +1063,32 @@ def import_stellar_kin(kin_file,h5file,indescription,version,kin_version='1.0',o
     hdf.close()
     hdu.close()
 
-def update_value_added(dset,hdf,version):
+def update_value_added(dset,hdf,version,disc='Blank Description'):
 
     """
        When ingesting an hlsp, check the value added table to see if the hlsp
        is already recorded, and if not add it to the table
     """
     
+    names = ('Dataset','Description')
+    dtypes = (np.dtype('S30'),np.dtype('S30'))
+    target_path = 'SAMI/'+version+'/Table/'
+    
     try:
-        va = hdf['SAMI/'+version+'/Table']['SAMI_VALUE_ADDED']
-        #code.interact(local=dict(globals(),**locals()))
-        if not np.any(va.value == dset):
-            va.resize([len(va)+1])
-            va[-1] = dset
+        va = hdf[target_path]['SAMI_VALUE_ADDED']
+        if not np.any(va.value['Dataset'] == dset):
+            tb = va.value
+            dat = astro_table.Table(np.transpose(np.transpose([[dset,disc]]))
+                                    ,names=names,dtype=dtypes)
+            tb = np.append(tb,dat)
+            del hdf[target_path]['SAMI_VALUE_ADDED']
+            hdf[target_path].create_dataset('SAMI_VALUE_ADDED',data=tb)
     except:
         print 'Value added table does not exist. Creating.'
-        target_path = 'SAMI/'+version+'/Table/'
-        hdf[target_path].create_dataset('SAMI_VALUE_ADDED',data=[dset],
-                                        maxshape=([None]),chunks=True)
+        dat = astro_table.Table(np.transpose(np.transpose([[dset,disc]]))
+                                ,names=names,dtype=dtypes)
+        hdf[target_path].create_dataset('SAMI_VALUE_ADDED',data=dat)
+                                        
 
 
 
