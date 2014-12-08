@@ -13,6 +13,36 @@ import os
 from glob import glob
 import multiprocessing
 
+def throughput(path, combined=True):
+    """
+    Return the instrument throughput, as measured from a standard star.
+
+    `combined' should be set to True if the provided file is a
+    TRANSFERcombined.fits file, False if it's an individual observation.
+
+    The returned spectrum is a fractional throughput for the telescope,
+    fibres and spectrograph (expected atmosphere was already removed).
+    """
+    h = 6.626E-27 #erg.s
+    c = 3E18  #speed of light in A/s [1m/s=1E10A/s]
+    area = 0.847*(np.pi*(389.3/2)**2)  #=100818cm^2 Telescope collecting area
+    hdulist = pf.open(path)
+    # data is the value of transfer function corrected for expected atm for
+    # each pixel, i.e. accounting for airmass
+    if combined:
+        data = hdulist[0].data
+    else:
+        data = hdulist['FLUX_CALIBRATION'].data[-1, :]
+    hdr = hdulist[0].header
+    # Wavelength range
+    wavelength = get_coords(hdr, 1)
+    delta_wl = hdr['CDELT1']
+    gain = hdr['RO_GAIN']  # photons/e-
+    # hc/lambda h=planck const c=speed of light in A/s ergs.s.A/A.s=ergs
+    hcl = h * c / wavelength
+    thput = (1/data) * (1E16) * gain * hcl / (area*delta_wl)
+    return thput
+
 def fluxcal_files(mngr):
     """
     Return two dictionaries of flux calibration files, one for each CCD.
