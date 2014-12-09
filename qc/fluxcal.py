@@ -70,11 +70,12 @@ def save_mean_throughput(path_out, mean_thput, thput, filename_list,
     filename_length = np.max([len(filename) for filename in filename_list])
     hdulist = pf.HDUList(
         [pf.PrimaryHDU(mean_thput),
-         pf.ImageHDU(thput),
+         pf.ImageHDU(thput, name='INPUT_DATA'),
          pf.BinTableHDU.from_columns(
              [pf.Column(name='filename', format='{}A'.format(filename_length),
                         array=filename_list),
-              pf.Column(name='used', format='L', array=good_list)])])
+              pf.Column(name='used', format='L', array=good_list)],
+              name='INPUTS')])
     header = hdulist[0].header
     header['DETECTOR'] = (detector, 'Detector name')
     if date_start is not None:
