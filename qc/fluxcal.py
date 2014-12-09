@@ -110,8 +110,8 @@ def calculate_mean_throughput(path_out, mngr_list, detector, date_start=None,
     for mngr in mngr_list:
         for fits in mngr.files(ndf_class='MFOBJECT', spectrophotometric=True,
                                do_not_use=False):
-            if ((fits.epoch < date_start or date_start is None) or 
-                (fits.epoch > date_finish or date_finish is None)):
+            if ((fits.epoch < date_start and date_start is not None) or 
+                (fits.epoch > date_finish and date_finish is not None)):
                 continue
             if pf.getval(fits.reduced_path, 'DETECTOR') != detector:
                 continue
