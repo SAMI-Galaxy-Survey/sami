@@ -44,18 +44,28 @@ def throughput(path, combined=True):
     return thput
 
 def save_mean_throughput(path_out, mean_thput, thput, filename_list,
-                         good_list):
+                         good_list, detector, date_start=None,
+                         date_finish=None):
     """
     Save the mean instrument throughput to a FITS file.
 
     Also included in the FITS file are all the individual throughputs that
-    went into the mean. The inputs are:
+    went into the mean.
 
+    Inputs:
     `path_out' - path to save to
     `mean_throughput' - 1d array
     `throughput' - n_spec X n_pix array of individual measurements
     `filename_list' - n_spec list of filenames
     `good_list' - n_spec boolean list of files included in the mean
+    `detector' - name of the CCD, e.g. E2V2A
+
+    Optional:
+    `date_start' - first date on which this CCD was used
+    `date_finish' - last date on which this CCD was used
+    
+    Dates should be recorded as fractional years, e.g. 2014.461
+    If not provided then a semi-infinite or infinite range is allowed.
     """
     filename_length = np.max([len(filename) for filename in filename_list])
     hdulist = pf.HDUList(
@@ -65,8 +75,54 @@ def save_mean_throughput(path_out, mean_thput, thput, filename_list,
              [pf.Column(name='filename', format='{}A'.format(filename_length),
                         array=filename_list),
               pf.Column(name='used', format='L', array=good_list)])])
+    header = hdulist[0].header
+    header['DETECTOR'] = (detector, 'Detector name')
+    if date_start is not None:
+        header['DATESTRT'] = (
+            date_start, 'Do not use for data before this date')
+    if date_finish is not None:
+        header['DATEFNSH'] = (
+            date_finish, 'Do not use for data after this date')
     hdulist.writeto(path_out)
     return
+
+def calculate_mean_throughput(path_out, mngr_list, detector, date_start=None,
+                              date_finish=None, reject=0.2):
+    """
+    Calculate and save the mean throughput for a given CCD.
+
+    Inputs:
+    `path_out' - path to save to
+    `mngr_list' - a list of Manager objects from which to draw the data
+    `detector' - name of the CCD, e.g. E2V2A
+
+    Optional:
+    `date_start' - first date on which this CCD was used
+    `date_finish' - last date on which this CCD was used
+    `reject' - fractional deviation from median throughput at which to
+               reject a spectrum
+
+    Dates should be recorded as fractional years, e.g. 2014.461
+    If not provided then a semi-infinite or infinite range is allowed.
+    """
+    thput_list = []
+    filename_list = []
+    for mngr in mngr_list:
+        for fits in mngr.files(ndf_class='MFOBJECT', spectrophotometric=True,
+                               do_not_use=False):
+            if fits.epoch < date_start or fits.epoch > date_finish:
+                continue
+            if pf.getval(fits.reduced_path, 'DETECTOR') != detector:
+                continue
+            thput_list.append(throughput(fits.reduced_path, combined=False))
+            filename_list.append(fits.filename)
+    thput = np.array(thput_list)
+    deviation = 1.0 - np.median(thput / np.median(thput, axis=0), axis=1)
+    good = np.abs(deviation) < reject
+    mean_thput = np.mean(thput[good, :], axis=0)
+    save_mean_throughput(path_out, mean_thput, thput, filename_list, good,
+                         detector, date_start=date_start,
+                         date_finish=date_finish)
 
 def fluxcal_files(mngr):
     """
