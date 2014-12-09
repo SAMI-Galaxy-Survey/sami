@@ -43,6 +43,31 @@ def throughput(path, combined=True):
     thput = (1/data) * (1E16) * gain * hcl / (area*delta_wl)
     return thput
 
+def save_mean_throughput(path_out, mean_thput, thput, filename_list,
+                         good_list):
+    """
+    Save the mean instrument throughput to a FITS file.
+
+    Also included in the FITS file are all the individual throughputs that
+    went into the mean. The inputs are:
+
+    `path_out' - path to save to
+    `mean_throughput' - 1d array
+    `throughput' - n_spec X n_pix array of individual measurements
+    `filename_list' - n_spec list of filenames
+    `good_list' - n_spec boolean list of files included in the mean
+    """
+    filename_length = np.max([len(filename) for filename in filename_list])
+    hdulist = pf.HDUList(
+        [pf.PrimaryHDU(mean_thput),
+         pf.ImageHDU(thput),
+         pf.BinTableHDU.from_columns(
+             [pf.Column(name='filename', format='{}A'.format(filename_length),
+                        array=filename_list),
+              pf.Column(name='used', format='L', array=good_list)])])
+    hdulist.writeto(path_out)
+    return
+
 def fluxcal_files(mngr):
     """
     Return two dictionaries of flux calibration files, one for each CCD.
