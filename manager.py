@@ -102,8 +102,11 @@ from .qc.fluxcal import stellar_mags_cube_pair, stellar_mags_frame_pair
 ASTROPY_VERSION = tuple(int(x) for x in ASTROPY_VERSION.split('.'))
 if ASTROPY_VERSION[:2] == (0, 2):
     ICRS = coord.ICRSCoordinates
-else:
+elif ASTROPY_VERSION[:2] == (0, 3):
     ICRS = coord.ICRS
+else:
+    def ICRS(*args, **kwargs):
+        return coord.SkyCoord(*args, frame='icrs', **kwargs)
 
 IDX_FILES_SLOW = {'1': 'sami580V_v1_2.idx',
                   '2': 'sami1000R_v1_2.idx',
