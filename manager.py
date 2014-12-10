@@ -811,7 +811,15 @@ class Manager:
         except KeyError:
             spectrophotometric_header = None
         # Check if the telescope was pointing in the right direction
-        if (fits.coords.separation(fits.cfg_coords) < self.matching_radius):
+        fits_coords = ICRS(
+            ra=fits.coords['ra'],
+            dec=fits.coords['dec'],
+            unit=fits.coords['unit'])
+        fits_cfg_coords = ICRS(
+            ra=fits.cfg_coords['ra'],
+            dec=fits.cfg_coords['dec'],
+            unit=fits.cfg_coords['unit'])
+        if fits_coords.separation(fits_cfg_coords) < self.matching_radius:
             # Yes it was
             name_coords = 'main'
             spectrophotometric_coords = False
@@ -823,7 +831,7 @@ class Manager:
         name_extra = None
         spectrophotometric_extra = None
         for extra in self.extra_list:
-            if (fits.coords.separation(extra['coords']) < self.matching_radius):
+            if (fits_coords.separation(extra['coords']) < self.matching_radius):
                 # Yes it does
                 name_extra = extra['name']
                 spectrophotometric_extra = extra['spectrophotometric']
@@ -865,7 +873,7 @@ class Manager:
         if name_extra is None and name_coords is None:
             self.extra_list.append(
                 {'name':fits.name,
-                 'coords':fits.coords,
+                 'coords':fits_coords,
                  'spectrophotometric':fits.spectrophotometric,
                  'fitsfile':fits})
         return
@@ -2721,7 +2729,11 @@ class FITSFile:
             # SAMIv1. Can only get the field number by cross-checking the
             # config file RA and Dec.
             for pilot_field in PILOT_FIELD_LIST:
-                if (self.cfg_coords.separation(
+                cfg_coords = ICRS(
+                    ra=self.cfg_coords['ra'],
+                    dec=self.cfg_coords['dec'],
+                    unit=self.cfg_coords['unit'])
+                if (cfg_coords.separation(
                     ICRS(pilot_field['coords'])).arcsecs < 1.0
                     and self.plate_id == pilot_field['plate_id']):
                     self.field_no = pilot_field['field_no']
@@ -2802,13 +2814,13 @@ class FITSFile:
         """Save the RA/Dec and config RA/Dec."""
         if self.ndf_class and self.ndf_class not in ['BIAS', 'DARK', 'LFLAT']:
             header = self.hdulist[self.fibres_extno].header
-            self.cfg_coords = ICRS(ra=header['CFGCENRA'],
-                                   dec=header['CFGCENDE'],
-                                   unit=(units.radian, units.radian))
+            self.cfg_coords = {'ra': header['CFGCENRA'],
+                               'dec': header['CFGCENDE'],
+                               'unit': (units.radian, units.radian)}
             if self.ndf_class == 'MFOBJECT':
-                self.coords = ICRS(ra=header['CENRA'],
-                                   dec=header['CENDEC'],
-                                   unit=(units.radian, units.radian))
+                self.coords = {'ra': header['CENRA'],
+                               'dec': header['CENDEC'],
+                               'unit': (units.radian, units.radian)}
             else:
                 self.coords = None
         else:
