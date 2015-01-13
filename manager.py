@@ -72,6 +72,7 @@ from contextlib import contextmanager
 from collections import defaultdict
 from getpass import getpass
 from time import sleep
+from glob import glob
 
 import astropy.coordinates as coord
 from astropy import units
@@ -97,6 +98,7 @@ from .general.align_micron import find_dither
 from .dr import fluxcal2, telluric, check_plots, tdfdr
 from .dr.throughput import make_clipped_thput_files
 from .qc.fluxcal import stellar_mags_cube_pair, stellar_mags_frame_pair
+from .qc.fluxcal import throughput
 from .qc.sky import sky_residuals
 
 # Get the astropy version as a tuple of integers
@@ -1337,6 +1339,8 @@ class Manager:
             if overwrite or not os.path.exists(path_out):
                 print 'Combining files to create', path_out
                 fluxcal2.combine_transfer_functions(path_list, path_out)
+                # Run the QC throughput measurement
+                self.qc_throughput_spectrum(path_out)
             # Copy the file into all required directories
             done = [os.path.dirname(path_list[0])]
             for path in path_list:
@@ -1468,6 +1472,10 @@ class Manager:
             inputs_list.append(((fits_1.telluric_path, fits_2.telluric_path),
                                 catalogue))
         self.map(scale_frame_pair, inputs_list)
+        # Measure the relative atmospheric transmission
+        for (path_1, path_2), _ in inputs_list:
+            self.qc_throughput_frame(path_1)
+            self.qc_throughput_frame(path_2)
         return
 
     def measure_offsets(self, overwrite=False, min_exposure=599.0, name='main',
@@ -1675,6 +1683,71 @@ class Manager:
         header['SKYMNLIA'] = (
             results['mean_skyflux_line'],
             'Mean line absolute sky residual')
+        hdulist.flush()
+        hdulist.close()
+        return
+
+    def qc_throughput_spectrum(self, path):
+        """Save the throughput function for a TRANSFERcombined file."""
+        absolute_throughput = throughput(path)
+        # Check the CCD and date for this file
+        path_input = pf.getval(path, 'ORIGFILE', 1)
+        detector = pf.getval(path_input, 'DETECTOR')
+        epoch = pf.getval(path_input, 'EPOCH')
+        # Load mean throughput function for that CCD
+        path_list = (glob('standards/throughput/mean_throughput_' +
+                          detector + '.fits') + 
+                     glob('standards/throughput/mean_throughput_' + 
+                          detector + '_*.fits'))
+        for path_mean in path_list:
+            hdulist_mean = pf.open(path_mean)
+            header = hdulist_mean[0].header
+            if (('DATESTRT' not in header or
+                 epoch >= header['DATESTRT']) and
+                ('DATEFNSH' not in header or
+                 epoch <= header['DATEFNSH'])):
+                # This file is suitable for use
+                found_mean = True
+                mean_throughput = hdulist_mean[0].data
+                hdulist_mean.close()
+                break
+            hdulist_mean.close()
+        else:
+            print 'Warning: No mean throughput file found for QC checks.'
+            found_mean = False
+        if found_mean:
+            relative_throughput = absolute_throughput / mean_throughput
+            data = np.vstack((absolute_throughput, relative_throughput))
+            median_relative_throughput = np.median(relative_throughput)
+        else:
+            data = absolute_throughput
+        hdulist = pf.open(path, 'update')
+        hdulist.append(pf.ImageHDU(data, name='THROUGHPUT'))
+        if found_mean:
+            hdulist['THROUGHPUT'].header['MEDRELTH'] = (
+                median_relative_throughput, 'Median relative throughput')
+            hdulist['THROUGHPUT'].header['PATHMEAN'] = (
+                path_mean, 'File used to define mean throughput')
+        hdulist.flush()
+        hdulist.close()
+        return
+
+    def qc_throughput_frame(self, path):
+        """Calculate and save the relative throughput for an object frame."""
+        try:
+            median_relative_throughput = (
+                pf.getval(path, 'RESCALE') * 
+                pf.getval(pf.getval(path, 'FCALFILE'),
+                          'MEDRELTH'))
+        except KeyError:
+            # Not all the data is available
+            print 'Warning: Not all data required to calculate transmission is available.'
+            return
+        self.ensure_qc_hdu(path)
+        hdulist = pf.open(path, 'update')
+        header = hdulist['QC'].header
+        header['TRANSMIS'] = (
+            median_relative_throughput, 'Relative transmission')
         hdulist.flush()
         hdulist.close()
         return
