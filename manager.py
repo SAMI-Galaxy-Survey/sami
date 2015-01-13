@@ -97,6 +97,7 @@ from .general.align_micron import find_dither
 from .dr import fluxcal2, telluric, check_plots, tdfdr
 from .dr.throughput import make_clipped_thput_files
 from .qc.fluxcal import stellar_mags_cube_pair, stellar_mags_frame_pair
+from .qc.sky import sky_residuals
 
 # Get the astropy version as a tuple of integers
 ASTROPY_VERSION = tuple(int(x) for x in ASTROPY_VERSION.split('.'))
@@ -1444,6 +1445,11 @@ class Manager:
         fits_2_list = [inputs['fits_2'] for inputs, done in 
                        zip(inputs_list, done_list) if done]
         self.update_checks('TEL', fits_2_list, False)
+        # Now is the perfect time to run the QC check on sky subtraction
+        for inputs in [inputs for inputs, done in
+                       zip(inputs_list, done_list) if done]:
+            self.qc_sky(inputs['fits_1'])
+            self.qc_sky(inputs['fits_2'])
         return
 
     def scale_frames(self, overwrite=False, **kwargs):
@@ -1624,6 +1630,53 @@ class Manager:
         self.measure_offsets(overwrite, **kwargs)
         self.cube(overwrite, **kwargs)
         self.scale_cubes(overwrite, **kwargs)
+        return
+
+    def ensure_qc_hdu(self, path, name='QC'):
+        """Ensure that the file has a QC HDU."""
+        hdulist = pf.open(path)
+        try:
+            hdulist[name]
+        except KeyError:
+            # QC HDU doesn't exist, so make one
+            hdu = pf.ImageHDU(name=name)
+            hdulist.append(hdu)
+            hdulist.flush()
+        hdulist.close()
+        return
+
+    def qc_sky(self, fits):
+        """Run QC check on sky subtraction accuracy and save results."""
+        results = sky_residuals(fits.telluric_path)
+        self.ensure_qc_hdu(fits.telluric_path)
+        hdulist = pf.open(fits.telluric_path, 'update')
+        header = hdulist['QC'].header
+        header['SKYMDCOF'] = (
+            results['med_frac_skyres_cont'],
+            'Median continuum fractional sky residual')
+        header['SKYMDLIF'] = (
+            results['med_frac_skyres_line'],
+            'Median line fractional sky residual')
+        header['SKYMDCOA'] = (
+            results['med_skyflux_cont'],
+            'Median continuum absolute sky residual')
+        header['SKYMDLIA'] = (
+            results['med_skyflux_line'],
+            'Median line absolute sky residual')
+        header['SKYMNCOF'] = (
+            results['mean_frac_skyres_cont'],
+            'Mean continuum fractional sky residual')
+        header['SKYMNLIF'] = (
+            results['mean_frac_skyres_line'],
+            'Mean line fractional sky residual')
+        header['SKYMNCOA'] = (
+            results['mean_skyflux_cont'],
+            'Mean continuum absolute sky residual')
+        header['SKYMNLIA'] = (
+            results['mean_skyflux_line'],
+            'Mean line absolute sky residual')
+        hdulist.flush()
+        hdulist.close()
         return
 
     def reduce_file(self, fits, overwrite=False, tlm=False,
