@@ -1280,7 +1280,8 @@ def create_qc_hdu(file_list, name):
     hdu = pf.BinTableHDU.from_columns(
         [pf.Column(name='filename', format='20A', array=filename_list),
          pf.Column(name='rel_transp', format='E', array=rel_transp),
-         pf.Column(name='fwhm', format='E', array=fwhm)])
+         pf.Column(name='fwhm', format='E', array=fwhm)],
+        name='QC')
     return hdu
 
 
