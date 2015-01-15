@@ -1,7 +1,7 @@
 import matplotlib
 import pylab as py
 import numpy as np
-import pyfits as pf
+import astropy.io.fits as pf
 
 from .fluxcal import get_coords
 
