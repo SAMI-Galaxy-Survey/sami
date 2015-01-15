@@ -1642,7 +1642,7 @@ class Manager:
 
     def ensure_qc_hdu(self, path, name='QC'):
         """Ensure that the file has a QC HDU."""
-        hdulist = pf.open(path)
+        hdulist = pf.open(path, 'update')
         try:
             hdulist[name]
         except KeyError:
