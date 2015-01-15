@@ -2,6 +2,7 @@ import matplotlib
 import pylab as py
 import numpy as np
 import astropy.io.fits as pf
+from scipy.ndimage.filters import median_filter
 
 from .fluxcal import get_coords
 
@@ -137,8 +138,8 @@ def sky_residuals(infile, fibstart=1, fibend=2000, allfib=False, verbose=False,
                     yy = ff[i,iloc-hwidth:iloc+hwidth+1]
 
                     # get median filtered continuum near the line:
-                    cont = nd.filters.median_filter(ff[i,:],size=51)
-                    cont_sky = nd.filters.median_filter(ss[i,:],size=51)
+                    cont = median_filter(ff[i,:],size=51)
+                    cont_sky = median_filter(ss[i,:],size=51)
                     cc = cont[iloc-hwidth:iloc+hwidth+1]
                     cc_sky = cont_sky[iloc-hwidth:iloc+hwidth+1]
                 
