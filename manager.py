@@ -1736,9 +1736,9 @@ class Manager:
         """Calculate and save the relative throughput for an object frame."""
         try:
             median_relative_throughput = (
-                pf.getval(path, 'RESCALE') * 
+                pf.getval(path, 'RESCALE', 'FLUX_CALIBRATION') * 
                 pf.getval(pf.getval(path, 'FCALFILE'),
-                          'MEDRELTH'))
+                          'MEDRELTH', 'THROUGHPUT'))
         except KeyError:
             # Not all the data is available
             print 'Warning: Not all data required to calculate transmission is available.'
