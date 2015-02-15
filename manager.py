@@ -1454,6 +1454,9 @@ class Manager:
                        zip(inputs_list, done_list) if done]:
             self.qc_sky(inputs['fits_1'])
             self.qc_sky(inputs['fits_2'])
+            # Also, copy the FWHM measurement to the QC header
+            self.qc_seeing(inputs['fits_1'])
+            self.qc_seeing(inputs['fits_2'])
         return
 
     def scale_frames(self, overwrite=False, **kwargs):
@@ -1652,6 +1655,16 @@ class Manager:
             hdulist.flush()
         hdulist.close()
         return
+
+    def qc_seeing(self, fits):
+        """Copy the FWHM over the QC header."""
+        self.ensure_qc_hdu(fits.telluric_path)
+        hdulist = pf.open(fits.telluric_path, 'update')
+        source_header = hdulist['FLUX_CALIBRATION'].header
+        header = hdulist['QC'].header
+        header['FWHM'] = source_header['FWHM'], source_header.comments['FWHM']
+        hdulist.flush()
+        hdulist.close()
 
     def qc_sky(self, fits):
         """Run QC check on sky subtraction accuracy and save results."""
