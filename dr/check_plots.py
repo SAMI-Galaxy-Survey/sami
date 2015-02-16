@@ -92,6 +92,8 @@ nomalisation is ok."""
     # Make a plot showing the combined transfer function and each individual one
     fig_combined = plt.figure('Combined data', figsize=(16., 6.))
     for hdu_1 in hdulist_combined_1[1:]:
+        if hdu_1.name != 'FLUX_CALIBRATION':
+            continue
         filename = os.path.basename(hdu_1.header['ORIGFILE'])
         hdu_2 = match_fcal_hdu(hdulist_combined_2, hdu_1)
         color = next(color_cycle)
@@ -103,6 +105,8 @@ nomalisation is ok."""
     plt.legend(loc='best')
     # Make a plot for each input file, showing the data and the fit
     for hdu_1 in hdulist_combined_1[1:]:
+        if hdu_1.name != 'FLUX_CALIBRATION':
+            continue
         filename = os.path.basename(hdu_1.header['ORIGFILE'])
         hdu_2 = match_fcal_hdu(hdulist_combined_2, hdu_1)
         fig_single = plt.figure(filename, figsize=(16., 6.))
@@ -338,6 +342,8 @@ def match_fcal_hdu(hdulist, hdu):
     filename = os.path.basename(hdu.header['ORIGFILE'])
     hdu_match = None
     for hdu_match in hdulist[1:]:
+        if hdu_match.name != 'FLUX_CALIBRATION':
+            continue
         filename_match = os.path.basename(hdu_match.header['ORIGFILE'])
         if (filename_match.startswith(filename[:5]) and 
             filename_match[6:10] == filename[6:10]):
