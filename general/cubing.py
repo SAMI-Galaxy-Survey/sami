@@ -1301,6 +1301,7 @@ def create_qc_hdu(file_list, name):
     columns = [
         pf.Column(name='filename', format='20A', array=filename_list),
         pf.Column(name='rel_transp', format='E', array=rel_transp),
+        ]
     for key in qc_keys:
         columns.append(pf.Column(name=key, format='E', array=qc_data[key]))
     hdu = pf.BinTableHDU.from_columns(columns, name='QC')
