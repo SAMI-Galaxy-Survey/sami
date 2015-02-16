@@ -1704,7 +1704,9 @@ class Manager:
         """Save the throughput function for a TRANSFERcombined file."""
         absolute_throughput = throughput(path)
         # Check the CCD and date for this file
-        path_input = pf.getval(path, 'ORIGFILE', 1)
+        file_input = pf.getval(path, 'ORIGFILE', 1)
+        path_input = os.path.join(
+            self.fits_file(file_input[:10]).reduced_dir, file_input)
         detector = pf.getval(path_input, 'DETECTOR')
         epoch = pf.getval(path_input, 'EPOCH')
         # Load mean throughput function for that CCD
