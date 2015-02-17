@@ -1767,6 +1767,37 @@ class Manager:
         hdulist.close()
         return
 
+    def qc_summary(self, min_exposure=599.0, ccd='ccd_2', **kwargs):
+        """Print a summary of the QC information available."""
+        for (field_id,), fits_list in self.group_files_by(
+                'field_id', ndf_class='MFOBJECT', min_exposure=min_exposure,
+                ccd=ccd, **kwargs):
+            print '+'*75
+            print field_id
+            print '-'*75
+            print 'File        Exposure  FWHM (")  Transmission  Sky residual'
+            for fits in fits_list:
+                fwhm = '       -'
+                transmission = '           -'
+                sky_residual = '           -'
+                try:
+                    header = pf.getheader(best_path(fits))
+                except IOError:
+                    pass
+                else:
+                    if 'FWHM' in header:
+                        fwhm = '{:8.2f}'.format(header['FWHM'])
+                    if 'TRANSMIS' in header:
+                        transmission = '{:12.3f}'.format(header['TRANSMIS'])
+                    if 'SKYMDCOF' in header:
+                        sky_residual = '{:12.3f}'.format(header['SKYMDCOF'])
+                print '{} {}  {:8i}  {}  {}  {}'.format(
+                    fits.filename[:5], fits.filename[6:10], fits.exposure,
+                    fwhm, transmission, sky_residual)
+            print '+'*75
+            print
+        return
+
     def reduce_file(self, fits, overwrite=False, tlm=False,
                     leave_reduced=False):
         """Select appropriate options and reduce the given file.
