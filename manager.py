@@ -1477,7 +1477,7 @@ class Manager:
             inputs_list.append((fits_1.telluric_path, fits_2.telluric_path))
         self.map(scale_frame_pair, inputs_list)
         # Measure the relative atmospheric transmission
-        for (path_1, path_2), _ in inputs_list:
+        for (path_1, path_2) in inputs_list:
             self.qc_throughput_frame(path_1)
             self.qc_throughput_frame(path_2)
         return
