@@ -1223,6 +1223,9 @@ class Manager:
             file_iterable_short, overwrite=overwrite))
         # Mark these files as not checked
         self.update_checks('OBJ', reduced_files, False)
+        # Check how good the sky subtraction was
+        self.qc_sky(inputs['fits_1'])
+        self.qc_sky(inputs['fits_2'])
         return
 
     def reduce_file_iterable(self, file_iterable, external_throughput=False, 
@@ -1449,12 +1452,9 @@ class Manager:
         fits_2_list = [inputs['fits_2'] for inputs, done in 
                        zip(inputs_list, done_list) if done]
         self.update_checks('TEL', fits_2_list, False)
-        # Now is the perfect time to run the QC check on sky subtraction
         for inputs in [inputs for inputs, done in
                        zip(inputs_list, done_list) if done]:
-            self.qc_sky(inputs['fits_1'])
-            self.qc_sky(inputs['fits_2'])
-            # Also, copy the FWHM measurement to the QC header
+            # Copy the FWHM measurement to the QC header
             self.qc_seeing(inputs['fits_1'])
             self.qc_seeing(inputs['fits_2'])
         return
@@ -1664,9 +1664,9 @@ class Manager:
 
     def qc_sky(self, fits):
         """Run QC check on sky subtraction accuracy and save results."""
-        results = sky_residuals(fits.telluric_path)
-        self.ensure_qc_hdu(fits.telluric_path)
-        hdulist = pf.open(fits.telluric_path, 'update')
+        results = sky_residuals(fits.reduced_path)
+        self.ensure_qc_hdu(fits.reduced_path)
+        hdulist = pf.open(fits.reduced_path, 'update')
         header = hdulist['QC'].header
         header['SKYMDCOF'] = (
             results['med_frac_skyres_cont'],
