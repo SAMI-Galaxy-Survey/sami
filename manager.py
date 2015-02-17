@@ -1211,7 +1211,11 @@ class Manager:
             file_iterable_long, overwrite=overwrite)
         if recalculate_throughput:
             # Correct any bad throughput measurements
-            self.correct_bad_throughput(overwrite=overwrite, **kwargs)
+            extra_files = self.correct_bad_throughput(
+                overwrite=overwrite, **kwargs)
+            for fits in extra_files:
+                if fits not in reduced_files:
+                    reduced_files.append(fits)
         # Now reduce the short exposures, which might need the long
         # exposure reduced above
         upper_limit = (self.min_exposure_for_throughput - 
@@ -1287,9 +1291,8 @@ class Manager:
             for fits, edited in zip(group, edited_list):
                 if edited:
                     rereduce.append(fits)
-        self.reduce_file_iterable(rereduce, external_throughput=True, 
-                                  overwrite=True)
-        return
+        return self.reduce_file_iterable(rereduce, external_throughput=True, 
+                                         overwrite=True)
 
     def derive_transfer_function(self, 
             overwrite=False, model_name='ref_centre_alpha_dist_circ_hdratm', 
