@@ -95,7 +95,7 @@ from .utils import IFU
 from .general.cubing import dithered_cubes_from_rss_list, get_object_names
 from .general.cubing import scale_cube_pair, scale_cube_pair_to_mag
 from .general.align_micron import find_dither
-from .dr import fluxcal2, telluric, check_plots, tdfdr
+from .dr import fluxcal2, telluric, check_plots, tdfdr, dust
 from .dr.throughput import make_clipped_thput_files
 from .qc.fluxcal import stellar_mags_cube_pair, stellar_mags_frame_pair
 from .qc.fluxcal import throughput
@@ -1584,6 +1584,24 @@ class Manager:
         with self.patch_if_demo('sami.manager.stellar_mags_cube_pair',
                                 fake_stellar_mags_cube_pair):
             self.map(scale_cubes_field, input_list)
+        return
+
+    def record_dust(self, overwrite=False, min_exposure=599.0, name='main',
+                    **kwargs):
+        """Record information about dust in the output datacubes."""
+        groups = self.group_files_by(
+            'field_id', ccd='ccd_1', ndf_class='MFOBJECT', do_not_use=False,
+            reduced=True, min_exposure=min_exposure, name=name, **kwargs)
+        for (field_id, ), fits_list in groups.items():
+            table = pf.getdata(fits_list[0].reduced_path, 'FIBRES_IFU')
+            objects = table['NAME'][table['TYPE'] == 'P']
+            objects = np.unique(objects).tolist()
+            for name in objects:
+                for arm in ('blue', 'red'):
+                    path = self.cubed_path(name, arm, len(fits_list), field_id,
+                                           exists=True)
+                    if path:
+                        dust.dustCorrectSAMICube(path, overwrite=overwrite)
         return
             
     def gzip_cubes(self, overwrite=False, min_exposure=599.0, name='main',
