@@ -1461,7 +1461,6 @@ class Manager:
 
     def scale_frames(self, overwrite=False, **kwargs):
         """Scale individual RSS frames to the secondary standard flux."""
-        catalogue = read_stellar_mags()
         # First make the list of file pairs to scale
         inputs_list = []
         for fits_2 in self.files(ndf_class='MFOBJECT', do_not_use=False,
@@ -1472,8 +1471,7 @@ class Manager:
                 # Already been done; skip to the next file
                 continue
             fits_1 = self.other_arm(fits_2)
-            inputs_list.append(((fits_1.telluric_path, fits_2.telluric_path),
-                                catalogue))
+            inputs_list.append((fits_1.telluric_path, fits_2.telluric_path))
         self.map(scale_frame_pair, inputs_list)
         # Measure the relative atmospheric transmission
         for (path_1, path_2), _ in inputs_list:
@@ -1547,7 +1545,6 @@ class Manager:
             'field_id', ccd='ccd_1', ndf_class='MFOBJECT', do_not_use=False,
             reduced=True, min_exposure=min_exposure, name=name, **kwargs)
         input_list = []
-        catalogue = read_stellar_mags()
         for (field_id, ), fits_list in groups.items():
             table = pf.getdata(fits_list[0].reduced_path, 'FIBRES_IFU')
             objects = table['NAME'][table['TYPE'] == 'P']
@@ -1580,8 +1577,7 @@ class Manager:
                 for name in objects]
             object_path_pair_list = [
                 pair for pair in object_path_pair_list if None not in pair]
-            input_list.append((star_path_pair, object_path_pair_list, star,
-                               catalogue))
+            input_list.append((star_path_pair, object_path_pair_list, star))
         with self.patch_if_demo('sami.manager.stellar_mags_cube_pair',
                                 fake_stellar_mags_cube_pair):
             self.map(scale_cubes_field, input_list)
@@ -3365,10 +3361,12 @@ def run_2dfdr_single_wrapper(group):
 @safe_for_multiprocessing
 def scale_cubes_field(group):
     """Scale a field to the correct magnitude."""
-    star_path_pair, object_path_pair_list, star, catalogue = group
+    star_path_pair, object_path_pair_list, star = group
     print 'Scaling field with star', star
     stellar_mags_cube_pair(star_path_pair, save=True)
-    found = assign_true_mag(star_path_pair, star, catalogue=catalogue)
+    # Previously tried reading the catalogue once and passing it, but for
+    # unknown reasons that was corrupting the data when run on aatmacb.
+    found = assign_true_mag(star_path_pair, star, catalogue=None)
     if found:
         scale = scale_cube_pair_to_mag(star_path_pair)
         for object_path_pair in object_path_pair_list:
@@ -3378,14 +3376,15 @@ def scale_cubes_field(group):
     return
 
 @safe_for_multiprocessing
-def scale_frame_pair(group):
+def scale_frame_pair(path_pair):
     """Scale a pair of RSS frames to the correct magnitude."""
-    path_pair, catalogue = group
     print 'Scaling RSS files to give star correct magnitude:'
     print os.path.basename(path_pair[0]), os.path.basename(path_pair[1])
     stellar_mags_frame_pair(path_pair, save=True)
     star = pf.getval(path_pair[0], 'STDNAME', 'FLUX_CALIBRATION')
-    found = assign_true_mag(path_pair, star, catalogue=catalogue,
+    # Previously tried reading the catalogue once and passing it, but for
+    # unknown reasons that was corrupting the data when run on aatmacb.
+    found = assign_true_mag(path_pair, star, catalogue=None,
                             hdu='FLUX_CALIBRATION')
     if found:
         scale_cube_pair_to_mag(path_pair, hdu='FLUX_CALIBRATION')
