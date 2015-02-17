@@ -1767,11 +1767,11 @@ class Manager:
         hdulist.close()
         return
 
-    def qc_summary(self, min_exposure=599.0, ccd='ccd_2', **kwargs):
+    def qc_summary(self, min_exposure=599.0, ccd='ccd_1', **kwargs):
         """Print a summary of the QC information available."""
         for (field_id,), fits_list in self.group_files_by(
                 'field_id', ndf_class='MFOBJECT', min_exposure=min_exposure,
-                ccd=ccd, **kwargs):
+                ccd=ccd, **kwargs).items():
             print '+'*75
             print field_id
             print '-'*75
@@ -1781,8 +1781,8 @@ class Manager:
                 transmission = '           -'
                 sky_residual = '           -'
                 try:
-                    header = pf.getheader(best_path(fits))
-                except IOError:
+                    header = pf.getheader(best_path(fits), 'QC')
+                except (IOError, KeyError):
                     pass
                 else:
                     if 'FWHM' in header:
@@ -1791,8 +1791,8 @@ class Manager:
                         transmission = '{:12.3f}'.format(header['TRANSMIS'])
                     if 'SKYMDCOF' in header:
                         sky_residual = '{:12.3f}'.format(header['SKYMDCOF'])
-                print '{} {}  {:8i}  {}  {}  {}'.format(
-                    fits.filename[:5], fits.filename[6:10], fits.exposure,
+                print '{} {}  {:8d}  {}  {}  {}'.format(
+                    fits.filename[:5], fits.filename[6:10], int(fits.exposure),
                     fwhm, transmission, sky_residual)
             print '+'*75
             print
