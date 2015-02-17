@@ -1224,8 +1224,8 @@ class Manager:
         # Mark these files as not checked
         self.update_checks('OBJ', reduced_files, False)
         # Check how good the sky subtraction was
-        self.qc_sky(inputs['fits_1'])
-        self.qc_sky(inputs['fits_2'])
+        for fits in reduced_files:
+            self.qc_sky(fits)
         return
 
     def reduce_file_iterable(self, file_iterable, external_throughput=False, 
