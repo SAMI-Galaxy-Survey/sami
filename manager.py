@@ -1282,8 +1282,12 @@ class Manager:
                 do_not_use=False,
                 min_exposure=self.min_exposure_for_throughput, reduced=True,
                 **kwargs).values():
-            if len(group) == 1:
-                # Can't do anything if there's only one file available
+            # Only keep files that used sky lines for throughput calibration
+            group = [fits for fits in group
+                     if fits.reduce_options()['TPMETH'] in
+                     ('SKYFLUX(MED)', 'SKYFLUX(COR)')]
+            if len(group) <= 1:
+                # Can't do anything if there's only one file available, or none
                 continue
             path_list = [fits.reduced_path for fits in group]
             edited_list = make_clipped_thput_files(
