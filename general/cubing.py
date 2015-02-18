@@ -1278,14 +1278,14 @@ def create_qc_hdu(file_list, name):
         'SKYMNLIF',
         'SKYMNCOA',
         'SKYMNLIA',
-        'TRANSMIS')
+        'TRANSMIS',
+        'FWHM')
     rel_transp = []
     fwhm = []
     qc_data = {key: [] for key in qc_keys}
     for path in file_list:
         hdulist = pf.open(path)
         rel_transp.append(1.0 / hdulist['FLUX_CALIBRATION'].header['RESCALE'])
-        fwhm.append(hdulist['FLUX_CALIBRATION'].header['FWHM'])
         if 'QC' in hdulist:
             qc_header = hdulist['QC'].header
             for key in qc_keys:
@@ -1301,7 +1301,7 @@ def create_qc_hdu(file_list, name):
     columns = [
         pf.Column(name='filename', format='20A', array=filename_list),
         pf.Column(name='rel_transp', format='E', array=rel_transp),
-        pf.Column(name='fwhm', format='E', array=fwhm)]
+        ]
     for key in qc_keys:
         columns.append(pf.Column(name=key, format='E', array=qc_data[key]))
     hdu = pf.BinTableHDU.from_columns(columns, name='QC')
