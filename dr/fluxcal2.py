@@ -680,11 +680,6 @@ def extract_total_flux(ifu, psf_parameters, model_name, clip=None):
             keep_bool = np.isfinite(ifu.data[:, bad_pixel])
             keep = np.where(keep_bool)[0]
             while rms[bad_pixel] >= (clip * rms_smoothed[bad_pixel]):
-                # Clip out the fibre with the largest positive deviation
-                worst_pixel = np.argmax(ifu.data[keep, bad_pixel] - 
-                                        fit[keep, bad_pixel])
-                keep_bool[keep[worst_pixel]] = False
-                keep = np.where(keep_bool)[0]
                 if len(keep) < 0.5*len(xfibre):
                     # Over half the fibres have been clipped; time to give up
                     flux[bad_pixel] = np.nan
@@ -692,6 +687,11 @@ def extract_total_flux(ifu, psf_parameters, model_name, clip=None):
                     sigma_flux[bad_pixel] = np.nan
                     sigma_background[bad_pixel] = np.nan
                     break
+                # Clip out the fibre with the largest positive deviation
+                worst_pixel = np.argmax(ifu.data[keep, bad_pixel] - 
+                                        fit[keep, bad_pixel])
+                keep_bool[keep[worst_pixel]] = False
+                keep = np.where(keep_bool)[0]
                 # Re-fit the model to the data
                 flux[bad_pixel], background[bad_pixel], \
                     sigma_flux[bad_pixel], sigma_background[bad_pixel] = \
