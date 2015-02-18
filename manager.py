@@ -95,7 +95,7 @@ from .utils import IFU
 from .general.cubing import dithered_cubes_from_rss_list, get_object_names
 from .general.cubing import scale_cube_pair, scale_cube_pair_to_mag
 from .general.align_micron import find_dither
-from .dr import fluxcal2, telluric, check_plots, tdfdr
+from .dr import fluxcal2, telluric, check_plots, tdfdr, dust
 from .dr.throughput import make_clipped_thput_files
 from .qc.fluxcal import stellar_mags_cube_pair, stellar_mags_frame_pair
 from .qc.fluxcal import throughput
@@ -1287,7 +1287,11 @@ class Manager:
             file_iterable_long, overwrite=overwrite)
         if recalculate_throughput:
             # Correct any bad throughput measurements
-            self.correct_bad_throughput(overwrite=overwrite, **kwargs)
+            extra_files = self.correct_bad_throughput(
+                overwrite=overwrite, **kwargs)
+            for fits in extra_files:
+                if fits not in reduced_files:
+                    reduced_files.append(fits)
         # Now reduce the short exposures, which might need the long
         # exposure reduced above
         upper_limit = (self.min_exposure_for_throughput - 
@@ -1299,6 +1303,9 @@ class Manager:
             file_iterable_short, overwrite=overwrite))
         # Mark these files as not checked
         self.update_checks('OBJ', reduced_files, False)
+        # Check how good the sky subtraction was
+        for fits in reduced_files:
+            self.qc_sky(fits)
         return
 
     def reduce_file_iterable(self, file_iterable, external_throughput=False, 
@@ -1346,24 +1353,28 @@ class Manager:
     def correct_bad_throughput(self, overwrite=False, **kwargs):
         """Create thput files with bad values replaced by mean over field."""
         rereduce = []
-        used_flats = self.fields_without_skies(**kwargs)
-        for (date, field_id, ccd), group in self.group_files_by(
+        # used_flats = self.fields_without_skies(**kwargs)
+        for group in self.group_files_by(
                 ('date', 'field_id', 'ccd'), ndf_class='MFOBJECT',
                 do_not_use=False,
                 min_exposure=self.min_exposure_for_throughput, reduced=True,
-                **kwargs).items():
-            done = False
-            for (field_id_done, plate_id_done, date_done,
-                    ccd_done) in used_flats:
-                if (date == date_done and field_id == field_id_done and
-                        ccd == ccd_done):
-                    # This field has been taken care of using dome flats
-                    done = True
-                    break
-            if done:
-                continue
-            if len(group) == 1:
-                # Can't do anything if there's only one file available
+                **kwargs).values():
+            # done = False
+            # for (field_id_done, plate_id_done, date_done,
+            #         ccd_done) in used_flats:
+            #     if (date == date_done and field_id == field_id_done and
+            #             ccd == ccd_done):
+            #         # This field has been taken care of using dome flats
+            #         done = True
+            #         break
+            # if done:
+            #     continue
+            # Only keep files that used sky lines for throughput calibration
+            group = [fits for fits in group
+                     if fits.reduce_options()['TPMETH'] in
+                     ('SKYFLUX(MED)', 'SKYFLUX(COR)')]
+            if len(group) <= 1:
+                # Can't do anything if there's only one file available, or none
                 continue
             path_list = [fits.reduced_path for fits in group]
             edited_list = make_clipped_thput_files(
@@ -1371,9 +1382,8 @@ class Manager:
             for fits, edited in zip(group, edited_list):
                 if edited:
                     rereduce.append(fits)
-        self.reduce_file_iterable(rereduce, external_throughput=True, 
-                                  overwrite=True)
-        return
+        return self.reduce_file_iterable(rereduce, external_throughput=True, 
+                                         overwrite=True)
 
     def derive_transfer_function(self, 
             overwrite=False, model_name='ref_centre_alpha_dist_circ_hdratm', 
@@ -1536,16 +1546,15 @@ class Manager:
         fits_2_list = [inputs['fits_2'] for inputs, done in 
                        zip(inputs_list, done_list) if done]
         self.update_checks('TEL', fits_2_list, False)
-        # Now is the perfect time to run the QC check on sky subtraction
         for inputs in [inputs for inputs, done in
                        zip(inputs_list, done_list) if done]:
-            self.qc_sky(inputs['fits_1'])
-            self.qc_sky(inputs['fits_2'])
+            # Copy the FWHM measurement to the QC header
+            self.qc_seeing(inputs['fits_1'])
+            self.qc_seeing(inputs['fits_2'])
         return
 
     def scale_frames(self, overwrite=False, **kwargs):
         """Scale individual RSS frames to the secondary standard flux."""
-        catalogue = read_stellar_mags()
         # First make the list of file pairs to scale
         inputs_list = []
         for fits_2 in self.files(ndf_class='MFOBJECT', do_not_use=False,
@@ -1556,11 +1565,10 @@ class Manager:
                 # Already been done; skip to the next file
                 continue
             fits_1 = self.other_arm(fits_2)
-            inputs_list.append(((fits_1.telluric_path, fits_2.telluric_path),
-                                catalogue))
+            inputs_list.append((fits_1.telluric_path, fits_2.telluric_path))
         self.map(scale_frame_pair, inputs_list)
         # Measure the relative atmospheric transmission
-        for (path_1, path_2), _ in inputs_list:
+        for (path_1, path_2) in inputs_list:
             self.qc_throughput_frame(path_1)
             self.qc_throughput_frame(path_2)
         return
@@ -1631,7 +1639,6 @@ class Manager:
             'field_id', ccd='ccd_1', ndf_class='MFOBJECT', do_not_use=False,
             reduced=True, min_exposure=min_exposure, name=name, **kwargs)
         input_list = []
-        catalogue = read_stellar_mags()
         for (field_id, ), fits_list in groups.items():
             table = pf.getdata(fits_list[0].reduced_path, 'FIBRES_IFU')
             objects = table['NAME'][table['TYPE'] == 'P']
@@ -1664,11 +1671,28 @@ class Manager:
                 for name in objects]
             object_path_pair_list = [
                 pair for pair in object_path_pair_list if None not in pair]
-            input_list.append((star_path_pair, object_path_pair_list, star,
-                               catalogue))
+            input_list.append((star_path_pair, object_path_pair_list, star))
         with self.patch_if_demo('sami.manager.stellar_mags_cube_pair',
                                 fake_stellar_mags_cube_pair):
             self.map(scale_cubes_field, input_list)
+        return
+
+    def record_dust(self, overwrite=False, min_exposure=599.0, name='main',
+                    **kwargs):
+        """Record information about dust in the output datacubes."""
+        groups = self.group_files_by(
+            'field_id', ccd='ccd_1', ndf_class='MFOBJECT', do_not_use=False,
+            reduced=True, min_exposure=min_exposure, name=name, **kwargs)
+        for (field_id, ), fits_list in groups.items():
+            table = pf.getdata(fits_list[0].reduced_path, 'FIBRES_IFU')
+            objects = table['NAME'][table['TYPE'] == 'P']
+            objects = np.unique(objects).tolist()
+            for name in objects:
+                for arm in ('blue', 'red'):
+                    path = self.cubed_path(name, arm, len(fits_list), field_id,
+                                           exists=True)
+                    if path:
+                        dust.dustCorrectSAMICube(path, overwrite=overwrite)
         return
             
     def gzip_cubes(self, overwrite=False, min_exposure=599.0, name='main',
@@ -1740,11 +1764,21 @@ class Manager:
         hdulist.close()
         return
 
-    def qc_sky(self, fits):
-        """Run QC check on sky subtraction accuracy and save results."""
-        results = sky_residuals(fits.telluric_path)
+    def qc_seeing(self, fits):
+        """Copy the FWHM over the QC header."""
         self.ensure_qc_hdu(fits.telluric_path)
         hdulist = pf.open(fits.telluric_path, 'update')
+        source_header = hdulist['FLUX_CALIBRATION'].header
+        header = hdulist['QC'].header
+        header['FWHM'] = source_header['FWHM'], source_header.comments['FWHM']
+        hdulist.flush()
+        hdulist.close()
+
+    def qc_sky(self, fits):
+        """Run QC check on sky subtraction accuracy and save results."""
+        results = sky_residuals(fits.reduced_path)
+        self.ensure_qc_hdu(fits.reduced_path)
+        hdulist = pf.open(fits.reduced_path, 'update')
         header = hdulist['QC'].header
         header['SKYMDCOF'] = (
             results['med_frac_skyres_cont'],
@@ -1778,7 +1812,9 @@ class Manager:
         """Save the throughput function for a TRANSFERcombined file."""
         absolute_throughput = throughput(path)
         # Check the CCD and date for this file
-        path_input = pf.getval(path, 'ORIGFILE', 1)
+        file_input = pf.getval(path, 'ORIGFILE', 1)
+        path_input = os.path.join(
+            self.fits_file(file_input[:10]).reduced_dir, file_input)
         detector = pf.getval(path_input, 'DETECTOR')
         epoch = pf.getval(path_input, 'EPOCH')
         # Load mean throughput function for that CCD
@@ -1837,6 +1873,37 @@ class Manager:
             median_relative_throughput, 'Relative transmission')
         hdulist.flush()
         hdulist.close()
+        return
+
+    def qc_summary(self, min_exposure=599.0, ccd='ccd_1', **kwargs):
+        """Print a summary of the QC information available."""
+        for (field_id,), fits_list in self.group_files_by(
+                'field_id', ndf_class='MFOBJECT', min_exposure=min_exposure,
+                ccd=ccd, **kwargs).items():
+            print '+'*75
+            print field_id
+            print '-'*75
+            print 'File        Exposure  FWHM (")  Transmission  Sky residual'
+            for fits in fits_list:
+                fwhm = '       -'
+                transmission = '           -'
+                sky_residual = '           -'
+                try:
+                    header = pf.getheader(best_path(fits), 'QC')
+                except (IOError, KeyError):
+                    pass
+                else:
+                    if 'FWHM' in header:
+                        fwhm = '{:8.2f}'.format(header['FWHM'])
+                    if 'TRANSMIS' in header:
+                        transmission = '{:12.3f}'.format(header['TRANSMIS'])
+                    if 'SKYMDCOF' in header:
+                        sky_residual = '{:12.3f}'.format(header['SKYMDCOF'])
+                print '{} {}  {:8d}  {}  {}  {}'.format(
+                    fits.filename[:5], fits.filename[6:10], int(fits.exposure),
+                    fwhm, transmission, sky_residual)
+            print '+'*75
+            print
         return
 
     def reduce_file(self, fits, overwrite=False, tlm=False,
@@ -3448,10 +3515,12 @@ def run_2dfdr_single_wrapper(group):
 @safe_for_multiprocessing
 def scale_cubes_field(group):
     """Scale a field to the correct magnitude."""
-    star_path_pair, object_path_pair_list, star, catalogue = group
+    star_path_pair, object_path_pair_list, star = group
     print 'Scaling field with star', star
     stellar_mags_cube_pair(star_path_pair, save=True)
-    found = assign_true_mag(star_path_pair, star, catalogue=catalogue)
+    # Previously tried reading the catalogue once and passing it, but for
+    # unknown reasons that was corrupting the data when run on aatmacb.
+    found = assign_true_mag(star_path_pair, star, catalogue=None)
     if found:
         scale = scale_cube_pair_to_mag(star_path_pair)
         for object_path_pair in object_path_pair_list:
@@ -3461,14 +3530,15 @@ def scale_cubes_field(group):
     return
 
 @safe_for_multiprocessing
-def scale_frame_pair(group):
+def scale_frame_pair(path_pair):
     """Scale a pair of RSS frames to the correct magnitude."""
-    path_pair, catalogue = group
     print 'Scaling RSS files to give star correct magnitude:'
     print os.path.basename(path_pair[0]), os.path.basename(path_pair[1])
     stellar_mags_frame_pair(path_pair, save=True)
     star = pf.getval(path_pair[0], 'STDNAME', 'FLUX_CALIBRATION')
-    found = assign_true_mag(path_pair, star, catalogue=catalogue,
+    # Previously tried reading the catalogue once and passing it, but for
+    # unknown reasons that was corrupting the data when run on aatmacb.
+    found = assign_true_mag(path_pair, star, catalogue=None,
                             hdu='FLUX_CALIBRATION')
     if found:
         scale_cube_pair_to_mag(path_pair, hdu='FLUX_CALIBRATION')

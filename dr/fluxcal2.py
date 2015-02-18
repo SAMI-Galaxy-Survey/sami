@@ -1206,7 +1206,8 @@ def save_combined_transfer_function(path_out, tf_combined, path_list):
         hdulist_tmp = pf.open(path)
         hdu = hdulist_tmp['FLUX_CALIBRATION']
         hdu.header['EXTVER'] = index + 1
-        hdu.header['ORIGFILE'] = (path, 'Originating file for this HDU')
+        hdu.header['ORIGFILE'] = (
+            os.path.basename(path), 'Originating file for this HDU')
         hdulist.append(hdu)
     if os.path.exists(path_out):
         os.remove(path_out)
