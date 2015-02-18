@@ -2624,7 +2624,7 @@ class Manager:
         require_link = [
             'tlmap', 'tlmap_loose', 'tlmap_flap', 'tlmap_flap_loose', 
             'fflat', 'fflat_loose', 'fflat_flap', 'fflat_flap_loose',
-            'wavel', 'wavel_loose', 'thput', 'thput_object']
+            'wavel', 'wavel_loose', 'thput', 'thput_fflat', 'thput_object']
         if match_class.lower() in require_link:
             link_path = os.path.join(fits.reduced_dir, filename)
             source_path = os.path.join(fits_match.reduced_dir, filename)
