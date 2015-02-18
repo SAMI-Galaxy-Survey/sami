@@ -3,7 +3,7 @@ import numpy as np
 from math import pi, sqrt, sin, cos
 from matplotlib import pyplot as plt
 
-import pyfits as pf
+import astropy.io.fits as pf
 
 try :
     import healpy as hp
