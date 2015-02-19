@@ -1281,11 +1281,14 @@ def create_qc_hdu(file_list, name):
         'TRANSMIS',
         'FWHM')
     rel_transp = []
-    fwhm = []
     qc_data = {key: [] for key in qc_keys}
     for path in file_list:
         hdulist = pf.open(path)
-        rel_transp.append(1.0 / hdulist['FLUX_CALIBRATION'].header['RESCALE'])
+        try:
+            rel_transp.append(
+                1.0 / hdulist['FLUX_CALIBRATION'].header['RESCALE'])
+        except KeyError:
+            rel_transp.append(-9999)
         if 'QC' in hdulist:
             qc_header = hdulist['QC'].header
             for key in qc_keys:
