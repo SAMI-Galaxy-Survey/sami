@@ -57,6 +57,9 @@ def download_map(name, overwrite=False):
     if os.path.exists(map_info['filename']) and not overwrite:
         print '{} map already downloaded; returning'
         return
+    dirname = os.path.dirname(map_info['filename'])
+    if not os.path.exists(dirname):
+        os.makedirs(dirname)
     response = urllib2.urlopen(map_info['url'])
     with open(map_info['filename'], 'w') as f_out:
         f_out.write(response.read())
