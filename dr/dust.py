@@ -2,6 +2,7 @@ import os
 import numpy as np
 from math import pi, sqrt, sin, cos
 from matplotlib import pyplot as plt
+import urllib2
 
 import astropy.io.fits as pf
 
@@ -20,20 +21,50 @@ from astropy import units as u
 MAPS = {}
 
 MAPS_FILES = {
-    'planck': ('dust/HFI_CompMap_ThermalDustModel_2048_R1.20.fits', 2),
-    'sfd98': ('dust/lambda_sfd_ebv.fits', 0),
+    'planck': {
+        'filename': 'dust/HFI_CompMap_ThermalDustModel_2048_R1.20.fits',
+        'field': 2,
+        'url': 'http://pla.esac.esa.int/pla/aio/product-action?MAP.MAP_ID=HFI_CompMap_ThermalDustModel_2048_R1.20.fits',
+        'header_key': 'EBVPLNCK',
+        'comment_name': 'Planck v1.20'},
+    'sfd98': {
+        'filename': 'dust/lambda_sfd_ebv.fits',
+        'field': 0,
+        'url': 'http://lambda.gsfc.nasa.gov/data/foregrounds/SFD/lambda_sfd_ebv.fits',
+        'header_key': 'EBVSFD98',
+        'comment_name': 'SFD98'},
+    'schlafly': {
+        'filename': 'dust/ps1-ebv-4.5kpc.fits',
+        'field': 0,
+        'url': 'http://lambda.gsfc.nasa.gov/data/foregrounds/EBV/ps1-ebv-4.5kpc.fits',
+        'header_key': 'EBVSCHLA',
+        'comment_name': 'Schlafly et al 2014'},
 }
 
 def load_map(name, force_reload=False):
     """Load the dust maps from various sources."""
     if name not in MAPS or force_reload:
-        path, field = MAPS_FILES[name]
+        map_info = MAPS_FILES[name]
         try:
-            MAPS[name] = hp.read_map(path, field=field)
+            MAPS[name] = hp.read_map(map_info['path'], field=map_info['field'])
         except IOError:
             return False
     return True
 
+def download_map(name, overwrite=False):
+    """Download a single dust map."""
+    map_info = MAPS_FILES[name]
+    if os.path.exists(map_info['filename']) and not overwrite:
+        print '{} map already downloaded; returning'
+        return
+    response = urllib2.urlopen(map_info['url'])
+    with open(map_info['filename'], 'w') as f_out:
+        f_out.write(response.read())
+
+def download_all_maps(overwrite=False):
+    """Download all the dust maps."""
+    for name in MAPS_FILES:
+        download_map(name, overwrite=overwrite)
 
 # planck_dust_map_filename = 'HFI_CompMap_ThermalDustModel_2048_R1.20.fits'
 # if not os.path.exists( planck_dust_map_filename ):
@@ -92,7 +123,7 @@ def EBV(name, theta, phi):
     """
     Return E(B-V) for given map at given location.
 
-    Valid names are 'planck' or 'sfd98'.
+    Valid names are 'planck', 'sfd98' or 'schlafly'.
     """
     success = load_map(name)
     if success:
@@ -141,20 +172,22 @@ def dustCorrectSAMICube( path, overwrite=False ):
                                 (1 + np.arange( header[ 'NAXIS3' ] ))
                                 - header[ 'CRPIX3' ] )
     theta, phi = healpixAngularCoords( ra, dec )
-    EBV_sfd98 = EBV( 'sfd98', theta, phi )
-    if EBV_sfd98 is not None:
-        hdu.header['EBVSFD98'] = (
-            EBV_sfd98, 'MW reddening E(B-V) from SFD98')
-    else:
-        print 'Warning: SFD98 dust map not available.'
-    EBV_planck = EBV( 'planck', theta, phi )
-    if EBV_planck is not None:
-        correction = MilkyWayDustCorrection( wl, EBV_planck )
-        hdu.data = correction
-        hdu.header['EBVPLNCK'] = (
-            EBV_planck, 'MW reddening E(B-V) from Planck v1.20')
-    else:
-        print 'Warning: Planck dust map not available; no dust curve recorded.'
+    for name, map_info in MAPS_FILES.items():
+        ebv = EBV(name, theta, phi)
+        if ebv is not None:
+            # We were able to find the dust map
+            hdu.header[map_info['header_key']] = (
+                ebv, 'MW reddening E(B-V) from {}'.format(
+                    map_info['comment_name']))
+            if name == 'planck':
+                correction = MilkyWayDustCorrection(wl, ebv)
+                hdu.data = correction
+        else:
+            # We were not able to find the dust map
+            print 'Warning: {} dust map not available'.format(
+                map_info['comment_name'])
+            if name == 'planck':
+                print 'No dust curve recorded'
     hdulist.flush()
     hdulist.close()
     return 
