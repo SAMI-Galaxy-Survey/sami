@@ -46,7 +46,8 @@ def load_map(name, force_reload=False):
     if name not in MAPS or force_reload:
         map_info = MAPS_FILES[name]
         try:
-            MAPS[name] = hp.read_map(map_info['path'], field=map_info['field'])
+            MAPS[name] = hp.read_map(
+                map_info['filename'], field=map_info['field'])
         except IOError:
             return False
     return True
