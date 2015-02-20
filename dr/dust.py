@@ -33,12 +33,12 @@ MAPS_FILES = {
         'url': 'http://lambda.gsfc.nasa.gov/data/foregrounds/SFD/lambda_sfd_ebv.fits',
         'header_key': 'EBVSFD98',
         'comment_name': 'SFD98'},
-    'schlafly': {
-        'filename': 'dust/ps1-ebv-4.5kpc.fits',
-        'field': 0,
-        'url': 'http://lambda.gsfc.nasa.gov/data/foregrounds/EBV/ps1-ebv-4.5kpc.fits',
-        'header_key': 'EBVSCHLA',
-        'comment_name': 'Schlafly et al 2014'},
+    # 'schlafly': {
+    #     'filename': 'dust/ps1-ebv-4.5kpc.fits',
+    #     'field': 0,
+    #     'url': 'http://lambda.gsfc.nasa.gov/data/foregrounds/EBV/ps1-ebv-4.5kpc.fits',
+    #     'header_key': 'EBVSCHLA',
+    #     'comment_name': 'Schlafly et al 2014'},
 }
 
 def load_map(name, force_reload=False):
