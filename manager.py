@@ -720,6 +720,9 @@ class Manager:
         """Add details of a file to the manager"""
         source_path = os.path.join(dirname, filename)
         fits = FITSFile(source_path)
+        if fits.copy:
+            # This is a copy of a file, don't add it to the list
+            return
         if fits.ndf_class == 'DARK':
             if fits.exposure_str not in self.dark_exposure_str_list:
                 self.dark_exposure_str_list.append(fits.exposure_str)
@@ -1190,14 +1193,87 @@ class Manager:
         self.update_checks('FLT', reduced_files, False)
         return
 
-    def reduce_sky(self, overwrite=False, **kwargs):
+    def reduce_sky(self, overwrite=False, fake_skies=True, **kwargs):
         """Reduce all offset sky frames matching given criteria."""
         file_iterable = self.files(ndf_class='MFSKY', do_not_use=False,
                                    **kwargs)
         reduced_files = self.reduce_file_iterable(
             file_iterable, overwrite=overwrite)
         self.update_checks('SKY', reduced_files, False)
+        if fake_skies:
+            no_sky_list = self.fields_without_skies(**kwargs)
+            # Certain parameters will already have been set so don't need
+            # to be passed (and passing will cause duplicate kwargs)
+            for key in ('field_id', 'plate_id', 'date', 'ccd'):
+                if key in kwargs:
+                    del kwargs[key]
+            fits_sky_list = []
+            for (field_id, plate_id, date, ccd) in no_sky_list:
+                # This field has no MFSKY files, so copy the dome flats
+                for fits in self.files(
+                        ndf_class='MFFFF', do_not_use=False, lamp='Dome',
+                        field_id=field_id, plate_id=plate_id, date=date,
+                        ccd=ccd, **kwargs):
+                    fits_sky_list.append(
+                        self.copy_as(fits, 'MFSKY', overwrite=overwrite))
+            # Now reduce the fake sky files from all fields
+            self.reduce_file_iterable(fits_sky_list, overwrite=overwrite)
         return
+
+    def fields_without_skies(self, **kwargs):
+        """Return a list of fields that have a dome flat but not a sky."""
+        keys = ('field_id', 'plate_id', 'date', 'ccd')
+        field_id_list_dome = self.group_files_by(
+            keys, ndf_class='MFFFF', do_not_use=False,
+            lamp='Dome', **kwargs).keys()
+        field_id_list_sky = self.group_files_by(
+            keys, ndf_class='MFSKY', do_not_use=False,
+            **kwargs).keys()
+        no_sky = [field for field in field_id_list_dome
+                  if field not in field_id_list_sky]
+        return no_sky
+
+    def copy_as(self, fits, ndf_class, overwrite=False):
+        """Copy a fits file and change its class. Return a new FITSFile."""
+        old_num = int(fits.filename[6:10])
+        new_num = old_num + 1000 * (9 - (old_num / 1000))
+        new_filename = (
+            fits.filename[:6] + '{:04d}'.format(new_num) + fits.filename[10:])
+        new_path = os.path.join(fits.reduced_dir, new_filename)
+        if os.path.exists(new_path) and overwrite:
+            os.remove(new_path)
+        if not os.path.exists(new_path):
+            # Make the actual copy
+            shutil.copy2(fits.raw_path, new_path)
+            # Open up the file and change its NDF_CLASS
+            hdulist = pf.open(new_path, 'update')
+            hdulist['STRUCT.MORE.NDF_CLASS'].data['NAME'][0] = ndf_class
+            hdulist[0].header['MNGRCOPY'] = (
+                True, 'True if this is a copy created by a Manager')
+            hdulist.flush()
+            hdulist.close()
+        new_fits = FITSFile(new_path)
+        # Add paths to the new FITSFile instance.
+        # Don't use Manager.set_reduced_path because the raw location is
+        # unusual
+        new_fits.raw_dir = fits.reduced_dir
+        new_fits.raw_path = new_path
+        new_fits.reduced_dir = fits.reduced_dir
+        new_fits.reduced_link = new_path
+        new_fits.reduced_path = os.path.join(
+            fits.reduced_dir, new_fits.reduced_filename)
+        return new_fits
+
+    def copy_path(self, path):
+        """Return the path for a copy of the specified file."""
+        directory = os.path.dirname(path)
+        old_filename = os.path.basename(path)
+        old_num = int(old_filename[6:10])
+        new_num = old_num + 1000 * (9 - (old_num / 1000))
+        new_filename = (
+            old_filename[:6] + '{:04d}'.format(new_num) + old_filename[10:])
+        new_path = os.path.join(directory, new_filename)
+        return new_path
 
     def reduce_object(self, overwrite=False, recalculate_throughput=True,
                       **kwargs):
@@ -1277,11 +1353,22 @@ class Manager:
     def correct_bad_throughput(self, overwrite=False, **kwargs):
         """Create thput files with bad values replaced by mean over field."""
         rereduce = []
+        # used_flats = self.fields_without_skies(**kwargs)
         for group in self.group_files_by(
                 ('date', 'field_id', 'ccd'), ndf_class='MFOBJECT',
                 do_not_use=False,
                 min_exposure=self.min_exposure_for_throughput, reduced=True,
                 **kwargs).values():
+            # done = False
+            # for (field_id_done, plate_id_done, date_done,
+            #         ccd_done) in used_flats:
+            #     if (date == date_done and field_id == field_id_done and
+            #             ccd == ccd_done):
+            #         # This field has been taken care of using dome flats
+            #         done = True
+            #         break
+            # if done:
+            #     continue
             # Only keep files that used sky lines for throughput calibration
             group = [fits for fits in group
                      if fits.reduce_options()['TPMETH'] in
@@ -1878,8 +1965,7 @@ class Manager:
             files_to_match = ['bias', 'dark', 'lflat', 'tlmap', 'wavel',
                               'fflat']
         elif fits.ndf_class == 'MFOBJECT':
-            if (fits.exposure < self.min_exposure_for_throughput and 
-                    not external_throughput):
+            if not external_throughput:
                 files_to_match = ['bias', 'dark', 'lflat', 'tlmap', 'wavel',
                                   'fflat', 'thput']
                 options.extend(['-TPMETH', 'OFFSKY'])
@@ -1926,17 +2012,25 @@ class Manager:
                     options.extend(['-USEFLATIM', '0'])
                     continue
                 elif match_class == 'thput':
-                    # Try to find a suitable object frame instead
-                    # filename_match = self.match_link(fits, 'thput_object')
-                    # Try to find a suitable twilight frame instead
-                    filename_match = self.match_link(fits, 'thput_sky')
+                    # Try to find a fake MFSKY made from a dome flat
+                    filename_match = self.match_link(fits, 'thput_fflat')
                     if filename_match is None:
-                        # Still nothing
-                        print ('Warning: Offsky (or substitute) frame not '
-                               'found. Turning off throughput calibration '
-                               'for '+fits.filename)
-                        options.extend(['-THRUPUT', '0'])
-                        continue
+                        if fits.exposure < self.min_exposure_for_throughput:
+                            # Try to find a suitable object frame instead
+                            filename_match = self.match_link(
+                                fits, 'thput_object')
+                            # Really run out of options here
+                            if filename_match is None:
+                                # Still nothing
+                                print ('Warning: Offsky (or substitute) frame '
+                                       'not found. Turning off throughput '
+                                       'calibration for '+fits.filename)
+                                options.extend(['-THRUPUT', '0'])
+                                continue
+                        else:
+                            # This is a long exposure, so use the sky lines
+                            options[options.index('-TPMETH') + 1] = (
+                                'SKYFLUX(MED)')
                 elif match_class == 'tlmap':
                     # Try with looser criteria
                     filename_match = self.match_link(fits, 'tlmap_loose')
@@ -2066,8 +2160,8 @@ class Manager:
               plate_id_short=None, field_no=None, field_id=None,
               ccd=None, exposure_str=None, do_not_use=None,
               min_exposure=None, max_exposure=None,
-              reduced_dir=None, reduced=None, tlm_created=None,
-              flux_calibrated=None, telluric_corrected=None,
+              reduced_dir=None, reduced=None, copy_reduced=None,
+              tlm_created=None, flux_calibrated=None, telluric_corrected=None,
               spectrophotometric=None, name=None, lamp=None,
               central_wavelength=None):
         """Generator for FITS files that satisfy requirements."""
@@ -2092,6 +2186,11 @@ class Manager:
                 (reduced is None or
                  (reduced and os.path.exists(fits.reduced_path)) or
                  (not reduced and not os.path.exists(fits.reduced_path))) and
+                (copy_reduced is None or
+                 (copy_reduced and os.path.exists(
+                    self.copy_path(fits.reduced_path))) or
+                 (not copy_reduced and not os.path.exists(
+                    self.copy_path(fits.reduced_path)))) and
                 (tlm_created is None or
                  (tlm_created and hasattr(fits, 'tlm_path') and
                   os.path.exists(fits.tlm_path)) or
@@ -2266,8 +2365,9 @@ class Manager:
         fflat_loose      -- As fflat, but with less strict criteria
         fflat_flap       -- As fflat, but from the flap lamp
         fflat_flap_loose -- As fflat_flap, but with less strict criteria
-        thput            -- Find a reduced long-exposure object file
-        thput_sky        -- As thput, but find an offset sky (twilight) file
+        thput            -- Find a reduced offset sky (twilight) file
+        thput_fflat      -- Find a dome flat that's had a copy made as MFSKY
+        thput_sky        -- As thput, but find long-exposure object file
         bias             -- Find a combined bias frame
         dark             -- Find a combined dark frame
         lflat            -- Find a combined long-slit flat frame
@@ -2290,6 +2390,7 @@ class Manager:
         max_exposure = None
         reduced_dir = None
         reduced = None
+        copy_reduced = None
         tlm_created = None
         flux_calibrated = None
         telluric_corrected = None
@@ -2301,6 +2402,8 @@ class Manager:
             abs(fits_test.epoch - fits.epoch))
         recent_reduction = lambda fits, fits_test: (
             -1.0 * os.stat(fits_test.reduced_path).st_mtime)
+        copy_recent_reduction = lambda fits, fits_test: (
+            -1.0 * os.stat(self.copy_path(fits_test.reduced_path)).st_mtime)
         def time_difference_min_exposure(min_exposure):
             def retfunc(fits, fits_test):
                 if fits_test.exposure <= min_exposure:
@@ -2392,7 +2495,7 @@ class Manager:
             reduced = True
             lamp = 'Flap'
             fom = time_difference
-        elif match_class.lower() == 'thput_sky':
+        elif match_class.lower() == 'thput':
             # Find a reduced offset sky field
             ndf_class = 'MFSKY'
             date = fits.date
@@ -2401,7 +2504,16 @@ class Manager:
             ccd = fits.ccd
             reduced = True
             fom = recent_reduction
-        elif match_class.lower() == 'thput':
+        elif match_class.lower() == 'thput_fflat':
+            # Find a dome flat that's had a fake sky copy made
+            ndf_class = 'MFFFF'
+            date = fits.date
+            plate_id = fits.plate_id
+            field_id = fits.field_id
+            ccd = fits.ccd
+            copy_reduced = True
+            fom = copy_recent_reduction
+        elif match_class.lower() == 'thput_object':
             # Find a reduced object field to take the throughput from
             ndf_class = 'MFOBJECT'
             date = fits.date
@@ -2476,6 +2588,7 @@ class Manager:
                 max_exposure=max_exposure,
                 reduced_dir=reduced_dir,
                 reduced=reduced,
+                copy_reduced=copy_reduced,
                 tlm_created=tlm_created,
                 flux_calibrated=flux_calibrated,
                 telluric_corrected=telluric_corrected,
@@ -2500,19 +2613,26 @@ class Manager:
             filename = fits_match
         elif match_class.lower().startswith('tlmap'):
             filename = fits_match.tlm_filename
+            raw_filename = fits_match.filename
+            raw_dir = fits_match.raw_dir
+        elif match_class.lower() == 'thput_fflat':
+            filename = self.copy_path(fits_match.reduced_filename)
+            raw_filename = self.copy_path(fits_match.filename)
+            raw_dir = fits_match.reduced_dir
         else:
             filename = fits_match.reduced_filename
+            raw_filename = fits_match.filename
+            raw_dir = fits_match.raw_dir
         # These are the cases where we do want to make a link
         require_link = [
             'tlmap', 'tlmap_loose', 'tlmap_flap', 'tlmap_flap_loose', 
             'fflat', 'fflat_loose', 'fflat_flap', 'fflat_flap_loose',
-            'wavel', 'wavel_loose', 'thput', 'thput_object']
+            'wavel', 'wavel_loose', 'thput', 'thput_fflat', 'thput_object']
         if match_class.lower() in require_link:
             link_path = os.path.join(fits.reduced_dir, filename)
             source_path = os.path.join(fits_match.reduced_dir, filename)
-            raw_link_path = os.path.join(fits.reduced_dir, fits_match.filename)
-            raw_source_path = os.path.join(fits_match.raw_dir,
-                                           fits_match.filename)
+            raw_link_path = os.path.join(fits.reduced_dir, raw_filename)
+            raw_source_path = os.path.join(raw_dir, raw_filename)
             # If the link path is occupied by a link, delete it
             # Leave actual files in place
             if os.path.islink(link_path):
@@ -2830,6 +2950,7 @@ class FITSFile:
         self.set_central_wavelength()
         self.set_do_not_use()
         self.set_coords_flags()
+        self.set_copy()
         self.hdulist.close()
         del self.hdulist
 
@@ -3098,6 +3219,14 @@ class FITSFile:
             self.coord_rev = self.header['COORDREV']
         except KeyError:
             self.coord_rev = None
+        return
+
+    def set_copy(self):
+        """Set whether this is a copy of a file."""
+        try:
+            self.copy = self.header['MNGRCOPY']
+        except KeyError:
+            self.copy = False
         return
 
     def relevant_check(self, check):
