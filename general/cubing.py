@@ -139,7 +139,10 @@ def get_object_names(infile):
     """Get the object names observed in the file infile."""
 
     # Open up the file and pull out list of observed objects.
-    table=pf.open(infile)[2].data
+    try:
+        table=pf.getdata(infile, 'FIBRES_IFU')
+    except KeyError:
+        table=pf.getdata(infile, 'MORE.FIBRES_IFU')
     names=table.field('NAME')
 
     # Find the set of unique values in names
