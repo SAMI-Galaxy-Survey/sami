@@ -1690,6 +1690,9 @@ class Manager:
     def qc_sky(self, fits):
         """Run QC check on sky subtraction accuracy and save results."""
         results = sky_residuals(fits.reduced_path)
+        for key, value in results.items():
+            if not np.isfinite(value):
+                results[key] = -9999
         self.ensure_qc_hdu(fits.reduced_path)
         hdulist = pf.open(fits.reduced_path, 'update')
         header = hdulist['QC'].header
