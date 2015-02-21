@@ -1,6 +1,7 @@
 """Functions relating to quality control of flux calibration."""
 
 from ..dr import fluxcal2
+from ..dr.telluric import identify_secondary_standard
 from ..utils import IFU
 from ..utils.other import clip_spectrum
 
@@ -260,15 +261,26 @@ def stability(mngr):
 #     return file_pair_list, observed_colours
 def get_sdss_stellar_mags(mngr):
     """Get magnitudes for stars from SDSS, with a little help from the user."""
-    file_pair_list, frame_pair_list_list = list_star_files(mngr)
     name_list = []
     coords_list = []
-    for file_pair in file_pair_list:
-        header = pf.getheader(file_pair[0])
-        name = header['NAME']
-        if name not in name_list:
-            name_list.append(name)
-            coords_list.append((header['CATARA'], header['CATADEC']))
+    for fits_list in mngr.group_files_by(
+            'field_id', ndf_class='MFOBJECT', reduced=True).values():
+        fits = fits_list[0]
+        path = fits.reduced_path
+        star = identify_secondary_standard(path)
+        fibres = pf.getdata(path, 'FIBRES_IFU')
+        fibre = fibres[fibres['NAME'] == star['name']][0]
+        name_list.append(star['name'])
+        coords_list.append((fibre['GRP_MRA'], fibre['GRP_MDEC']))
+    # file_pair_list, frame_pair_list_list = list_star_files(mngr)
+    # name_list = []
+    # coords_list = []
+    # for file_pair in file_pair_list:
+    #     header = pf.getheader(file_pair[0])
+    #     name = header['NAME']
+    #     if name not in name_list:
+    #         name_list.append(name)
+    #         coords_list.append((header['CATARA'], header['CATADEC']))
     print 'Go to:'
     print
     print 'http://cas.sdss.org/dr7/en/tools/crossid/crossid.asp'
