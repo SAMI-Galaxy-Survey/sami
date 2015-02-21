@@ -259,7 +259,7 @@ def stability(mngr):
 #     observed_colours = [measure_colour(model, model_catalogue['wavelength']) 
 #                         for model in model_list]
 #     return file_pair_list, observed_colours
-def get_sdss_stellar_mags(mngr):
+def get_sdss_stellar_mags(mngr, catalogue=None):
     """Get magnitudes for stars from SDSS, with a little help from the user."""
     name_list = []
     coords_list = []
@@ -268,25 +268,23 @@ def get_sdss_stellar_mags(mngr):
         fits = fits_list[0]
         path = fits.reduced_path
         star = identify_secondary_standard(path)
+        if catalogue and star['name'] in catalogue:
+            continue
         fibres = pf.getdata(path, 'FIBRES_IFU')
         fibre = fibres[fibres['NAME'] == star['name']][0]
         name_list.append(star['name'])
         coords_list.append((fibre['GRP_MRA'], fibre['GRP_MDEC']))
-    # file_pair_list, frame_pair_list_list = list_star_files(mngr)
-    # name_list = []
-    # coords_list = []
-    # for file_pair in file_pair_list:
-    #     header = pf.getheader(file_pair[0])
-    #     name = header['NAME']
-    #     if name not in name_list:
-    #         name_list.append(name)
-    #         coords_list.append((header['CATARA'], header['CATADEC']))
+    if not name_list:
+        # Already had all the stars required
+        print 'All magnitudes already in the catalogue.'
+        return False
     print 'Go to:'
     print
     print 'http://cas.sdss.org/dr7/en/tools/crossid/crossid.asp'
     print
     print 'Copy-paste the following into the upload list box:'
     print
+    print 'name ra dec'
     for name, coords in zip(name_list, coords_list):
         print name, coords[0], coords[1]
     print
@@ -302,8 +300,7 @@ WHERE u.up_id = x.up_id and x.objID=p.objID
 ORDER BY x.up_id"""
     print
     print 'Change output format to CSV, then hit submit.'
-    print 'Put the result somewhere safe.'
-    return
+    return True
 
 def get_sdss_galaxy_mags(galaxy_file_pair_list):
     """Get magnitudes for galaxies from SDSS, with a little help from the user."""

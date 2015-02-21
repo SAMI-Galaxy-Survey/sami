@@ -98,7 +98,7 @@ from .general.align_micron import find_dither
 from .dr import fluxcal2, telluric, check_plots, tdfdr, dust
 from .dr.throughput import make_clipped_thput_files
 from .qc.fluxcal import stellar_mags_cube_pair, stellar_mags_frame_pair
-from .qc.fluxcal import throughput
+from .qc.fluxcal import throughput, get_sdss_stellar_mags
 from .qc.sky import sky_residuals
 
 # Get the astropy version as a tuple of integers
@@ -257,6 +257,15 @@ STELLAR_MAGS_FILES = [
         (0.0, 0.0, 0.0, 0.0, 0.0)),
     ('standards/secondary/sdss_stellar_mags.csv', 'SDSS_GAMA',
         (0.0, 0.0, 0.0, 0.0, 0.0))]
+
+def stellar_mags_files():
+    """Yield details of each stellar magnitudes file that can be found."""
+    for mags_file in STELLAR_MAGS_FILES:
+        # The pre-determined ones listed above
+        yield mags_file
+    for path in glob('standards/secondary/sdss_stellar_mags_*.csv'):
+        # Extra files that have been downloaded by the user
+        yield (path, 'SDSS_GAMA', (0.0, 0.0, 0.0, 0.0, 0.0))
 
 class Manager:
     """Object for organising and reducing SAMI data.
@@ -1464,6 +1473,26 @@ class Manager:
             # Copy the FWHM measurement to the QC header
             self.qc_seeing(inputs['fits_1'])
             self.qc_seeing(inputs['fits_2'])
+        return
+
+    def get_stellar_photometry(self, refresh=False):
+        """Get photometry of stars, with help from the user."""
+        if refresh:
+            catalogue = None
+        else:
+            catalogue = read_stellar_mags()
+        new = get_sdss_stellar_mags(self, catalogue=catalogue)
+        if not new:
+            # No new magnitudes were downloaded
+            return
+        path_in = raw_input('Enter the path to the downloaded file:\n')
+        idx = 1
+        path_out = 'standards/secondary/sdss_stellar_mags_{}.csv'.format(idx)
+        while os.path.exists(path_out):
+            idx += 1
+            path_out = (
+                'standards/secondary/sdss_stellar_mags_{}.csv'.format(idx))
+        shutil.move(path_in, path_out)
         return
 
     def scale_frames(self, overwrite=False, **kwargs):
@@ -3458,7 +3487,7 @@ def assign_true_mag(path_pair, name, catalogue=None, hdu=0):
 def read_stellar_mags():
     """Read stellar magnitudes from the various catalogues available."""
     data_dict = {}
-    for (path, catalogue_type, extinction) in STELLAR_MAGS_FILES:
+    for (path, catalogue_type, extinction) in stellar_mags_files():
         if catalogue_type == 'ATLAS':
             names = ('PHOT_ID', 'ra', 'dec', 'u', 'g', 'r', 'i', 'z',
                      'sigma', 'radius')
