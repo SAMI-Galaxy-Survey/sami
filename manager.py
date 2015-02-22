@@ -695,6 +695,11 @@ class Manager:
 
     def map(self, function, input_list):
         """Map inputs to a function, using built-in map or multiprocessing."""
+        if not input_list:
+            # input_list is empty. I expected the map functions to deal with
+            # this issue, but in one case it hung on aatmacb, so let's be
+            # absolutely sure to avoid the issue
+            return []
         if self.n_cpu == 1:
             result_list = map(function, input_list)
         else:
