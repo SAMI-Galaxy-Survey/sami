@@ -3518,6 +3518,9 @@ def read_stellar_mags():
             name_func = lambda d: d['name']
         data = np.loadtxt(path, skiprows=skiprows, delimiter=delimiter,
                           dtype={'names': names, 'formats': formats})
+        if data.shape == ():
+            # Ensure data is iterable in case of only a single line
+            data.shape = (1,)
         data['u'] += extinction[0]
         data['g'] += extinction[1]
         data['r'] += extinction[2]
