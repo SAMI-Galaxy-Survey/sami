@@ -348,7 +348,7 @@ def dithered_cube_from_rss_wrapper(files, name, size_of_grid=50,
                 print 'Output file already exists:'
                 print outfile_name_full
                 print 'Skipping this object'
-                continue
+                return False
 
     # Call dithered_cube_from_rss to create the flux, variance and weight cubes for the object.
     #try:
@@ -423,6 +423,7 @@ def dithered_cube_from_rss_wrapper(files, name, size_of_grid=50,
 
         # Close the open file
         list1.close()
+    return True
 
 
 def dithered_cube_from_rss(ifu_list, size_of_grid=50, output_pix_size_arcsec=0.5, drop_factor=0.5,
