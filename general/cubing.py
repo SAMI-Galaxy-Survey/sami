@@ -280,12 +280,7 @@ def dithered_cubes_from_rss_files(inlist, objects='all', size_of_grid=50,
                                  clip_throughput=clip_throughput)
     return
 
-def dithered_cubes_from_rss_list(files, objects='all', size_of_grid=50, 
-                                 output_pix_size_arcsec=0.5, drop_factor=0.5,
-                                 clip=True, plot=True, write=True, suffix='',
-                                 nominal=False, root='', overwrite=False, offsets='file',
-                                 covar_mode='optimal', do_dar_correct=True,
-                                 clip_throughput=True):
+def dithered_cubes_from_rss_list(files, objects='all', **kwargs):
     """A wrapper to make a cube from reduced RSS files, passed as a list. Only input files that go together - ie have the same objects."""
         
     start_time = datetime.datetime.now()
@@ -294,137 +289,141 @@ def dithered_cubes_from_rss_list(files, objects='all', size_of_grid=50,
     np.seterr(divide='ignore', invalid='ignore') # don't print division or invalid warnings.
     np.set_printoptions(linewidth=120) # can also use to set precision of numbers printed to screen
 
-    n_files = len(files)
-
     # For first file get the names of galaxies observed - assuming these are the same in all RSS files.
     # @TODO: This is not necessarily true, and we should either through an exception or account for it
     if objects=='all':
         object_names=get_object_names(files[0])
     else:
         object_names=objects
-    
     print "--------------------------------------------------------------"
     print "The following objects will be cubed:"
     print
-
     for name in object_names:
         print name
-
     print "--------------------------------------------------------------"
-
     for name in object_names:
-
         print
         print "--------------------------------------------------------------"
-        print "Starting with object:", name
+        print "Cubing object:", name
         print
-        
-        ifu_list = []
-        
-        for j in xrange(n_files):
-            ifu_list.append(utils.IFU(files[j], name, flag_name=True))
-
-        if write:
-            # First check if the object directory already exists or not.
-            directory = os.path.join(root, name)
-            try:
-                os.makedirs(directory)
-            except OSError:
-                print "Directory Exists", directory
-                print "Writing files to the existing directory"
-            else:
-                print "Making directory", directory
-
-            # Filename to write to
-            arm = ifu_list[0].spectrograph_arm            
-            outfile_name=str(name)+'_'+str(arm)+'_'+str(len(files))+suffix+'.fits'
-            outfile_name_full=os.path.join(directory, outfile_name)
-
-            # Check if the filename already exists
-            if os.path.exists(outfile_name_full):
-                if overwrite:
-                    os.remove(outfile_name_full)
-                else:
-                    print 'Output file already exists:'
-                    print outfile_name_full
-                    print 'Skipping this object'
-                    continue
-
-        # Call dithered_cube_from_rss to create the flux, variance and weight cubes for the object.
-        #try:
-        flux_cube, var_cube, weight_cube, diagnostics, covariance_cube, covar_locs = \
-                       dithered_cube_from_rss(ifu_list, size_of_grid=size_of_grid,
-                                              output_pix_size_arcsec=output_pix_size_arcsec,
-                                              drop_factor=drop_factor,
-                                              clip=clip, plot=plot, offsets=offsets, covar_mode=covar_mode,
-                                              do_dar_correct=do_dar_correct,
-                                              clip_throughput=clip_throughput)
-
-        #except Exception:
-        #    print "Cubing Failed."
-        #    continue
-
-        # Write out FITS files.
-        if write==True:
-
-            if ifu_list[0].gratid == '580V':
-                band = 'g'
-            elif ifu_list[0].gratid == '1000R':
-                band = 'r'
-            else:
-                raise ValueError('Could not identify band. Exiting')
-
-            # Equate Positional WCS
-            WCS_pos, WCS_flag=wcs.wcs_solve(ifu_list[0], flux_cube, name, band, size_of_grid, output_pix_size_arcsec, plot, nominal=nominal)
-            
-            # First get some info from one of the headers.
-            list1=pf.open(files[0])
-            hdr=list1[0].header
-    
-            hdr_new = create_primary_header(ifu_list, name, files, WCS_pos, WCS_flag)
-
-            # Define the units for the datacube
-            hdr_new['BUNIT'] = ('10**(-16) erg /s /cm**2 /angstrom /pixel', 
-                                'Units')
-
-            # Create HDUs for each cube.
-            
-            list_of_hdus = []
-
-            # @NOTE: PyFITS writes axes to FITS files in the reverse of the sense
-            # of the axes in Numpy/Python. So a numpy array with dimensions
-            # (5,10,20) will produce a FITS cube with x-dimension 20,
-            # y-dimension 10, and the cube (wavelength) dimension 5.  --AGreen
-            list_of_hdus.append(pf.PrimaryHDU(np.transpose(flux_cube, (2,1,0)), hdr_new))
-            list_of_hdus.append(pf.ImageHDU(np.transpose(var_cube, (2,1,0)), name='VARIANCE'))
-            list_of_hdus.append(pf.ImageHDU(np.transpose(weight_cube, (2,1,0)), name='WEIGHT'))
-
-            if covar_mode != 'none':
-                hdu4 = pf.ImageHDU(np.transpose(covariance_cube,(4,3,2,1,0)),name='COVAR')
-                hdu4.header['COVARMOD'] = (covar_mode, 'Covariance mode')
-                if covar_mode == 'optimal':
-                    hdu4.header['COVAR_N'] = (len(covar_locs), 'Number of covariance locations')
-                    for i in xrange(len(covar_locs)):
-                        hdu4.header['HIERARCH COVARLOC_'+str(i+1)] = covar_locs[i]
-                list_of_hdus.append(hdu4)
-
-            # Create HDUs for meta-data
-            #metadata_table = create_metadata_table(ifu_list)
-
-            list_of_hdus.append(create_qc_hdu(files, name))
-            
-            # Put individual HDUs into a HDU list
-            hdulist = pf.HDUList(list_of_hdus)
-
-            # Write the file
-            print "Writing", outfile_name_full
-            "--------------------------------------------------------------"
-            hdulist.writeto(outfile_name_full)
-    
-            # Close the open file
-            list1.close()
-            
+        dithered_cube_from_rss_wrapper(files, name, **kwargs)            
     print("Time dithered_cubes_from_files wall time: {0}".format(datetime.datetime.now() - start_time))
+    return
+
+def dithered_cube_from_rss_wrapper(files, name, size_of_grid=50, 
+                                   output_pix_size_arcsec=0.5, drop_factor=0.5,
+                                   clip=True, plot=True, write=True, suffix='',
+                                   nominal=False, root='', overwrite=False, offsets='file',
+                                   covar_mode='optimal', do_dar_correct=True,
+                                   clip_throughput=True):
+    """Cubes and saves a single object."""
+    n_files = len(files)
+
+    ifu_list = []
+    
+    for filename in files:
+        ifu_list.append(utils.IFU(filename, name, flag_name=True))
+
+    if write:
+        # First check if the object directory already exists or not.
+        directory = os.path.join(root, name)
+        try:
+            os.makedirs(directory)
+        except OSError:
+            print "Directory Exists", directory
+            print "Writing files to the existing directory"
+        else:
+            print "Making directory", directory
+
+        # Filename to write to
+        arm = ifu_list[0].spectrograph_arm            
+        outfile_name=str(name)+'_'+str(arm)+'_'+str(n_files)+suffix+'.fits'
+        outfile_name_full=os.path.join(directory, outfile_name)
+
+        # Check if the filename already exists
+        if os.path.exists(outfile_name_full):
+            if overwrite:
+                os.remove(outfile_name_full)
+            else:
+                print 'Output file already exists:'
+                print outfile_name_full
+                print 'Skipping this object'
+                continue
+
+    # Call dithered_cube_from_rss to create the flux, variance and weight cubes for the object.
+    #try:
+    flux_cube, var_cube, weight_cube, diagnostics, covariance_cube, covar_locs = \
+                   dithered_cube_from_rss(ifu_list, size_of_grid=size_of_grid,
+                                          output_pix_size_arcsec=output_pix_size_arcsec,
+                                          drop_factor=drop_factor,
+                                          clip=clip, plot=plot, offsets=offsets, covar_mode=covar_mode,
+                                          do_dar_correct=do_dar_correct,
+                                          clip_throughput=clip_throughput)
+
+    #except Exception:
+    #    print "Cubing Failed."
+    #    continue
+
+    # Write out FITS files.
+    if write==True:
+
+        if ifu_list[0].gratid == '580V':
+            band = 'g'
+        elif ifu_list[0].gratid == '1000R':
+            band = 'r'
+        else:
+            raise ValueError('Could not identify band. Exiting')
+
+        # Equate Positional WCS
+        WCS_pos, WCS_flag=wcs.wcs_solve(ifu_list[0], flux_cube, name, band, size_of_grid, output_pix_size_arcsec, plot, nominal=nominal)
+        
+        # First get some info from one of the headers.
+        list1=pf.open(files[0])
+        hdr=list1[0].header
+
+        hdr_new = create_primary_header(ifu_list, name, files, WCS_pos, WCS_flag)
+
+        # Define the units for the datacube
+        hdr_new['BUNIT'] = ('10**(-16) erg /s /cm**2 /angstrom /pixel', 
+                            'Units')
+
+        # Create HDUs for each cube.
+        
+        list_of_hdus = []
+
+        # @NOTE: PyFITS writes axes to FITS files in the reverse of the sense
+        # of the axes in Numpy/Python. So a numpy array with dimensions
+        # (5,10,20) will produce a FITS cube with x-dimension 20,
+        # y-dimension 10, and the cube (wavelength) dimension 5.  --AGreen
+        list_of_hdus.append(pf.PrimaryHDU(np.transpose(flux_cube, (2,1,0)), hdr_new))
+        list_of_hdus.append(pf.ImageHDU(np.transpose(var_cube, (2,1,0)), name='VARIANCE'))
+        list_of_hdus.append(pf.ImageHDU(np.transpose(weight_cube, (2,1,0)), name='WEIGHT'))
+
+        if covar_mode != 'none':
+            hdu4 = pf.ImageHDU(np.transpose(covariance_cube,(4,3,2,1,0)),name='COVAR')
+            hdu4.header['COVARMOD'] = (covar_mode, 'Covariance mode')
+            if covar_mode == 'optimal':
+                hdu4.header['COVAR_N'] = (len(covar_locs), 'Number of covariance locations')
+                for i in xrange(len(covar_locs)):
+                    hdu4.header['HIERARCH COVARLOC_'+str(i+1)] = covar_locs[i]
+            list_of_hdus.append(hdu4)
+
+        # Create HDUs for meta-data
+        #metadata_table = create_metadata_table(ifu_list)
+
+        list_of_hdus.append(create_qc_hdu(files, name))
+        
+        # Put individual HDUs into a HDU list
+        hdulist = pf.HDUList(list_of_hdus)
+
+        # Write the file
+        print "Writing", outfile_name_full
+        "--------------------------------------------------------------"
+        hdulist.writeto(outfile_name_full)
+
+        # Close the open file
+        list1.close()
+
 
 def dithered_cube_from_rss(ifu_list, size_of_grid=50, output_pix_size_arcsec=0.5, drop_factor=0.5,
                            clip=True, plot=True, offsets='file', covar_mode='optimal',

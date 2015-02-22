@@ -1566,16 +1566,38 @@ class Manager:
         # Add in the root path as well, so that cubing puts things in the 
         # right place
         cubed_root = os.path.join(self.root, 'cubed')
-        groups = [(key, fits_list, cubed_root, overwrite, star_only) 
-                  for key, fits_list in groups.items()]
+        inputs_list = []
+        for (field_id, ccd), fits_list in groups:
+            path_list = [best_path(fits) for fits in fits_list]
+            if star_only:
+                objects = [
+                    pf.getval(path_list[0], 'STDNAME', 'FLUX_CALIBRATION')]
+            else:
+                objects = get_object_names(path_list[0])
+            if fits_list[0].epoch < 2013.0:
+                # Large pitch of pilot data requires a larger drop size
+                drop_factor = 0.75
+            else:
+                drop_factor = 0.5
+            for name in objects:
+                inputs_list.append(
+                    (field_id, ccd, path_list, name, cubed_root, drop_factor,
+                     overwrite))
         # Send the cubing tasks off to multiple CPUs
-        with self.patch_if_demo('sami.manager.dithered_cubes_from_rss_list',
-                                fake_dithered_cubes_from_rss_list):
-            self.map(cube_group, groups)
+        with self.patch_if_demo('sami.manager.dithered_cubes_from_rss_wrapper',
+                                fake_dithered_cubes_from_rss_wrapper):
+            self.map(cube_object, inputs_list)
+
+        # groups = [(key, fits_list, cubed_root, overwrite, star_only) 
+        #           for key, fits_list in groups.items()]
+        # # Send the cubing tasks off to multiple CPUs
+        # with self.patch_if_demo('sami.manager.dithered_cubes_from_rss_list',
+        #                         fake_dithered_cubes_from_rss_list):
+        #     self.map(cube_group, groups)
         # Mark all cubes as not checked. Ideally would only mark those that
         # actually exist. Maybe set dithered_cubes_from_rss_list to return a 
         # list of those it created?
-        for fits_list in [item[1] for item in groups]:
+        for fits_list in groups.values():
             self.update_checks('CUB', [fits_list[0]], False)
         return
         
@@ -3393,6 +3415,17 @@ def cube_group(group):
         nominal=True, root=root, overwrite=overwrite, do_dar_correct=True,
         objects=objects, clip=True, drop_factor=drop_factor)
     return
+
+@safe_for_multiprocessing
+def cube_object(inputs):
+    """Cube a single object in a set of RSS files."""
+    field_id, ccd, path_list, name, cubed_root, drop_factor, overwrite = inputs
+    print 'Cubing {} in field ID: {}, CCD: {}'.format(name, field_id, ccd)
+    print '{} files available'.format(len(path_list))
+    dithered_cubes_from_rss_wrapper(
+        path_list, name, suffix='_'+field_id, size_of_grid=50, write=True,
+        nominal=True, root=cubed_root, overwrite=overwrite, do_dar_correct=True,
+        clip=True, drop_factor=drop_factor)
 
 def best_path(fits):
     """Return the best (most calibrated) path for the given file."""
