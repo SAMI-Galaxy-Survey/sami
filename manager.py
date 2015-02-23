@@ -100,6 +100,7 @@ from .dr.throughput import make_clipped_thput_files
 from .qc.fluxcal import stellar_mags_cube_pair, stellar_mags_frame_pair
 from .qc.fluxcal import throughput, get_sdss_stellar_mags
 from .qc.sky import sky_residuals
+from .qc.arc import bad_fibres
 
 # Get the astropy version as a tuple of integers
 ASTROPY_VERSION = tuple(int(x) for x in ASTROPY_VERSION.split('.'))
@@ -1192,6 +1193,8 @@ class Manager:
                                    **kwargs)
         reduced_files = self.reduce_file_iterable(
             file_iterable, overwrite=overwrite)
+        for fits in reduced_files:
+            bad_fibres(fits, save=True)
         self.update_checks('ARC', reduced_files, False)
         return
 
