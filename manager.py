@@ -93,6 +93,7 @@ except ImportError:
 from .utils.other import find_fibre_table, gzip
 from .utils import IFU
 from .general.cubing import dithered_cubes_from_rss_list, get_object_names
+from .general.cubing import dithered_cube_from_rss_wrapper
 from .general.cubing import scale_cube_pair, scale_cube_pair_to_mag
 from .general.align_micron import find_dither
 from .dr import fluxcal2, telluric, check_plots, tdfdr, dust
@@ -1656,16 +1657,38 @@ class Manager:
         # Add in the root path as well, so that cubing puts things in the 
         # right place
         cubed_root = os.path.join(self.root, 'cubed')
-        groups = [(key, fits_list, cubed_root, overwrite, star_only) 
-                  for key, fits_list in groups.items()]
+        inputs_list = []
+        for (field_id, ccd), fits_list in groups.items():
+            path_list = [best_path(fits) for fits in fits_list]
+            if star_only:
+                objects = [
+                    pf.getval(path_list[0], 'STDNAME', 'FLUX_CALIBRATION')]
+            else:
+                objects = get_object_names(path_list[0])
+            if fits_list[0].epoch < 2013.0:
+                # Large pitch of pilot data requires a larger drop size
+                drop_factor = 0.75
+            else:
+                drop_factor = 0.5
+            for name in objects:
+                inputs_list.append(
+                    (field_id, ccd, path_list, name, cubed_root, drop_factor,
+                     overwrite))
         # Send the cubing tasks off to multiple CPUs
-        with self.patch_if_demo('sami.manager.dithered_cubes_from_rss_list',
-                                fake_dithered_cubes_from_rss_list):
-            self.map(cube_group, groups)
+        with self.patch_if_demo('sami.manager.dithered_cubes_from_rss_wrapper',
+                                fake_dithered_cube_from_rss_wrapper):
+            self.map(cube_object, inputs_list)
+
+        # groups = [(key, fits_list, cubed_root, overwrite, star_only) 
+        #           for key, fits_list in groups.items()]
+        # # Send the cubing tasks off to multiple CPUs
+        # with self.patch_if_demo('sami.manager.dithered_cubes_from_rss_list',
+        #                         fake_dithered_cubes_from_rss_list):
+        #     self.map(cube_group, groups)
         # Mark all cubes as not checked. Ideally would only mark those that
         # actually exist. Maybe set dithered_cubes_from_rss_list to return a 
         # list of those it created?
-        for fits_list in [item[1] for item in groups]:
+        for fits_list in groups.values():
             self.update_checks('CUB', [fits_list[0]], False)
         return
         
@@ -3526,6 +3549,17 @@ def cube_group(group):
         objects=objects, clip=True, drop_factor=drop_factor)
     return
 
+@safe_for_multiprocessing
+def cube_object(inputs):
+    """Cube a single object in a set of RSS files."""
+    field_id, ccd, path_list, name, cubed_root, drop_factor, overwrite = inputs
+    print 'Cubing {} in field ID: {}, CCD: {}'.format(name, field_id, ccd)
+    print '{} files available'.format(len(path_list))
+    dithered_cube_from_rss_wrapper(
+        path_list, name, suffix='_'+field_id, size_of_grid=50, write=True,
+        nominal=True, root=cubed_root, overwrite=overwrite, do_dar_correct=True,
+        clip=True, drop_factor=drop_factor)
+
 def best_path(fits):
     """Return the best (most calibrated) path for the given file."""
     if os.path.exists(fits.telluric_path):
@@ -3700,7 +3734,7 @@ def fake_find_dither(demo_data_source):
 def fake_dithered_cubes_from_rss_list(demo_data_source):
     """Return a function that pretends to make datacubes."""
     source = os.path.join(demo_data_source, 'cubes')
-    def inner(path_list, suffix='', root='', overwrite='', *args, **kwargs):
+    def inner(path_list, suffix='', root='', overwrite=True, *args, **kwargs):
         """Pretend to make datacubes."""
         object_names = get_object_names(path_list[0])
         for name in object_names:
@@ -3729,6 +3763,38 @@ def fake_dithered_cubes_from_rss_list(demo_data_source):
                     continue
             copy_demo_data(outfile_name, source, directory)
     return inner
+
+def fake_dithered_cube_from_rss_wrapper(demo_data_source):
+    """Return a function that pretends to make cubes for 1 object."""
+    def inner(path_list, name, suffix='', root='', overwrite=True,
+              *args, **kwargs):
+        """Pretend to make datacubes."""
+        ifu_list = [IFU(path, name, flag_name=True) for path in path_list]
+        directory = os.path.join(root, name)
+        try:
+            os.makedirs(directory)
+        except OSError:
+            print "Directory Exists", directory
+            print "Writing files to the existing directory"
+        else:
+            print "Making directory", directory
+        # Filename to write to
+        arm = ifu_list[0].spectrograph_arm            
+        outfile_name = (
+            str(name)+'_'+str(arm)+'_'+str(len(path_list))+suffix+'.fits')
+        outfile_name_full = os.path.join(directory, outfile_name)
+        # Check if the filename already exists
+        if os.path.exists(outfile_name_full):
+            if overwrite:
+                os.remove(outfile_name_full)
+            else:
+                print 'Output file already exists:'
+                print outfile_name_full
+                print 'Skipping this object'
+                return False
+        copy_demo_data(outfile_name, source, directory)
+        return True
+    return inner    
 
 def fake_stellar_mags_cube_pair(demo_data_source):
     """Return a function that pretends to measure and scale stellar mags."""
