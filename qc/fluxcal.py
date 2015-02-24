@@ -944,7 +944,8 @@ def fit_moffat_to_image(image, noise, elliptical=False, background=False):
 def fit_moffat_to_chunks(flux, noise, wavelength, elliptical=False):
     """Fit a Moffat profile to a chunked datacube"""
     fit_pix = np.isfinite(flux) & np.isfinite(noise)
-    coords = np.meshgrid(np.arange(flux.shape[1]), 
+    coords = np.meshgrid(
+        np.arange(flux.shape[1]), 
                          np.arange(flux.shape[2]))
     x00 = 0.5 * (flux.shape[1] - 1)
     y00 = 0.5 * (flux.shape[2] - 1)
@@ -969,10 +970,13 @@ def fit_moffat_to_chunks(flux, noise, wavelength, elliptical=False):
         return ((model[fit_pix] - flux[fit_pix]) / noise[fit_pix])
     result = leastsq(fit_function, p0, full_output=True)
     params = result[0]
-    reduced_chi2 = np.sum(fit_function(params)**2 / (np.sum(fit_pix) - 1))
-    n_params = len(params)
-    sigma = np.sqrt(result[1][np.arange(n_params), np.arange(n_params)] /
-                    reduced_chi2)
+    if result[1] is None:
+        sigma = None
+    else:
+        reduced_chi2 = np.sum(fit_function(params)**2 / (np.sum(fit_pix) - 1))
+        n_params = len(params)
+        sigma = np.sqrt(result[1][np.arange(n_params), np.arange(n_params)] /
+                        reduced_chi2)
     return params, sigma
     
 def psf_params_at_slice(params, i_slice, wavelength, elliptical=False,
