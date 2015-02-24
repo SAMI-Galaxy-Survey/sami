@@ -1194,7 +1194,7 @@ class Manager:
         reduced_files = self.reduce_file_iterable(
             file_iterable, overwrite=overwrite)
         for fits in reduced_files:
-            bad_fibres(fits, save=True)
+            bad_fibres(fits.reduced_path, save=True)
         self.update_checks('ARC', reduced_files, False)
         return
 
