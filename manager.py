@@ -73,6 +73,7 @@ from collections import defaultdict
 from getpass import getpass
 from time import sleep
 from glob import glob
+from pydoc import pager
 
 import astropy.coordinates as coord
 from astropy import units
@@ -1972,13 +1973,17 @@ class Manager:
 
     def qc_summary(self, min_exposure=599.0, ccd='ccd_1', **kwargs):
         """Print a summary of the QC information available."""
+        text = 'QC summary table\n'
+        text += '='*75+'\n'
+        text += 'Use space bar and cursor keys to move up and down; q to quit.\n'
+        text += '\n'
         for (field_id,), fits_list in self.group_files_by(
                 'field_id', ndf_class='MFOBJECT', min_exposure=min_exposure,
                 ccd=ccd, **kwargs).items():
-            print '+'*75
-            print field_id
-            print '-'*75
-            print 'File        Exposure  FWHM (")  Transmission  Sky residual'
+            text += '+'*75+'\n'
+            text += field_id+'\n'
+            text += '-'*75+'\n'
+            text += 'File        Exposure  FWHM (")  Transmission  Sky residual\n'
             for fits in fits_list:
                 fwhm = '       -'
                 transmission = '           -'
@@ -1994,11 +1999,12 @@ class Manager:
                         transmission = '{:12.3f}'.format(header['TRANSMIS'])
                     if 'SKYMDCOF' in header:
                         sky_residual = '{:12.3f}'.format(header['SKYMDCOF'])
-                print '{} {}  {:8d}  {}  {}  {}'.format(
+                text += '{} {}  {:8d}  {}  {}  {}\n'.format(
                     fits.filename[:5], fits.filename[6:10], int(fits.exposure),
                     fwhm, transmission, sky_residual)
-            print '+'*75
-            print
+            text += '+'*75+'\n'
+            text += '\n'
+        pager(text)
         return
 
     def reduce_file(self, fits, overwrite=False, tlm=False,
