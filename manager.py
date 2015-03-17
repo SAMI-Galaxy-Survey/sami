@@ -2875,8 +2875,9 @@ class Manager:
 
     def check_2dfdr(self, fits_list, message, filename_type='reduced_filename'):
         """Use 2dfdr to perform a check of some sort."""
-        print 'Use 2dfdr to plot the following files'
-        print '(You may need to click on the triangles to see reduced files.)'
+        print 'Use 2dfdr to plot the following files.'
+        print 'You may need to click on the triangles to see reduced files.'
+        print 'If the files are not listed, use the plot commands in the 2dfdr menu.'
         for fits in fits_list:
             print '   ' + getattr(fits, filename_type)
         print message
