@@ -508,6 +508,14 @@ class Manager:
 
     >>> mngr.scale_cubes()
 
+    If you have healpy installed and the relevant dust maps downloaded, you
+    can record the E(B-V) and attenuation curves in the datacubes:
+
+    >>> mngr.record_dust()
+
+    It's safe to leave this step out if you don't have the necessary
+    components.
+
     Finally, the cubes can be gzipped to save space/bandwidth. You might
     want to leave this until after the output checking (see below), to
     improve read times.
@@ -592,6 +600,20 @@ class Manager:
     >>> mngr.enable_files(['06mar10003', '06mar20003', '06mar10047'])
 
     This function follows exactly the same syntax as disable_files.
+
+    Summarising results
+    ===================
+
+    At any time you can print out a summary of the object frames observed,
+    including some basic quality control metrics:
+
+    >>> mngr.qc_summary()
+
+    The QC values are not filled in until certain steps of the data
+    reduction have been done; you need to get as far as mngr.scale_frames()
+    to see everything. While observing, keep an eye on the seeing and the
+    transmission. If the seeing is above 3" or the transmission is below
+    about 0.7, the data are unlikely to be of much use.
 
     Changing object names and spectrophotometric flags
     ==================================================
