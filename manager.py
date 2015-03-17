@@ -477,7 +477,17 @@ class Manager:
 
     To take into account variations in atmospheric transmission over the
     course of a night (or between nights), the flux level in each frame is
-    scaled to set the standard star flux to the catalogue level:
+    scaled to set the standard star flux to the catalogue level. First the
+    manager needs to find out what that catalogue level is:
+
+    >>> mngr.get_stellar_photometry()
+
+    This will check the stars in your observing run against the inbuilt
+    catalogue. If any are missing you will be prompted to download the
+    relevant data from the SDSS website.
+
+    Once the stellar photometry is complete, you can continue with scaling
+    each frame:
 
     >>> mngr.scale_frames()
     
