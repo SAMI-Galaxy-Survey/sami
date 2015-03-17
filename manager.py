@@ -1976,6 +1976,8 @@ class Manager:
         text = 'QC summary table\n'
         text += '='*75+'\n'
         text += 'Use space bar and cursor keys to move up and down; q to quit.\n'
+        text += 'If one file in a pair is disabled it is marked with a +\n'
+        text += 'If both are disabled it is marked with a *\n'
         text += '\n'
         for (field_id,), fits_list in self.group_files_by(
                 'field_id', ndf_class='MFOBJECT', min_exposure=min_exposure,
@@ -1999,9 +2001,16 @@ class Manager:
                         transmission = '{:12.3f}'.format(header['TRANSMIS'])
                     if 'SKYMDCOF' in header:
                         sky_residual = '{:12.3f}'.format(header['SKYMDCOF'])
-                text += '{} {}  {:8d}  {}  {}  {}\n'.format(
-                    fits.filename[:5], fits.filename[6:10], int(fits.exposure),
-                    fwhm, transmission, sky_residual)
+                fits_2 = self.other_arm(fits)
+                if fits.do_not_use and fits_2.do_not_use:
+                    disabled_flag = '*'
+                elif fits.do_not_use or fits_2.do_not_use:
+                    disabled_flag = '+'
+                else:
+                    disabled_flag = ' '
+                text += '{} {}{} {:8d}  {}  {}  {}\n'.format(
+                    fits.filename[:5], fits.filename[6:10], disabled_flag,
+                    int(fits.exposure), fwhm, transmission, sky_residual)
             text += '+'*75+'\n'
             text += '\n'
         pager(text)
