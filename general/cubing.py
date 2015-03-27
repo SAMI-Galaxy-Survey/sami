@@ -257,12 +257,7 @@ def dar_correct(ifu_list, xfibre_all, yfibre_all, method='simple',update_rss=Fal
         diagnostics.DAR.yfib = yfibre_all
 
 
-def dithered_cubes_from_rss_files(inlist, objects='all', size_of_grid=50, 
-                                  output_pix_size_arcsec=0.5, drop_factor=0.5,
-                                  clip=True, plot=True, write=True, suffix='',
-                                  nominal=False, root='', overwrite=False, offsets='file',
-                                  covar_mode='optimal', do_dar_correct=True,
-                                  clip_throughput=True):
+def dithered_cubes_from_rss_files(inlist, **kwargs):
     """A wrapper to make a cube from reduced RSS files, passed as a filename containing a list of filenames. Only input files that go together - ie have the same objects."""
 
     # Read in the list of all the RSS files input by the user.
@@ -273,11 +268,7 @@ def dithered_cubes_from_rss_files(inlist, objects='all', size_of_grid=50,
 
         files.append(np.str(cols[0]))
 
-    dithered_cubes_from_rss_list(files, objects=objects, size_of_grid=size_of_grid, 
-                                 output_pix_size_arcsec=output_pix_size_arcsec, clip=clip, plot=plot,
-                                 write=write, root=root, suffix=suffix, nominal=nominal, overwrite=overwrite, offsets=offsets,
-                                 covar_mode=covar_mode, do_dar_correct=do_dar_correct, drop_factor=drop_factor,
-                                 clip_throughput=clip_throughput)
+    dithered_cubes_from_rss_list(files, **kwargs)
     return
 
 def dithered_cubes_from_rss_list(files, objects='all', **kwargs):
@@ -313,9 +304,10 @@ def dithered_cubes_from_rss_list(files, objects='all', **kwargs):
 def dithered_cube_from_rss_wrapper(files, name, size_of_grid=50, 
                                    output_pix_size_arcsec=0.5, drop_factor=0.5,
                                    clip=True, plot=True, write=True, suffix='',
-                                   nominal=False, root='', overwrite=False, offsets='file',
-                                   covar_mode='optimal', do_dar_correct=True,
-                                   clip_throughput=True):
+                                   nominal=False, root='', overwrite=False,
+                                   offsets='file', covar_mode='optimal',
+                                   do_dar_correct=True, clip_throughput=True,
+                                   update_tol=0.1):
     """Cubes and saves a single object."""
     n_files = len(files)
 
@@ -353,12 +345,13 @@ def dithered_cube_from_rss_wrapper(files, name, size_of_grid=50,
     # Call dithered_cube_from_rss to create the flux, variance and weight cubes for the object.
     #try:
     flux_cube, var_cube, weight_cube, diagnostics, covariance_cube, covar_locs = \
-                   dithered_cube_from_rss(ifu_list, size_of_grid=size_of_grid,
-                                          output_pix_size_arcsec=output_pix_size_arcsec,
-                                          drop_factor=drop_factor,
-                                          clip=clip, plot=plot, offsets=offsets, covar_mode=covar_mode,
-                                          do_dar_correct=do_dar_correct,
-                                          clip_throughput=clip_throughput)
+        dithered_cube_from_rss(
+            ifu_list, size_of_grid=size_of_grid,
+            output_pix_size_arcsec=output_pix_size_arcsec,
+            drop_factor=drop_factor, clip=clip, plot=plot,
+            offsets=offsets, covar_mode=covar_mode,
+            do_dar_correct=do_dar_correct, clip_throughput=clip_throughput,
+            update_tol=update_tol)
 
     #except Exception:
     #    print "Cubing Failed."
@@ -428,7 +421,7 @@ def dithered_cube_from_rss_wrapper(files, name, size_of_grid=50,
 
 def dithered_cube_from_rss(ifu_list, size_of_grid=50, output_pix_size_arcsec=0.5, drop_factor=0.5,
                            clip=True, plot=True, offsets='file', covar_mode='optimal',
-                           do_dar_correct=True, clip_throughput=True):
+                           do_dar_correct=True, clip_throughput=True, update_tol=0.1):
     diagnostic_info = {}
 
     n_obs = len(ifu_list)
@@ -442,12 +435,16 @@ def dithered_cube_from_rss(ifu_list, size_of_grid=50, output_pix_size_arcsec=0.5
 
     # Create an instance of SAMIDrizzler for use later to create individual overlap maps for each fibre.
     # The attributes of this instance don't change from ifu to ifu.
-    overlap_maps=SAMIDrizzler(size_of_grid, output_pix_size_arcsec, drop_factor, n_obs * n_fibres)
+    overlap_maps=SAMIDrizzler(
+        size_of_grid, output_pix_size_arcsec, drop_factor, n_obs * n_fibres,
+        update_tol=update_tol)
 
     ### RGS 27/2/14 We also need a second copy of this IFF we are clipping the data AND drop_factor != 1
     if drop_factor != 1 and clip:
         ### But, check this does not bugger up intermediate calculation elements in the code?
-        overlap_maps_fulldrop=SAMIDrizzler(size_of_grid, output_pix_size_arcsec, 1, n_obs * n_fibres)
+        overlap_maps_fulldrop=SAMIDrizzler(
+            size_of_grid, output_pix_size_arcsec, 1, n_obs * n_fibres,
+            update_tol=update_tol)
                 
     # Empty lists for positions and data. Could be arrays, might be faster? Should test...
     xfibre_all=[]
@@ -882,15 +879,20 @@ class SAMIDrizzler:
     """Make an overlap map for a single fibre. This is the same at all lambda slices for that fibre (neglecting
     DAR)"""  
 
-    def __init__(self, size_of_grid, output_pix_size_arcsec, drop_factor, n_fibres):
+    def __init__(self, size_of_grid, output_pix_size_arcsec, drop_factor,
+                 n_fibres, update_tol=0.1):
         """Construct a new SAMIDrizzler isntance with the necessary information.
         
         Parameters
         ----------
         size_of_grid: the number of pixels along each dimension of the 
             square output pixel grid
+        output_pix_size_arcsec: required output pixel size in arcseconds
+        drop_factor: fraction to multiply the true fibre diameter by
         n_fibres: the total number of unique fibres which will be 
             mapped onto the grid (usually n_fibres * n_obs) 
+        update_tol: how far, as a fraction of a pixel, to allow the footprint
+            to wander before recalculating
         
         """
 
@@ -907,7 +909,7 @@ class SAMIDrizzler:
         self.drop_diameter_pix = self.drop_diameter_arcsec / self.pix_size_arcsec
         self.drop_area_pix = np.pi * (self.drop_diameter_pix / 2.0) ** 2
         
-        self.drizzle_update_tol = 0.1 * self.pix_size_micron
+        self.drizzle_update_tol = update_tol * self.pix_size_micron
 
         # Output grid abscissa in microns
         self.grid_coordinates_x = (np.arange(self.output_dimension) - self.output_dimension / 2) * self.pix_size_micron
