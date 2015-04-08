@@ -739,7 +739,7 @@ class Manager:
             result_list = map(function, input_list)
         else:
             pool = multiprocessing.Pool(self.n_cpu)
-            result_list = pool.map(function, input_list)
+            result_list = pool.map(function, input_list, chunksize=1)
             pool.close()
             pool.join()
         return result_list
