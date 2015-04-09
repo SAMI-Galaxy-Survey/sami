@@ -1683,7 +1683,7 @@ class Manager:
 
     def cube(self, overwrite=False, min_exposure=599.0, name='main', 
              star_only=False, drop_factor=None, tag='', update_tol=0.1,
-             **kwargs):
+             size_of_grid=50, output_pix_size_arcsec=0.5, **kwargs):
         """Make datacubes from the given RSS files."""
         groups = self.group_files_by(
             ['field_id', 'ccd'], ndf_class='MFOBJECT', do_not_use=False,
@@ -1708,7 +1708,8 @@ class Manager:
             for name in objects:
                 inputs_list.append(
                     (field_id, ccd, path_list, name, cubed_root, drop_factor,
-                     tag, update_tol, overwrite))
+                     tag, update_tol, size_of_grid, output_pix_size_arcsec,
+                     overwrite))
         # Send the cubing tasks off to multiple CPUs
         with self.patch_if_demo('sami.manager.dithered_cubes_from_rss_wrapper',
                                 fake_dithered_cube_from_rss_wrapper):
@@ -3603,16 +3604,18 @@ def cube_group(group):
 def cube_object(inputs):
     """Cube a single object in a set of RSS files."""
     (field_id, ccd, path_list, name, cubed_root, drop_factor, tag,
-     update_tol, overwrite) = inputs
+     update_tol, size_of_grid, output_pix_size_arcsec, overwrite) = inputs
     print 'Cubing {} in field ID: {}, CCD: {}'.format(name, field_id, ccd)
     print '{} files available'.format(len(path_list))
     suffix = '_'+field_id
     if tag:
         suffix += '_'+tag
     dithered_cube_from_rss_wrapper(
-        path_list, name, suffix=suffix, size_of_grid=50, write=True,
-        nominal=True, root=cubed_root, overwrite=overwrite, do_dar_correct=True,
-        clip=True, drop_factor=drop_factor, update_tol=update_tol)
+        path_list, name, suffix=suffix, write=True, nominal=True,
+        root=cubed_root, overwrite=overwrite, do_dar_correct=True, clip=True,
+        drop_factor=drop_factor, update_tol=update_tol,
+        size_of_grid=size_of_grid,
+        output_pix_size_arcsec=output_pix_size_arcsec)
 
 def best_path(fits):
     """Return the best (most calibrated) path for the given file."""
