@@ -475,7 +475,7 @@ def stellar_mags_scatter_cube_pair(file_pair, min_relative_flux=0.5, save=False)
     if save:
         for hdulist in hdulist_pair:
             hdulist[0].header['COLORSTD'] = (
-                colour, 'Scatter in g-r within cubes')
+                scatter, 'Scatter in g-r within cubes')
             hdulist.flush()
     for hdulist in hdulist_pair:
         hdulist.close()
