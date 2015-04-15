@@ -1433,17 +1433,22 @@ class Manager:
         thput_file_list = [
             filename for filename in thput_file_list if
             not self.fits_file(filename) and not filename.startswith('thput')]
+        file_list = [(fits,
+                      fits.reduce_options()['THPUT_FILENAME'],
+                      pf.getval(fits.reduced_path, 'SKYMNCOF', 'QC'))
+                     for fits in self.files(
+                         ndf_class='MFOBJECT', do_not_use=False, reduced=True)]
         bad_files = []
         for thput_file in thput_file_list:
             # Check all files, not just the ones that were just reduced
             matching_files = [
-                fits for fits in self.files(
-                    ndf_class='MFOBJECT', do_not_use=False, reduced=True)
-                if fits.reduce_options()['THPUT_FILENAME'] == thput_file]
-            sky_residual = np.mean([
-                pf.getval(fits.reduced_path, 'SKYMNCOF', 'QC')
-                for fits in matching_files])
-            if sky_residual >= sky_residual_limit:
+                (fits, sky_residual) for
+                (fits, thput_file_match, sky_residual) in file_list
+                if thput_file_match == thput_file]
+            mean_sky_residual = np.mean([
+                sky_residual
+                for (fits, sky_residual) in matching_files])
+            if mean_sky_residual >= sky_residual_limit:
                 bad_files.extend(matching_files)
         return bad_files
 
