@@ -1447,7 +1447,8 @@ class Manager:
                 if thput_file_match == thput_file]
             mean_sky_residual = np.mean([
                 sky_residual
-                for (fits, sky_residual) in matching_files])
+                for (fits, sky_residual) in matching_files
+                if fits.exposure >= self.min_exposure_for_throughput])
             if mean_sky_residual >= sky_residual_limit:
                 bad_files.extend(matching_files)
         return bad_files
