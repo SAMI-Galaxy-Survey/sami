@@ -1428,13 +1428,15 @@ class Manager:
         """Return list of fields with bad residuals that used dome flats."""
         # Get a list of all throughput files used
         thput_file_list = np.unique([
-            fits.reduce_options()['THPUT_FILENAME'] for fits in fits_list])
+            fits.reduce_options().get('THPUT_FILENAME', '')
+            for fits in fits_list])
         # Keep only the dome flats
         thput_file_list = [
             filename for filename in thput_file_list if
-            not self.fits_file(filename) and not filename.startswith('thput')]
+            filename and not self.fits_file(filename) and
+            not filename.startswith('thput')]
         file_list = [(fits,
-                      fits.reduce_options()['THPUT_FILENAME'],
+                      fits.reduce_options().get('THPUT_FILENAME', ''),
                       pf.getval(fits.reduced_path, 'SKYMNCOF', 'QC'))
                      for fits in self.files(
                          ndf_class='MFOBJECT', do_not_use=False, reduced=True)]
