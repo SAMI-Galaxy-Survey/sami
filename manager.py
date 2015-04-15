@@ -1327,7 +1327,7 @@ class Manager:
         return new_path
 
     def reduce_object(self, overwrite=False, recalculate_throughput=True,
-                      **kwargs):
+                      sky_residual_limit=0.025, **kwargs):
         """Reduce all object frames matching given criteria."""
         # Reduce long exposures first, to make sure that any required
         # throughput measurements are available
@@ -1336,8 +1336,20 @@ class Manager:
             min_exposure=self.min_exposure_for_throughput, **kwargs)
         reduced_files = self.reduce_file_iterable(
             file_iterable_long, overwrite=overwrite)
+        # Check how good the sky subtraction was
+        for fits in reduced_files:
+            self.qc_sky(fits)
+        if sky_residual_limit is not None:
+            # Switch to sky line throughputs if the sky residuals are bad
+            fits_list = self.files_with_bad_dome_throughput(
+                reduced_files, sky_residual_limit=sky_residual_limit)
+            self.reduce_file_iterable(
+                fits_list, throughput_method='skylines',
+                overwrite=True)
+        else:
+            bad_fields = []
         if recalculate_throughput:
-            # Correct any bad throughput measurements
+            # Average over individual throughputs measured from sky lines
             extra_files = self.correct_bad_throughput(
                 overwrite=overwrite, **kwargs)
             for fits in extra_files:
@@ -1350,8 +1362,18 @@ class Manager:
         file_iterable_short = self.files(
             ndf_class='MFOBJECT', do_not_use=False,
             max_exposure=upper_limit, **kwargs)
+        file_iterable_sky_lines = []
+        file_iterable_default = []
+        for fits in file_iterable_short:
+            if fits.field_id in bad_fields:
+                file_iterable_sky_lines.append(fits)
+            else:
+                file_iterable_default.append(fits)
         reduced_files.extend(self.reduce_file_iterable(
-            file_iterable_short, overwrite=overwrite))
+            file_iterable_sky_lines, overwrite=overwrite,
+            throughput_method='skylines'))
+        reduced_files.extend(self.reduce_file_iterable(
+            file_iterable_default, overwrite=overwrite))
         # Mark these files as not checked
         self.update_checks('OBJ', reduced_files, False)
         # Check how good the sky subtraction was
@@ -1359,7 +1381,7 @@ class Manager:
             self.qc_sky(fits)
         return
 
-    def reduce_file_iterable(self, file_iterable, external_throughput=False, 
+    def reduce_file_iterable(self, file_iterable, throughput_method='default', 
                              overwrite=False, tlm=False, leave_reduced=True):
         """Reduce all files in the iterable."""
         # First establish the 2dfdr options for all files that need reducing
@@ -1367,7 +1389,7 @@ class Manager:
         input_list = [(fits, 
                        self.idx_files[fits.ccd],
                        tuple(self.tdfdr_options(
-                           fits, external_throughput=external_throughput,
+                           fits, throughput_method=throughput_method,
                            tlm=tlm)),
                        self.cwd,
                        self.imp_scratch,
@@ -1401,6 +1423,30 @@ class Manager:
             target = fits.reduced_path
         return target
 
+    def files_with_bad_dome_throughput(self, fits_list,
+                                       sky_residual_limit=0.025):
+        """Return list of fields with bad residuals that used dome flats."""
+        # Get a list of all throughput files used
+        thput_file_list = np.unique([
+            fits.reduce_options()['THPUT_FILENAME'] for fits in fits_list])
+        # Keep only the dome flats
+        thput_file_list = [
+            filename for filename in thput_file_list if
+            not self.fits_file(filename) and not filename.startswith('thput')]
+        bad_files = []
+        for thput_file in thput_file_list:
+            # Check all files, not just the ones that were just reduced
+            matching_files = [
+                fits for fits in self.files(
+                    ndf_class='MFOBJECT', do_not_use=False, reduced=True)
+                if fits.reduce_options()['THPUT_FILENAME'] == thput_file]
+            sky_residual = np.mean([
+                pf.getval(fits.reduced_path, 'SKYMNCOF', 'QC')
+                for fits in matching_files])
+            if sky_residual >= sky_residual_limit:
+                bad_files.extend(matching_files)
+        return bad_files
+
     def correct_bad_throughput(self, overwrite=False, **kwargs):
         """Create thput files with bad values replaced by mean over field."""
         rereduce = []
@@ -1433,8 +1479,9 @@ class Manager:
             for fits, edited in zip(group, edited_list):
                 if edited:
                     rereduce.append(fits)
-        return self.reduce_file_iterable(rereduce, external_throughput=True, 
-                                         overwrite=True)
+        reduced_files = self.reduce_file_iterable(
+            rereduce, throughput_method='external', overwrite=True)
+        return reduced_files
 
     def derive_transfer_function(self, 
             overwrite=False, model_name='ref_centre_alpha_dist_circ_hdratm', 
@@ -2042,7 +2089,7 @@ class Manager:
             os.remove(fits.reduced_path)
         return True
 
-    def tdfdr_options(self, fits, external_throughput=False, tlm=False):
+    def tdfdr_options(self, fits, throughput_method='default', tlm=False):
         """Set the 2dfdr reduction options for this file."""
         options = []
         if fits.ccd == 'ccd_2':
@@ -2075,13 +2122,25 @@ class Manager:
             files_to_match = ['bias', 'dark', 'lflat', 'tlmap', 'wavel',
                               'fflat']
         elif fits.ndf_class == 'MFOBJECT':
-            if not external_throughput:
+            if throughput_method == 'default':
                 files_to_match = ['bias', 'dark', 'lflat', 'tlmap', 'wavel',
                                   'fflat', 'thput']
                 options.extend(['-TPMETH', 'OFFSKY'])
-            else:
+            elif throughput_method == 'external':
                 files_to_match = ['bias', 'dark', 'lflat', 'tlmap', 'wavel',
                                   'fflat']
+                options.extend(['-TPMETH', 'OFFSKY'])
+                options.extend(['-THPUT_FILENAME',
+                                'thput_'+fits.reduced_filename])
+            elif throughput_method == 'skylines':
+                if fits.exposure >= self.min_exposure_for_throughput:
+                    files_to_match = ['bias', 'dark', 'lflat', 'tlmap', 'wavel',
+                                      'fflat']
+                    options.extend(['-TPMETH', 'SKYFLUX(MED)'])
+                else:
+                    files_to_match = ['bias', 'dark', 'lflat', 'tlmap', 'wavel',
+                                      'fflat', 'thput_object']
+                    options.extend(['-TPMETH', 'OFFSKY'])
         else:
             raise ValueError('Unrecognised NDF_CLASS: '+fits.ndf_class)
         # Remove unnecessary files from files_to_match
@@ -2218,9 +2277,6 @@ class Manager:
                     match_class = 'tlmap'
                 options.extend(['-'+match_class.upper()+'_FILENAME',
                                 filename_match])
-        if external_throughput:
-            options.extend(['-TPMETH', 'OFFSKY'])
-            options.extend(['-THPUT_FILENAME', 'thput_'+fits.reduced_filename])
         return options        
 
     def run_2dfdr_auto(self, dirname):
