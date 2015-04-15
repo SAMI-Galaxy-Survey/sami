@@ -1450,7 +1450,7 @@ class Manager:
                 for (fits, sky_residual) in matching_files
                 if fits.exposure >= self.min_exposure_for_throughput])
             if mean_sky_residual >= sky_residual_limit:
-                bad_files.extend(matching_files)
+                bad_files.extend([fits for (fits, _) in matching_files])
         return bad_files
 
     def correct_bad_throughput(self, overwrite=False, **kwargs):
