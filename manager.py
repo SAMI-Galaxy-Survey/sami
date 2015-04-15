@@ -1346,6 +1346,7 @@ class Manager:
             self.reduce_file_iterable(
                 fits_list, throughput_method='skylines',
                 overwrite=True)
+            bad_fields = np.unique([fits.field_id for fits in fits_list])
         else:
             bad_fields = []
         if recalculate_throughput:
