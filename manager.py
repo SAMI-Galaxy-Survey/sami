@@ -1436,11 +1436,18 @@ class Manager:
             filename for filename in thput_file_list if
             filename and not self.fits_file(filename) and
             not filename.startswith('thput')]
-        file_list = [(fits,
-                      fits.reduce_options().get('THPUT_FILENAME', ''),
-                      pf.getval(fits.reduced_path, 'SKYMNCOF', 'QC'))
-                     for fits in self.files(
-                         ndf_class='MFOBJECT', do_not_use=False, reduced=True)]
+        file_list = []
+        for fits in self.files(
+                ndf_class='MFOBJECT', do_not_use=False, reduced=True):
+            try:
+                residual = pf.getval(fits.reduced_path, 'SKYMNCOF', 'QC')
+            except KeyError:
+                # The QC measurement hasn't been done
+                continue
+            file_list.append(
+                (fits,
+                 fits.reduce_options().get['THPUT_FILENAME', ''],
+                 residual))
         bad_files = []
         for thput_file in thput_file_list:
             # Check all files, not just the ones that were just reduced
