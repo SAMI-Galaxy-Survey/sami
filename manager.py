@@ -2282,8 +2282,11 @@ class Manager:
             if filename_match is not None:
                 # Note we can't use else for the above line, because
                 # filename_match might have changed
+                # Make sure that 2dfdr gets the correct option names
                 if match_class == 'tlmap_flap':
                     match_class = 'tlmap'
+                elif match_class == 'thput_object':
+                    match_class = 'thput'
                 options.extend(['-'+match_class.upper()+'_FILENAME',
                                 filename_match])
         return options        
