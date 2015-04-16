@@ -1446,7 +1446,7 @@ class Manager:
                 continue
             file_list.append(
                 (fits,
-                 fits.reduce_options().get['THPUT_FILENAME', ''],
+                 fits.reduce_options().get('THPUT_FILENAME', ''),
                  residual))
         bad_files = []
         for thput_file in thput_file_list:
