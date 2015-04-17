@@ -97,7 +97,7 @@ from .general.cubing import dithered_cubes_from_rss_list, get_object_names
 from .general.cubing import dithered_cube_from_rss_wrapper
 from .general.cubing import scale_cube_pair, scale_cube_pair_to_mag
 from .general.align_micron import find_dither
-from .dr import fluxcal2, telluric, check_plots, tdfdr, dust
+from .dr import fluxcal2, telluric, check_plots, tdfdr, dust, binning
 from .dr.throughput import make_clipped_thput_files
 from .qc.fluxcal import stellar_mags_cube_pair, stellar_mags_frame_pair
 from .qc.fluxcal import throughput, get_sdss_stellar_mags
@@ -1859,6 +1859,34 @@ class Manager:
         with self.patch_if_demo('sami.manager.stellar_mags_cube_pair',
                                 fake_stellar_mags_cube_pair):
             self.map(scale_cubes_field, input_list)
+        return
+
+    def bin_cubes(self, overwrite=False, min_exposure=599.0, name='main',
+                  **kwargs):
+        """Apply default binning schemes to datacubes."""
+        path_pair_list = []
+        groups = self.group_files_by(
+            'field_id', ccd='ccd_1', ndf_class='MFOBJECT', do_not_use=False,
+            reduced=True, min_exposure=min_exposure, name=name, **kwargs)
+        for (field_id, ), fits_list in groups.items():
+            table = pf.getdata(fits_list[0].reduced_path, 'FIBRES_IFU')
+            objects = table['NAME'][table['TYPE'] == 'P']
+            objects = np.unique(objects).tolist()
+            for name in objects:
+                path_pair = [self.cubed_path(name, arm, len(fits_list),
+                                             field_id, exists=True)
+                             for arm in ('blue', 'red')]
+                if path_pair[0] and path_pair[1]:
+                    skip = False
+                    if not overwrite:
+                        hdulist = pf.open(path_pair[0])
+                        for hdu in hdulist:
+                            if hdu.name.startswith('BINNED_FLUX'):
+                                skip = True
+                                break
+                    if not skip:
+                        path_pair_list.append(path_pair)
+        self.map(bin_cubes_pair, path_pair_list)
         return
 
     def record_dust(self, overwrite=False, min_exposure=599.0, name='main',
@@ -3779,6 +3807,20 @@ def scale_frame_pair(path_pair):
         scale_cube_pair_to_mag(path_pair, hdu='FLUX_CALIBRATION')
     else:
         print 'No photometric data found for', star
+    return
+
+@safe_for_multiprocessing
+def bin_cubes_pair(path_pair):
+    """Bin a pair of datacubes using each of the default schemes."""
+    path_blue, path_red = path_pair
+    print 'Binning datacubes:'
+    print os.path.basename(path_blue), os.path.basename(path_red)
+    binning_settings = (
+        ('adaptive', {'mode': 'adaptive'}),
+        ('annular', {'mode': 'prescriptive', 'sectors': 1}),
+        ('sectors', {'mode': 'prescriptive'}))
+    for name, kwargs in binning_settings:
+        binning.bin_cube_pair(path_blue, path_red, name=name, **kwargs)
     return
 
 @safe_for_multiprocessing
