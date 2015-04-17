@@ -439,7 +439,9 @@ def stellar_mags_cube_pair(file_pair, sum_cubes=False, save=False):
                 # Covering an old bug that was putting MAGR in the wrong place
                 del hdulist[1].header['MAGR']
             if not sum_cubes:
-                alpha = 0.5 * psf_params[0]
+                # CDELT1 gives the pixel scale in degrees; convert to arcsec
+                alpha = (3600.0 * np.abs(hdulist[0].header['CDELT1'])
+                         * psf_params[0])
                 beta = psf_params[1]
                 fwhm = alpha * 2.0 * np.sqrt(2.0**(1.0/beta) - 1.0)
                 hdulist[0].header['PSFALPHA'] = (
