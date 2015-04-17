@@ -10,7 +10,7 @@ from .fluxcal import get_coords
 # script to test sky subtraction accuracy.  Runs on a single RSS frame.  
 
 def sky_residuals(infile, fibstart=1, fibend=2000, allfib=False, verbose=False,
-                  plot=False):
+                  plot=False, summarise=True):
     """
     Function to check sky subtraction accuracy in SAMI data.
     
@@ -23,6 +23,8 @@ def sky_residuals(infile, fibstart=1, fibend=2000, allfib=False, verbose=False,
     allfib    - use all fibres, not just sky.
     verbose   - output to the screen
     plot      - make plots
+    summarise - return summary dict of results, otherwise results for each
+                fibre are returned
     """
     
     # half-width of window around the sky lines:
@@ -171,62 +173,67 @@ def sky_residuals(infile, fibstart=1, fibend=2000, allfib=False, verbose=False,
             ns=ns+1
             #            print 'number of lines used:',nlines_used
 
-    # get the median/mean fractional sky residuals:
-    medsky_cont=np.median(abs(fracs[0:ns]))
-    medsky_line=np.median(abs(line_fracs[0:ns]))
-    meansky_cont=np.mean(abs(fracs[0:ns]))
-    meansky_line=np.mean(abs(line_fracs[0:ns]))
+    if summarise:
 
-    # get the median/mean fluxes:
-    medskyflux_cont = np.median(abs(skyflux[0:ns]))
-    medskyflux_line = np.median(abs(line_skyflux[0:ns]))
-    meanskyflux_cont = np.mean(abs(skyflux[0:ns]))
-    meanskyflux_line = np.mean(abs(line_skyflux[0:ns]))
-    
-    if (verbose):
-        print 'median absolute continuum residuals:',medsky_cont
-        print 'median absolute line residuals:',medsky_line
-        print 'mean absolute continuum residuals:',meansky_cont
-        print 'mean absolute line residuals:',meansky_line
+        # get the median/mean fractional sky residuals:
+        medsky_cont=np.median(abs(fracs[0:ns]))
+        medsky_line=np.median(abs(line_fracs[0:ns]))
+        meansky_cont=np.mean(abs(fracs[0:ns]))
+        meansky_line=np.mean(abs(line_fracs[0:ns]))
 
-    if (plot):
-        py.figure(1)            
-        lab = infile+' cont residual'
-        py.plot(fibs[0:ns],fracs[0:ns],'-',color='r',label=lab)
-        for i in xrange(ys):
-            if (types[i] == 'S'):
-                py.plot(fibs[i],fracs[i],'x',color='g')
-            else:
-                py.plot(fibs[i],fracs[i],'.',color='r')
-
-                
-        lab = infile+' line residual'
-        py.plot(fibs[0:ns],line_fracs[0:ns],'-',color='b',label=lab)
-        for i in xrange(ys):
-            if (types[i] == 'S'):
-                py.plot(fibs[i],line_fracs[i],'x',color='m')
-            else:
-                py.plot(fibs[i],line_fracs[i],'.',color='b')
-                
-                
-        py.axhline(0.0,color='k',linestyle='--')
-        py.xlabel('Fibre')
-        py.ylabel('fractional sky residual')
-        py.title('Fractional sky residuals')
-        py.legend(prop={'size':10})
+        # get the median/mean fluxes:
+        medskyflux_cont = np.median(abs(skyflux[0:ns]))
+        medskyflux_line = np.median(abs(line_skyflux[0:ns]))
+        meanskyflux_cont = np.mean(abs(skyflux[0:ns]))
+        meanskyflux_line = np.mean(abs(line_skyflux[0:ns]))
         
-        # put results into a dictonary:
-    sky_sub_res = {
-        'med_frac_skyres_cont':medsky_cont,
-        'med_frac_skyres_line':medsky_line,
-        'med_skyflux_cont':medskyflux_cont,
-        'med_skyflux_line':medskyflux_line,
-        'mean_frac_skyres_cont':meansky_cont,
-        'mean_frac_skyres_line':meansky_line,
-        'mean_skyflux_cont':meanskyflux_cont,
-        'mean_skyflux_line':meanskyflux_line}
-        
-    return sky_sub_res
+        if (verbose):
+            print 'median absolute continuum residuals:',medsky_cont
+            print 'median absolute line residuals:',medsky_line
+            print 'mean absolute continuum residuals:',meansky_cont
+            print 'mean absolute line residuals:',meansky_line
+
+        if (plot):
+            py.figure(1)            
+            lab = infile+' cont residual'
+            py.plot(fibs[0:ns],fracs[0:ns],'-',color='r',label=lab)
+            for i in xrange(ys):
+                if (types[i] == 'S'):
+                    py.plot(fibs[i],fracs[i],'x',color='g')
+                else:
+                    py.plot(fibs[i],fracs[i],'.',color='r')
+
+                    
+            lab = infile+' line residual'
+            py.plot(fibs[0:ns],line_fracs[0:ns],'-',color='b',label=lab)
+            for i in xrange(ys):
+                if (types[i] == 'S'):
+                    py.plot(fibs[i],line_fracs[i],'x',color='m')
+                else:
+                    py.plot(fibs[i],line_fracs[i],'.',color='b')
+                    
+                    
+            py.axhline(0.0,color='k',linestyle='--')
+            py.xlabel('Fibre')
+            py.ylabel('fractional sky residual')
+            py.title('Fractional sky residuals')
+            py.legend(prop={'size':10})
+            
+            # put results into a dictonary:
+        sky_sub_res = {
+            'med_frac_skyres_cont':medsky_cont,
+            'med_frac_skyres_line':medsky_line,
+            'med_skyflux_cont':medskyflux_cont,
+            'med_skyflux_line':medskyflux_line,
+            'mean_frac_skyres_cont':meansky_cont,
+            'mean_frac_skyres_line':meansky_line,
+            'mean_skyflux_cont':meanskyflux_cont,
+            'mean_skyflux_line':meanskyflux_line}
+            
+        return sky_sub_res
+
+    else:
+        return fracs, line_fracs
 
 
 #############################################################################

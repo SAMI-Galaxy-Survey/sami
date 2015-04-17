@@ -452,6 +452,35 @@ def stellar_mags_cube_pair(file_pair, sum_cubes=False, save=False):
             hdulist.close()
     return mag_g, mag_r
 
+def stellar_mags_scatter_cube_pair(file_pair, min_relative_flux=0.5, save=False):
+    """Return the scatter in stellar colours within a star datacube pair."""
+    hdulist_pair = [pf.open(path, 'update') for path in file_pair]
+    flux = np.vstack(
+        [hdulist[0].data for hdulist in hdulist_pair])
+    noise = np.sqrt(np.vstack(
+        [hdulist['VARIANCE'].data for hdulist in hdulist_pair]))
+    wavelength = np.hstack(
+        [get_coords(hdulist[0].header, 3) for hdulist in hdulist_pair])
+    smoothed_flux = flux.copy()
+    smoothed_flux[~np.isfinite(smoothed_flux)] = 0.0
+    smoothed_flux = median_filter(smoothed_flux, (201, 1, 1))
+    image = np.sum(smoothed_flux, 0)
+    keep = (image >= (min_relative_flux * np.max(image)))
+    flux = flux[:, keep]
+    noise = noise[:, keep]
+    mags = np.array([measure_mags(f, n, wavelength)
+                     for f, n in zip(flux.T, noise.T)])
+    colour = mags[:, 0] - mags[:, 1]
+    scatter = np.std(colour)
+    if save:
+        for hdulist in hdulist_pair:
+            hdulist[0].header['COLORSTD'] = (
+                scatter, 'Scatter in g-r within cubes')
+            hdulist.flush()
+    for hdulist in hdulist_pair:
+        hdulist.close()
+    return scatter
+
 def stellar_mags_frame_pair(file_pair, save=False):
     """Return stellar mags for a single pair of flux calibrated RSS files."""
     # Unlike in stellar_mags_cube_pair the old scaling is not taken into
