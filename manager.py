@@ -1961,6 +1961,7 @@ class Manager:
         self.measure_offsets(overwrite, **kwargs)
         self.cube(overwrite, **kwargs)
         self.scale_cubes(overwrite, **kwargs)
+        self.bin_cubes(overwrite, **kwargs)
         return
 
     def ensure_qc_hdu(self, path, name='QC'):
