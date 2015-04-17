@@ -439,7 +439,9 @@ def stellar_mags_cube_pair(file_pair, sum_cubes=False, save=False):
                 # Covering an old bug that was putting MAGR in the wrong place
                 del hdulist[1].header['MAGR']
             if not sum_cubes:
-                alpha = 0.5 * psf_params[0]
+                # CDELT1 gives the pixel scale in degrees; convert to arcsec
+                alpha = (3600.0 * np.abs(hdulist[0].header['CDELT1'])
+                         * psf_params[0])
                 beta = psf_params[1]
                 fwhm = alpha * 2.0 * np.sqrt(2.0**(1.0/beta) - 1.0)
                 hdulist[0].header['PSFALPHA'] = (
@@ -715,7 +717,13 @@ def sum_spectrum_from_cube(file_pair, radius):
     """Return the summed spectrum from spaxels in the centre of a cube."""
     # Replace the hard-coded numbers with something smarter
     hdulist_pair = [pf.open(path) for path in file_pair]
-    x, y = np.meshgrid(0.5*(np.arange(50)-24.5), 0.5*(np.arange(50)-24.5))
+    n_pix = hdulist_pair[0][0].header['NAXIS1']
+    # Pixel scale in arcseconds
+    pix_scale = 3600.0 * np.abs(hdulist_pair[0][0].header['CDELT1'])
+    # Construct coordinates along a single axis
+    x_tmp = pix_scale * (np.arange(n_pix) - (n_pix - 1)/2.0)
+    # Expand that to a grid of coordinate values
+    x, y = np.meshgrid(x_tmp, x_tmp)
     weight_map = np.nansum(np.array((hdulist_pair[0]['WEIGHT'].data,
                                      hdulist_pair[1]['WEIGHT'].data)), (0, 1))
     cen_x = np.nansum(x * weight_map) / np.nansum(weight_map)

@@ -1,5 +1,6 @@
 import numpy as np
 from scipy.ndimage.filters import median_filter
+from astropy import coordinates
 
 import os
 import subprocess
@@ -332,13 +333,32 @@ def hadec_from_altaz(alt, az):
 
     return (ha / degree, dec / degree)
 
-def domewindscreenflat_pos(ha_h, ha_m, ha_s, dec_d, dec_m, dec_s):
+def domewindscreenflat_pos(coords_string, *args):
     """Compute dome coordinates for flat patch in front of AAT for given HA and DEC."""
+
+    success = True
+    try:
+        coords = coordinates.SkyCoord(coords_string)
+    except ValueError:
+        success = False
+    if args:
+        success = False
+
+    if not success:
+        print 'domewindscreenflat_pos now takes a single string as input, e.g.:'
+        print "sami.utils.domewindscreenflat_pos('-00h23m00s +00d14m03s')"
+        return
 
     DomeCoords=namedtuple('DomeCoords', ['azimuth', 'zd'])
 
     # Convert sexagesimal to degrees
-    ha, dec=decimal_to_degree(ha_h, ha_m, ha_s, dec_d, dec_m, dec_s)
+    # Not using the decimal_to_degree function because of quirks in handling negatives
+    # ha, dec=decimal_to_degree(ha_h, ha_m, ha_s, dec_d, dec_m, dec_s)
+    ha = coords.ra.value
+    # People prefer HA from -180 to 180
+    if ha > 180.0:
+        ha -= 360.0
+    dec = coords.dec.value
 
     print
     print "---------------------------------------------------------------------------"
