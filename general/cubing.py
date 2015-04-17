@@ -307,7 +307,7 @@ def dithered_cube_from_rss_wrapper(files, name, size_of_grid=50,
                                    nominal=False, root='', overwrite=False,
                                    offsets='file', covar_mode='optimal',
                                    do_dar_correct=True, clip_throughput=True,
-                                   update_tol=0.1):
+                                   update_tol=0.02):
     """Cubes and saves a single object."""
     n_files = len(files)
 
@@ -421,7 +421,7 @@ def dithered_cube_from_rss_wrapper(files, name, size_of_grid=50,
 
 def dithered_cube_from_rss(ifu_list, size_of_grid=50, output_pix_size_arcsec=0.5, drop_factor=0.5,
                            clip=True, plot=True, offsets='file', covar_mode='optimal',
-                           do_dar_correct=True, clip_throughput=True, update_tol=0.1):
+                           do_dar_correct=True, clip_throughput=True, update_tol=0.02):
     diagnostic_info = {}
 
     n_obs = len(ifu_list)
@@ -880,7 +880,7 @@ class SAMIDrizzler:
     DAR)"""  
 
     def __init__(self, size_of_grid, output_pix_size_arcsec, drop_factor,
-                 n_fibres, update_tol=0.1):
+                 n_fibres, update_tol=0.02):
         """Construct a new SAMIDrizzler isntance with the necessary information.
         
         Parameters

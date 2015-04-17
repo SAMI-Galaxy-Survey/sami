@@ -1682,7 +1682,7 @@ class Manager:
         return
 
     def cube(self, overwrite=False, min_exposure=599.0, name='main', 
-             star_only=False, drop_factor=None, tag='', update_tol=0.1,
+             star_only=False, drop_factor=None, tag='', update_tol=0.02,
              **kwargs):
         """Make datacubes from the given RSS files."""
         groups = self.group_files_by(
