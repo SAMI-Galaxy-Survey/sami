@@ -1746,7 +1746,8 @@ class Manager:
 
     def cube(self, overwrite=False, min_exposure=599.0, name='main', 
              star_only=False, drop_factor=None, tag='', update_tol=0.02,
-             size_of_grid=50, output_pix_size_arcsec=0.5, **kwargs):
+             size_of_grid=50, output_pix_size_arcsec=0.5,
+             min_transmission=0.333, max_seeing=4.0, **kwargs):
         """Make datacubes from the given RSS files."""
         groups = self.group_files_by(
             ['field_id', 'ccd'], ndf_class='MFOBJECT', do_not_use=False,
@@ -1756,7 +1757,31 @@ class Manager:
         cubed_root = os.path.join(self.root, 'cubed')
         inputs_list = []
         for (field_id, ccd), fits_list in groups.items():
-            path_list = [best_path(fits) for fits in fits_list]
+            path_list = []
+            for fits in fits_list:
+                # Check that the file pair meets basic QC requirements.
+                # We check both files and use the worst case, so that
+                # either both are used or neither.
+                transmission = np.inf
+                seeing = 0.0
+                fits_pair = (fits, self.other_arm(fits))
+                for fits_test in fits_pair:
+                    try:
+                        transmission = np.minimum(
+                            transmission,
+                            pf.getval(fits_test, 'TRANSMIS', 'QC'))
+                    except KeyError:
+                        # Either QC HDU doesn't exist or TRANSMIS isn't there
+                        pass
+                    try:
+                        seeing = np.maximum(
+                            seeing,
+                            pf.getval(fits_test, 'FWHM', 'QC'))
+                    except KeyError:
+                        # Either QC HDU doesn't exist or FWHM isn't there
+                        pass
+                if transmission >= min_transmission and seeing <= max_seeing:
+                    path_list.append(best_path(fits))
             if star_only:
                 objects = [
                     pf.getval(path_list[0], 'STDNAME', 'FLUX_CALIBRATION')]
