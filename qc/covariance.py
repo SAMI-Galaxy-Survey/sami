@@ -4,7 +4,7 @@ import astropy.io.fits as pf
 import itertools
 
 def read_norm_covariance(hdulist):
-    """Return a full 50x50x2048x5x5 normalised covariance array."""
+    """Return full Npix x Npix x Nwav x Ncov x Ncov normalised covariance."""
     covar_cut = hdulist['COVAR'].data
     header = hdulist['COVAR'].header
     n_wave_out = hdulist[0].header['NAXIS3']
@@ -50,7 +50,13 @@ def compare_variance(path):
     hdulist = pf.open(path)
     variance = hdulist['VARIANCE'].data
     weight = hdulist['WEIGHT'].data
-    x, y = np.meshgrid(0.5*(np.arange(50)-24.5), 0.5*(np.arange(50)-24.5))
+    n_pix = hdulist[0].header['NAXIS1']
+    # Pixel scale in arcseconds
+    pix_scale = 3600.0 * np.abs(hdulist[0].header['CDELT1'])
+    # Construct coordinates along a single axis
+    x_tmp = pix_scale * (np.arange(n_pix) - (n_pix - 1)/2.0)
+    # Expand that to a grid of coordinate values
+    x, y = np.meshgrid(x_tmp, x_tmp)
     radii = 0.5 * (np.arange(15) + 1)
     mask_list = [(x**2 + y**2) < radius**2 for radius in radii]
     var_right = [np.median(var) for spec, var in 
@@ -114,9 +120,10 @@ def full_covar(hdulist):
     var = hdulist['VARIANCE'].data
     weight = hdulist['WEIGHT'].data
     covar = np.zeros(norm_covar.shape)
-    for i in range(0,2048):
-        for j in range(0,50):
-            for k in range(0,50):
+    header = hdulist[0].header
+    for i in xrange(header['NAXIS3']):
+        for j in xrange(header['NAXIS2']):
+            for k in xrange(header['NAXIS1']):
                 covar[i,:,:,j,k] = (var[i,j,k] * norm_covar[i,:,:,j,k] *
                                     weight[i,j,k]**2)
     return covar

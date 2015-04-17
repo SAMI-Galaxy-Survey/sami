@@ -75,8 +75,13 @@ def measure_sn_continuum(path, radius=1.0):
     noise = np.sqrt(hdulist['VARIANCE'].data)
     n_x = flux.shape[2]
     n_y = flux.shape[1]
-    x, y = np.meshgrid(0.5*(np.arange(n_x)-0.5*(n_x-1)),
-                       0.5*(np.arange(n_y)-0.5*(n_y-1)))
+    # Pixel scale in arcseconds
+    pix_scale = 3600.0 * np.abs(hdulist[0].header['CDELT1'])
+    # Construct coordinates along each axis
+    x_tmp = pix_scale * (np.arange(n_x) - (n_x - 1)/2.0)
+    y_tmp = pix_scale * (np.arange(n_y) - (n_y - 1)/2.0)
+    # Expand that to a grid of coordinate values
+    x, y = np.meshgrid(x_tmp, y_tmp)
     x_ind, y_ind = np.where((x**2 + y**2) <= radius**2)
     return np.nanmean(np.median(flux[:, y_ind, x_ind] /
                                 noise[:, y_ind, x_ind], axis=0))

@@ -2151,6 +2151,10 @@ class Manager:
             files_to_match = ['bias', 'dark', 'lflat']
         elif fits.ndf_class == 'MFARC':
             files_to_match = ['bias', 'dark', 'lflat', 'tlmap']
+            # Arc frames can't use optimal extraction because 2dfdr screws up
+            # and marks entire columns as bad when it gets too many saturated
+            # pixels
+            options.extend(['-EXTR_OPERATION', 'GAUSS'])
         elif fits.ndf_class == 'MFFFF' and not tlm:
             if fits.lamp == 'Flap':
                 # Flap flats should use their own tramline maps, not those
