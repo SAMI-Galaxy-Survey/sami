@@ -1769,19 +1769,22 @@ class Manager:
                     try:
                         transmission = np.minimum(
                             transmission,
-                            pf.getval(fits_test, 'TRANSMIS', 'QC'))
+                            pf.getval(best_path(fits_test), 'TRANSMIS', 'QC'))
                     except KeyError:
                         # Either QC HDU doesn't exist or TRANSMIS isn't there
                         pass
                     try:
                         seeing = np.maximum(
                             seeing,
-                            pf.getval(fits_test, 'FWHM', 'QC'))
+                            pf.getval(best_path(fits_test), 'FWHM', 'QC'))
                     except KeyError:
                         # Either QC HDU doesn't exist or FWHM isn't there
                         pass
                 if transmission >= min_transmission and seeing <= max_seeing:
                     path_list.append(best_path(fits))
+            if not path_list:
+                # All frames failed the QC checks!
+                continue
             if star_only:
                 objects = [
                     pf.getval(path_list[0], 'STDNAME', 'FLUX_CALIBRATION')]
