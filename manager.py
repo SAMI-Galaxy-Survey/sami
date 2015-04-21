@@ -1751,37 +1751,16 @@ class Manager:
         """Make datacubes from the given RSS files."""
         groups = self.group_files_by(
             ['field_id', 'ccd'], ndf_class='MFOBJECT', do_not_use=False,
-            reduced=True, min_exposure=min_exposure, name=name, **kwargs)
+            reduced=True, name=name, **kwargs)
         # Add in the root path as well, so that cubing puts things in the 
         # right place
         cubed_root = os.path.join(self.root, 'cubed')
         inputs_list = []
         for (field_id, ccd), fits_list in groups.items():
-            path_list = []
-            for fits in fits_list:
-                # Check that the file pair meets basic QC requirements.
-                # We check both files and use the worst case, so that
-                # either both are used or neither.
-                transmission = np.inf
-                seeing = 0.0
-                fits_pair = (fits, self.other_arm(fits))
-                for fits_test in fits_pair:
-                    try:
-                        transmission = np.minimum(
-                            transmission,
-                            pf.getval(best_path(fits_test), 'TRANSMIS', 'QC'))
-                    except KeyError:
-                        # Either QC HDU doesn't exist or TRANSMIS isn't there
-                        pass
-                    try:
-                        seeing = np.maximum(
-                            seeing,
-                            pf.getval(best_path(fits_test), 'FWHM', 'QC'))
-                    except KeyError:
-                        # Either QC HDU doesn't exist or FWHM isn't there
-                        pass
-                if transmission >= min_transmission and seeing <= max_seeing:
-                    path_list.append(best_path(fits))
+            good_fits_list = self.qc_for_cubing(
+                fits_list, min_transmission=min_transmission,
+                max_seeing=max_seeing, min_exposure=min_exposure)
+            path_list = [best_path(fits) for fits in good_fits_list]
             if not path_list:
                 # All frames failed the QC checks!
                 continue
@@ -1818,13 +1797,45 @@ class Manager:
         for fits_list in groups.values():
             self.update_checks('CUB', [fits_list[0]], False)
         return
+
+    def qc_for_cubing(self, fits_list, min_transmission=0.333, max_seeing=4.0,
+                      min_exposure=599.0):
+        """Return a list of fits files from the inputs that pass basic QC."""
+        good_fits_list = []
+        for fits in fits_list:
+            # Check that the file pair meets basic QC requirements.
+            # We check both files and use the worst case, so that
+            # either both are used or neither.
+            transmission = np.inf
+            seeing = 0.0
+            fits_pair = (fits, self.other_arm(fits))
+            for fits_test in fits_pair:
+                try:
+                    transmission = np.minimum(
+                        transmission,
+                        pf.getval(best_path(fits_test), 'TRANSMIS', 'QC'))
+                except KeyError:
+                    # Either QC HDU doesn't exist or TRANSMIS isn't there
+                    pass
+                try:
+                    seeing = np.maximum(
+                        seeing,
+                        pf.getval(best_path(fits_test), 'FWHM', 'QC'))
+                except KeyError:
+                    # Either QC HDU doesn't exist or FWHM isn't there
+                    pass
+            if (transmission >= min_transmission 
+                    and seeing <= max_seeing
+                    and fits.exposure >= min_exposure):
+                good_fits_list.append(fits)
+        return good_fits_list
         
     def scale_cubes(self, overwrite=False, min_exposure=599.0, name='main',
-                    **kwargs):
+                    min_transmission=0.333, max_seeing=4.0, **kwargs):
         """Scale datacubes based on the stellar g magnitudes."""
         groups = self.group_files_by(
             'field_id', ccd='ccd_1', ndf_class='MFOBJECT', do_not_use=False,
-            reduced=True, min_exposure=min_exposure, name=name, **kwargs)
+            reduced=True, name=name, **kwargs)
         input_list = []
         for (field_id, ), fits_list in groups.items():
             table = pf.getdata(fits_list[0].reduced_path, 'FIBRES_IFU')
@@ -1838,8 +1849,10 @@ class Manager:
             star = name
             objects.remove(star)
             star_path_pair = [
-                self.cubed_path(star, arm, len(fits_list), field_id,
-                                exists=True)
+                self.cubed_path(star, arm, fits_list, field_id,
+                                exists=True, min_exposure=min_exposure,
+                                min_transmission=min_transmission,
+                                max_seeing=max_seeing)
                 for arm in ('blue', 'red')]
             if star_path_pair[0] is None or star_path_pair[1] is None:
                 continue
@@ -1852,8 +1865,10 @@ class Manager:
                 else:
                     continue
             object_path_pair_list = [
-                [self.cubed_path(name, arm, len(fits_list), field_id,
-                                 exists=True)
+                [self.cubed_path(name, arm, fits_list, field_id,
+                                 exists=True, min_exposure=min_exposure,
+                                 min_transmission=min_transmission,
+                                 max_seeing=max_seeing)
                  for arm in ('blue', 'red')]
                 for name in objects]
             object_path_pair_list = [
@@ -1865,20 +1880,23 @@ class Manager:
         return
 
     def bin_cubes(self, overwrite=False, min_exposure=599.0, name='main',
-                  **kwargs):
+                  min_transmission=0.333, max_seeing=4.0, **kwargs):
         """Apply default binning schemes to datacubes."""
         path_pair_list = []
         groups = self.group_files_by(
             'field_id', ccd='ccd_1', ndf_class='MFOBJECT', do_not_use=False,
-            reduced=True, min_exposure=min_exposure, name=name, **kwargs)
+            reduced=True, name=name, **kwargs)
         for (field_id, ), fits_list in groups.items():
             table = pf.getdata(fits_list[0].reduced_path, 'FIBRES_IFU')
             objects = table['NAME'][table['TYPE'] == 'P']
             objects = np.unique(objects).tolist()
             for name in objects:
-                path_pair = [self.cubed_path(name, arm, len(fits_list),
-                                             field_id, exists=True)
-                             for arm in ('blue', 'red')]
+                path_pair = [
+                    self.cubed_path(name, arm, fits_list, field_id, 
+                                    exists=True, min_exposure=min_exposure,
+                                    min_transmission=min_transmission,
+                                    max_seeing=max_seeing)
+                    for arm in ('blue', 'red')]
                 if path_pair[0] and path_pair[1]:
                     skip = False
                     if not overwrite:
@@ -1893,29 +1911,33 @@ class Manager:
         return
 
     def record_dust(self, overwrite=False, min_exposure=599.0, name='main',
-                    **kwargs):
+                    min_transmission=0.333, max_seeing=4.0, **kwargs):
         """Record information about dust in the output datacubes."""
         groups = self.group_files_by(
             'field_id', ccd='ccd_1', ndf_class='MFOBJECT', do_not_use=False,
-            reduced=True, min_exposure=min_exposure, name=name, **kwargs)
+            reduced=True, name=name, **kwargs)
         for (field_id, ), fits_list in groups.items():
             table = pf.getdata(fits_list[0].reduced_path, 'FIBRES_IFU')
             objects = table['NAME'][table['TYPE'] == 'P']
             objects = np.unique(objects).tolist()
             for name in objects:
                 for arm in ('blue', 'red'):
-                    path = self.cubed_path(name, arm, len(fits_list), field_id,
-                                           exists=True)
+                    path = self.cubed_path(
+                        name, arm, fits_list, field_id,
+                        exists=True, min_exposure=min_exposure,
+                        min_transmission=min_transmission,
+                        max_seeing=max_seeing)
                     if path:
                         dust.dustCorrectSAMICube(path, overwrite=overwrite)
         return
             
     def gzip_cubes(self, overwrite=False, min_exposure=599.0, name='main',
-                   star_only=False, **kwargs):
+                   star_only=False, min_transmission=0.333, max_seeing=4.0,
+                   **kwargs):
         """Gzip the final datacubes."""
         groups = self.group_files_by(
             ['field_id', 'ccd'], ndf_class='MFOBJECT', do_not_use=False,
-            reduced=True, min_exposure=min_exposure, name=name, **kwargs)
+            reduced=True, name=name, **kwargs)
         input_list = []
         for (field_id, ccd), fits_list in groups.items():
             if ccd == 'ccd_1':
@@ -1930,9 +1952,11 @@ class Manager:
                 objects = table['NAME'][table['TYPE'] == 'P']
                 objects = np.unique(objects).tolist()
             for obj in objects:
-                input_path = os.path.join(
-                    self.abs_root, 'cubed', obj,
-                    obj+'_'+arm+'_'+str(len(fits_list))+'_'+field_id+'.fits')
+                input_path = self.cubed_path(
+                    obj, arm, fits_list, field_id,
+                    exists=True, min_exposure=min_exposure,
+                    min_transmission=min_transmission,
+                    max_seeing=max_seeing)
                 if os.path.exists(input_path):
                     output_path = input_path + '.gz'
                     if os.path.exists(output_path) and overwrite:
@@ -2561,9 +2585,10 @@ class Manager:
         other_fits = self.fits_file(other_filename)
         return other_fits
         
-    def cubed_path(self, name, arm, n_file, field_id, gzipped=False,
-                   exists=False):
+    def cubed_path(self, name, arm, fits_list, field_id, gzipped=False,
+                   exists=False, **kwargs):
         """Return the path to the cubed file."""
+        n_file = len(self.qc_for_cubing(fits_list, **kwargs))
         path = os.path.join(
             self.abs_root, 'cubed', name,
             name+'_'+arm+'_'+str(n_file)+'_'+field_id+'.fits')
@@ -2571,8 +2596,9 @@ class Manager:
             path = path + '.gz'
         if exists:
             if not os.path.exists(path):
-                path = self.cubed_path(name, arm, n_file, field_id,
-                                       gzipped=(not gzipped), exists=False)
+                path = self.cubed_path(name, arm, fits_list, field_id,
+                                       gzipped=(not gzipped), exists=False,
+                                       **kwargs)
                 if not os.path.exists(path):
                     return None
         return path
