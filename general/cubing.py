@@ -1198,7 +1198,7 @@ def create_covar_matrix(overlap_array,variances):
         As input takes the output of the drizzle class, overlap_array, 
         and the variances of the individual fibres"""
     
-    covarS = 3 # Radius of sub-region to record covariance information - probably
+    covarS = 2 # Radius of sub-region to record covariance information - probably
                # shouldn't be hard coded, but scaled to drop size in some way
     
     s = np.shape(overlap_array)
