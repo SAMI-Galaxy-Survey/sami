@@ -2085,6 +2085,8 @@ class Manager:
             relative_throughput = absolute_throughput / mean_throughput
             data = np.vstack((absolute_throughput, relative_throughput))
             median_relative_throughput = np.median(relative_throughput)
+            if not np.isfinite(median_relative_throughput):
+                median_relative_throughput = -1.0
         else:
             data = absolute_throughput
         hdulist = pf.open(path, 'update')
@@ -2109,6 +2111,8 @@ class Manager:
             # Not all the data is available
             print 'Warning: Not all data required to calculate transmission is available.'
             return
+        if not np.isfinite(median_relative_throughput):
+            median_relative_throughput = -1.0
         self.ensure_qc_hdu(path)
         hdulist = pf.open(path, 'update')
         header = hdulist['QC'].header
