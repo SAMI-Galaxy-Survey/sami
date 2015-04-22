@@ -131,8 +131,8 @@ def reconstruct_covariance(covar_array_red,covar_header,n_wave=2048):
     covar_array_full[np.isfinite(covar_array_full) == False] = 0.0
     
     #Fill missing values (needs to be improved with median/interpolation filling)
-    half_spax = (n_spax + 1) / 2
-    half_covar = (n_grid + 1) / 2
+    half_spax = (n_spax - 1) / 2
+    half_covar = (n_grid - 1) / 2
     lowest_point = np.min(np.where(
         (covar_array_full[1:,half_covar,half_covar,half_spax,half_spax] != 0.0) &
         (np.isfinite(covar_array_full[1:,half_covar,half_covar,half_spax,half_spax])))[0]) + 1
