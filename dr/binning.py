@@ -81,7 +81,7 @@ def bin_cube(hdu,bin_mask):
     cube = hdu[0].data
     var = hdu[1].data
     weight = hdu[2].data
-    covar = reconstruct_covariance(hdu[3].data,hdu[3].header)
+    covar = reconstruct_covariance(hdu[3].data,hdu[3].header,n_wave=cube.shape[0])
 
     weighted_cube = cube*weight
     weighted_var = var*weight*weight
@@ -108,15 +108,18 @@ def bin_cube(hdu,bin_mask):
 
     return binned_cube,binned_var
 
-def reconstruct_covariance(covar_array_red,covar_header):
+def reconstruct_covariance(covar_array_red,covar_header,n_wave=2048):
     #Reconstruct the full covariance array from the reduced covariance
     #information stored in a standard cube
     
     if covar_header['COVARMOD'] != 'optimal':
         raise Exception('This cube does not contain covariance information in the optimal format')
     
+    n_spax = covar_array_red.shape[3]
+    n_covar = covar_array_red.shape[1]
+
     #Create an empty full covariance cube
-    covar_array_full = np.zeros([2048,5,5,50,50])
+    covar_array_full = np.zeros([n_wave,n_covar,n_covar,n_spax,n_spax])
     
     #Fill full cube with values from reduced array
     n_covar = covar_header['COVAR_N']
@@ -128,9 +131,12 @@ def reconstruct_covariance(covar_array_red,covar_header):
     covar_array_full[np.isfinite(covar_array_full) == False] = 0.0
     
     #Fill missing values (needs to be improved with median/interpolation filling)
-    lowest_point = np.min(np.where((covar_array_full[1:,2,2,25,25] != 0.0) &
-                                   (np.isfinite(covar_array_full[1:,2,2,25,25])))[0]) + 1
-    for i in range(2048):
+    half_spax = (n_spax + 1) / 2
+    half_covar = (n_covar + 1) / 2
+    lowest_point = np.min(np.where(
+        (covar_array_full[1:,half_covar,half_covar,half_spax,half_spax] != 0.0) &
+        (np.isfinite(covar_array_full[1:,half_covar,half_covar,half_spax,half_spax])))[0]) + 1
+    for i in range(n_wave):
         if np.sum(np.abs(covar_array_full[i,:,:,:,:])) == 0:
             if i < lowest_point:
                 covar_array_full[i,:,:,:,:] = covar_array_full[lowest_point,:,:,:,:]
@@ -173,7 +179,7 @@ def adaptive_bin_sami(hdu,targetSN=10.0):
                           
                           
     # Reconstruct then flatten covariance cube
-    covar = reconstruct_covariance(covar,covar_header)
+    covar = reconstruct_covariance(covar,covar_header,n_wave=data.shape[0])
     covar_image = nanmedian(covar,axis=0)
     covar_matrix = np.transpose(covar_image[:,:,x[goodpixels[0]],y[goodpixels[0]]])
                           
@@ -286,6 +292,7 @@ def prescribed_bin_sami(hdu,sectors=8,radial=5,log=False,
 #The PA should be in degrees.
 
     cube = hdu['PRIMARY'].data
+    n_spax = cube.shape[1]
 
     #Check if all the pa,eps,xc,yc information has been supplied. If not fill in missing info
     if (xmed == '') or (ymed == '') or (eps == '') or (pa == ''):
@@ -295,15 +302,15 @@ def prescribed_bin_sami(hdu,sectors=8,radial=5,log=False,
         try:
             maj0,eps0,pa0,xpeak0,ypeak0,xmed0,ymed0,n_blobs = find_galaxy(image0,quiet=True,fraction=0.05)
         except:
-            eps0,pa0,xmed0,ymed0 = 0.0,0.0,24.5,24.5
+            eps0,pa0,xmed0,ymed0 = 0.0,0.0,0.5*n_spax,0.5*n_spax
     n = 1
 
-    while ((np.abs(xmed0 - 25) > 3) or (np.abs(ymed0 -25) > 3)) and (n <= n_blobs) :
+    while ((np.abs(xmed0 - 0.5*n_spax) > 3) or (np.abs(ymed0 - 0.5*n_spax) > 3)) and (n <= n_blobs) :
         try:
             maj0,eps0,pa0,xpeak0,ypeak0,xmed0,ymed0,junk = find_galaxy(image0,quiet=True,fraction=0.05,nblob=n)
             n+=1
         except:
-            eps0,pa0,xmed0,ymed0 = 0.0,0.0,24.5,24.5
+            eps0,pa0,xmed0,ymed0 = 0.0,0.0,0.5*n_spax,0.5*n_spax
             n = n_blobs+1
 
     if xmed == '':
@@ -346,8 +353,8 @@ def prescribed_bin_sami(hdu,sectors=8,radial=5,log=False,
 
     #Determine the angle of each spaxel relative to the major axis
     ang_ellipse = np.zeros(np.shape(dist_ellipse))
-    for i in range(50):
-        for j in range(50):
+    for i in range(n_spax):
+        for j in range(n_spax):
             if spax_pos_rot[0,i,j] >= 0:
                 if spax_pos_rot[1,i,j] >= 0:
                     ang_ellipse[i,j] = np.degrees(np.arctan(spax_pos_rot[1,i,j]/spax_pos_rot[0,i,j]))
@@ -365,8 +372,8 @@ def prescribed_bin_sami(hdu,sectors=8,radial=5,log=False,
         radii = np.linspace(0.0,max_rad,num=radial+1)
 
     #Assign each spaxel to a different radial and angular bin
-    rad_bins = np.digitize(np.ravel(dist_ellipse),radii).reshape(50,50)
-    ang_bins = np.digitize(np.ravel(ang_ellipse),angles).reshape(50,50)
+    rad_bins = np.digitize(np.ravel(dist_ellipse),radii).reshape(n_spax,n_spax)
+    ang_bins = np.digitize(np.ravel(ang_ellipse),angles).reshape(n_spax,n_spax)
 
     #Rationalize the radial and angular binning and create the bin mask
 
