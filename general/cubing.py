@@ -345,7 +345,8 @@ def dithered_cube_from_rss_wrapper(files, name, size_of_grid=50,
 
         if overwrite:
             # Check for old cubes that used a different number of files
-            for path in glob(str(name)+'_'+str(arm)+'_*'+suffix+'.fits'):
+            for path in glob(os.path.join(
+                    directory, str(name)+'_'+str(arm)+'_*'+suffix+'.fits')):
                 os.remove(path)
 
     # Call dithered_cube_from_rss to create the flux, variance and weight cubes for the object.
