@@ -90,14 +90,15 @@ def sn_w_covariance(xin,yin,signal,noise,covar) :
     """ Determine the new S/N of a bin,
         accounting for covariance
         """
-    xin2 = np.transpose(np.tile(xin,(25,1)))
-    yin2 = np.transpose(np.tile(yin,(25,1)))
+    n_grid = covar.shape[1]
+    xin2 = np.transpose(np.tile(xin,(n_grid**2,1)))
+    yin2 = np.transpose(np.tile(yin,(n_grid**2,1)))
     
-    ximprint = np.repeat(np.arange(5)-2,5)
-    yimprint = np.tile(np.arange(5)-2,5)
+    ximprint = np.repeat(np.arange(n_grid)-(n_grid-1)/2,n_grid)
+    yimprint = np.tile(np.arange(n_grid)-(n_grid-1)/2,n_grid)
     
     scaled_var = np.zeros((len(xin)))
-    covar_flat = np.reshape(covar,(len(xin),25))
+    covar_flat = np.reshape(covar,(len(xin),n_grid**2))
     for i in range(len(scaled_var)):
         #w = np.where((abs(xin - xin[i]) < 2) & (abs(yin-yin[i]) < 2))
         xoverlap = xin2 - (ximprint + xin[i])
