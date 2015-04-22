@@ -116,10 +116,10 @@ def reconstruct_covariance(covar_array_red,covar_header,n_wave=2048):
         raise Exception('This cube does not contain covariance information in the optimal format')
     
     n_spax = covar_array_red.shape[3]
-    n_covar = covar_array_red.shape[1]
+    n_grid = covar_array_red.shape[1]
 
     #Create an empty full covariance cube
-    covar_array_full = np.zeros([n_wave,n_covar,n_covar,n_spax,n_spax])
+    covar_array_full = np.zeros([n_wave,n_grid,n_grid,n_spax,n_spax])
     
     #Fill full cube with values from reduced array
     n_covar = covar_header['COVAR_N']
@@ -132,7 +132,7 @@ def reconstruct_covariance(covar_array_red,covar_header,n_wave=2048):
     
     #Fill missing values (needs to be improved with median/interpolation filling)
     half_spax = (n_spax + 1) / 2
-    half_covar = (n_covar + 1) / 2
+    half_covar = (n_grid + 1) / 2
     lowest_point = np.min(np.where(
         (covar_array_full[1:,half_covar,half_covar,half_spax,half_spax] != 0.0) &
         (np.isfinite(covar_array_full[1:,half_covar,half_covar,half_spax,half_spax])))[0]) + 1
