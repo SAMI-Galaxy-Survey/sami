@@ -40,7 +40,7 @@ from numpy import sum, sqrt, min, max, any
 from numpy import argmax, argmin, mean, abs
 from numpy import int32 as Nint
 from numpy import float32 as Nfloat
-import copy
+import copy,code
 
 class Error(Exception):
     """Base class for exceptions in this module."""
@@ -234,7 +234,7 @@ class bin2D :
         Check data before binning (noise versus signal)
         """
         ## Check if enough S/N in the sum of All pixels
-        if sum(self.data) / sqrt(sum(self.noise**2)) < self.targetSN :
+        if sum(self.data) / sqrt(sum(self.noise**2)) < self.targetSN:
             self._warning("Not enough S/N in data for this targetSN")
             self.lowSN = True
             
@@ -348,7 +348,7 @@ class bin2D :
                 ## New set of unbinned pixels
                 unBinned = np.where(self.status == 0)[0]
                 ## ----- End of While Loop --------------------------------------------
-
+                
             ## Unbinned pixels
             unBinned = np.where(self.status == 0)[0]
             ## Break if all pixels are binned
@@ -368,6 +368,14 @@ class bin2D :
 
         ## Set to zero all bins that did not reach the target SN
         self.status *= self.good
+            
+        ## If no bins created, create a dummy bin centred on the highest SN
+        ## pixel to allow reassignment
+        
+        if len(np.where(self.status != 0)[0]) == 0:
+            currentBin = [argmax(self.SN)]
+            self.status[currentBin] = 1
+            self.good[currentBin] = 1
 
     ### Compute centroid of bins ======================================
     def bin2d_centroid(self, verbose=0):
@@ -487,9 +495,12 @@ class bin2D :
         print "          ...Done"
         print "===================="
         print "Reassigning Bins... "
+    
+        
         self.bin2d_centroid()
         ## Get the bad pixels, not assigned and assign them
         badpixels = np.where(self.status == 0)[0]
+        
         self.bin2d_assign_bins(badpixels)
         print "            ...Done"
         print "===================="
@@ -586,7 +597,5 @@ class bin2D :
             dataout[i] = mean(datain[listbins])
             SNout[i] = sn_w_covariance(self.xin[listbins],self.yin[listbins],datain[listbins],
                 noisein[listbins],self.covar[listbins,:,:])
-            #if np.isfinite(SNout[i]) == False: #code.interact(local=dict(globals(),**locals()))
-            #    sum(datain[listbins])/sqrt(sum(noisein[listbins]**2))
 
         return xout, yout, dataout, SNout
