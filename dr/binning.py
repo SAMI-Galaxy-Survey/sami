@@ -133,9 +133,10 @@ def reconstruct_covariance(covar_array_red,covar_header,n_wave=2048):
     #Fill missing values (needs to be improved with median/interpolation filling)
     half_spax = (n_spax - 1) / 2
     half_covar = (n_grid - 1) / 2
-    lowest_point = np.min(np.where(
-        (covar_array_full[1:,half_covar,half_covar,half_spax,half_spax] != 0.0) &
-        (np.isfinite(covar_array_full[1:,half_covar,half_covar,half_spax,half_spax])))[0]) + 1
+    lowest_point = covar_header['COVARLOC_1']
+    # lowest_point = np.min(np.where(
+    #     (covar_array_full[1:,half_covar,half_covar,half_spax,half_spax] != 0.0) &
+    #     (np.isfinite(covar_array_full[1:,half_covar,half_covar,half_spax,half_spax])))[0]) + 1
     for i in range(n_wave):
         if np.sum(np.abs(covar_array_full[i,:,:,:,:])) == 0:
             if i < lowest_point:
