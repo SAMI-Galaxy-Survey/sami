@@ -934,28 +934,57 @@ def rebin_flux_noise(target_wavelength, source_wavelength, source_flux,
     interp_noise = interp_noise[interp_good]
     interp_wavelength = source_wavelength[interp_good]
     interp_variance = interp_noise ** 2
-    # Assume pixel size is fixed
-    target_delta_wave = target_wavelength[1] - target_wavelength[0]
-    interp_delta_wave = interp_wavelength[1] - interp_wavelength[0]
-    # Correct to start/end of pixels instead of centre points
-    target_wave_limits = target_wavelength - 0.5*target_delta_wave
-    interp_wave_limits = interp_wavelength - 0.5*interp_delta_wave
-    n_pix_out = np.size(target_wavelength)
-    bins = np.arange(n_pix_out + 1)    
+    # # Assume pixel size is fixed
+    # target_delta_wave = target_wavelength[1] - target_wavelength[0]
+    # interp_delta_wave = interp_wavelength[1] - interp_wavelength[0]
+    # # Correct to start/end of pixels instead of centre points
+    # target_wave_limits = target_wavelength - 0.5*target_delta_wave
+    # interp_wave_limits = interp_wavelength - 0.5*interp_delta_wave
+    # # The output pixel that each input pixel starts/ends in
+    # start_pix = np.floor(
+    #     (interp_wave_limits - target_wave_limits[0]) / 
+    #     target_delta_wave).astype(int)
+    # end_pix = np.floor(
+    #     (interp_wave_limits + interp_delta_wave - target_wave_limits[0]) / 
+    #     target_delta_wave).astype(int)
+    #
+    # Adjust each wavelength value to the start of its pixel, not the middle
+    target_wave_limits = np.hstack(
+        (target_wavelength[0] - 
+         0.5 * (target_wavelength[1] - target_wavelength[0]),
+         0.5 * (target_wavelength[:-1] + target_wavelength[1:])))
+    interp_wave_limits = np.hstack(
+        (interp_wavelength[0] - 
+         0.5 * (interp_wavelength[1] - interp_wavelength[0]),
+         0.5 * (interp_wavelength[:-1] + interp_wavelength[1:])))
+    # Get the width of each wavelength pixel
+    # target_delta_wave = np.hstack(
+    #     (target_wave_limits[1:] - target_wave_limits[:-1],
+    #      target_wave_limits[-1] - target_wave_limits[-2]))
+    interp_delta_wave = np.hstack(
+        (interp_wave_limits[1:] - interp_wave_limits[:-1],
+         interp_wave_limits[-1] - interp_wave_limits[-2]))
     # The output pixel that each input pixel starts/ends in
-    start_pix = np.floor(
-        (interp_wave_limits - target_wave_limits[0]) / 
-        target_delta_wave).astype(int)
-    end_pix = np.floor(
-        (interp_wave_limits + interp_delta_wave - target_wave_limits[0]) / 
-        target_delta_wave).astype(int)
+    # Assumes standard star has complete wavelength coverage
+    n_pix_out = np.size(target_wavelength)
+    n_pix_in = np.size(interp_wavelength)
+    start_pix = np.sum(
+        np.outer(interp_wave_limits, np.ones(n_pix_out)) >
+        np.outer(np.ones(n_pix_in), target_wave_limits),
+        1) - 1
+    end_pix = np.sum(
+        np.outer(interp_wave_limits + interp_delta_wave, np.ones(n_pix_out)) >
+        np.outer(np.ones(n_pix_in), target_wave_limits),
+        1) - 1
+    bins = np.arange(n_pix_out + 1)    
     # `complete` is True if the input pixel is entirely within one output pixel
     complete = (start_pix == end_pix)
     incomplete = ~complete
     # The fraction of the input pixel that falls in the start_pix output pixel
     # Only correct for incomplete pixels
     frac_low = (
-        (target_wave_limits[end_pix] - interp_wave_limits) / interp_delta_wave)
+        (target_wave_limits[end_pix] - interp_wave_limits) /
+        interp_delta_wave)
     # Make output arrays
     flux_out = np.zeros(n_pix_out)
     variance_out = np.zeros(n_pix_out)
