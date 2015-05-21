@@ -919,8 +919,8 @@ class SAMIDrizzler:
         self.drizzle_update_tol = update_tol * self.pix_size_micron
 
         # Output grid abscissa in microns
-        self.grid_coordinates_x = (np.arange(self.output_dimension) - self.output_dimension / 2) * self.pix_size_micron
-        self.grid_coordinates_y = (np.arange(self.output_dimension) - self.output_dimension / 2) * self.pix_size_micron
+        self.grid_coordinates_x = (np.arange(self.output_dimension) - self.output_dimension / 2.0) * self.pix_size_micron
+        self.grid_coordinates_y = (np.arange(self.output_dimension) - self.output_dimension / 2.0) * self.pix_size_micron
 
         # Empty array for all overlap maps - i.e. need one for each fibre!
         self.drop_to_pixel = np.empty((self.output_dimension, self.output_dimension, n_fibres))
