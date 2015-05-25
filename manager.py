@@ -1958,7 +1958,7 @@ class Manager:
                     exists=True, min_exposure=min_exposure,
                     min_transmission=min_transmission,
                     max_seeing=max_seeing, tag=tag)
-                if os.path.exists(input_path):
+                if input_path:
                     output_path = input_path + '.gz'
                     if os.path.exists(output_path) and overwrite:
                         os.remove(output_path)
