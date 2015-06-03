@@ -1846,7 +1846,8 @@ class Manager:
                 if telluric.is_star(name):
                     break
             else:
-                raise ValueError('No star found in field: ' + field_id)
+                print 'No star found in field, skipping: ' + field_id
+                continue
             star = name
             objects.remove(star)
             star_path_pair = [
