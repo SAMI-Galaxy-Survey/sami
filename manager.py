@@ -1969,28 +1969,67 @@ class Manager:
             self.map(gzip_wrapper, input_list)
         return
 
-    def reduce_all(self, overwrite=False, **kwargs):
+    def reduce_all(self, overwrite=False, start=None, finish=None, **kwargs):
         """Reduce everything, in order. Don't use unless you're sure."""
-        self.reduce_bias(overwrite)
-        self.combine_bias(overwrite)
-        self.reduce_dark(overwrite)
-        self.combine_dark(overwrite)
-        self.reduce_lflat(overwrite)
-        self.combine_lflat(overwrite)
-        self.make_tlm(overwrite, **kwargs)
-        self.reduce_arc(overwrite, **kwargs)
-        self.reduce_fflat(overwrite, **kwargs)
-        self.reduce_sky(overwrite, **kwargs)
-        self.reduce_object(overwrite, **kwargs)
-        self.derive_transfer_function(overwrite, **kwargs)
-        self.combine_transfer_function(overwrite, **kwargs)
-        self.flux_calibrate(overwrite, **kwargs)
-        self.telluric_correct(overwrite, **kwargs)
-        self.scale_frames(overwrite, **kwargs)
-        self.measure_offsets(overwrite, **kwargs)
-        self.cube(overwrite, **kwargs)
-        self.scale_cubes(overwrite, **kwargs)
-        self.bin_cubes(overwrite, **kwargs)
+        task_list = (
+            ('reduce_bias', True),
+            ('combine_bias', False),
+            ('reduce_dark', True),
+            ('combine_dark', False),
+            ('reduce_lflat', True),
+            ('combine_lflat', False),
+            ('make_tlm', True),
+            ('reduce_arc', True),
+            ('reduce_lflat', True),
+            ('reduce_sky', True),
+            ('reduce_object', True),
+            ('derive_transfer_function', True),
+            ('combine_transfer_function', True),
+            ('flux_calibrate', True),
+            ('telluric_correct', True),
+            ('scale_frames', True),
+            ('measure_offsets', True),
+            ('cube', True),
+            ('scale_cubes', True),
+            ('bin_cubes', True),
+            )
+        if start is None:
+            start = task_list[0][0]
+        if finish is None:
+            finish = task_list[-1][0]
+        started = False
+        for task, include_kwargs in task_list:
+            if not started and task != start:
+                # Haven't yet reached the first task to do
+                continue
+            method = getattr(self, task)
+            if include_kwargs:
+                method(overwrite, **kwargs)
+            else:
+                method(overwrite)
+            if task == finish:
+                # Do not do any further tasks
+                break
+        # self.reduce_bias(overwrite, **kwargs)
+        # self.combine_bias(overwrite)
+        # self.reduce_dark(overwrite, **kwargs)
+        # self.combine_dark(overwrite)
+        # self.reduce_lflat(overwrite, **kwargs)
+        # self.combine_lflat(overwrite)
+        # self.make_tlm(overwrite, **kwargs)
+        # self.reduce_arc(overwrite, **kwargs)
+        # self.reduce_fflat(overwrite, **kwargs)
+        # self.reduce_sky(overwrite, **kwargs)
+        # self.reduce_object(overwrite, **kwargs)
+        # self.derive_transfer_function(overwrite, **kwargs)
+        # self.combine_transfer_function(overwrite, **kwargs)
+        # self.flux_calibrate(overwrite, **kwargs)
+        # self.telluric_correct(overwrite, **kwargs)
+        # self.scale_frames(overwrite, **kwargs)
+        # self.measure_offsets(overwrite, **kwargs)
+        # self.cube(overwrite, **kwargs)
+        # self.scale_cubes(overwrite, **kwargs)
+        # self.bin_cubes(overwrite, **kwargs)
         return
 
     def ensure_qc_hdu(self, path, name='QC'):
