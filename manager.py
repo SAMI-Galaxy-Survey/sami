@@ -1980,7 +1980,7 @@ class Manager:
             ('combine_lflat', False),
             ('make_tlm', True),
             ('reduce_arc', True),
-            ('reduce_lflat', True),
+            ('reduce_fflat', True),
             ('reduce_sky', True),
             ('reduce_object', True),
             ('derive_transfer_function', True),
