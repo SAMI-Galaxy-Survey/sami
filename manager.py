@@ -2002,6 +2002,7 @@ class Manager:
             if not started and task != start:
                 # Haven't yet reached the first task to do
                 continue
+            started = True
             method = getattr(self, task)
             if include_kwargs:
                 method(overwrite, **kwargs)
