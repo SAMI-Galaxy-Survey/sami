@@ -1960,6 +1960,9 @@ class Manager:
                     min_transmission=min_transmission,
                     max_seeing=max_seeing, tag=tag)
                 if input_path:
+                    if input_path.endswith('.gz'):
+                        # Already gzipped, and no non-gzipped version exists
+                        continue
                     output_path = input_path + '.gz'
                     if os.path.exists(output_path) and overwrite:
                         os.remove(output_path)
