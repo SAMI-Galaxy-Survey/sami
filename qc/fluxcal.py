@@ -261,19 +261,7 @@ def stability(mngr):
 #     return file_pair_list, observed_colours
 def get_sdss_stellar_mags(mngr, catalogue=None):
     """Get magnitudes for stars from SDSS, with a little help from the user."""
-    name_list = []
-    coords_list = []
-    for fits_list in mngr.group_files_by(
-            'field_id', ndf_class='MFOBJECT', reduced=True).values():
-        fits = fits_list[0]
-        path = fits.reduced_path
-        star = identify_secondary_standard(path)
-        if catalogue and star['name'] in catalogue:
-            continue
-        fibres = pf.getdata(path, 'FIBRES_IFU')
-        fibre = fibres[fibres['NAME'] == star['name']][0]
-        name_list.append(star['name'])
-        coords_list.append((fibre['GRP_MRA'], fibre['GRP_MDEC']))
+    name_list, coords_list = get_missing_stars(mngr, catalogue=catalogue)
     if not name_list:
         # Already had all the stars required
         print 'All magnitudes already in the catalogue.'
@@ -301,6 +289,23 @@ ORDER BY x.up_id"""
     print
     print 'Change output format to CSV, then hit submit.'
     return True
+
+def get_missing_stars(mngr, catalogue=None):
+    """Return lists of observed stars missing from the catalogue."""
+    name_list = []
+    coords_list = []
+    for fits_list in mngr.group_files_by(
+            'field_id', ndf_class='MFOBJECT', reduced=True).values():
+        fits = fits_list[0]
+        path = fits.reduced_path
+        star = identify_secondary_standard(path)
+        if catalogue and star['name'] in catalogue:
+            continue
+        fibres = pf.getdata(path, 'FIBRES_IFU')
+        fibre = fibres[fibres['NAME'] == star['name']][0]
+        name_list.append(star['name'])
+        coords_list.append((fibre['GRP_MRA'], fibre['GRP_MDEC']))
+    return name_list, coords_list
 
 def get_sdss_galaxy_mags(galaxy_file_pair_list):
     """Get magnitudes for galaxies from SDSS, with a little help from the user."""
