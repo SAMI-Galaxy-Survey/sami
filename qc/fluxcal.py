@@ -298,7 +298,11 @@ def get_missing_stars(mngr, catalogue=None):
             'field_id', ndf_class='MFOBJECT', reduced=True).values():
         fits = fits_list[0]
         path = fits.reduced_path
-        star = identify_secondary_standard(path)
+        try:
+            star = identify_secondary_standard(path)
+        except ValueError:
+            # A frame didn't have a recognised star. Just skip it.
+            continue
         if catalogue and star['name'] in catalogue:
             continue
         fibres = pf.getdata(path, 'FIBRES_IFU')
