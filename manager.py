@@ -1747,7 +1747,7 @@ class Manager:
     def cube(self, overwrite=False, min_exposure=599.0, name='main', 
              star_only=False, drop_factor=None, tag='', update_tol=0.02,
              size_of_grid=50, output_pix_size_arcsec=0.5,
-             min_transmission=0.333, max_seeing=4.0, **kwargs):
+             min_transmission=0.333, max_seeing=4.0, min_frames=6, **kwargs):
         """Make datacubes from the given RSS files."""
         groups = self.group_files_by(
             ['field_id', 'ccd'], ndf_class='MFOBJECT', do_not_use=False,
@@ -1761,8 +1761,8 @@ class Manager:
                 fits_list, min_transmission=min_transmission,
                 max_seeing=max_seeing, min_exposure=min_exposure)
             path_list = [best_path(fits) for fits in good_fits_list]
-            if not path_list:
-                # All frames failed the QC checks!
+            if len(path_list) < min_frames:
+                # Not enough good frames to bother making the cubes
                 continue
             if star_only:
                 objects = [
