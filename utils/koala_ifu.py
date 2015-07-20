@@ -84,6 +84,20 @@ class KoalaIFU(object):
         #self.fibre_offsets_arcsec_ra = fibre_table.field("XPOS")
         #self.fibre_offsets_arcsec_dec = fibre_table.field("YPOS")
         
+        # Details about the KOALA IFU for drizzling:
+
+        # Plate scale in arcseconds per millimeter (1000.0 means the input
+        # positions are in arcseconds instead of microns)
+        self.plate_scale = 1000.0
+
+        if self.fibre_table_header['FOV'].strip() == "Normal":
+            # Fibre diameter for Small field of view
+            self.fibre_diameter_arcsec = 0.7
+        else:
+            # Fibre diameter for Small field of view
+            self.fibre_diameter_arcsec = 1.25
+
+
 
         #X and Y positions of fibres in absolute degrees.
         #self.xpos=table_new.field('FIB_MRA') #RA add -1*

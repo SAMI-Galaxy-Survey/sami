@@ -130,7 +130,7 @@ from ..utils.mc_adr import DARCorrector, parallactic_angle, zenith_distance
 from .. import diagnostics
 
 # importing everything defined in the config file
-from ..config import *
+#from ..config import *
 
 # WCS code
 from . import wcs
@@ -447,7 +447,11 @@ def dithered_cube_from_rss(ifu_list, size_of_grid=50, output_pix_size_arcsec=0.5
     # overlap maps for each fibre. The attributes of this instance don't
     # change from ifu to ifu.
     overlap_maps = SAMIDrizzler(
-        size_of_grid, output_pix_size_arcsec, drop_factor, n_obs * n_fibres)
+        size_of_grid, output_pix_size_arcsec, drop_factor, n_obs * n_fibres,
+        ifu_list[0].fibre_diameter_arcsec, ifu_list[0].plate_scale)
+
+    # Local copy of the fibre diameter
+    fibre_diameter_arcsec = ifu_list[0].fibre_diameter_arcsec
 
     ### RGS 27/2/14 We also need a second copy of this IFF we are clipping the data AND drop_factor != 1
     if drop_factor != 1 and clip:
@@ -909,7 +913,8 @@ class SAMIDrizzler:
     """Make an overlap map for a single fibre. This is the same at all lambda slices for that fibre (neglecting
     DAR)"""  
 
-    def __init__(self, size_of_grid, output_pix_size_arcsec, drop_factor, n_fibres):
+    def __init__(self, size_of_grid, output_pix_size_arcsec, drop_factor, n_fibres, 
+            fibre_diameter_arcsec, plate_scale):
         """Construct a new SAMIDrizzler isntance with the necessary information.
         
         Parameters
