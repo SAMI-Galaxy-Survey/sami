@@ -559,6 +559,17 @@ def dithered_cube_from_rss(ifu_list, size_of_grid=50, output_pix_size_arcsec=0.5
             file_fibre_pos_dec = galaxy_data.y_microns - y_shift_full
 
         elif (offsets == 'given'):
+            # Offsets, when given should be in the following directions/form:
+            # Absolute offsets as a list of pairs:
+            #
+            #   [(0,0), (1.4,-1.4), (3,-1)]
+            #
+            # NOTE: The directions are as follows: first number is West (so
+            # negative for east), second number is North. The orientation is
+            # strange because of the way cubing is implemented for SAMI: i.e.
+            # in microns, not arc-seconds, which are the reverse in the
+            # horizontal axis.
+
             file_fibre_pos_ra = galaxy_data.fibre_ra_offset_arcsec + galaxy_data.offset_ra
             file_fibre_pos_dec = galaxy_data.fibre_dec_offset_arcsec + galaxy_data.offset_dec
             
@@ -696,7 +707,6 @@ def dithered_cube_from_rss(ifu_list, size_of_grid=50, output_pix_size_arcsec=0.5
     # This loops over wavelength slices (e.g., 2048).
     for l in xrange(n_slices):
 
-        print(l)
         # In this loop, we will map the RSS fluxes from individual fibres
         # onto the output grid.
         #
@@ -711,10 +721,12 @@ def dithered_cube_from_rss(ifu_list, size_of_grid=50, output_pix_size_arcsec=0.5
         
         # Estimate time to loop completion, and display to user:
         if (l == 1):
+            print("Mapping slices onto output grid, wavelength slice by slice...")
             start_time = datetime.datetime.now()
+        elif (l == 1):
+            print("One slice done...")
         elif (l == 10):
             time_diff = datetime.datetime.now() - start_time
-            print("Mapping slices onto output grid, wavelength slice by slice...")
             print("Estimated time to complete all {0} slices: {1}".format(
                 n_slices, n_slices * time_diff / 9))
             sys.stdout.flush()
@@ -868,8 +880,6 @@ def dithered_cube_from_rss(ifu_list, size_of_grid=50, output_pix_size_arcsec=0.5
         # summation" of the data reduction paper. Note that these arrays are
         # "unweighted" cubes C' and V', not the weighted C and V given in the
         # paper.
-        import subprocess
-        subprocess.call(["echo", "hi"])
         data_grid_slice_final = nansum(data_grid_slice_fibres, axis=2) 
         var_grid_slice_final = nansum(var_grid_slice_fibres, axis=2)
         weight_grid_slice_final = nansum(weight_grid_slice_fibres, axis=2)
