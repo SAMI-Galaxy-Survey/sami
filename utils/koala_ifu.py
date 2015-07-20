@@ -108,19 +108,33 @@ class KoalaIFU(object):
         # This was fixed before the run starting 26 March 2015
 
         if self.obs_date < datetime(2015, 3, 26):
+            print("Rotating KOALA field to correct for fibre table issues.")
+            if self.fibre_table_header['INST_ROT'] > 91 or self.fibre_table_header['INST_ROT'] < 89:
+                print("WARNING: Instrument rotation not in expected range. Output orientation may be wrong.")
             theta = np.radians(90.0)
             self.fibre_ra_offset_arcsec = np.cos(theta) * fibre_table.field('XPOS') - np.sin(theta) * fibre_table.field('YPOS')
+            self.fibre_dec_offset_arcsec = np.sin(theta) * fibre_table.field('XPOS') + np.cos(theta) * fibre_table.field('YPOS')
+            del theta
+        elif True:
+            if self.fibre_table_header['INST_ROT'] < -91 or self.fibre_table_header['INST_ROT'] > -89:
+                print("WARNING: Instrument rotation not in expected range. Output orientation may be wrong.")
+            theta = np.radians(-90.0)
+            # Note, the RA offset has its sign changed: I believe this is
+            # because RA increases to the left, but pixels increase to the
+            # right. The original cubing code for SAMI is designed to work in
+            # microns, so SAMI does not need to be reversed in this way.
+            self.fibre_ra_offset_arcsec = -(np.cos(theta) * fibre_table.field('XPOS') - np.sin(theta) * fibre_table.field('YPOS'))
             self.fibre_dec_offset_arcsec = np.sin(theta) * fibre_table.field('XPOS') + np.cos(theta) * fibre_table.field('YPOS')
             del theta
         else:
             self.fibre_ra_offset_arcsec = fibre_table.field('XPOS')
             self.fibre_dec_offset_arcsec = fibre_table.field('YPOS')
- 
 
         # Correct for errors in the KOALA Fibre Mapping (koala_fibres.txt):
         # The positions of fibres 305 and 306 were swapped in data prior to 29
         # March 2015, and must be corrected:
         if self.obs_date < datetime(2015, 3, 29):
+            print("Swapping fibre 305 and 306.")
             tmp = (self.fibre_ra_offset_arcsec[305], self.fibre_dec_offset_arcsec[305])
             self.fibre_ra_offset_arcsec[305] = self.fibre_ra_offset_arcsec[306]
             self.fibre_dec_offset_arcsec[305] = self.fibre_dec_offset_arcsec[306]
