@@ -31,44 +31,44 @@ described below.
 
 
 INPUTS:
-inlist - a file containing the names of the RSS files to be cubed. These file
-namesare one per line in this file.
+    inlist - a file containing the names of the RSS files to be cubed. These file
+    namesare one per line in this file.
 
-objects - a python list containing the names of the galaxies to make cubes for.
-The default is the special value (string) 'all', which means all galaxies in the
-input RSS files will be cubed.
+    objects - a python list containing the names of the galaxies to make cubes for.
+    The default is the special value (string) 'all', which means all galaxies in the
+    input RSS files will be cubed.
 
-size_of_grid - The size of the square output grid in pixels. The default is 50 pixels.
+    size_of_grid - The size of the square output grid in pixels. The default is 50 pixels.
 
-output_pix_size_arcsec - The size of the pixels within the square output grid in
-arcseconds. The default is 0.5 arcseconds.
+    output_pix_size_arcsec - The size of the pixels within the square output grid in
+    arcseconds. The default is 0.5 arcseconds.
 
-drop_factor - The size reduction factor for the input fibres when they are drizzled
-onto the output grid.
+    drop_factor - The size reduction factor for the input fibres when they are drizzled
+    onto the output grid.
 
-clip - Clip the data when combining. This should provide cleaner output cubes. Default
-is True.
+    clip - Clip the data when combining. This should provide cleaner output cubes. Default
+    is True.
 
-plot - Make diagnostic plots when creating cubes. This seems to be defunct as no plots are
-made. Default is True.
+    plot - Make diagnostic plots when creating cubes. This seems to be defunct as no plots are
+    made. Default is True.
 
-write - Write data cubes to file after creating them. The default is False. (Should change?)
+    write - Write data cubes to file after creating them. The default is False. (Should change?)
 
-suffix - A suffix to add to the output file name. Should be a string. Default is a null string.
+    suffix - A suffix to add to the output file name. Should be a string. Default is a null string.
 
-nominal - Use the nominal tabulated object positions when determining WCS. Default is False and
-a full comparison with SDSS is done.
+    nominal - Use the nominal tabulated object positions when determining WCS. Default is False and
+    a full comparison with SDSS is done.
 
-root - Root directory for writing files to. Should be a string. Default is null string.
+    root - Root directory for writing files to. Should be a string. Default is null string.
 
-overwrite - Overwrite existing files with the same output name. Default is False.
+    overwrite - Overwrite existing files with the same output name. Default is False.
 
-covar_mode - Option are 'none', 'optimal' or 'full'. Default is 'optimal'.
+    covar_mode - Option are 'none', 'optimal' or 'full'. Default is 'optimal'.
 
 OUTPUTS:
-If write is set to True two data cubes will be produced for each object cubed. These are
-written by default to a new directory, created within the working directory, with the name
-of the object.
+    If write is set to True two data cubes will be produced for each object cubed. These are
+    written by default to a new directory, created within the working directory, with the name
+    of the object.
 
 **dithered_cubes_from_rss_list**
 INPUTS:
@@ -82,6 +82,18 @@ INPUTS:
 
 ifu_list - A list of IFU objects. In most cases this is passed from
 dithered_cubes_from_rss_list.
+
+
+
+NOTES:
+       
+    2015-07-20 by Andy Green:   
+
+        This code is currently a real memory hog. Not sure why, but it should
+        be profiled. More information:
+
+            http://stackoverflow.com/questions/110259/which-python-memory-profiler-is-recommended 
+
 
 ############################################################################################
 
@@ -1038,129 +1050,6 @@ class SAMIDrizzler:
         self._last_drizzle_y = yfibre_all
     
         return self.drop_to_pixel
-
-
-
-class KOALADrizzler:
-    """Make an overlap map for a single fibre. This is the same at all lambda slices for that fibre (neglecting
-    DAR)"""  
-
-    def __init__(self, size_of_grid, output_pix_size_arcsec, drop_factor, n_fibres):
-        """Construct a new SAMIDrizzler isntance with the necessary information.
-        
-        Parameters
-        ----------
-        size_of_grid: the number of pixels along each dimension of the 
-            square output pixel grid
-        n_fibres: the total number of unique fibres which will be 
-            mapped onto the grid (usually n_fibres * n_obs) 
-        
-        """
-
-        # The input values
-        self.pix_size_arcsec = output_pix_size_arcsec
-        #self.pix_size_micron = output_pix_size_arcsec * (1000.0 / plate_scale)
-        # Set the size of the output grid - should probably be calculated somehow.
-        self.output_dimension = size_of_grid
-
-        self.plate_scale = plate_scale    # (in arcseconds per mm)
-        self.drop_diameter_arcsec = fibre_diameter_arcsec * drop_factor
-        
-        # Drop dimensions in units of output pixels
-        self.drop_diameter_pix = self.drop_diameter_arcsec / self.pix_size_arcsec
-        self.drop_area_pix = np.pi * (self.drop_diameter_pix / 2.0) ** 2
-        
-        self.drizzle_update_tol = 0.1 * self.pix_size_arcsec
-
-        # Output grid abscissa in microns
-        self.grid_coordinates_x = (np.arange(self.output_dimension) - self.output_dimension / 2) * self.pix_size_arcsec
-        self.grid_coordinates_y = (np.arange(self.output_dimension) - self.output_dimension / 2) * self.pix_size_arcsec
-
-        # Empty array for all overlap maps - i.e. need one for each fibre!
-        self.drop_to_pixel = np.empty((self.output_dimension, self.output_dimension, n_fibres))
-        self.pixel_coverage = np.empty((self.output_dimension, self.output_dimension, n_fibres))
-
-        # These are used to cache the arguments for the last drizzle.
-        self._last_drizzle_x = np.zeros(1)
-        self._last_drizzle_y = np.zeros(1)        
-
-        # Number of times drizzle has been called in this instance
-        self.n_drizzle = 0
-        
-        # Number of times drizzle has been recomputed in this instance
-        self.n_drizzle_recompute = 0
-
-    def single_overlap_map(self, fibre_position_x, fibre_position_y):
-        """Compute the mapping from a single input drop to output pixel grid.
-        
-        (drop_fraction, pixel_fraction) = single_overlap_map(fibre_position_x, fibre_position_y)
-        
-        Parameters
-        ----------
-        fibre_position_x: (float) The grid_coordinates_x-coordinate of the fibre.
-        fibre_position_y: (float) The grid_coordinates_y-coordinate of the fibre.
-        
-        Returns
-        -------
-        
-        This returns a tuple of two arrays. Both arrays have the same dimensions
-        (that of the output pixel grid). 
-        
-        drop_fraction: (array) The fraction of the input drop in each output pixel.
-        pixel_fraction: (arra) The fraction of each output pixel covered by the drop.
-                
-        """
-
-        # Map fibre positions onto pixel positions in the output grid.
-        xfib = (fibre_position_x - self.grid_coordinates_x[0]) / self.pix_size_arcsec
-        yfib = (fibre_position_y - self.grid_coordinates_y[0]) / self.pix_size_arcsec
-
-        # Create the overlap map from the circ.py code. This returns values in
-        # the range [0,1] that represent the amount by which each output pixel
-        # is covered by the input drop.
-        #
-        # @NOTE: The circ.py code returns an array which has the x-coodinate in
-        # the second index and the y-coordinate in the first index. Therefore,
-        # we transpose the result here so that the x-cooridnate (north positive)
-        # is in the first index, and y-coordinate (east positive) is in the
-        # second index.
-        weight_map = np.transpose(
-            utils.circ.resample_circle(
-                self.output_dimension, self.output_dimension, 
-                xfib, yfib,
-                self.drop_diameter_pix / 2.0))
-
-        return weight_map
-
-    def drizzle(self, xfibre_all, yfibre_all):
-        """Compute a mapping from fibre drops to output pixels for all given fibre locations."""
-            
-        # Increment the drizzle counter
-        self.n_drizzle = self.n_drizzle + 1
-
-        if (np.allclose(xfibre_all,self._last_drizzle_x, rtol=0,atol=self.drizzle_update_tol) and
-            np.allclose(yfibre_all,self._last_drizzle_y, rtol=0,atol=self.drizzle_update_tol)):
-            # We've been asked to recompute an asnwer that is less than the tolerance to recompute
-            return self.drop_to_pixel
-        else:
-            self.n_drizzle_recompute = self.n_drizzle_recompute + 1
-        
-        for i_fibre, xfib, yfib in itertools.izip(itertools.count(), xfibre_all, yfibre_all):
-    
-            # Feed the grid_coordinates_x and grid_coordinates_y fibre positions to the overlap_maps instance.
-            drop_to_pixel_fibre = self.single_overlap_map(xfib, yfib)
-    
-            # Padding with NaNs instead of zeros (do I really need to do this? Probably not...)
-            drop_to_pixel_fibre[np.where(drop_to_pixel_fibre < epsilon)] = np.nan
-    
-            self.drop_to_pixel[:,:,i_fibre]=drop_to_pixel_fibre
-    
-        self._last_drizzle_x = xfibre_all
-        self._last_drizzle_y = yfibre_all
-    
-        return self.drop_to_pixel
-
-
 
 
 def create_primary_header(ifu_list,name,files,WCS_pos,WCS_flag):

@@ -120,6 +120,15 @@ class IFU:
         # Adding for tests only - LF 05/04/2012
         self.x_microns=-1*table_new.field('FIBPOS_X') # To put into on-sky frame
         self.y_microns=table_new.field('FIBPOS_Y')
+
+        # Details about the SAMI IFU for drizzling:
+
+        # Plate scale in arcseconds per millimeter (1000.0 means the input
+        # positions are in arcseconds instead of microns)
+        self.plate_scale = 15.22
+
+        self.fibre_diameter_arcsec = 1.6
+
         
         # Name of object
         name_tab=table_new.field('NAME')
