@@ -443,9 +443,11 @@ def dithered_cube_from_rss(ifu_list, size_of_grid=50, output_pix_size_arcsec=0.5
     n_fibres = ifu_list[0].data.shape[0]
     # Number of fibres
 
-    # Create an instance of SAMIDrizzler for use later to create individual overlap maps for each fibre.
-    # The attributes of this instance don't change from ifu to ifu.
-    overlap_maps=SAMIDrizzler(size_of_grid, output_pix_size_arcsec, drop_factor, n_obs * n_fibres)
+    # Create an instance of SAMIDrizzler for use later to create individual
+    # overlap maps for each fibre. The attributes of this instance don't
+    # change from ifu to ifu.
+    overlap_maps = SAMIDrizzler(
+        size_of_grid, output_pix_size_arcsec, drop_factor, n_obs * n_fibres)
 
     ### RGS 27/2/14 We also need a second copy of this IFF we are clipping the data AND drop_factor != 1
     if drop_factor != 1 and clip:
@@ -553,8 +555,14 @@ def dithered_cube_from_rss(ifu_list, size_of_grid=50, output_pix_size_arcsec=0.5
             file_fibre_pos_dec = galaxy_data.y_microns - y_shift_full
 
         elif (offsets == 'given'):
-            pass
+            file_fibre_pos_ra = galaxy_data.fibre_ra_offset_arcsec + galaxy_data.offset_ra
+            file_fibre_pos_dec = galaxy_data.fibre_dec_offset_arcsec + galaxy_data.offset_dec
+            
+        elif (offsets == 'none'):
+            file_fibre_pos_ra = galaxy_data.fibre_ra_offset_arcsec
+            file_fibre_pos_dec = galaxy_data.fibre_dec_offset_arcsec
 
+        
         else:
             # Perhaps use this place to allow definition of the offsets manually??
             # Hopefully only useful for test purposes. LF 05/06/2013
@@ -684,6 +692,7 @@ def dithered_cube_from_rss(ifu_list, size_of_grid=50, output_pix_size_arcsec=0.5
     # This loops over wavelength slices (e.g., 2048).
     for l in xrange(n_slices):
 
+        print(l)
         # In this loop, we will map the RSS fluxes from individual fibres
         # onto the output grid.
         #
@@ -855,6 +864,8 @@ def dithered_cube_from_rss(ifu_list, size_of_grid=50, output_pix_size_arcsec=0.5
         # summation" of the data reduction paper. Note that these arrays are
         # "unweighted" cubes C' and V', not the weighted C and V given in the
         # paper.
+        import subprocess
+        subprocess.call(["echo", "hi"])
         data_grid_slice_final = nansum(data_grid_slice_fibres, axis=2) 
         var_grid_slice_final = nansum(var_grid_slice_fibres, axis=2)
         weight_grid_slice_final = nansum(weight_grid_slice_fibres, axis=2)
@@ -1012,6 +1023,130 @@ class SAMIDrizzler:
         self._last_drizzle_y = yfibre_all
     
         return self.drop_to_pixel
+
+
+
+class KOALADrizzler:
+    """Make an overlap map for a single fibre. This is the same at all lambda slices for that fibre (neglecting
+    DAR)"""  
+
+    def __init__(self, size_of_grid, output_pix_size_arcsec, drop_factor, n_fibres):
+        """Construct a new SAMIDrizzler isntance with the necessary information.
+        
+        Parameters
+        ----------
+        size_of_grid: the number of pixels along each dimension of the 
+            square output pixel grid
+        n_fibres: the total number of unique fibres which will be 
+            mapped onto the grid (usually n_fibres * n_obs) 
+        
+        """
+
+        # The input values
+        self.pix_size_arcsec = output_pix_size_arcsec
+        #self.pix_size_micron = output_pix_size_arcsec * (1000.0 / plate_scale)
+        # Set the size of the output grid - should probably be calculated somehow.
+        self.output_dimension = size_of_grid
+
+        self.plate_scale = plate_scale    # (in arcseconds per mm)
+        self.drop_diameter_arcsec = fibre_diameter_arcsec * drop_factor
+        
+        # Drop dimensions in units of output pixels
+        self.drop_diameter_pix = self.drop_diameter_arcsec / self.pix_size_arcsec
+        self.drop_area_pix = np.pi * (self.drop_diameter_pix / 2.0) ** 2
+        
+        self.drizzle_update_tol = 0.1 * self.pix_size_arcsec
+
+        # Output grid abscissa in microns
+        self.grid_coordinates_x = (np.arange(self.output_dimension) - self.output_dimension / 2) * self.pix_size_arcsec
+        self.grid_coordinates_y = (np.arange(self.output_dimension) - self.output_dimension / 2) * self.pix_size_arcsec
+
+        # Empty array for all overlap maps - i.e. need one for each fibre!
+        self.drop_to_pixel = np.empty((self.output_dimension, self.output_dimension, n_fibres))
+        self.pixel_coverage = np.empty((self.output_dimension, self.output_dimension, n_fibres))
+
+        # These are used to cache the arguments for the last drizzle.
+        self._last_drizzle_x = np.zeros(1)
+        self._last_drizzle_y = np.zeros(1)        
+
+        # Number of times drizzle has been called in this instance
+        self.n_drizzle = 0
+        
+        # Number of times drizzle has been recomputed in this instance
+        self.n_drizzle_recompute = 0
+
+    def single_overlap_map(self, fibre_position_x, fibre_position_y):
+        """Compute the mapping from a single input drop to output pixel grid.
+        
+        (drop_fraction, pixel_fraction) = single_overlap_map(fibre_position_x, fibre_position_y)
+        
+        Parameters
+        ----------
+        fibre_position_x: (float) The grid_coordinates_x-coordinate of the fibre.
+        fibre_position_y: (float) The grid_coordinates_y-coordinate of the fibre.
+        
+        Returns
+        -------
+        
+        This returns a tuple of two arrays. Both arrays have the same dimensions
+        (that of the output pixel grid). 
+        
+        drop_fraction: (array) The fraction of the input drop in each output pixel.
+        pixel_fraction: (arra) The fraction of each output pixel covered by the drop.
+                
+        """
+
+        # Map fibre positions onto pixel positions in the output grid.
+        xfib = (fibre_position_x - self.grid_coordinates_x[0]) / self.pix_size_arcsec
+        yfib = (fibre_position_y - self.grid_coordinates_y[0]) / self.pix_size_arcsec
+
+        # Create the overlap map from the circ.py code. This returns values in
+        # the range [0,1] that represent the amount by which each output pixel
+        # is covered by the input drop.
+        #
+        # @NOTE: The circ.py code returns an array which has the x-coodinate in
+        # the second index and the y-coordinate in the first index. Therefore,
+        # we transpose the result here so that the x-cooridnate (north positive)
+        # is in the first index, and y-coordinate (east positive) is in the
+        # second index.
+        weight_map = np.transpose(
+            utils.circ.resample_circle(
+                self.output_dimension, self.output_dimension, 
+                xfib, yfib,
+                self.drop_diameter_pix / 2.0))
+
+        return weight_map
+
+    def drizzle(self, xfibre_all, yfibre_all):
+        """Compute a mapping from fibre drops to output pixels for all given fibre locations."""
+            
+        # Increment the drizzle counter
+        self.n_drizzle = self.n_drizzle + 1
+
+        if (np.allclose(xfibre_all,self._last_drizzle_x, rtol=0,atol=self.drizzle_update_tol) and
+            np.allclose(yfibre_all,self._last_drizzle_y, rtol=0,atol=self.drizzle_update_tol)):
+            # We've been asked to recompute an asnwer that is less than the tolerance to recompute
+            return self.drop_to_pixel
+        else:
+            self.n_drizzle_recompute = self.n_drizzle_recompute + 1
+        
+        for i_fibre, xfib, yfib in itertools.izip(itertools.count(), xfibre_all, yfibre_all):
+    
+            # Feed the grid_coordinates_x and grid_coordinates_y fibre positions to the overlap_maps instance.
+            drop_to_pixel_fibre = self.single_overlap_map(xfib, yfib)
+    
+            # Padding with NaNs instead of zeros (do I really need to do this? Probably not...)
+            drop_to_pixel_fibre[np.where(drop_to_pixel_fibre < epsilon)] = np.nan
+    
+            self.drop_to_pixel[:,:,i_fibre]=drop_to_pixel_fibre
+    
+        self._last_drizzle_x = xfibre_all
+        self._last_drizzle_y = yfibre_all
+    
+        return self.drop_to_pixel
+
+
+
 
 def create_primary_header(ifu_list,name,files,WCS_pos,WCS_flag):
     """Create a primary header to attach to each cube from the RSS file headers"""
