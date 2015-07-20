@@ -9,11 +9,12 @@ ASTROPY_VERSION = tuple(int(x) for x in ASTROPY_VERSION.split('.'))
 
 # ----------------------------------------------------------------------------------------
 
-# Approximate plate scale
-plate_scale=15.22
+# Approximate plate scale (arcseconds per millimeter)
+#plate_scale=15.22
+plate_scale = 1000.0
 
 # Diameter of individual SAMI fibres in arcseconds
-fibre_diameter_arcsec = 1.6
+fibre_diameter_arcsec = 1.25
 
 # ----------------------------------------------------------------------------------------
 
