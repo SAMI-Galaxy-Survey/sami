@@ -135,11 +135,12 @@ class KoalaIFU(object):
         # March 2015, and must be corrected:
         if self.obs_date < datetime(2015, 3, 29):
             print("Swapping fibre 305 and 306.")
-            tmp = (self.fibre_ra_offset_arcsec[305], self.fibre_dec_offset_arcsec[305])
-            self.fibre_ra_offset_arcsec[305] = self.fibre_ra_offset_arcsec[306]
-            self.fibre_dec_offset_arcsec[305] = self.fibre_dec_offset_arcsec[306]
-            self.fibre_ra_offset_arcsec[306] = tmp[0]
-            self.fibre_dec_offset_arcsec[306] = tmp[1]
+            # Remember python arrays are zero-indexed, so we must subtract one from the fibre number
+            tmp = (self.fibre_ra_offset_arcsec[304], self.fibre_dec_offset_arcsec[304])
+            self.fibre_ra_offset_arcsec[304] = self.fibre_ra_offset_arcsec[305]
+            self.fibre_dec_offset_arcsec[304] = self.fibre_dec_offset_arcsec[305]
+            self.fibre_ra_offset_arcsec[305] = tmp[0]
+            self.fibre_dec_offset_arcsec[305] = tmp[1]
             del tmp
             
         # Fibre number - used for tests.
