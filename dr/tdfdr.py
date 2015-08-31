@@ -116,8 +116,8 @@ def run_2dfdr_combine(input_path_list, output_path, idx_file, **kwargs):
         raise ValueError('Need at least 2 files to combine!')
     output_dir, output_filename = os.path.split(output_path)
     options = ['combine_image',
-               '"{}"'.format(' '.join([os.path.relpath(input_path, output_dir)
-                                       for input_path in input_path_list])),
+               ' '.join([os.path.relpath(input_path, output_dir)
+                         for input_path in input_path_list]),
                '-COMBINEDFILE',
                output_filename,
                '-idxfile',
