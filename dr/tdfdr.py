@@ -102,7 +102,7 @@ def run_2dfdr_single(fits, idx_file, options=None, lockdir=LOCKDIR, **kwargs):
 #         os.remove(script_filename)
 #     return
 
-def run_2dfdr_combine(input_path_list, output_path, **kwargs):
+def run_2dfdr_combine(input_path_list, output_path, idx_file, **kwargs):
     """Run 2dfdr to combine the specified FITS files."""
     if len(input_path_list) < 2:
         raise ValueError('Need at least 2 files to combine!')
@@ -111,7 +111,9 @@ def run_2dfdr_combine(input_path_list, output_path, **kwargs):
                '"{}"'.format(' '.join([os.path.relpath(input_path, output_dir)
                                        for input_path in input_path_list])),
                '-COMBINEDFILE',
-               output_filename]
+               output_filename,
+               '-idxfile',
+               idx_file]
     run_2dfdr(output_dir, options=options, **kwargs)
 
 def cleanup():

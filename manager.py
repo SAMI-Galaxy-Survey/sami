@@ -2468,9 +2468,11 @@ class Manager:
     def run_2dfdr_combine(self, file_iterable, output_path):
         """Use 2dfdr to combine the specified FITS files."""
         input_path_list = [fits.reduced_path for fits in file_iterable]
+        idx_file = self.idx_files[
+            self.fits_file(os.path.basename(input_path_list[0])).ccd]
         print 'Combining files to create', output_path
         tdfdr.run_2dfdr_combine(
-            input_path_list, output_path, unique_imp_scratch=True, 
+            input_path_list, output_path, idx_file, unique_imp_scratch=True, 
             return_to=self.cwd, restore_to=self.imp_scratch, 
             scratch_dir=self.scratch_dir)
         return
