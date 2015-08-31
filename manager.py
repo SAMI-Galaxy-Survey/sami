@@ -114,10 +114,10 @@ else:
     def ICRS(*args, **kwargs):
         return coord.SkyCoord(*args, frame='icrs', **kwargs)
 
-IDX_FILES_SLOW = {'1': 'sami580V_v1_2.idx',
-                  '2': 'sami1000R_v1_2.idx',
-                  'ccd_1': 'sami580V_v1_2.idx',
-                  'ccd_2': 'sami1000R_v1_2.idx'}
+IDX_FILES_SLOW = {'1': 'sami580V_v1_3.idx',
+                  '2': 'sami1000R_v1_3.idx',
+                  'ccd_1': 'sami580V_v1_3.idx',
+                  'ccd_2': 'sami1000R_v1_3.idx'}
 IDX_FILES_FAST = {'1': 'sami580V.idx',
                   '2': 'sami1000R.idx',
                   'ccd_1': 'sami580V.idx',
