@@ -2468,8 +2468,11 @@ class Manager:
     def run_2dfdr_combine(self, file_iterable, output_path):
         """Use 2dfdr to combine the specified FITS files."""
         input_path_list = [fits.reduced_path for fits in file_iterable]
-        idx_file = self.idx_files[
-            self.fits_file(os.path.basename(input_path_list[0])).ccd]
+        if not input_path_list:
+            print 'No reduced files found to combine!'
+            return
+        # Following line uses the last FITS file, assuming all are the same CCD
+        idx_file = self.idx_files[fits.ccd]
         print 'Combining files to create', output_path
         tdfdr.run_2dfdr_combine(
             input_path_list, output_path, idx_file, unique_imp_scratch=True, 
