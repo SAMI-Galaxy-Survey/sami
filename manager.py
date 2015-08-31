@@ -1395,7 +1395,8 @@ class Manager:
                            tlm=tlm)),
                        self.cwd,
                        self.imp_scratch,
-                       self.scratch_dir)
+                       self.scratch_dir,
+                       self.debug)
                       for fits in file_iterable
                       if (overwrite or 
                           not os.path.exists(self.target_path(fits, tlm=tlm)))]
@@ -3850,12 +3851,12 @@ def best_path(fits):
 @safe_for_multiprocessing
 def run_2dfdr_single_wrapper(group):
     """Run 2dfdr on a single file."""
-    fits, idx_file, options, cwd, imp_scratch, scratch_dir = group
+    fits, idx_file, options, cwd, imp_scratch, scratch_dir, debug = group
     try:
         tdfdr.run_2dfdr_single(
             fits, idx_file, options=options, return_to=cwd, 
             unique_imp_scratch=True, restore_to=imp_scratch, 
-            scratch_dir=scratch_dir, debug=self.debug)
+            scratch_dir=scratch_dir, debug=debug)
     except tdfdr.LockException:
         message = ('Postponing ' + fits.filename + 
                    ' while other process has directory lock.')
