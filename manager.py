@@ -727,6 +727,7 @@ class Manager:
                 demo = False
         self.demo = demo
         self.demo_data_source = demo_data_source
+        self.debug = False
 
     def map(self, function, input_list):
         """Map inputs to a function, using built-in map or multiprocessing."""
@@ -2229,7 +2230,7 @@ class Manager:
         options = self.tdfdr_options(fits, tlm=tlm)
         # All options have been set, so run 2dfdr
         tdfdr.run_2dfdr_single(fits, self.idx_files[fits.ccd], 
-                               options=options, cwd=self.cwd)
+                               options=options, cwd=self.cwd, debug=self.debug)
         if (fits.ndf_class == 'MFFFF' and tlm and not leave_reduced and
             os.path.exists(fits.reduced_path)):
             os.remove(fits.reduced_path)
@@ -2477,7 +2478,7 @@ class Manager:
         tdfdr.run_2dfdr_combine(
             input_path_list, output_path, idx_file, unique_imp_scratch=True, 
             return_to=self.cwd, restore_to=self.imp_scratch, 
-            scratch_dir=self.scratch_dir)
+            scratch_dir=self.scratch_dir, debug=self.debug)
         return
 
     def files(self, ndf_class=None, date=None, plate_id=None,
@@ -3039,7 +3040,7 @@ class Manager:
         tdfdr.load_gui(dirname=dirname, idx_file=idx_file, 
                        unique_imp_scratch=True, return_to=self.cwd, 
                        restore_to=self.imp_scratch, 
-                       scratch_dir=self.scratch_dir)
+                       scratch_dir=self.scratch_dir, debug=self.debug)
         return
 
     def remove_directory_locks(self):
@@ -3854,7 +3855,7 @@ def run_2dfdr_single_wrapper(group):
         tdfdr.run_2dfdr_single(
             fits, idx_file, options=options, return_to=cwd, 
             unique_imp_scratch=True, restore_to=imp_scratch, 
-            scratch_dir=scratch_dir)
+            scratch_dir=scratch_dir, debug=self.debug)
     except tdfdr.LockException:
         message = ('Postponing ' + fits.filename + 
                    ' while other process has directory lock.')

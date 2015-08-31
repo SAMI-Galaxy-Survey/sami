@@ -9,8 +9,16 @@ LOCKDIR = '2dfdrLockDir'
 COMMAND_GUI = 'drcontrol'
 COMMAND_REDUCE = 'aaorun'
 
+def call(command_line, debug=False, **kwargs):
+    """Simply passes the command out to a subprocess, unless debug is True."""
+    if debug:
+        print 'CWD: ' + os.getcwd()
+        print command_line
+    else:
+        subprocess.call(command_line, **kwargs)
+
 def run_2dfdr(dirname, options=None, return_to=None, unique_imp_scratch=False,
-              lockdir=LOCKDIR, command=COMMAND_REDUCE, **kwargs):
+              lockdir=LOCKDIR, command=COMMAND_REDUCE, debug=False, **kwargs):
     """Run 2dfdr with a specified set of command-line options."""
     command_line = [command]
     if options is not None:
@@ -20,12 +28,12 @@ def run_2dfdr(dirname, options=None, return_to=None, unique_imp_scratch=False,
             with visit_dir(dirname, return_to=return_to, 
                            cleanup_2dfdr=True, lockdir=lockdir):
                 with open(os.devnull, 'w') as dump:
-                    subprocess.call(command_line, stdout=dump)
+                    call(command_line, stdout=dump, debug=debug)
     else:
         with visit_dir(dirname, return_to=return_to, 
                        cleanup_2dfdr=True, lockdir=lockdir):
             with open(os.devnull, 'w') as dump:
-                subprocess.call(command_line, stdout=dump)
+                call(command_line, stdout=dump, debug=debug)
     return
 
 def load_gui(dirname=None, idx_file=None, lockdir=LOCKDIR, **kwargs):
