@@ -66,7 +66,12 @@ def run_2dfdr_single(fits, idx_file, options=None, lockdir=LOCKDIR, **kwargs):
         task = 'reduce_object'
     else:
         raise ValueError('Unrecognised NDF_CLASS')
-    options_all = [task, fits.filename, '-idxfile', idx_file]
+    out_dirname = fits.filename[:fits.filename.rindex('.')] + '_outdir'
+    out_dirname_full = os.path.join(fits.reduced_dir, out_dirname)
+    if not os.path.exists(out_dirname_full):
+        os.makedirs(out_dirname_full)
+    options_all = [task, fits.filename, '-idxfile', idx_file,
+                   '-OUT_DIRNAME', out_dirname]
     if options is not None:
         options_all.extend(options)
     run_2dfdr(fits.reduced_dir, options=options_all, lockdir=lockdir, **kwargs)
