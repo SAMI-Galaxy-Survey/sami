@@ -3059,9 +3059,9 @@ class Manager:
         # element[1] = list of fits objects to be checked
         if recent_ever == 'both':
             complete_list = []
-            complete_list.extend(self.list_checks('ever'))
+            complete_list.extend(self.list_checks('ever', *args, **kwargs))
             # Should ditch the duplicate checks, but will work anyway
-            complete_list.extend(self.list_checks('recent'))
+            complete_list.extend(self.list_checks('recent', *args, **kwargs))
             return complete_list
         # The keys for the following defaultdict will be tuples, where
         # key[0] = 'TLM' (or similar)
