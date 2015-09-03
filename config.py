@@ -30,9 +30,11 @@ latitude=coords.Angle(-31.3275, unit=u.degree)
 
 # astropy version catch to be backwards compatible
 if ASTROPY_VERSION[0] == 0 and ASTROPY_VERSION[1] <= 2:
-    latitude_radians=latitude.radians
+    latitude_radians = latitude.radians
+    latitude_degrees = latitude.degrees
 else:
-    latitude_radians=latitude.radian
+    latitude_radians = latitude.radian
+    latitude_degrees = latitude.degree
 # ----------------------------------------------------------------------------------------
 
 # Pressure conversion factor from millibars to mm of Hg 

@@ -20,7 +20,7 @@ History:
 import numpy
 from scipy import integrate
 
-from ..config import latitude, millibar_to_mmHg
+from ..config import latitude_degrees, millibar_to_mmHg
 from other import saturated_partial_pressure_water
 
 from astropy import __version__ as astropy_version
@@ -98,8 +98,8 @@ def parallactic_angle(hour_angle, declination, latitude):
     cos_dec = numpy.cos(numpy.radians(declination))
     sin_lat = numpy.sin(numpy.radians(latitude))
     cos_lat = numpy.cos(numpy.radians(latitude))
-    sin_ha =  numpy.sin(numpy.radians(hour_angle))
-    cos_ha =  numpy.cos(numpy.radians(hour_angle))
+    sin_ha = numpy.sin(numpy.radians(hour_angle))
+    cos_ha = numpy.cos(numpy.radians(hour_angle))
 
     return numpy.degrees(
         -numpy.arctan2( cos_lat * sin_ha, sin_lat * cos_dec - cos_lat * sin_dec * cos_ha)
@@ -114,17 +114,11 @@ def zenith_distance(declination, hour_angle):
     
     """
     
-    # astropy version catch to be backwards compatible
-    if float(astropy_version[2]) >= 3.:
-        Latitude=latitude.degree
-    else:
-        Latitude=latitude.degrees
-    
-    sin_lat = numpy.sin(numpy.radians(Latitude))
+    sin_lat = numpy.sin(numpy.radians(latitude_degrees))
     sin_dec = numpy.sin(numpy.radians(declination))
-    cos_lat = numpy.cos(numpy.radians(Latitude))
+    cos_lat = numpy.cos(numpy.radians(latitude_degrees))
     cos_dec = numpy.cos(numpy.radians(declination))
-    cos_ha =numpy.cos(numpy.radians(hour_angle))
+    cos_ha = numpy.cos(numpy.radians(hour_angle))
     
     return numpy.degrees(
         numpy.arccos(sin_lat * sin_dec + cos_lat * cos_dec * cos_ha))
@@ -148,11 +142,7 @@ class DARCorrector(object):
             self.zenith_distance = 0
             self.ref_wavelength = 5000.0
         
-        # astropy version catch to be backwards compatible
-        if float(astropy_version[2]) >= 3.:
-            self.latitude=latitude.degree
-        else:
-            self.latitude=latitude.degrees
+        self.latitude = latitude_degrees
         
         # Private variables
         self._pa = False
