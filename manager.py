@@ -1516,7 +1516,8 @@ class Manager:
         """Derive flux calibration transfer functions and save them."""
         inputs_list = []
         for fits in self.files(ndf_class='MFOBJECT', do_not_use=False,
-                               spectrophotometric=True, ccd='ccd_1', **kwargs):
+                               reduced=True, spectrophotometric=True,
+                               ccd='ccd_1', **kwargs):
             if not overwrite:
                 hdulist = pf.open(fits.reduced_path)
                 try:
@@ -1551,42 +1552,50 @@ class Manager:
         # are on different units; remove the name matching when that's
         # sorted.
         groups = self.group_files_by(('date', 'field_id', 'ccd', 'name'),
-            ndf_class='MFOBJECT', do_not_use=False,
+            ndf_class='MFOBJECT', reduced=True, do_not_use=False,
             spectrophotometric=True, **kwargs)
         # Now combine the files within each group
         for fits_list in groups.values():
             path_list = [fits.reduced_path for fits in fits_list]
             path_out = os.path.join(os.path.dirname(path_list[0]),
                                     'TRANSFERcombined.fits')
-            if overwrite or not os.path.exists(path_out):
+            if os.path.exists(path_out) and not overwrite:
+                combined = True
+            else:
                 print 'Combining files to create', path_out
-                fluxcal2.combine_transfer_functions(path_list, path_out)
-                # Run the QC throughput measurement
-                self.qc_throughput_spectrum(path_out)
-            # Copy the file into all required directories
-            done = [os.path.dirname(path_list[0])]
-            for path in path_list:
-                if os.path.dirname(path) not in done:
-                    path_copy = os.path.join(os.path.dirname(path),
-                                             'TRANSFERcombined.fits')
-                    done.append(os.path.dirname(path_copy))
-                    if overwrite or not os.path.exists(path_copy):
-                        print 'Copying combined file to', path_copy
-                        shutil.copy2(path_out, path_copy)
-            self.update_checks('FLX', fits_list, False)
+                combined = fluxcal2.combine_transfer_functions(
+                    path_list, path_out)
+                if combined:
+                    # Run the QC throughput measurement
+                    self.qc_throughput_spectrum(path_out)
+            if combined:
+                # Copy the file into all required directories
+                done = [os.path.dirname(path_list[0])]
+                for path in path_list:
+                    if os.path.dirname(path) not in done:
+                        path_copy = os.path.join(os.path.dirname(path),
+                                                 'TRANSFERcombined.fits')
+                        done.append(os.path.dirname(path_copy))
+                        if overwrite or not os.path.exists(path_copy):
+                            print 'Copying combined file to', path_copy
+                            shutil.copy2(path_out, path_copy)
+                self.update_checks('FLX', fits_list, False)
         return
 
     def flux_calibrate(self, overwrite=False, **kwargs):
         """Apply flux calibration to object frames."""
         for fits in self.files(ndf_class='MFOBJECT', do_not_use=False,
-                               spectrophotometric=False, **kwargs):
+                               reduced=True, spectrophotometric=False,
+                               **kwargs):
             fits_spectrophotometric = self.matchmaker(fits, 'fcal')
             if fits_spectrophotometric is None:
                 # Try again with less strict criteria
                 fits_spectrophotometric = self.matchmaker(fits, 'fcal_loose')
                 if fits_spectrophotometric is None:
-                    raise MatchException('No matching flux calibrator found ' +
-                                         'for ' + fits.filename)
+                    print ('No matching flux calibrator found for ' + 
+                           fits.filename)
+                    print 'Skipping this file'
+                    continue
             if overwrite or not os.path.exists(fits.fluxcal_path):
                 print 'Flux calibrating file:', fits.reduced_path
                 if os.path.exists(fits.fluxcal_path):
@@ -1605,6 +1614,7 @@ class Manager:
         # First make the list of file pairs to correct
         inputs_list = []
         for fits_2 in self.files(ndf_class='MFOBJECT', do_not_use=False,
+                                 flux_calibrated=True,
                                  spectrophotometric=False, ccd='ccd_2', 
                                  **kwargs):
             if os.path.exists(fits_2.telluric_path) and not overwrite:

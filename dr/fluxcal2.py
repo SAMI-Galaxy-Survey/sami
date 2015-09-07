@@ -1207,6 +1207,8 @@ def combine_transfer_functions(path_list, path_out, use_all=False):
             if good_psf:
                 path_list_good.append(path)
     n_file = len(path_list_good)
+    if n_file == 0:
+        return False
     n_pixel = pf.getval(path_list_good[0], 'NAXIS1')
     tf_array = np.zeros((n_file, n_pixel))
     # Read the individual transfer functions
@@ -1222,7 +1224,7 @@ def combine_transfer_functions(path_list, path_out, use_all=False):
     # Using inverse because it's more stable when observed flux is low
     tf_combined = 1.0 / nanmean(1.0 / tf_array, axis=0)
     save_combined_transfer_function(path_out, tf_combined, path_list_good)
-    return
+    return True
 
 def save_combined_transfer_function(path_out, tf_combined, path_list):
     """Write the combined transfer function (and the individuals to file."""
