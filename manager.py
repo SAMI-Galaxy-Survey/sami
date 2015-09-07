@@ -1012,11 +1012,15 @@ class Manager:
         for dirname, subdirname_list, filename_list in os.walk(source_dir):
             for filename in filename_list:
                 if self.file_filter(filename):
+                    tmp_path = os.path.join(self.tmp_dir, filename)
                     self.update_copy(os.path.join(dirname, filename),
-                                     os.path.join(self.tmp_dir, filename))
+                                     tmp_path)
                     self.import_file(self.tmp_dir, filename,
                                      trust_header=trust_header,
                                      copy_files=False, move_files=True)
+                    if os.path.exists(tmp_path):
+                        # The import was abandoned; delete the temporary copy
+                        os.remove(tmp_path)
         if os.path.exists(self.tmp_dir) and len(os.listdir(self.tmp_dir)) == 0:
             os.rmdir(self.tmp_dir)
         return
