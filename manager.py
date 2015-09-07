@@ -773,6 +773,13 @@ class Manager:
         if fits.copy:
             # This is a copy of a file, don't add it to the list
             return
+        if fits.ndf_class not in [
+                'BIAS', 'DARK', 'LFLAT', 'MFFFF', 'MFARC', 'MFSKY', 
+                'MFOBJECT']:
+            print 'Unrecognised NDF_CLASS for {}: {}'.format(
+                filename, fits.ndf_class)
+            print 'Skipping this file'
+            return
         if fits.ndf_class == 'DARK':
             if fits.exposure_str not in self.dark_exposure_str_list:
                 self.dark_exposure_str_list.append(fits.exposure_str)
