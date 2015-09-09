@@ -3515,9 +3515,21 @@ class FITSFile:
     def set_lamp(self):
         """Set which lamp was on, if any."""
         if self.ndf_class == 'MFARC':
-            # This isn't guaranteed to work, but it's ok for our normal lamp
-            _object = self.header['OBJECT']
-            self.lamp = _object[_object.rfind(' ')+1:]
+            lamp = self.header['LAMPNAME']
+            if lamp == '':
+                # No lamp set. Most likely that the CuAr lamp was on but the
+                # control software screwed up. Patch the headers assuming this
+                # is the case, but warn the user.
+                lamp = 'CuAr'
+                hdulist_write = pf.open(self.source_path, 'update')
+                hdulist_write[0].header['LAMPNAME'] = lamp
+                hdulist_write[0].header['OBJECT'] = 'ARC - ' + lamp
+                hdulist_write.flush()
+                hdulist_write.close()
+                print 'No arc lamp specified for ' + self.filename
+                print ('Updating LAMPNAME and OBJECT keywords assuming a ' +
+                       lamp + ' lamp')
+            self.lamp = lamp
         elif self.ndf_class == 'MFFFF':
             if self.exposure >= 17.5:
                 # Assume longer exposures are dome flats
