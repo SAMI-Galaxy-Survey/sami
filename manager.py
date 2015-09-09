@@ -717,6 +717,10 @@ class Manager:
         self.aat_username = None
         self.aat_password = None
         self.inspect_root(copy_files, move_files)
+        if self.find_directory_locks():
+            print 'Warning: directory locks in place!'
+            print 'If this is because you killed a crashed manager, clean them'
+            print 'up using mngr.remove_directory_locks()'
         if demo:
             if PATCH_AVAILABLE:
                 print 'WARNING: Manager is in demo mode.'
@@ -3048,11 +3052,18 @@ class Manager:
                        scratch_dir=self.scratch_dir)
         return
 
-    def remove_directory_locks(self):
+    def find_directory_locks(self, lock_name='2dfdrLockDir'):
+        """Return a list of directory locks that currently exist."""
+        lock_list = []
+        for dirname, subdirname_list, _ in os.walk(self.abs_root):
+            if lock_name in subdirname_list:
+                lock_list.append(os.path.join(dirname, lock_name))
+        return lock_list
+
+    def remove_directory_locks(self, lock_name='2dfdrLockDir'):
         """Remove all 2dfdr locks from directories."""
-        for dirname, subdirname_list, filename_list in os.walk(self.abs_root):
-            if '2dfdrLockDir' in subdirname_list:
-                os.rmdir(os.path.join(dirname, '2dfdrLockDir'))
+        for path in self.find_directory_locks(lock_name=lock_name):
+            os.rmdir(path)
         return
 
     def update_checks(self, key, file_iterable, value, force=False):
