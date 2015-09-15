@@ -3918,6 +3918,18 @@ def scale_cubes_field(group):
     star_path_pair, object_path_pair_list, star = group
     print 'Scaling field with star', star
     stellar_mags_cube_pair(star_path_pair, save=True)
+    # Copy the PSF data to the galaxy datacubes
+    star_header = pf.getheader(star_path_pair[0])
+    for object_path_pair in object_path_pair_list:
+        for object_path in object_path_pair:
+            hdulist_write = pf.open(object_path, 'update')
+            for key in ('PSFFWHM', 'PSFALPHA', 'PSFBETA'):
+                try:
+                    hdulist_write[0].header[key] = star_header[key]
+                except KeyError:
+                    pass
+            hdulist_write.flush()
+            hdulist_write.close()
     # Previously tried reading the catalogue once and passing it, but for
     # unknown reasons that was corrupting the data when run on aatmacb.
     found = assign_true_mag(star_path_pair, star, catalogue=None)
