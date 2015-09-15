@@ -277,7 +277,7 @@ def centroid(infile, ifus='all', savefile=True, plot=True):
         
         # -------------------------------------------------------
         # Write the results to file
-        if outfile!=None:
+        if outfile is not None:
             # Probe number, offset in RA ("), offset in Dec (")
             s=str(ifu_data.ifu)+' '+str(x_off)+' '+str(y_off)+'\n' # the data to write to file
             f.write(s)
