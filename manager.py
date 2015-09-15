@@ -1606,13 +1606,14 @@ class Manager:
                     path_transfer_fn)
         return
 
-    def telluric_correct(self, overwrite=False, model_name=None, **kwargs):
+    def telluric_correct(self, overwrite=False, model_name=None, name='main',
+                         **kwargs):
         """Apply telluric correction to object frames."""
         # First make the list of file pairs to correct
         inputs_list = []
         for fits_2 in self.files(ndf_class='MFOBJECT', do_not_use=False,
                                  spectrophotometric=False, ccd='ccd_2', 
-                                 **kwargs):
+                                 name=name, **kwargs):
             if os.path.exists(fits_2.telluric_path) and not overwrite:
                 # Already been done; skip to the next file
                 continue
@@ -3315,16 +3316,18 @@ class FITSFile:
                 (hdu.header['EXTNAME'] == 'STRUCT.MORE.NDF_CLASS' or
                  hdu.header['EXTNAME'] == 'NDF_CLASS')):
                 # It has a class
-                ndf_class = hdu.data['NAME'][0]
+                self.ndf_class = hdu.data['NAME'][0]
                 # Change DFLAT to LFLAT
-                if ndf_class == 'DFLAT':
-                    hdulist_write = pf.open(self.source_path, 'update')
-                    hdulist_write[hdu.header['EXTNAME']].data['NAME'][0] = (
-                        'LFLAT')
-                    hdulist_write.flush()
-                    hdulist_write.close()
-                    ndf_class = 'LFLAT'
-                self.ndf_class = ndf_class
+                if self.ndf_class == 'DFLAT':
+                    self.overwrite_ndf_class('LFLAT')
+                # Ask the user if SFLAT should be changed to MFSKY
+                if self.ndf_class == 'SFLAT':
+                    print ('NDF_CLASS of SFLAT (OFFSET FLAT) found for ' + 
+                           self.filename)
+                    print 'Change to MFSKY (OFFSET SKY)? (y/n)'
+                    y_n = raw_input(' > ')
+                    if y_n.lower()[0] == 'y':
+                        self.overwrite_ndf_class('MFSKY')
                 break
         else:
             self.ndf_class = None
@@ -3724,6 +3727,24 @@ class FITSFile:
                               do_not_scale_image_data=True)
             hdulist[0].header[key] = value_comment
             hdulist.close()
+        return
+
+    def overwrite_ndf_class(self, new_ndf_class):
+        """Change the NDF_CLASS value in the FITS file and in the object."""
+        hdulist_write = pf.open(self.source_path, 'update')
+        for hdu_name in ('STRUCT.MORE.NDF_CLASS', 'NDF_CLASS'):
+            try:
+                hdu = hdulist_write[hdu_name]
+                break
+            except KeyError:
+                pass
+        else:
+            # No relevant extension found
+            raise KeyError('No NDF_CLASS extension found in file')
+        hdu.data['NAME'][0] = new_ndf_class
+        hdulist_write.flush()
+        hdulist_write.close()
+        self.ndf_class = new_ndf_class
         return
 
 

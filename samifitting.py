@@ -107,7 +107,7 @@ class GaussFitter:
 
         self.var_fit = var_fit
 
-        if self.cov_x != None:
+        if self.cov_x is not None:
             self.perr = sp.sqrt(self.cov_x.diagonal())*self.var_fit
 
         if not self.success in [1,2,3,4]:
@@ -183,7 +183,7 @@ class GaussHermiteFitter:
 
         self.var_fit = var_fit
 
-        if self.cov_x != None:
+        if self.cov_x is not None:
             self.perr = S.sqrt(self.cov_x.diagonal())*self.var_fit
 
         # Would like to return the linestrength and associated error
@@ -293,7 +293,7 @@ class TwoDGaussFitter:
 
         self.var_fit = var_fit
 
-        if self.cov_x != None:
+        if self.cov_x is not None:
             self.perr = sp.sqrt(self.cov_x.diagonal())*self.var_fit
 
         if not self.success in [1,2,3,4]:
