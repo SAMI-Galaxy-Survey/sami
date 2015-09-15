@@ -406,7 +406,7 @@ class bin2D :
 
     ### Compute WEIGHTED centroid of bins ======================================
     def bin2d_weighted_centroid(self, weight=None, verbose=0):
-        if weight != None : self.weight = weight
+        if weight is not None : self.weight = weight
 
         self.Areanode, self.bins = np.histogram(self.status, bins=np.arange(np.max(self.status+0.5))+0.5)
         ## Select the ones which have at least one bin
@@ -436,7 +436,7 @@ class bin2D :
         """ 
         Assign the bins when the nodes are derived With Scaling factor
         """
-        if scale != None: self.scale = scale
+        if scale is not None: self.scale = scale
         if sel_pixels == None : sel_pixels = range(self.xin.size)
         for i in sel_pixels :
             minind = argmin(dist2(self.xin[i], self.yin[i], self.xnode, self.ynode, scale=self.scale))
@@ -459,7 +459,7 @@ class bin2D :
         self.status = np.zeros(self.npix, dtype=Nint)
         self.statusnode = np.arange(self.xnode.size) + 1
 
-        if wvt != None : self.wvt = wvt
+        if wvt is not None : self.wvt = wvt
         if self.wvt : self.weight = np.ones_like(self.SN)
         else : self.weight = self.SN**4
 
@@ -487,8 +487,8 @@ class bin2D :
         wvt: default is None (will use preset value, see self.wvt)
         cvt: default is None (will use preset value, see self.cvt)
         """
-        if cvt != None : self.cvt = cvt
-        if wvt != None : self.wvt = wvt
+        if cvt is not None : self.cvt = cvt
+        if wvt is not None : self.wvt = wvt
 
         print "=================="
         print "Accreting Bins... "
