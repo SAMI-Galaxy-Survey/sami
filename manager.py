@@ -114,10 +114,10 @@ else:
     def ICRS(*args, **kwargs):
         return coord.SkyCoord(*args, frame='icrs', **kwargs)
 
-IDX_FILES_SLOW = {'1': 'sami580V_v1_2.idx',
-                  '2': 'sami1000R_v1_2.idx',
-                  'ccd_1': 'sami580V_v1_2.idx',
-                  'ccd_2': 'sami1000R_v1_2.idx'}
+IDX_FILES_SLOW = {'1': 'sami580V_v1_3.idx',
+                  '2': 'sami1000R_v1_3.idx',
+                  'ccd_1': 'sami580V_v1_3.idx',
+                  'ccd_2': 'sami1000R_v1_3.idx'}
 IDX_FILES_FAST = {'1': 'sami580V.idx',
                   '2': 'sami1000R.idx',
                   'ccd_1': 'sami580V.idx',
@@ -731,6 +731,7 @@ class Manager:
                 demo = False
         self.demo = demo
         self.demo_data_source = demo_data_source
+        self.debug = False
 
     def map(self, function, input_list):
         """Map inputs to a function, using built-in map or multiprocessing."""
@@ -1409,7 +1410,8 @@ class Manager:
                            tlm=tlm)),
                        self.cwd,
                        self.imp_scratch,
-                       self.scratch_dir)
+                       self.scratch_dir,
+                       self.debug)
                       for fits in file_iterable
                       if (overwrite or 
                           not os.path.exists(self.target_path(fits, tlm=tlm)))]
@@ -2245,7 +2247,7 @@ class Manager:
         options = self.tdfdr_options(fits, tlm=tlm)
         # All options have been set, so run 2dfdr
         tdfdr.run_2dfdr_single(fits, self.idx_files[fits.ccd], 
-                               options=options, cwd=self.cwd)
+                               options=options, cwd=self.cwd, debug=self.debug)
         if (fits.ndf_class == 'MFFFF' and tlm and not leave_reduced and
             os.path.exists(fits.reduced_path)):
             os.remove(fits.reduced_path)
@@ -2484,11 +2486,16 @@ class Manager:
     def run_2dfdr_combine(self, file_iterable, output_path):
         """Use 2dfdr to combine the specified FITS files."""
         input_path_list = [fits.reduced_path for fits in file_iterable]
+        if not input_path_list:
+            print 'No reduced files found to combine!'
+            return
+        # Following line uses the last FITS file, assuming all are the same CCD
+        idx_file = self.idx_files[fits.ccd]
         print 'Combining files to create', output_path
         tdfdr.run_2dfdr_combine(
-            input_path_list, output_path, unique_imp_scratch=True, 
+            input_path_list, output_path, idx_file, unique_imp_scratch=True, 
             return_to=self.cwd, restore_to=self.imp_scratch, 
-            scratch_dir=self.scratch_dir)
+            scratch_dir=self.scratch_dir, debug=self.debug)
         return
 
     def files(self, ndf_class=None, date=None, plate_id=None,
@@ -3050,7 +3057,7 @@ class Manager:
         tdfdr.load_gui(dirname=dirname, idx_file=idx_file, 
                        unique_imp_scratch=True, return_to=self.cwd, 
                        restore_to=self.imp_scratch, 
-                       scratch_dir=self.scratch_dir)
+                       scratch_dir=self.scratch_dir, debug=self.debug)
         return
 
     def find_directory_locks(self, lock_name='2dfdrLockDir'):
@@ -3899,12 +3906,12 @@ def best_path(fits):
 @safe_for_multiprocessing
 def run_2dfdr_single_wrapper(group):
     """Run 2dfdr on a single file."""
-    fits, idx_file, options, cwd, imp_scratch, scratch_dir = group
+    fits, idx_file, options, cwd, imp_scratch, scratch_dir, debug = group
     try:
         tdfdr.run_2dfdr_single(
             fits, idx_file, options=options, return_to=cwd, 
             unique_imp_scratch=True, restore_to=imp_scratch, 
-            scratch_dir=scratch_dir)
+            scratch_dir=scratch_dir, debug=debug)
     except tdfdr.LockException:
         message = ('Postponing ' + fits.filename + 
                    ' while other process has directory lock.')
