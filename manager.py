@@ -1604,13 +1604,14 @@ class Manager:
                     path_transfer_fn)
         return
 
-    def telluric_correct(self, overwrite=False, model_name=None, **kwargs):
+    def telluric_correct(self, overwrite=False, model_name=None, name='main',
+                         **kwargs):
         """Apply telluric correction to object frames."""
         # First make the list of file pairs to correct
         inputs_list = []
         for fits_2 in self.files(ndf_class='MFOBJECT', do_not_use=False,
                                  spectrophotometric=False, ccd='ccd_2', 
-                                 **kwargs):
+                                 name=name, **kwargs):
             if os.path.exists(fits_2.telluric_path) and not overwrite:
                 # Already been done; skip to the next file
                 continue
