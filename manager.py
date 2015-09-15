@@ -1801,19 +1801,12 @@ class Manager:
         # Send the cubing tasks off to multiple CPUs
         with self.patch_if_demo('sami.manager.dithered_cubes_from_rss_wrapper',
                                 fake_dithered_cube_from_rss_wrapper):
-            self.map(cube_object, inputs_list)
-
-        # groups = [(key, fits_list, cubed_root, overwrite, star_only) 
-        #           for key, fits_list in groups.items()]
-        # # Send the cubing tasks off to multiple CPUs
-        # with self.patch_if_demo('sami.manager.dithered_cubes_from_rss_list',
-        #                         fake_dithered_cubes_from_rss_list):
-        #     self.map(cube_group, groups)
-        # Mark all cubes as not checked. Ideally would only mark those that
-        # actually exist. Maybe set dithered_cubes_from_rss_list to return a 
-        # list of those it created?
-        for fits_list in groups.values():
-            self.update_checks('CUB', [fits_list[0]], False)
+            cubed_list = self.map(cube_object, inputs_list)
+        # Mark cubes as not checked. Only mark the first file in each input set
+        for inputs, cubed in zip(inputs_list, cubed_list):
+            if cubed:
+                fits = self.fits_file(os.path.basename(inputs[2][0])[:10])
+                self.update_checks('CUB', [fits], False)
         return
 
     def qc_for_cubing(self, fits_list, min_transmission=0.333, max_seeing=4.0,
