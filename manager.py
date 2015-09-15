@@ -3872,7 +3872,7 @@ def cube_object(inputs):
     suffix = '_'+field_id
     if tag:
         suffix += '_'+tag
-    dithered_cube_from_rss_wrapper(
+    return dithered_cube_from_rss_wrapper(
         path_list, name, suffix=suffix, write=True, nominal=True,
         root=cubed_root, overwrite=overwrite, do_dar_correct=True, clip=True,
         drop_factor=drop_factor, update_tol=update_tol,
