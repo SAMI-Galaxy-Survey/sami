@@ -3954,6 +3954,8 @@ def scale_frame_pair(path_pair):
 @safe_for_multiprocessing
 def bin_cubes_pair(path_pair):
     """Bin a pair of datacubes using each of the default schemes."""
+    # TODO: Allow the user to specify name/kwargs pairs. Will require
+    # coordination with Manager.bin_cubes() [JTA 23/9/2015]
     path_blue, path_red = path_pair
     print 'Binning datacubes:'
     print os.path.basename(path_blue), os.path.basename(path_red)
