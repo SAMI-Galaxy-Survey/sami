@@ -42,6 +42,10 @@ def bin_cube_pair(path_blue, path_red, name=None, **kwargs):
 
 def bin_and_save(hdulist, bin_mask, name=None):
     """Do binning and save results for an HDUList."""
+    # TODO: Check if the extensions already exist. In most cases you would
+    # want to either overwrite or just return without doing anything, but
+    # occasionally the user might want to append duplicate extensions (the
+    # current behaviour). (JTA 14/9/2015)
     binned_cube, binned_var = bin_cube(hdulist, bin_mask)
     if name is None:
         suffix = ''
