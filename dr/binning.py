@@ -56,10 +56,10 @@ def bin_and_save(hdulist, bin_mask, name=None):
     hdulist.flush()
     return
 
-def return_bin_mask(hdu,mode='adaptive',targetSN=10,sectors=8,radial=5,log=False):
+def return_bin_mask(hdu, mode='adaptive', targetSN=10, minSN=None, sectors=8,radial=5,log=False):
     
     if mode == 'adaptive':
-        bin_mask = adaptive_bin_sami(hdu,targetSN=targetSN)
+        bin_mask = adaptive_bin_sami(hdu,targetSN=targetSN, minSN=minSN)
         
     elif mode == 'prescriptive':
         bin_mask = prescribed_bin_sami(hdu,sectors=sectors,radial=radial,log=log)
@@ -146,7 +146,7 @@ def reconstruct_covariance(covar_array_red,covar_header,n_wave=2048):
                                    
     return covar_array_full
 
-def adaptive_bin_sami(hdu,targetSN=10.0):
+def adaptive_bin_sami(hdu, targetSN=10.0, minSN=None):
     """
         Wrapper for handling SAMI data. Returns an 'image'
         where each spaxels' value indicates the bin it belongs
@@ -173,8 +173,16 @@ def adaptive_bin_sami(hdu,targetSN=10.0):
     # Flatten arrays for input and mask nans
     signal = image.ravel()
     noise = np.sqrt(var_image.ravel())
-    goodpixels = np.where((np.isfinite(signal) == True) &
+
+    # Check if there is a minimum spaxel S/N to be included 
+    if minSN == None:
+        goodpixels = np.where((np.isfinite(signal) == True) &
                           (np.isfinite(noise) == True))
+
+    else:
+        goodpixels = np.where((np.isfinite(signal) == True) &
+                        (np.isfinite(noise) == True) & (signal/noise > minSN))
+
     signal = signal[goodpixels]
     noise = noise[goodpixels]
                           
