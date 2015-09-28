@@ -125,8 +125,9 @@ IDX_FILES_FAST = {'1': 'sami580V.idx',
 IDX_FILES = {'fast': IDX_FILES_FAST,
              'slow': IDX_FILES_SLOW}
 
-GRATLPMM = {'ccd_1': 582.0,
-            'ccd_2': 1001.0}
+GRATLPMM = {'580V': 582.0,
+            '1500V': 1500.0,
+            '1000R': 1001.0}
 
 # This list is used for identifying field numbers in the pilot data.
 PILOT_FIELD_LIST = [
@@ -805,7 +806,7 @@ class Manager:
         self.set_reduced_path(fits)
         if not fits.do_not_use:
             fits.make_reduced_link()
-        fits.add_header_item('GRATLPMM', self.gratlpmm[fits.ccd])
+        fits.add_header_item('GRATLPMM', self.gratlpmm[fits.grating])
         self.file_list.append(fits)
         return
 
@@ -3285,6 +3286,7 @@ class FITSFile:
             self.field_no = None
             self.field_id = None
         self.set_ccd()
+        self.set_grating()
         self.set_exposure()
         self.set_epoch()
         self.set_lamp()
@@ -3499,6 +3501,14 @@ class FITSFile:
                 self.ccd = 'unknown_ccd'
         else:
             self.ccd = None
+        return
+
+    def set_grating(self):
+        """Set the grating name."""
+        if self.ndf_class:
+            self.grating = self.header['GRATID']
+        else:
+            self.grating = None
         return
 
     def set_exposure(self):
