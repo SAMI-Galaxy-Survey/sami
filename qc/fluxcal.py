@@ -382,7 +382,8 @@ def read_stellar_mags_cubes(file_pair_list, verbose=True):
         mag_cube.append((magg, magr))
     return mag_cube
 
-def read_stellar_mags_frames(frame_pair_list_list, verbose=True):
+def read_stellar_mags_frames(frame_pair_list_list, bands=('g', 'r'),
+                             verbose=True):
     """
     Return stellar magnitudes as measured by SAMI (via interpolation),
     for the input files.
@@ -395,7 +396,7 @@ def read_stellar_mags_frames(frame_pair_list_list, verbose=True):
                 print 'Reading magnitudes from', os.path.basename(frame_pair[0])
             flux, noise, wavelength = read_stellar_spectrum(frame_pair)
             mags = measure_mags(flux, noise, wavelength)
-            mag_frame[-1].append((mags['g'], mags['r']))
+            mag_frame[-1].append((mags[bands[0]], mags[bands[1]]))
     return mag_frame
 
 # def stellar_mags(mngr, n_cpu=1):
