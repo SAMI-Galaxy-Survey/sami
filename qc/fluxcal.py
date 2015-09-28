@@ -14,6 +14,8 @@ import os
 from glob import glob
 import multiprocessing
 
+BANDS = 'ugriz'
+
 def throughput(path, combined=True):
     """
     Return the instrument throughput, as measured from a standard star.
@@ -395,31 +397,30 @@ def read_stellar_mags_frames(frame_pair_list_list, verbose=True):
             mag_frame[-1].append(measure_mags(flux, noise, wavelength))
     return mag_frame
 
-def stellar_mags(mngr, n_cpu=1):
-    """
-    Return stellar magnitudes as measured by SAMI (via interpolation), for
-    the datacubes and the input files.
-    """
-    if n_cpu == 1:
-        _map = map
-    else:
-        pool = multiprocessing.Pool(n_cpu)
-        _map = pool.map
-    file_pair_list, frame_pair_list_list = list_star_files(mngr)
-    mag_cube = _map(stellar_mags_cube_pair, file_pair_list)
-    mag_frame = []
-    for file_pair, frame_pair_list in zip(
-            file_pair_list, frame_pair_list_list):
-        # flux, noise, wavelength, psf_params, sigma_params = (
-        #     extract_stellar_spectrum(file_pair))
-        # mag_cube.append(measure_mags(flux, noise, wavelength))
-        mag_frame.append([])
-        for frame_pair in frame_pair_list:
-            flux, noise, wavelength = read_stellar_spectrum(frame_pair)
-            mag_frame[-1].append(measure_mags(flux, noise, wavelength))
-    if n_cpu != 1:
-        pool.close()
-    return file_pair_list, frame_pair_list_list, mag_cube, mag_frame
+# def stellar_mags(mngr, n_cpu=1):
+#     """
+#     Return stellar magnitudes as measured by SAMI (via interpolation), for
+#     the datacubes and the input files.
+#     """
+#     if n_cpu == 1:
+#         _map = map
+#     else:
+#         pool = multiprocessing.Pool(n_cpu)
+#         _map = pool.map
+#     file_pair_list, frame_pair_list_list = list_star_files(mngr)
+#     mag_cube = _map(stellar_mags_cube_pair, file_pair_list)
+#     mag_frame = []
+#     for file_pair, frame_pair_list in zip(
+#             file_pair_list, frame_pair_list_list):
+#         # NOTE: measure_mags() return value has changed, so the following
+#         # code will no longer work
+#         mag_frame.append([])
+#         for frame_pair in frame_pair_list:
+#             flux, noise, wavelength = read_stellar_spectrum(frame_pair)
+#             mag_frame[-1].append(measure_mags(flux, noise, wavelength))
+#     if n_cpu != 1:
+#         pool.close()
+#     return file_pair_list, frame_pair_list_list, mag_cube, mag_frame
     
 def stellar_mags_cube_pair(file_pair, sum_cubes=False, save=False):
     """Return stellar mags for a single pair of datacubes."""
@@ -874,12 +875,18 @@ def measure_mags(flux, noise, wavelength):
     good = clip_spectrum(flux, noise, wavelength, limit_flux=20.0)
     flux, noise, wavelength = interpolate_arms(
         flux, noise, wavelength, good)
-    mag_g = measure_band('g', flux, wavelength)
-    mag_r = measure_band('r', flux, wavelength)
-    return (mag_g, mag_r)
+    mags = {}
+    for band in BANDS:
+        mags[band] = measure_band(band, flux, wavelength)
+    return mags
 
 def interpolate_arms(flux, noise, wavelength, good=None, n_pix_fit=300):
     """Interpolate between the red and blue arms."""
+    # This function currently assumes that:
+    #  * There are an even number of pixels, half of which come from each arm
+    #  * There is a gap in the wavelength coverage between the two arms
+    #  * There are at least 300 pixels in each arm to fit to
+    # TODO: Clean up to remove these assumptions, particularly the second one
     # Establish basic facts about which pixels we should look at
     n_pix = len(wavelength)
     if good is None:
