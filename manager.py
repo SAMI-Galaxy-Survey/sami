@@ -3959,15 +3959,14 @@ def assign_true_mag(path_pair, name, catalogue=None, hdu=0):
     """Find the magnitudes in a catalogue and save them to the header."""
     if catalogue is None:
         catalogue = read_stellar_mags()
-    if name in catalogue:
-        mag_g = catalogue[name]['g']
-        mag_r = catalogue[name]['r']
-    else:
+    if name not in catalogue:
         return False
+    line = catalogue[name]
     for path in path_pair:
         hdulist = pf.open(path, 'update')
-        hdulist[hdu].header['CATMAGG'] = (mag_g, 'g mag from catalogue')
-        hdulist[hdu].header['CATMAGR'] = (mag_r, 'r mag from catalogue')
+        for band in 'ugriz':
+            hdulist[hdu].header['CATMAG'+band.upper()] = (
+                line[band], band+' mag from catalogue')
         hdulist.flush()
         hdulist.close()
     return True
