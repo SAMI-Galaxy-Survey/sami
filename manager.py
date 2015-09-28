@@ -3899,7 +3899,7 @@ def scale_cubes_field(group):
     # unknown reasons that was corrupting the data when run on aatmacb.
     found = assign_true_mag(star_path_pair, star, catalogue=None)
     if found:
-        scale = scale_cube_pair_to_mag(star_path_pair)
+        scale = scale_cube_pair_to_mag(star_path_pair, 3)
         for object_path_pair in object_path_pair_list:
             scale_cube_pair(object_path_pair, scale)
     else:
@@ -3918,7 +3918,7 @@ def scale_frame_pair(path_pair):
     found = assign_true_mag(path_pair, star, catalogue=None,
                             hdu='FLUX_CALIBRATION')
     if found:
-        scale_cube_pair_to_mag(path_pair, hdu='FLUX_CALIBRATION')
+        scale_cube_pair_to_mag(path_pair, 1, hdu='FLUX_CALIBRATION')
     else:
         print 'No photometric data found for', star
     return
