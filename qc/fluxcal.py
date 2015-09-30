@@ -14,6 +14,8 @@ import os
 from glob import glob
 import multiprocessing
 
+BANDS = 'ugriz'
+
 def throughput(path, combined=True):
     """
     Return the instrument throughput, as measured from a standard star.
@@ -380,7 +382,8 @@ def read_stellar_mags_cubes(file_pair_list, verbose=True):
         mag_cube.append((magg, magr))
     return mag_cube
 
-def read_stellar_mags_frames(frame_pair_list_list, verbose=True):
+def read_stellar_mags_frames(frame_pair_list_list, bands=('g', 'r'),
+                             verbose=True):
     """
     Return stellar magnitudes as measured by SAMI (via interpolation),
     for the input files.
@@ -392,37 +395,37 @@ def read_stellar_mags_frames(frame_pair_list_list, verbose=True):
             if verbose:
                 print 'Reading magnitudes from', os.path.basename(frame_pair[0])
             flux, noise, wavelength = read_stellar_spectrum(frame_pair)
-            mag_frame[-1].append(measure_mags(flux, noise, wavelength))
+            mags = measure_mags(flux, noise, wavelength)
+            mag_frame[-1].append((mags[bands[0]], mags[bands[1]]))
     return mag_frame
 
-def stellar_mags(mngr, n_cpu=1):
-    """
-    Return stellar magnitudes as measured by SAMI (via interpolation), for
-    the datacubes and the input files.
-    """
-    if n_cpu == 1:
-        _map = map
-    else:
-        pool = multiprocessing.Pool(n_cpu)
-        _map = pool.map
-    file_pair_list, frame_pair_list_list = list_star_files(mngr)
-    mag_cube = _map(stellar_mags_cube_pair, file_pair_list)
-    mag_frame = []
-    for file_pair, frame_pair_list in zip(
-            file_pair_list, frame_pair_list_list):
-        # flux, noise, wavelength, psf_params, sigma_params = (
-        #     extract_stellar_spectrum(file_pair))
-        # mag_cube.append(measure_mags(flux, noise, wavelength))
-        mag_frame.append([])
-        for frame_pair in frame_pair_list:
-            flux, noise, wavelength = read_stellar_spectrum(frame_pair)
-            mag_frame[-1].append(measure_mags(flux, noise, wavelength))
-    if n_cpu != 1:
-        pool.close()
-    return file_pair_list, frame_pair_list_list, mag_cube, mag_frame
+# def stellar_mags(mngr, n_cpu=1):
+#     """
+#     Return stellar magnitudes as measured by SAMI (via interpolation), for
+#     the datacubes and the input files.
+#     """
+#     if n_cpu == 1:
+#         _map = map
+#     else:
+#         pool = multiprocessing.Pool(n_cpu)
+#         _map = pool.map
+#     file_pair_list, frame_pair_list_list = list_star_files(mngr)
+#     mag_cube = _map(stellar_mags_cube_pair, file_pair_list)
+#     mag_frame = []
+#     for file_pair, frame_pair_list in zip(
+#             file_pair_list, frame_pair_list_list):
+#         # NOTE: measure_mags() return value has changed, so the following
+#         # code will no longer work
+#         mag_frame.append([])
+#         for frame_pair in frame_pair_list:
+#             flux, noise, wavelength = read_stellar_spectrum(frame_pair)
+#             mag_frame[-1].append(measure_mags(flux, noise, wavelength))
+#     if n_cpu != 1:
+#         pool.close()
+#     return file_pair_list, frame_pair_list_list, mag_cube, mag_frame
     
 def stellar_mags_cube_pair(file_pair, sum_cubes=False, save=False):
-    """Return stellar mags for a single pair of datacubes."""
+    """Return unscaled stellar mags for a single pair of datacubes."""
     if sum_cubes:
         flux, noise, wavelength = (
             extract_galaxy_spectrum(file_pair))
@@ -436,17 +439,17 @@ def stellar_mags_cube_pair(file_pair, sum_cubes=False, save=False):
         old_scale = 1
     flux /= old_scale
     noise /= old_scale
-    mag_g, mag_r = measure_mags(flux, noise, wavelength)
-    mag_g_header = mag_g if np.isfinite(mag_g) else -99999
-    mag_r_header = mag_r if np.isfinite(mag_r) else -99999
+    mags = measure_mags(flux, noise, wavelength)
     if save:
         for path in file_pair:
             hdulist = pf.open(path, 'update')
-            hdulist[0].header['MAGG'] = (mag_g_header, 'g mag before scaling')
-            hdulist[0].header['MAGR'] = (mag_r_header, 'r mag before scaling')
-            if 'MAGR' in hdulist[1].header:
-                # Covering an old bug that was putting MAGR in the wrong place
-                del hdulist[1].header['MAGR']
+            for band in BANDS:
+                if np.isfinite(mags[band]):
+                    mag = mags[band]
+                else:
+                    mag = -99999
+                hdulist[0].header['MAG'+band.upper()] = (
+                    mag, band+' mag before scaling')    
             if not sum_cubes:
                 # CDELT1 gives the pixel scale in degrees; convert to arcsec
                 alpha = (3600.0 * np.abs(hdulist[0].header['CDELT1'])
@@ -461,7 +464,7 @@ def stellar_mags_cube_pair(file_pair, sum_cubes=False, save=False):
                     fwhm, 'FWHM (arcsec) of PSF')
             hdulist.flush()
             hdulist.close()
-    return mag_g, mag_r
+    return mags
 
 def stellar_mags_scatter_cube_pair(file_pair, min_relative_flux=0.5, save=False):
     """Return the scatter in stellar colours within a star datacube pair."""
@@ -479,8 +482,11 @@ def stellar_mags_scatter_cube_pair(file_pair, min_relative_flux=0.5, save=False)
     keep = (image >= (min_relative_flux * np.max(image)))
     flux = flux[:, keep]
     noise = noise[:, keep]
-    mags = np.array([measure_mags(f, n, wavelength)
-                     for f, n in zip(flux.T, noise.T)])
+    mags = []
+    for flux_i, noise_i in zip(flux.T, noise.T):
+        mags_i = measure_mags(flux_i, noise_i, wavelength)
+        mags.append([mags_i['g'], mags_i['r']])
+    mags = np.array(mags)
     colour = mags[:, 0] - mags[:, 1]
     scatter = np.std(colour)
     if save:
@@ -498,19 +504,20 @@ def stellar_mags_frame_pair(file_pair, save=False):
     # account, because it is never applied to the FLUX_CALIBRATION HDU
     # from which these measurements are made.
     flux, noise, wavelength = read_stellar_spectrum(file_pair)
-    mag_g, mag_r = measure_mags(flux, noise, wavelength)
-    mag_g_header = mag_g if np.isfinite(mag_g) else -99999
-    mag_r_header = mag_r if np.isfinite(mag_r) else -99999
+    mags = measure_mags(flux, noise, wavelength)
     if save:
         for path in file_pair:
             hdulist = pf.open(path, 'update')
-            hdulist['FLUX_CALIBRATION'].header['MAGG'] = (
-                mag_g_header, 'g mag before scaling')
-            hdulist['FLUX_CALIBRATION'].header['MAGR'] = (
-                mag_r_header, 'r mag before scaling')
+            for band in BANDS:
+                if np.isfinite(mags[band]):
+                    mag = mags[band]
+                else:
+                    mag = -99999
+                hdulist['FLUX_CALIBRATION'].header['MAG'+band.upper()] = (
+                    mag, band+' mag before scaling')    
             hdulist.flush()
             hdulist.close()
-    return mag_g, mag_r
+    return mags
 
 def list_star_files(mngr, gzip=True, verbose=True):
     """
@@ -874,12 +881,18 @@ def measure_mags(flux, noise, wavelength):
     good = clip_spectrum(flux, noise, wavelength, limit_flux=20.0)
     flux, noise, wavelength = interpolate_arms(
         flux, noise, wavelength, good)
-    mag_g = measure_band('g', flux, wavelength)
-    mag_r = measure_band('r', flux, wavelength)
-    return (mag_g, mag_r)
+    mags = {}
+    for band in BANDS:
+        mags[band] = measure_band(band, flux, wavelength)
+    return mags
 
 def interpolate_arms(flux, noise, wavelength, good=None, n_pix_fit=300):
     """Interpolate between the red and blue arms."""
+    # This function currently assumes that:
+    #  * There are an even number of pixels, half of which come from each arm
+    #  * There is a gap in the wavelength coverage between the two arms
+    #  * There are at least 300 pixels in each arm to fit to
+    # TODO: Clean up to remove these assumptions, particularly the second one
     # Establish basic facts about which pixels we should look at
     n_pix = len(wavelength)
     if good is None:

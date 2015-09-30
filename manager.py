@@ -114,19 +114,18 @@ else:
     def ICRS(*args, **kwargs):
         return coord.SkyCoord(*args, frame='icrs', **kwargs)
 
-IDX_FILES_SLOW = {'1': 'sami580V_v1_2.idx',
-                  '2': 'sami1000R_v1_2.idx',
-                  'ccd_1': 'sami580V_v1_2.idx',
-                  'ccd_2': 'sami1000R_v1_2.idx'}
-IDX_FILES_FAST = {'1': 'sami580V.idx',
-                  '2': 'sami1000R.idx',
-                  'ccd_1': 'sami580V.idx',
-                  'ccd_2': 'sami1000R.idx'}
+IDX_FILES_SLOW = {'580V': 'sami580V_v1_2.idx',
+                  '1500V': 'sami1500V_v1_2.idx',
+                  '1000R': 'sami1000R_v1_2.idx'}
+IDX_FILES_FAST = {'580V': 'sami580V.idx',
+                  '1500V': 'sami1500V.idx',
+                  '1000R': 'sami1000R.idx'}
 IDX_FILES = {'fast': IDX_FILES_FAST,
              'slow': IDX_FILES_SLOW}
 
-GRATLPMM = {'ccd_1': 582.0,
-            'ccd_2': 1001.0}
+GRATLPMM = {'580V': 582.0,
+            '1500V': 1500.0,
+            '1000R': 1001.0}
 
 # This list is used for identifying field numbers in the pilot data.
 PILOT_FIELD_LIST = [
@@ -805,7 +804,7 @@ class Manager:
         self.set_reduced_path(fits)
         if not fits.do_not_use:
             fits.make_reduced_link()
-        fits.add_header_item('GRATLPMM', self.gratlpmm[fits.ccd])
+        fits.add_header_item('GRATLPMM', self.gratlpmm[fits.grating])
         self.file_list.append(fits)
         return
 
@@ -1403,7 +1402,7 @@ class Manager:
         # First establish the 2dfdr options for all files that need reducing
         # Would be more memory-efficient to construct a generator
         input_list = [(fits, 
-                       self.idx_files[fits.ccd],
+                       self.idx_files[fits.grating],
                        tuple(self.tdfdr_options(
                            fits, throughput_method=throughput_method,
                            tlm=tlm)),
@@ -2237,7 +2236,7 @@ class Manager:
             return False
         options = self.tdfdr_options(fits, tlm=tlm)
         # All options have been set, so run 2dfdr
-        tdfdr.run_2dfdr_single(fits, self.idx_files[fits.ccd], 
+        tdfdr.run_2dfdr_single(fits, self.idx_files[fits.grating], 
                                options=options, cwd=self.cwd)
         if (fits.ndf_class == 'MFFFF' and tlm and not leave_reduced and
             os.path.exists(fits.reduced_path)):
@@ -2440,39 +2439,6 @@ class Manager:
                 options.extend(['-'+match_class.upper()+'_FILENAME',
                                 filename_match])
         return options        
-
-    def run_2dfdr_auto(self, dirname):
-        """Run 2dfdr in auto mode in the specified directory."""
-        # First find a file in that directory to get the date and ccd
-        for fits in self.file_list:
-            if os.path.realpath(dirname) == os.path.realpath(fits.reduced_dir):
-                date_ccd = fits.filename[:6]
-                break
-        else:
-            # No known files in that directory, best not do anything
-            return
-        with self.visit_dir(dirname):
-            # Make the 2dfdr AutoScript
-            script = ['AutoScript:SetAutoUpdate ' + date_ccd,
-                      'AutoScript:InvokeButton .auto.buttons.update',
-                      'AutoScript:InvokeButton .auto.buttons.start']
-            script_filename = '2dfdr_script.tcl'
-            f_script = open(script_filename, 'w')
-            f_script.write('\n'.join(script))
-            f_script.close()
-            # Run 2dfdr
-            idx_file = self.idx_files[date_ccd[-1]]
-            command = ['drcontrol',
-                       idx_file,
-                       '-AutoScript',
-                       '-ScriptName',
-                       script_filename]
-            print 'Running 2dfdr in', dirname
-            with open(os.devnull, 'w') as f:
-                subprocess.call(command, stdout=f)
-            # Clean up
-            os.remove(script_filename)
-        return
 
     def run_2dfdr_combine(self, file_iterable, output_path):
         """Use 2dfdr to combine the specified FITS files."""
@@ -3029,17 +2995,14 @@ class Manager:
         if isinstance(fits_or_dirname, FITSFile):
             # A FITS file has been provided, so go to its directory
             dirname = fits_or_dirname.reduced_dir
-            idx_file = self.idx_files[fits_or_dirname.ccd]
+            idx_file = self.idx_files[fits_or_dirname.grating]
         else:
             # A directory name has been provided
             dirname = fits_or_dirname
-            if 'ccd_1' in dirname:
-                idx_file = self.idx_files['ccd_1']
-            elif 'ccd_2' in dirname:
-                idx_file = self.idx_files['ccd_2']
-            else:
-                # Can't work out the CCD, let the GUI sort it out
-                idx_file = None
+            # Let the GUI sort out what idx file to use
+            # TODO: Look in the directory for a suitable fits file to work out
+            # the idx file
+            idx_file = None
         tdfdr.load_gui(dirname=dirname, idx_file=idx_file, 
                        unique_imp_scratch=True, return_to=self.cwd, 
                        restore_to=self.imp_scratch, 
@@ -3285,6 +3248,7 @@ class FITSFile:
             self.field_no = None
             self.field_id = None
         self.set_ccd()
+        self.set_grating()
         self.set_exposure()
         self.set_epoch()
         self.set_lamp()
@@ -3499,6 +3463,14 @@ class FITSFile:
                 self.ccd = 'unknown_ccd'
         else:
             self.ccd = None
+        return
+
+    def set_grating(self):
+        """Set the grating name."""
+        if self.ndf_class:
+            self.grating = self.header['GRATID']
+        else:
+            self.grating = None
         return
 
     def set_exposure(self):
@@ -3927,7 +3899,7 @@ def scale_cubes_field(group):
     # unknown reasons that was corrupting the data when run on aatmacb.
     found = assign_true_mag(star_path_pair, star, catalogue=None)
     if found:
-        scale = scale_cube_pair_to_mag(star_path_pair)
+        scale = scale_cube_pair_to_mag(star_path_pair, 3)
         for object_path_pair in object_path_pair_list:
             scale_cube_pair(object_path_pair, scale)
     else:
@@ -3946,7 +3918,7 @@ def scale_frame_pair(path_pair):
     found = assign_true_mag(path_pair, star, catalogue=None,
                             hdu='FLUX_CALIBRATION')
     if found:
-        scale_cube_pair_to_mag(path_pair, hdu='FLUX_CALIBRATION')
+        scale_cube_pair_to_mag(path_pair, 1, hdu='FLUX_CALIBRATION')
     else:
         print 'No photometric data found for', star
     return
@@ -3989,15 +3961,14 @@ def assign_true_mag(path_pair, name, catalogue=None, hdu=0):
     """Find the magnitudes in a catalogue and save them to the header."""
     if catalogue is None:
         catalogue = read_stellar_mags()
-    if name in catalogue:
-        mag_g = catalogue[name]['g']
-        mag_r = catalogue[name]['r']
-    else:
+    if name not in catalogue:
         return False
+    line = catalogue[name]
     for path in path_pair:
         hdulist = pf.open(path, 'update')
-        hdulist[hdu].header['CATMAGG'] = (mag_g, 'g mag from catalogue')
-        hdulist[hdu].header['CATMAGR'] = (mag_r, 'r mag from catalogue')
+        for band in 'ugriz':
+            hdulist[hdu].header['CATMAG'+band.upper()] = (
+                line[band], band+' mag from catalogue')
         hdulist.flush()
         hdulist.close()
     return True
