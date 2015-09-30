@@ -128,6 +128,9 @@ from ..config import *
 # WCS code
 from . import wcs
 
+# Function for reading a filter response
+from ..qc.fluxcal import read_filter, get_coords
+
 import code
 
 # Some global constants:
@@ -1247,12 +1250,12 @@ def create_covar_matrix(overlap_array,variances):
     
     return covariance_array
     
-def scale_cube_pair(file_pair, scale, hdu='PRIMARY'):
+def scale_cube_pair(file_pair, scale, **kwargs):
     """Scale both blue and red cubes by a given value."""
     for path in file_pair:
-        scale_cube(path, scale, hdu=hdu)
+        scale_cube(path, scale, **kwargs)
 
-def scale_cube(path, scale, hdu='PRIMARY'):
+def scale_cube(path, scale, hdu='PRIMARY', band=None):
     """Scale a single cube by a given value."""
     hdulist = pf.open(path, 'update')
     try:
@@ -1262,20 +1265,53 @@ def scale_cube(path, scale, hdu='PRIMARY'):
     hdulist['PRIMARY'].data *= (scale / old_scale)
     hdulist['VARIANCE'].data *= (scale / old_scale)**2
     hdulist[hdu].header['RESCALE'] = (scale, 'Scaling applied to data')
+    if band is not None:
+        hdulist[hdu].header['SCALEBND'] = (band, 'Band used to scale data')
     hdulist.flush()
     hdulist.close()
 
-def scale_cube_pair_to_mag(file_pair, hdu='PRIMARY'):
-    """Scale both cubes according to their pre-measured g-band mags."""
+def scale_cube_pair_to_mag(file_pair, axis, hdu='PRIMARY', band=None):
+    """
+    Scale both cubes according to their pre-measured magnitude.
+
+    If no band is supplied, it will try to choose the best one based on
+    wavelength coverage.
+    """
     header = pf.getheader(file_pair[0], hdu)
-    measured_mag = header['MAGG']
-    catalogue_mag = header['CATMAGG']
+    if band is None:
+        overlap = 0.0
+        # Loop in decreasing order of preference, as a tie-breaker
+        for band_new in 'griuz':
+            key = 'MAG' + band_new.upper()
+            if key not in header or header[key] == -99999:
+                # No magnitude available for this band
+                continue
+            overlap_new = wavelength_overlap(file_pair, band_new, axis)
+            if overlap_new > overlap:
+                # Better coverage than previous best
+                band = band_new
+    key = 'MAG' + band.upper()
+    measured_mag = header[key]
+    catalogue_mag = header['CAT' + key]
     scale = 10.0 ** ((measured_mag - catalogue_mag) / 2.5)
     if measured_mag == -99999:
         # No valid magnitude found
         scale = 1.0
-    scale_cube_pair(file_pair, scale, hdu=hdu)
+    scale_cube_pair(file_pair, scale, hdu=hdu, band=band)
     return scale
+
+def wavelength_overlap(file_pair, band, axis):
+    """Return the weighted fraction of the band that is covered by the data."""
+    overlap = 0.0
+    response, wavelength_band = read_filter(band)
+    response /= np.sum(response)
+    coverage = np.zeros_like(response)
+    for path in file_pair:
+        wavelength_data = get_coords(pf.getheader(path), axis)
+        coverage[(wavelength_band >= wavelength_data[0]) &
+                 (wavelength_band <= wavelength_data[-1])] = 1.0
+    overlap = np.sum(response * coverage)
+    return overlap
 
 def create_qc_hdu(file_list, name):
     """Create and return an HDU of QC information."""
