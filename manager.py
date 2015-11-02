@@ -1357,6 +1357,8 @@ class Manager:
             # Switch to sky line throughputs if the sky residuals are bad
             fits_list = self.files_with_bad_dome_throughput(
                 reduced_files, sky_residual_limit=sky_residual_limit)
+            # Only keep them if they actually have a sky line to use
+            fits_list = [fits for fits in fits_list if fits.has_sky_lines()]
             self.reduce_file_iterable(
                 fits_list, throughput_method='skylines',
                 overwrite=True)
@@ -2295,7 +2297,8 @@ class Manager:
                 options.extend(['-THPUT_FILENAME',
                                 'thput_'+fits.reduced_filename])
             elif throughput_method == 'skylines':
-                if fits.exposure >= self.min_exposure_for_throughput:
+                if (fits.exposure >= self.min_exposure_for_throughput and 
+                        fits.has_sky_lines()):
                     files_to_match = ['bias', 'dark', 'lflat', 'tlmap', 'wavel',
                                       'fflat']
                     options.extend(['-TPMETH', 'SKYFLUX(MED)'])
@@ -2346,7 +2349,8 @@ class Manager:
                     # Try to find a fake MFSKY made from a dome flat
                     filename_match = self.match_link(fits, 'thput_fflat')
                     if filename_match is None:
-                        if fits.exposure < self.min_exposure_for_throughput:
+                        if (fits.exposure < self.min_exposure_for_throughput or
+                                not fits.has_sky_lines()):
                             # Try to find a suitable object frame instead
                             filename_match = self.match_link(
                                 fits, 'thput_object')
