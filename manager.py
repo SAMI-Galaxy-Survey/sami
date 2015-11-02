@@ -1384,9 +1384,13 @@ class Manager:
                 file_iterable_sky_lines.append(fits)
             else:
                 file_iterable_default.append(fits)
+        # Although 'skylines' is requested, these will be throughput calibrated
+        # by matching to long exposures, because they will be recognised as
+        # short
         reduced_files.extend(self.reduce_file_iterable(
             file_iterable_sky_lines, overwrite=overwrite,
             throughput_method='skylines'))
+        # These will be throughput calibrated using dome flats
         reduced_files.extend(self.reduce_file_iterable(
             file_iterable_default, overwrite=overwrite))
         # Mark these files as not checked
@@ -3704,6 +3708,30 @@ class FITSFile:
         hdulist_write.close()
         self.ndf_class = new_ndf_class
         return
+
+    def has_sky_lines(self):
+        """Return True if there are sky lines in the wavelength range."""
+        # Coverage taken from http://ftp.aao.gov.au/2df/aaomega/aaomega_gratings.html
+        coverage_dict = {
+            '1500V': 750,
+            '580V': 2100,
+            '1000R': 1100,
+        }
+        coverage = coverage_dict[self.grating]
+        wavelength_range = (
+            self.header['LAMBDCR'] - 0.5*coverage,
+            self.header['LAMBDCR'] + 0.5*coverage
+        )
+        # Highly incomplete list! May give incorrect results for high-res
+        # red gratings
+        useful_lines = (5577.338, 6300.309, 6553.626, 6949.066, 7401.862,
+            7889.680, 8382.402, 8867.605, 9337.874, 9799.827, 9972.357)
+        for line in useful_lines:
+            if wavelength_range[0] < line < wavelength_range[1]:
+                # This sky line is within the observed wavelength range
+                return True
+        # No sky lines were within the observed wavelength range
+        return False
 
 
 def safe_for_multiprocessing(function):
