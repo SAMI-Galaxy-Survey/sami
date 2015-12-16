@@ -1,4 +1,15 @@
 #!/usr/bin/env python
+"""
+Functions for updating the CSV files that define which probes are allocated
+to which objects. It can be run from the command line directly, but the
+current instructions for observers tell them to use it from within python.
+Dependencies were kept to a minimum so that it could be run on old systems
+at the AAT, but in practice this hasn't made any difference.
+
+The definitions of the frames are kept separately, so that the sami package
+can be imported on systems that don't have Tkinter installed without error.
+Of course, this module cannot be used without Tkinter.
+"""
 
 # THIS CODE NEEDS TO BE BACKWARDS COMPATIBLE WITH PYTHON 2.4 IN ORDER
 # TO RUN AT THE AAT. DO NOT USE with open(foo) as f.

@@ -1,3 +1,14 @@
+"""
+Functions for defining the effect of Milky Way dust on SAMI observations.
+
+For a variety of published maps (currently 2) this module will download the
+maps and use them to measure the E(B-V) value at the position of a SAMI
+observation. Then for different parameterisations of the dust attenuation
+law it will calculate the transmission curve for the observation. The
+results are saved in the FITS file, but no correction is made to the data
+itself.
+"""
+
 import os
 import numpy as np
 from math import pi, sqrt, sin, cos

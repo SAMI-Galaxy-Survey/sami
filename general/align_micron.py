@@ -1,21 +1,13 @@
-from .. import utils
-from ..observing import centroid
-from ..utils.mc_adr import DARCorrector
-
-
-import string
-import numpy as np
-import os
-import matplotlib.pyplot as plt
-from matplotlib import cm
-import astropy.io.fits as pf
-from scipy.optimize import leastsq
-
-
 """
 This file contains some functions used for recovering the dither pattern of a set of SAMI observations. 
 These revolve around finding the centroid for each source in each IFU and then computing the best cordinate 
 transformation to bring each RSS frame on the coordinate system of a reference one. 
+
+Frankly, the code is a mess. The original implementation used IRAF (via
+pyraf) to do the fitting, so all the data went via ASCII files. Later, the
+functionality was replicated without using IRAF, and this is now the
+default, but for reasons of technical debt the system of ASCII files was
+retained.
 
 1) find_dither(RSSname,reference,centroid=True,inter=False,plot=False,remove_files=True,do_dar_correct=True,max_shift=350.0)
 
@@ -100,6 +92,20 @@ You should not touch this one, as it is called automatically, in case needed.
 
 
 """
+
+from .. import utils
+from ..observing import centroid
+from ..utils.mc_adr import DARCorrector
+
+
+import string
+import numpy as np
+import os
+import matplotlib.pyplot as plt
+from matplotlib import cm
+import astropy.io.fits as pf
+from scipy.optimize import leastsq
+
 
 HG_CHANGESET = utils.hg_changeset(__file__)
 
