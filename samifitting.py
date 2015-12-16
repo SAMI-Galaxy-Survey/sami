@@ -1,7 +1,3 @@
-from scipy.optimize import leastsq
-import scipy as sp
-import numpy as np
-
 """
 This file contains various fitting functions for general use with SAMI codes.
 
@@ -47,7 +43,18 @@ my_fitter(x, y)
 
 would return the best-fit model values at the coordinates (x, y).
 
+TODO: Make a BaseFitter class containing the basic functionality that other
+classes can inherit from.
+
+TODO: Implement limits in a better way, i.e. use a minimisation function
+that incorporates limits rather than the "return 1e99" method used below.
+
+TODO: Rename this module to fitting, rather than samifitting.
 """
+
+from scipy.optimize import leastsq
+import scipy as sp
+import numpy as np
 
 class FittingException(Exception):
     """Could I make this do something useful?"""
@@ -92,6 +99,10 @@ class GaussFitter:
         if p[2] < 0. or p[0] < 0.:
             # if we get a negative sigma value then penalise massively because
             # that is silly.
+            # This method isn't great, as it can make leastsq confused about
+            # the convergence criteria. Would be better to use something like
+            # scipy.optimize.minimize that properly incorporates limits. Same
+            # goes for the other classes in this module.
             return 1e99
         else:
             return weights*(self.fitfunc(p, x) - y)

@@ -1,4 +1,17 @@
-"""Functions for modifying fibre coordinates in SAMI FITS files."""
+"""
+Functions for modifying fibre coordinates in SAMI FITS files. These were
+necessary to correct the files produced during the March 2013 run (the first
+with the upgraded SAMI instrument), which had two problems:
+
+    * The probes were numbered in the wrong order (1-13 instead of 13-1)
+    * The position angles were calculated 180deg out
+
+The top-level function correct_coordinates checks which of these issues
+affects a given file, and makes the necessary corrections.
+
+These functions will presumably never be needed again, but should be kept
+for reference.
+"""
 
 import astropy.io.fits as pf
 import numpy as np

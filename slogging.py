@@ -25,6 +25,9 @@ slogging.
 Created on Apr 30, 2014
 
 @author: agreen
+
+This module does not seem to be used anywhere. I don't know if anyone has
+been using it interactively. (JTA)
 '''
 
 # Set up logging

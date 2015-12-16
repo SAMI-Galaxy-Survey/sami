@@ -1,4 +1,15 @@
-"""Code for correcting for telluric absorption in SAMI data."""
+"""
+Code for correcting for telluric absorption in SAMI data.
+
+Most of the heavy lifting is done by the fluxcal2 module, which fits the
+data to find the spectrum of the standard star. derive_transfer_function()
+fits a straight line to the data (under the assumption that that is a
+decent description of the stellar spectrum) and infers the telluric
+absorption from that. By default the secondary standard, in the galaxy
+field, is used. As an alternative the primary (spectrophotometric)
+standard can be used - this is useful for the pilot data where the
+secondary standards were too faint to be much use.
+"""
 
 from .fluxcal2 import read_chunked_data, set_fixed_parameters, fit_model_flux
 from .fluxcal2 import insert_fixed_parameters, check_psf_parameters
