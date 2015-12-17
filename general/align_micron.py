@@ -9,6 +9,36 @@ functionality was replicated without using IRAF, and this is now the
 default, but for reasons of technical debt the system of ASCII files was
 retained.
 
+The alignment works by measuring the position of each galaxy in each
+observation. The positions are then compared between the first frame and
+each subsequent frame, in turn. The difference between two frames is
+modelled as an x/y shift and a radial stretch; the offsets from this model
+are then saved to the FITS file.
+
+Advantages:
+
+* Bad fits to individual galaxy positions are rejected during the model
+  fitting, so the procedure is pretty robust.
+* The overall accuracy is generally very good - see Allen et al (2015) for
+  quality assessment.
+
+Disadvantages:
+
+* The shift+stretch model used is not strictly correct; a stretch in the
+  zenith direction would be better than a radial stretch. This can cause
+  occasional inaccuracies, particularly if one galaxy is a long way from
+  the others in a field.
+* The pairwise comparison between frames does not use all the available
+  information. Additionally, if a galaxy has a poor fit in the first
+  frame, that galaxy will never contribute to the model. A better method
+  would use all frames simultaneously.
+* If an IFU includes a second object (e.g. a foreground star) it can throw
+  off the fit. This normally isn't a problem for the alignment step itself
+  but because the same fits are used to decide where the centre of the
+  datacube should be, it can leave the star in the middle of the cube and
+  the galaxy off to the side. It would be useful to allow the user to
+  override the positioning in some way.
+
 1) find_dither(RSSname,reference,centroid=True,inter=False,plot=False,remove_files=True,do_dar_correct=True,max_shift=350.0)
 
 ---"RSSname" should be a list containing the names of the RSS fits files to be aligned 
