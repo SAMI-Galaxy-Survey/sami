@@ -30,8 +30,8 @@ The Manager also keeps lists of the different dark frame exposure lengths (as
 both string and float), as well as a list of directories that have been
 recently reduced, and hence should be visually checked.
 
-2dfdr is controlled via the tdfdr module. Almost data reduction steps are run
-in parallel, creating a Pool as it is needed.
+2dfdr is controlled via the tdfdr module. Almost all data reduction steps are
+run in parallel, creating a Pool as it is needed.
 
 As individual files are reduced, entries are added to the checklist of
 directories to visually inspect. There are some functions for loading up 2dfdr
