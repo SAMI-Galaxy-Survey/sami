@@ -1,3 +1,15 @@
+"""
+Functions for measuring and recording WCS information.
+
+In particular, wcs_position_coords is supposed to determine the WCS for
+a file based on cross-correlating a collapsed image from the datacube with
+an external photometric image. However, this was never shown to work
+properly (the results were clustering around particular values, for
+unknown reasons), so it was put to one side and never finished. Instead,
+the SAMI Galaxy Survey has been using the 'nominal' WCS, which assumes
+that the catalogued object is in the centre of the data.
+"""
+
 import numpy as np
 import scipy as sp
 import astropy.io.ascii as ascii
