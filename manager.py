@@ -1077,13 +1077,21 @@ class Manager:
             os.rmdir(self.tmp_dir)
         return
 
-    def fits_file(self, filename):
+    def fits_file(self, filename, include_linked_managers=False):
         """Return the FITSFile object that corresponds to the given filename."""
         filename_options = [filename, filename+'.fit', filename+'.fits',
                             filename+'.FIT', filename+'.FITS']
-        for fits in self.file_list:
+        if include_linked_managers:
+            # Include files from linked managers too
+            file_list = itertools.chain(
+                self.file_list,
+                *[mngr.file_list for mngr in self.linked_managers])
+        else:
+            file_list = self.file_list
+        for fits in file_list:
             if fits.filename in filename_options:
                 return fits
+        return None
 
     def check_reduced_dir_contents(self, reduced_dir):
         """Return True if any FITSFile objects point to reduced_dir."""
@@ -1782,7 +1790,8 @@ class Manager:
             include_linked_managers=True, **kwargs)
         complete_groups = []
         for key, fits_list in groups.items():
-            fits_list_other_arm = [self.other_arm(fits) for fits in fits_list]
+            fits_list_other_arm = [self.other_arm(fits, include_linked_managers=True)
+                                   for fits in fits_list]
             if overwrite:
                 complete_groups.append(
                     (key, fits_list, copy_to_other_arm, fits_list_other_arm))
@@ -1847,7 +1856,10 @@ class Manager:
         # Mark cubes as not checked. Only mark the first file in each input set
         for inputs, cubed in zip(inputs_list, cubed_list):
             if cubed:
-                fits = self.fits_file(os.path.basename(inputs[2][0])[:10])
+                # Select the first fits file from this run (not linked runs)
+                for path in inputs[2]:
+                    if self.fits_file(os.path.basename(path)):
+                        break
                 self.update_checks('CUB', [fits], False)
         return
 
@@ -1861,7 +1873,8 @@ class Manager:
             # either both are used or neither.
             transmission = np.inf
             seeing = 0.0
-            fits_pair = (fits, self.other_arm(fits))
+            fits_pair = (
+                fits, self.other_arm(fits, include_linked_managers=True))
             for fits_test in fits_pair:
                 try:
                     transmission = np.minimum(
@@ -2568,7 +2581,7 @@ class Manager:
                 yield fits
         return
 
-    def group_files_by(self, keys, **kwargs):
+    def group_files_by(self, keys, require_this_manager=True, **kwargs):
         """Return a dictionary of FITSFile objects grouped by the keys."""
         if isinstance(keys, str):
             keys = [keys]
@@ -2579,6 +2592,16 @@ class Manager:
                 combined_key.append(getattr(fits, key))
             combined_key = tuple(combined_key)
             groups[combined_key].append(fits)
+        if require_this_manager:
+            # Check that at least one of the files from each group has come
+            # from this manager
+            for combined_key, fits_list in groups.items():
+                for fits in fits_list:
+                    if fits in self.file_list:
+                        break
+                else:
+                    # None of the files are from this manager
+                    del groups[combined_key]
         return groups
 
     def ccds(self, do_not_use=False):
@@ -2654,7 +2677,7 @@ class Manager:
                        self.lflat_combined_path(ccd))
         return
 
-    def other_arm(self, fits):
+    def other_arm(self, fits, include_linked_managers=False):
         """Return the FITSFile from the other arm of the spectrograph."""
         if fits.ccd == 'ccd_1':
             other_number = '2'
@@ -2663,7 +2686,8 @@ class Manager:
         else:
             raise ValueError('Unrecognised CCD: ' + fits.ccd)
         other_filename = fits.filename[:5] + other_number + fits.filename[6:]
-        other_fits = self.fits_file(other_filename)
+        other_fits = self.fits_file(
+            other_filename, include_linked_managers=include_linked_managers)
         return other_fits
         
     def cubed_path(self, name, arm, fits_list, field_id, gzipped=False,
