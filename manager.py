@@ -823,7 +823,11 @@ class Manager:
         self.set_reduced_path(fits)
         if not fits.do_not_use:
             fits.make_reduced_link()
-        fits.add_header_item('GRATLPMM', self.gratlpmm[fits.grating])
+        if fits.grating in self.gratlpmm:
+            fits.add_header_item('GRATLPMM', self.gratlpmm[fits.grating])
+        if fits.grating not in self.idx_files:
+            # Without an idx file we would have no way to reduce this file
+            self.disable_files([fits])
         self.file_list.append(fits)
         return
 
