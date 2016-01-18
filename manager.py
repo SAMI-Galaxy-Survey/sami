@@ -675,8 +675,8 @@ class Manager:
     To combine the data, first create a manager for each run (you may
     already have done this):
 
-    >>> mngr = sami.manager.Manager('')
-    >>> mngr_old = sami.manager.Manager('')
+    >>> mngr = sami.manager.Manager('2014_04_24-2014_05_04')
+    >>> mngr_old = sami.manager.Manager('2014_05_23-2014_06_01')
 
     Then create the link:
 
