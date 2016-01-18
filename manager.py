@@ -61,6 +61,7 @@ from getpass import getpass
 from time import sleep
 from glob import glob
 from pydoc import pager
+import itertools
 
 import astropy.coordinates as coord
 from astropy import units
@@ -663,6 +664,36 @@ class Manager:
 
     >>> mngr.remove_directory_locks()
 
+    Including data from other runs
+    ==============================
+
+    If a field has been observed over more than one run, the manager will
+    need to be made aware of the pre-existing data to make combined
+    datacubes. Note that this is only necessary for the final data
+    reduction, so observers do not need to worry about this.
+
+    To combine the data, first create a manager for each run (you may
+    already have done this):
+
+    >>> mngr = sami.manager.Manager('')
+    >>> mngr_old = sami.manager.Manager('')
+
+    Then create the link:
+
+    >>> mngr.link_manager(mngr_old)
+
+    Now `mngr` will include files from `mngr_old` when necessary, i.e. for
+    these steps:
+
+    >>> mngr.measure_offsets()
+    >>> mngr.cube()
+    >>> mngr.scale_cubes()
+    >>> mngr.bin_cubes()
+
+    For all previous steps the two managers still act independently, so
+    you need to follow through up to scale_frames() for each manager
+    individually.
+
     Other functions
     ===============
 
@@ -692,6 +723,7 @@ class Manager:
         self.extra_list = []
         self.dark_exposure_str_list = []
         self.dark_exposure_list = []
+        self.linked_managers = []
         self.cwd = os.getcwd()
         if 'IMP_SCRATCH' in os.environ:
             self.imp_scratch = os.environ['IMP_SCRATCH']
@@ -1079,6 +1111,22 @@ class Manager:
             if isinstance(fits, str):
                 fits = self.fits_file(fits)
             fits.update_do_not_use(False)
+        return
+
+    def link_manager(self, manager):
+        """Include data from specified manager when cubing."""
+        if manager not in self.linked_managers:
+            self.linked_managers.append(manager)
+        else:
+            print 'Already including that manager!'
+        return
+
+    def unlink_manager(self, manager):
+        """Remove specified manager from list to include when cubing."""
+        if manager in self.linked_managers:
+            self.linked_managers.remove(manager)
+        else:
+            print 'Manager not in linked list!'
         return
 
     def bias_combined_filename(self):
@@ -1727,7 +1775,7 @@ class Manager:
         groups = self.group_files_by(
             'field_id', ndf_class='MFOBJECT', do_not_use=False,
             reduced=True, min_exposure=min_exposure, name=name, ccd=ccd_measure,
-            **kwargs)
+            include_linked_managers=True, **kwargs)
         complete_groups = []
         for key, fits_list in groups.items():
             fits_list_other_arm = [self.other_arm(fits) for fits in fits_list]
@@ -1759,7 +1807,7 @@ class Manager:
         """Make datacubes from the given RSS files."""
         groups = self.group_files_by(
             ['field_id', 'ccd'], ndf_class='MFOBJECT', do_not_use=False,
-            reduced=True, name=name, **kwargs)
+            reduced=True, name=name, include_linked_managers=True, **kwargs)
         # Add in the root path as well, so that cubing puts things in the 
         # right place
         cubed_root = os.path.join(self.root, 'cubed')
@@ -1837,7 +1885,7 @@ class Manager:
         """Scale datacubes based on the stellar g magnitudes."""
         groups = self.group_files_by(
             'field_id', ccd='ccd_1', ndf_class='MFOBJECT', do_not_use=False,
-            reduced=True, name=name, **kwargs)
+            reduced=True, name=name, include_linked_managers=True, **kwargs)
         input_list = []
         for (field_id, ), fits_list in groups.items():
             table = pf.getdata(fits_list[0].reduced_path, 'FIBRES_IFU')
@@ -1888,7 +1936,7 @@ class Manager:
         path_pair_list = []
         groups = self.group_files_by(
             'field_id', ccd='ccd_1', ndf_class='MFOBJECT', do_not_use=False,
-            reduced=True, name=name, **kwargs)
+            reduced=True, name=name, include_linked_managers=True, **kwargs)
         for (field_id, ), fits_list in groups.items():
             table = pf.getdata(fits_list[0].reduced_path, 'FIBRES_IFU')
             objects = table['NAME'][table['TYPE'] == 'P']
@@ -2452,57 +2500,67 @@ class Manager:
               reduced_dir=None, reduced=None, copy_reduced=None,
               tlm_created=None, flux_calibrated=None, telluric_corrected=None,
               spectrophotometric=None, name=None, lamp=None,
-              central_wavelength=None):
+              central_wavelength=None, include_linked_managers=False):
         """Generator for FITS files that satisfy requirements."""
-        for fits in self.file_list:
+        if include_linked_managers:
+            # Include files from linked managers too
+            file_list = itertools.chain(
+                self.file_list,
+                *[mngr.file_list for mngr in self.linked_managers])
+        else:
+            file_list = self.file_list
+        for fits in file_list:
             if fits.ndf_class is None:
                 continue
             if ((ndf_class is None or fits.ndf_class in ndf_class) and
-                (date is None or fits.date in date) and
-                (plate_id is None or fits.plate_id in plate_id) and
-                (plate_id_short is None or
-                 fits.plate_id_short in plate_id_short) and
-                (field_no is None or fits.field_no == field_no) and
-                (field_id is None or fits.field_id in field_id) and
-                (ccd is None or fits.ccd in ccd) and
-                (exposure_str is None or fits.exposure_str in exposure_str) and
-                (do_not_use is None or fits.do_not_use == do_not_use) and
-                (min_exposure is None or fits.exposure >= min_exposure) and
-                (max_exposure is None or fits.exposure <= max_exposure) and
-                (reduced_dir is None or
-                 os.path.realpath(reduced_dir) ==
-                 os.path.realpath(fits.reduced_dir)) and
-                (reduced is None or
-                 (reduced and os.path.exists(fits.reduced_path)) or
-                 (not reduced and not os.path.exists(fits.reduced_path))) and
-                (copy_reduced is None or
-                 (copy_reduced and os.path.exists(
-                    self.copy_path(fits.reduced_path))) or
-                 (not copy_reduced and not os.path.exists(
-                    self.copy_path(fits.reduced_path)))) and
-                (tlm_created is None or
-                 (tlm_created and hasattr(fits, 'tlm_path') and
-                  os.path.exists(fits.tlm_path)) or
-                 (not tlm_created and hasattr(fits, 'tlm_path') and
-                  not os.path.exists(fits.tlm_path))) and
-                (flux_calibrated is None or
-                 (flux_calibrated and hasattr(fits, 'fluxcal_path') and
-                  os.path.exists(fits.fluxcal_path)) or
-                 (not flux_calibrated and hasattr(fits, 'fluxcal_path') and
-                  not os.path.exists(fits.fluxcal_path))) and
-                (telluric_corrected is None or
-                 (telluric_corrected and hasattr(fits, 'telluric_path') and
-                  os.path.exists(fits.telluric_path)) or
-                 (not telluric_corrected and hasattr(fits, 'telluric_path') and
-                  not os.path.exists(fits.telluric_path))) and
-                (spectrophotometric is None or
-                 (hasattr(fits, 'spectrophotometric') and
-                  (fits.spectrophotometric == spectrophotometric))) and
-                (name is None or 
-                 (fits.name is not None and fits.name in name)) and
-                (lamp is None or fits.lamp == lamp) and
-                (central_wavelength is None or 
-                 fits.central_wavelength == central_wavelength)):
+                    (date is None or fits.date in date) and
+                    (plate_id is None or fits.plate_id in plate_id) and
+                    (plate_id_short is None or
+                     fits.plate_id_short in plate_id_short) and
+                    (field_no is None or fits.field_no == field_no) and
+                    (field_id is None or fits.field_id in field_id) and
+                    (ccd is None or fits.ccd in ccd) and
+                    (exposure_str is None or
+                     fits.exposure_str in exposure_str) and
+                    (do_not_use is None or fits.do_not_use == do_not_use) and
+                    (min_exposure is None or fits.exposure >= min_exposure) and
+                    (max_exposure is None or fits.exposure <= max_exposure) and
+                    (reduced_dir is None or
+                     os.path.realpath(reduced_dir) ==
+                     os.path.realpath(fits.reduced_dir)) and
+                    (reduced is None or
+                     (reduced and os.path.exists(fits.reduced_path)) or
+                     (not reduced and
+                      not os.path.exists(fits.reduced_path))) and
+                    (copy_reduced is None or
+                     (copy_reduced and os.path.exists(
+                         self.copy_path(fits.reduced_path))) or
+                     (not copy_reduced and not os.path.exists(
+                         self.copy_path(fits.reduced_path)))) and
+                    (tlm_created is None or
+                     (tlm_created and hasattr(fits, 'tlm_path') and
+                      os.path.exists(fits.tlm_path)) or
+                     (not tlm_created and hasattr(fits, 'tlm_path') and
+                      not os.path.exists(fits.tlm_path))) and
+                    (flux_calibrated is None or
+                     (flux_calibrated and hasattr(fits, 'fluxcal_path') and
+                      os.path.exists(fits.fluxcal_path)) or
+                     (not flux_calibrated and hasattr(fits, 'fluxcal_path') and
+                      not os.path.exists(fits.fluxcal_path))) and
+                    (telluric_corrected is None or
+                     (telluric_corrected and hasattr(fits, 'telluric_path') and
+                      os.path.exists(fits.telluric_path)) or
+                     (not telluric_corrected and
+                      hasattr(fits, 'telluric_path') and
+                      not os.path.exists(fits.telluric_path))) and
+                    (spectrophotometric is None or
+                     (hasattr(fits, 'spectrophotometric') and
+                      (fits.spectrophotometric == spectrophotometric))) and
+                    (name is None or 
+                     (fits.name is not None and fits.name in name)) and
+                    (lamp is None or fits.lamp == lamp) and
+                    (central_wavelength is None or 
+                     fits.central_wavelength == central_wavelength)):
                 yield fits
         return
 
