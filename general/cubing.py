@@ -1048,13 +1048,18 @@ def create_primary_header(ifu_list,name,files,WCS_pos,WCS_flag):
     wcs_new.wcs.cdelt = np.array([WCS_pos["CDELT1"], WCS_pos["CDELT2"], hdr['CDELT1']])
     wcs_new.wcs.crval = [WCS_pos["CRVAL1"], WCS_pos["CRVAL2"], hdr['CRVAL1']]
     wcs_new.wcs.ctype = [WCS_pos["CTYPE1"], WCS_pos["CTYPE2"], "AWAV"]
-    wcs_new.wcs.cunit = [WCS_pos["CUNIT1"], WCS_pos["CUNIT2"], "Angstrom"]
     wcs_new.wcs.equinox = 2000
     wcs_new.wcs.radesys = 'FK5'
             
     # Create a header
-    hdr_new=wcs_new.to_header()
+    hdr_new=wcs_new.to_header(relax=True)
     hdr_new.update('WCS_SRC',WCS_flag,'WCS Source')
+
+    # Putting in the units by hand, because otherwise astropy converts
+    # 'Angstrom' to 'm'. Note 2dfdr uses 'Angstroms', which is non-standard.
+    hdr_new['CUNIT1'] = WCS_pos['CUNIT1']
+    hdr_new['CUNIT2'] = WCS_pos['CUNIT2']
+    hdr_new['CUNIT3'] = 'Angstrom'
             
     # Add the name to the header
     hdr_new.update('NAME', name, 'Object ID')
