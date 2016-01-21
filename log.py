@@ -2,6 +2,8 @@
 Created on Nov 12, 2013
 
 @author: agreen
+
+This functionality is not currently used anywhere.
 '''
 import logging
 

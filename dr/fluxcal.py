@@ -1,14 +1,9 @@
 #! /usr/bin/env python
 
-version = 2.0
-date = '3 June, 2013'
-day = ''
-
 """Flux calibration package for SAMI data.
 
-Requires pyfits, astropy
-
-Version %s beta -- %s; %s
+This is the original module for flux calibration, that was abandoned when
+fluxcal2 was developed. No longer in use.
 
 Developed by Edward Taylor, James Allen, Matt Owers, and Scott Croom.
 Maintained (for now) by Edward Taylor - <ent@ph.unimelb.edu.au>
@@ -21,7 +16,11 @@ To do list:
 * devise a good smoothing strategy for the secondary scaling factor
 * header management (standard names and QC params; DAR coefficients, etc.)
 
-""" % (version, date, day)
+"""
+
+version = 2.0
+date = '3 June, 2013'
+day = ''
 
 import numpy as np
 np.seterr(invalid='ignore')

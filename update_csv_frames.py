@@ -1,4 +1,8 @@
-"""Definitions of frames for update_csv. Kept separate to isolate Tkinter."""
+"""
+Definitions of frames for update_csv. Kept separate to isolate Tkinter.
+There is some overlap of business logic and GUI code that could probably
+be cleaned up.
+"""
 
 import Tkinter
 import tkMessageBox
