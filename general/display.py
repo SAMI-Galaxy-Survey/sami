@@ -1,3 +1,10 @@
+"""
+This module contains many useful plotting functions, mostly for observers.
+
+Each plotting function is described in its docstring. This module has quite
+a lot of fudges and magic numbers that work fine for the SAMI Galaxy Survey
+but may not always work for other data sets.
+"""
 import pylab as py
 import numpy as np
 import scipy as sp
@@ -15,12 +22,13 @@ from matplotlib.collections import PatchCollection
 
 from .. import utils # Module containing utilities functions for SAMI
 
-"""
-This script contains the display functions for SAMI data.
-
-"""
 def display(infile, ifus='all', log=True):
-    """Plot broad band images of each of the ifus asked for, from infile"""
+    """Plot broad band images of each of the ifus asked for, from infile.
+
+    infile is the path to a reduced FITS file.
+    ifus is a list of probe numbers, or the string 'all'.
+    log determines whether the images are plotted on a log scale.
+    """
    
     # Define the list of IFUs to display
     if ifus=='all':
@@ -124,7 +132,12 @@ def display(infile, ifus='all', log=True):
     py.suptitle(infile)
 
 def display_list(inlist, ifu, log=True):
-    """For each file in inlist, plot a collapsed broad band image of the hexabundle"""
+    """Plot collapsed broad band images for one probe across several files.
+
+    inlist is the path to an ASCII file that contains a list of paths to
+        reduced FITS files (one per line).
+    ifu is an integer determining the probe number to plot.
+    """
 
     files=[]
 
@@ -221,11 +234,17 @@ def display_list(inlist, ifu, log=True):
     fig.suptitle(title_string)
 
 def summed_spectrum(infile, ifu, overplot=False):
-    """Sums all spectra in an RSS file and plots the summed spectrum against wavelength"""
+    """Sums all spectra in a probe and plots the summed spectrum.
 
-    # Only close windows if overplot tag is False (note, strings not Booleans)
+    infile is the path to a reduced FITS file.
+    ifu is an integer determining the probe number to plot.
+    if overplot is False a new figure is made (and existing ones closed!).
+    """
+
+    # Only close windows if overplot tag is False
     if overplot==False:
         # Close any active figure windows
+        # Shouldn't we just open a new figure instead?
         py.close('all')
 
     if overplot==True:
@@ -249,6 +268,10 @@ def summed_spectrum(infile, ifu, overplot=False):
 
 
 def field(infile, ifus='all', log=True):
+    """Plots images of galaxies in their positions in the field.
+
+    Inputs are as for display()
+    """
 
     # Define the list of IFUs to display
     if ifus=='all':
@@ -347,7 +370,7 @@ def raw(flat_file, object_file, IFU="unknown", sigma_clip=False, log=True, pix_w
     #
     #   Function Example:
     #
-    #       quicklook.display("02sep20045.fits","02sep20053.fits",Probe_to_fit=2,
+    #       sami.display.raw("02sep20045.fits","02sep20053.fits",Probe_to_fit=2,
     #                   sigma_clip=True)
     #
     #   Input Parameters:

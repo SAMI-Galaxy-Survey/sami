@@ -1,6 +1,32 @@
 """
-This module covers functions required to create cubes from a dithered set of RSS
-frames.
+This module covers functions required to create cubes from a dithered set
+of RSS frames. See Sharp et al (2015) for a detailed description of the
+cubing algorithm.
+
+The hard work is done by dithered_cube_from_rss which takes a list of IFU
+objects as input and returns a datacube, variance and other information.
+Various levels of wrappers give other ways of accessing this function -
+the manager uses dithered_cube_from_rss_wrapper.
+
+A few things to be aware of:
+
+* Alignment should be done before calling the cubing. If it hasn't, the
+  cubing will fall back to measuring the offsets itself, but this is much
+  worse than the proper alignment code.
+* By default, the absolute astrometry is measured by comparison to SDSS
+  images. However, this doesn't work properly, so until someone fixes it
+  you should always ask for nominal astrometry by setting nominal=True.
+* The covariance information would be too large to store at every
+  wavelength slice, so is currently only stored when the drizzle data is
+  updated. James Allen is currently (Dec 2015) looking into alternative
+  storage strategies to allow the drizzle information to be updated at
+  every slice.
+* Ned Taylor is currently (Dec 2015) investigating alternative cubing
+  methods that may replace some of all of this code.
+
+This module is in need of refactoring to break up some very long
+functions.
+
 
 The most likely command a user will want to run is one of:
 
@@ -1015,17 +1041,25 @@ def create_primary_header(ifu_list,name,files,WCS_pos,WCS_flag):
     hdr = ifu_list[0].primary_header
     fbr_hdr = ifu_list[0].fibre_table_header
 
-    # Create the wcs.
+    # Create the wcs. Note 2dfdr uses non-standard CTYPE and CUNIT, so these
+    # are not copied
     wcs_new=pw.WCS(naxis=3)
     wcs_new.wcs.crpix = [WCS_pos["CRPIX1"], WCS_pos["CRPIX2"], hdr['CRPIX1']]
     wcs_new.wcs.cdelt = np.array([WCS_pos["CDELT1"], WCS_pos["CDELT2"], hdr['CDELT1']])
     wcs_new.wcs.crval = [WCS_pos["CRVAL1"], WCS_pos["CRVAL2"], hdr['CRVAL1']]
-    wcs_new.wcs.ctype = [WCS_pos["CTYPE1"], WCS_pos["CTYPE2"], hdr['CTYPE1']]
+    wcs_new.wcs.ctype = [WCS_pos["CTYPE1"], WCS_pos["CTYPE2"], "AWAV"]
     wcs_new.wcs.equinox = 2000
+    wcs_new.wcs.radesys = 'FK5'
             
     # Create a header
-    hdr_new=wcs_new.to_header()
+    hdr_new=wcs_new.to_header(relax=True)
     hdr_new.update('WCS_SRC',WCS_flag,'WCS Source')
+
+    # Putting in the units by hand, because otherwise astropy converts
+    # 'Angstrom' to 'm'. Note 2dfdr uses 'Angstroms', which is non-standard.
+    hdr_new['CUNIT1'] = WCS_pos['CUNIT1']
+    hdr_new['CUNIT2'] = WCS_pos['CUNIT2']
+    hdr_new['CUNIT3'] = 'Angstrom'
             
     # Add the name to the header
     hdr_new.update('NAME', name, 'Object ID')
@@ -1054,7 +1088,7 @@ def create_primary_header(ifu_list,name,files,WCS_pos,WCS_flag):
     primary_header_keyword_list = ['DCT_DATE','DCT_VER','DETECXE','DETECXS','DETECYE','DETECYS',
                                    'DETECTOR','XPIXSIZE','YPIXSIZE','METHOD','SPEED','READAMP','RO_GAIN',
                                    'RO_NOISE','ORIGIN','TELESCOP','ALT_OBS','LAT_OBS','LONG_OBS',
-                                   'RCT_VER','RCT_DATE','RADECSYS','INSTRUME','SPECTID',
+                                   'RCT_VER','RCT_DATE','INSTRUME','SPECTID',
                                    'GRATID','GRATTILT','GRATLPMM','ORDER','TDFCTVER','TDFCTDAT','DICHROIC',
                                    'OBSTYPE','TOPEND','AXIS','AXIS_X','AXIS_Y','TRACKING','TDFDRVER']
 
