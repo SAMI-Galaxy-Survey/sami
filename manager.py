@@ -1,65 +1,52 @@
-"""Code for organising and reducing SAMI data.
+"""
+Code for organising and reducing SAMI data.
 
-Instructions on how to use this module are given in the docstring for
-the  Manager class. The following describes some of the under-the-hood
-details.
+Instructions on how to use this module are given in the docstring for the
+Manager class. The following describes some of the under-the-hood details.
 
-This module contains two classes: Manager and FITSFile. The Manager
-stores information about an observing run, including a list of all raw
-files. Each FITSFile object stores information about a particular raw
-file. Note that neither object stores whether or not a file has been
-reduced; this is checked on the fly when necessary.
+This module contains two classes: Manager and FITSFile. The Manager stores
+information about an observing run, including a list of all raw files. Each
+FITSFile object stores information about a particular raw file. Note that
+neither object stores whether or not a file has been reduced; this is checked
+on the fly when necessary.
 
-When a Manager object is initiated, it makes an empty list to store
-the raw files. It will then inspect given directories to find raw
-files, with names of like 01jan10001.fits. It will reject duplicate
-filenames. Each valid filename is used to initialise a FITSFile
-object, which is added to the Manager's file list. The file itself is
-also moved into a suitable location in the output directory structure.
+When a Manager object is initiated, it makes an empty list to store the raw
+files. It will then inspect given directories to find raw files, with names of
+like 01jan10001.fits. It will reject duplicate filenames. Each valid filename
+is used to initialise a FITSFile object, which is added to the Manager's file
+list. The file itself is also moved into a suitable location in the output
+directory structure.
 
-Each FITSFile object stores basic information about the file, such as
-the path to the raw file and to the reduced file. The plate and field
-IDs are determined automatically from the FITS headers. A check is
-made to see if the telescope was pointing at the field listed in the
-MORE.FIBRES_IFU extension. If not, the user is asked to give a name
-for the pointing, which will generally be the name of whatever object
-was being observed. This name is then added to an "extra" list in the
-Manager, so that subsequent observations at the same position will be
-automatically recognised.
+Each FITSFile object stores basic information about the file, such as the path
+to the raw file and to the reduced file. The plate and field IDs are
+determined automatically from the FITS headers. A check is made to see if the
+telescope was pointing at the field listed in the MORE.FIBRES_IFU extension.
+If not, the user is asked to give a name for the pointing, which will
+generally be the name of whatever object was being observed. This name is then
+added to an "extra" list in the Manager, so that subsequent observations at
+the same position will be automatically recognised.
 
-The Manager also keeps lists of the different dark frame exposure
-lengths (as  both string and float), as well as a list of directories
-that have been recently reduced, and hence should be visually checked.
+The Manager also keeps lists of the different dark frame exposure lengths (as
+both string and float), as well as a list of directories that have been
+recently reduced, and hence should be visually checked.
 
-There are three different methods for calling 2dfdr in different
-modes:
-
-Manager.run_2dfdr_single calls 2dfdr via the aaorun functionality to
-reduce a single file. This is generally called from
-Manager.reduce_file, which first uses Manager.matchmaker to work out
-which calibration files should be used, and makes symbolic links to
-them in the target file's directory.
-
-Manager.run_2dfdr_auto calls 2dfdr in AutoScript mode and tells it to
-auto-reduce everything in a specified directory. This is no longer used.
-
-Manager.run_2dfdr_combine also uses AutoScript mode, this time to
-combine a given list of files. This is used for making combined bias,
-dark or long-slit flat frames.
-
-Functionality for flux calibration and cubing are provided via
-functions from other sami modules.
+2dfdr is controlled via the tdfdr module. Almost all data reduction steps are
+run in parallel, creating a Pool as it is needed.
 
 As individual files are reduced, entries are added to the checklist of
-directories to visually inspect. There are some functions for loading
-up 2dfdr in the relevant directories, but the user must select and
-plot the individual files themself. This whole system is a bit clunky
-and needs overhauling.
+directories to visually inspect. There are some functions for loading up 2dfdr
+in the relevant directories, but the user must select and plot the individual
+files themself. This whole system is a bit clunky and needs overhauling.
 
-There are a few generators for useful items, most notably
-Manager.files. This iterates through all entries in the internal file
-list and yields those that satisfy a wide range of optional
-parameters. """
+There are a few generators for useful items, most notably Manager.files. This
+iterates through all entries in the internal file list and yields those that
+satisfy a wide range of optional parameters.
+
+The Manager class can be run in demo mode, in which no actual data reduction
+is done. Instead, the pre-calculated results are simply copied into the output
+directories. This is useful for demonstrating how to use the Manager without
+waiting for the actual data reduction to happen.
+"""
 
 import shutil
 import os
@@ -74,6 +61,7 @@ from getpass import getpass
 from time import sleep
 from glob import glob
 from pydoc import pager
+import itertools
 
 import astropy.coordinates as coord
 from astropy import units
@@ -676,6 +664,36 @@ class Manager:
 
     >>> mngr.remove_directory_locks()
 
+    Including data from other runs
+    ==============================
+
+    If a field has been observed over more than one run, the manager will
+    need to be made aware of the pre-existing data to make combined
+    datacubes. Note that this is only necessary for the final data
+    reduction, so observers do not need to worry about this.
+
+    To combine the data, first create a manager for each run (you may
+    already have done this):
+
+    >>> mngr = sami.manager.Manager('2014_04_24-2014_05_04')
+    >>> mngr_old = sami.manager.Manager('2014_05_23-2014_06_01')
+
+    Then create the link:
+
+    >>> mngr.link_manager(mngr_old)
+
+    Now `mngr` will include files from `mngr_old` when necessary, i.e. for
+    these steps:
+
+    >>> mngr.measure_offsets()
+    >>> mngr.cube()
+    >>> mngr.scale_cubes()
+    >>> mngr.bin_cubes()
+
+    For all previous steps the two managers still act independently, so
+    you need to follow through up to scale_frames() for each manager
+    individually.
+
     Other functions
     ===============
 
@@ -705,6 +723,7 @@ class Manager:
         self.extra_list = []
         self.dark_exposure_str_list = []
         self.dark_exposure_list = []
+        self.linked_managers = []
         self.cwd = os.getcwd()
         if 'IMP_SCRATCH' in os.environ:
             self.imp_scratch = os.environ['IMP_SCRATCH']
@@ -805,7 +824,11 @@ class Manager:
         self.set_reduced_path(fits)
         if not fits.do_not_use:
             fits.make_reduced_link()
-        fits.add_header_item('GRATLPMM', self.gratlpmm[fits.grating])
+        if fits.grating in self.gratlpmm:
+            fits.add_header_item('GRATLPMM', self.gratlpmm[fits.grating])
+        if fits.grating not in self.idx_files:
+            # Without an idx file we would have no way to reduce this file
+            self.disable_files([fits])
         self.file_list.append(fits)
         return
 
@@ -1055,13 +1078,21 @@ class Manager:
             os.rmdir(self.tmp_dir)
         return
 
-    def fits_file(self, filename):
+    def fits_file(self, filename, include_linked_managers=False):
         """Return the FITSFile object that corresponds to the given filename."""
         filename_options = [filename, filename+'.fit', filename+'.fits',
                             filename+'.FIT', filename+'.FITS']
-        for fits in self.file_list:
+        if include_linked_managers:
+            # Include files from linked managers too
+            file_list = itertools.chain(
+                self.file_list,
+                *[mngr.file_list for mngr in self.linked_managers])
+        else:
+            file_list = self.file_list
+        for fits in file_list:
             if fits.filename in filename_options:
                 return fits
+        return None
 
     def check_reduced_dir_contents(self, reduced_dir):
         """Return True if any FITSFile objects point to reduced_dir."""
@@ -1093,6 +1124,22 @@ class Manager:
             if isinstance(fits, str):
                 fits = self.fits_file(fits)
             fits.update_do_not_use(False)
+        return
+
+    def link_manager(self, manager):
+        """Include data from specified manager when cubing."""
+        if manager not in self.linked_managers:
+            self.linked_managers.append(manager)
+        else:
+            print 'Already including that manager!'
+        return
+
+    def unlink_manager(self, manager):
+        """Remove specified manager from list to include when cubing."""
+        if manager in self.linked_managers:
+            self.linked_managers.remove(manager)
+        else:
+            print 'Manager not in linked list!'
         return
 
     def bias_combined_filename(self):
@@ -1742,10 +1789,11 @@ class Manager:
         groups = self.group_files_by(
             'field_id', ndf_class='MFOBJECT', do_not_use=False,
             reduced=True, min_exposure=min_exposure, name=name, ccd=ccd_measure,
-            **kwargs)
+            include_linked_managers=True, **kwargs)
         complete_groups = []
         for key, fits_list in groups.items():
-            fits_list_other_arm = [self.other_arm(fits) for fits in fits_list]
+            fits_list_other_arm = [self.other_arm(fits, include_linked_managers=True)
+                                   for fits in fits_list]
             if overwrite:
                 complete_groups.append(
                     (key, fits_list, copy_to_other_arm, fits_list_other_arm))
@@ -1774,7 +1822,7 @@ class Manager:
         """Make datacubes from the given RSS files."""
         groups = self.group_files_by(
             ['field_id', 'ccd'], ndf_class='MFOBJECT', do_not_use=False,
-            reduced=True, name=name, **kwargs)
+            reduced=True, name=name, include_linked_managers=True, **kwargs)
         # Add in the root path as well, so that cubing puts things in the 
         # right place
         cubed_root = os.path.join(self.root, 'cubed')
@@ -1810,7 +1858,10 @@ class Manager:
         # Mark cubes as not checked. Only mark the first file in each input set
         for inputs, cubed in zip(inputs_list, cubed_list):
             if cubed:
-                fits = self.fits_file(os.path.basename(inputs[2][0])[:10])
+                # Select the first fits file from this run (not linked runs)
+                for path in inputs[2]:
+                    if self.fits_file(os.path.basename(path)):
+                        break
                 self.update_checks('CUB', [fits], False)
         return
 
@@ -1824,7 +1875,8 @@ class Manager:
             # either both are used or neither.
             transmission = np.inf
             seeing = 0.0
-            fits_pair = (fits, self.other_arm(fits))
+            fits_pair = (
+                fits, self.other_arm(fits, include_linked_managers=True))
             for fits_test in fits_pair:
                 try:
                     transmission = np.minimum(
@@ -1852,7 +1904,7 @@ class Manager:
         """Scale datacubes based on the stellar g magnitudes."""
         groups = self.group_files_by(
             'field_id', ccd='ccd_1', ndf_class='MFOBJECT', do_not_use=False,
-            reduced=True, name=name, **kwargs)
+            reduced=True, name=name, include_linked_managers=True, **kwargs)
         input_list = []
         for (field_id, ), fits_list in groups.items():
             table = pf.getdata(fits_list[0].reduced_path, 'FIBRES_IFU')
@@ -1903,7 +1955,7 @@ class Manager:
         path_pair_list = []
         groups = self.group_files_by(
             'field_id', ccd='ccd_1', ndf_class='MFOBJECT', do_not_use=False,
-            reduced=True, name=name, **kwargs)
+            reduced=True, name=name, include_linked_managers=True, **kwargs)
         for (field_id, ), fits_list in groups.items():
             table = pf.getdata(fits_list[0].reduced_path, 'FIBRES_IFU')
             objects = table['NAME'][table['TYPE'] == 'P']
@@ -2472,61 +2524,71 @@ class Manager:
               reduced_dir=None, reduced=None, copy_reduced=None,
               tlm_created=None, flux_calibrated=None, telluric_corrected=None,
               spectrophotometric=None, name=None, lamp=None,
-              central_wavelength=None):
+              central_wavelength=None, include_linked_managers=False):
         """Generator for FITS files that satisfy requirements."""
-        for fits in self.file_list:
+        if include_linked_managers:
+            # Include files from linked managers too
+            file_list = itertools.chain(
+                self.file_list,
+                *[mngr.file_list for mngr in self.linked_managers])
+        else:
+            file_list = self.file_list
+        for fits in file_list:
             if fits.ndf_class is None:
                 continue
             if ((ndf_class is None or fits.ndf_class in ndf_class) and
-                (date is None or fits.date in date) and
-                (plate_id is None or fits.plate_id in plate_id) and
-                (plate_id_short is None or
-                 fits.plate_id_short in plate_id_short) and
-                (field_no is None or fits.field_no == field_no) and
-                (field_id is None or fits.field_id in field_id) and
-                (ccd is None or fits.ccd in ccd) and
-                (exposure_str is None or fits.exposure_str in exposure_str) and
-                (do_not_use is None or fits.do_not_use == do_not_use) and
-                (min_exposure is None or fits.exposure >= min_exposure) and
-                (max_exposure is None or fits.exposure <= max_exposure) and
-                (reduced_dir is None or
-                 os.path.realpath(reduced_dir) ==
-                 os.path.realpath(fits.reduced_dir)) and
-                (reduced is None or
-                 (reduced and os.path.exists(fits.reduced_path)) or
-                 (not reduced and not os.path.exists(fits.reduced_path))) and
-                (copy_reduced is None or
-                 (copy_reduced and os.path.exists(
-                    self.copy_path(fits.reduced_path))) or
-                 (not copy_reduced and not os.path.exists(
-                    self.copy_path(fits.reduced_path)))) and
-                (tlm_created is None or
-                 (tlm_created and hasattr(fits, 'tlm_path') and
-                  os.path.exists(fits.tlm_path)) or
-                 (not tlm_created and hasattr(fits, 'tlm_path') and
-                  not os.path.exists(fits.tlm_path))) and
-                (flux_calibrated is None or
-                 (flux_calibrated and hasattr(fits, 'fluxcal_path') and
-                  os.path.exists(fits.fluxcal_path)) or
-                 (not flux_calibrated and hasattr(fits, 'fluxcal_path') and
-                  not os.path.exists(fits.fluxcal_path))) and
-                (telluric_corrected is None or
-                 (telluric_corrected and hasattr(fits, 'telluric_path') and
-                  os.path.exists(fits.telluric_path)) or
-                 (not telluric_corrected and hasattr(fits, 'telluric_path') and
-                  not os.path.exists(fits.telluric_path))) and
-                (spectrophotometric is None or
-                 (hasattr(fits, 'spectrophotometric') and
-                  (fits.spectrophotometric == spectrophotometric))) and
-                (name is None or 
-                 (fits.name is not None and fits.name in name)) and
-                (lamp is None or fits.lamp == lamp) and
-                (central_wavelength is None or 
-                 fits.central_wavelength == central_wavelength)):
+                    (date is None or fits.date in date) and
+                    (plate_id is None or fits.plate_id in plate_id) and
+                    (plate_id_short is None or
+                     fits.plate_id_short in plate_id_short) and
+                    (field_no is None or fits.field_no == field_no) and
+                    (field_id is None or fits.field_id in field_id) and
+                    (ccd is None or fits.ccd in ccd) and
+                    (exposure_str is None or
+                     fits.exposure_str in exposure_str) and
+                    (do_not_use is None or fits.do_not_use == do_not_use) and
+                    (min_exposure is None or fits.exposure >= min_exposure) and
+                    (max_exposure is None or fits.exposure <= max_exposure) and
+                    (reduced_dir is None or
+                     os.path.realpath(reduced_dir) ==
+                     os.path.realpath(fits.reduced_dir)) and
+                    (reduced is None or
+                     (reduced and os.path.exists(fits.reduced_path)) or
+                     (not reduced and
+                      not os.path.exists(fits.reduced_path))) and
+                    (copy_reduced is None or
+                     (copy_reduced and os.path.exists(
+                         self.copy_path(fits.reduced_path))) or
+                     (not copy_reduced and not os.path.exists(
+                         self.copy_path(fits.reduced_path)))) and
+                    (tlm_created is None or
+                     (tlm_created and hasattr(fits, 'tlm_path') and
+                      os.path.exists(fits.tlm_path)) or
+                     (not tlm_created and hasattr(fits, 'tlm_path') and
+                      not os.path.exists(fits.tlm_path))) and
+                    (flux_calibrated is None or
+                     (flux_calibrated and hasattr(fits, 'fluxcal_path') and
+                      os.path.exists(fits.fluxcal_path)) or
+                     (not flux_calibrated and hasattr(fits, 'fluxcal_path') and
+                      not os.path.exists(fits.fluxcal_path))) and
+                    (telluric_corrected is None or
+                     (telluric_corrected and hasattr(fits, 'telluric_path') and
+                      os.path.exists(fits.telluric_path)) or
+                     (not telluric_corrected and
+                      hasattr(fits, 'telluric_path') and
+                      not os.path.exists(fits.telluric_path))) and
+                    (spectrophotometric is None or
+                     (hasattr(fits, 'spectrophotometric') and
+                      (fits.spectrophotometric == spectrophotometric))) and
+                    (name is None or 
+                     (fits.name is not None and fits.name in name)) and
+                    (lamp is None or fits.lamp == lamp) and
+                    (central_wavelength is None or 
+                     fits.central_wavelength == central_wavelength)):
                 yield fits
         return
 
-    def group_files_by(self, keys, **kwargs):
+    def group_files_by(self, keys, require_this_manager=True, **kwargs):
         """Return a dictionary of FITSFile objects grouped by the keys."""
         if isinstance(keys, str):
             keys = [keys]
@@ -2537,6 +2599,16 @@ class Manager:
                 combined_key.append(getattr(fits, key))
             combined_key = tuple(combined_key)
             groups[combined_key].append(fits)
+        if require_this_manager:
+            # Check that at least one of the files from each group has come
+            # from this manager
+            for combined_key, fits_list in groups.items():
+                for fits in fits_list:
+                    if fits in self.file_list:
+                        break
+                else:
+                    # None of the files are from this manager
+                    del groups[combined_key]
         return groups
 
     def ccds(self, do_not_use=False):
@@ -2612,7 +2684,7 @@ class Manager:
                        self.lflat_combined_path(ccd))
         return
 
-    def other_arm(self, fits):
+    def other_arm(self, fits, include_linked_managers=False):
         """Return the FITSFile from the other arm of the spectrograph."""
         if fits.ccd == 'ccd_1':
             other_number = '2'
@@ -2621,7 +2693,8 @@ class Manager:
         else:
             raise ValueError('Unrecognised CCD: ' + fits.ccd)
         other_filename = fits.filename[:5] + other_number + fits.filename[6:]
-        other_fits = self.fits_file(other_filename)
+        other_fits = self.fits_file(
+            other_filename, include_linked_managers=include_linked_managers)
         return other_fits
         
     def cubed_path(self, name, arm, fits_list, field_id, gzipped=False,

@@ -1,4 +1,12 @@
 #!/usr/bin/env python
+"""
+Module for performing Voronoi binning on SAMI data.
+
+The following code was originally written by Eric Emsellem, following an
+IDL version by Michele Cappellari, and was extended to include covariance
+information (needed for SAMI data) by Nic Scott.
+"""
+
 #
 ########################################################################
 #

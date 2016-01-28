@@ -1,4 +1,13 @@
-"""Code to deal with fibre throughputs."""
+"""
+Code to deal with fibre throughputs.
+
+make_clipped_thput_files() is used by the manager to make FITS files with
+a THPUT extension that contains values averaged over a few observations.
+This is useful for when the throughput has been measured from night sky
+lines: the S/N is increased by averaging, and frames with a bad throughput
+measurement (e.g. if the 5577A line has been hit by a cosmic ray or bad
+pixel) are clipped out.
+"""
 
 import os
 

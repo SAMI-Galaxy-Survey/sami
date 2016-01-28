@@ -1,6 +1,32 @@
 """
-This module covers functions required to create cubes from a dithered set of RSS
-frames.
+This module covers functions required to create cubes from a dithered set
+of RSS frames. See Sharp et al (2015) for a detailed description of the
+cubing algorithm.
+
+The hard work is done by dithered_cube_from_rss which takes a list of IFU
+objects as input and returns a datacube, variance and other information.
+Various levels of wrappers give other ways of accessing this function -
+the manager uses dithered_cube_from_rss_wrapper.
+
+A few things to be aware of:
+
+* Alignment should be done before calling the cubing. If it hasn't, the
+  cubing will fall back to measuring the offsets itself, but this is much
+  worse than the proper alignment code.
+* By default, the absolute astrometry is measured by comparison to SDSS
+  images. However, this doesn't work properly, so until someone fixes it
+  you should always ask for nominal astrometry by setting nominal=True.
+* The covariance information would be too large to store at every
+  wavelength slice, so is currently only stored when the drizzle data is
+  updated. James Allen is currently (Dec 2015) looking into alternative
+  storage strategies to allow the drizzle information to be updated at
+  every slice.
+* Ned Taylor is currently (Dec 2015) investigating alternative cubing
+  methods that may replace some of all of this code.
+
+This module is in need of refactoring to break up some very long
+functions.
+
 
 The most likely command a user will want to run is one of:
 
@@ -374,8 +400,13 @@ def dithered_cube_from_rss_wrapper(files, name, size_of_grid=50,
             band = 'g'
         elif ifu_list[0].gratid == '1000R':
             band = 'r'
-        else:
+        elif not nominal:
+            # Need an identified band if we're going to do full WCS matching.
+            # Should try to work something out, like in scale_cube_pair_to_mag()
             raise ValueError('Could not identify band. Exiting')
+        else:
+            # When nominal is True, wcs_solve doesn't even look at band
+            band = None
 
         # Equate Positional WCS
         WCS_pos, WCS_flag=wcs.wcs_solve(ifu_list[0], flux_cube, name, band, size_of_grid, output_pix_size_arcsec, plot, nominal=nominal)

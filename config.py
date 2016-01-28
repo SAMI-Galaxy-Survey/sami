@@ -1,3 +1,11 @@
+"""
+Useful quantities to be used throughout the sami package.
+
+Note that actual use of these values varies: some modules correctly use this
+module, but others define these values themselves, so do not assume that a
+change made here will be correctly propagated everywhere.
+"""
+
 import astropy.units as u
 import astropy.coordinates as coords
 import os.path
