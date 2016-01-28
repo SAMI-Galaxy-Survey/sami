@@ -1,4 +1,13 @@
-"""Flux calibration code that looks at the red and blue data together.
+"""
+Flux calibration code that looks at the red and blue data together.
+
+This code replaces the original fluxcal module. The key functionality
+(and the most difficult part to develop) is to infer the "total" observed
+spectrum of a star based on the light in the fibres, i.e. to work out how
+much light was lost between the fibres. This is done based on a model
+that incorporates our understanding of how the atmosphere affects light,
+both in terms of the PSF and the atmospheric refraction. A few different
+models are available, with different amounts of freedom.
 
 The allowed models are:
 
@@ -24,6 +33,20 @@ fixed.
 The same as ref_centre_alpha_angle_circ, but with atmospheric values
 as free parameters too. Note, however, that the atmospheric parameters
 are completely degenerate with each other and with ZD.
+
+-- ref_centre_alpha_dist_circ_hdratm --
+
+As ref_centre_alpha_dist_circ, but uses atmospheric values read from the
+FITS header instead of the default values.
+
+-- ref_centre_alpha_circ_hdratm --
+
+Uses a circular Moffat function, fixed zenith distance and atmospheric
+values from the FITS header.
+
+Other than the functions for reading parameters in and out, the
+functionality for doing the actual fitting is the same for all models,
+so can be extended for further models quite straightforwardly.
 """
 
 import os

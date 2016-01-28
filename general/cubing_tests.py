@@ -1,9 +1,20 @@
 """
 Tests for SAMI Cubing routines.
 
-Run all tests using run_tests().
+Individual tests described with each function. Currently available:
 
-Individual tests described with each function.
+speed_test() prints time taken to cube 100 wavelength slices
+
+hot_pixel_clipping() checks that artifically inserted hot pixels (e.g. cosmic
+rays) are correctly clipped
+
+dar_correction_test() cubes a star and fits its position at different
+wavelengths to check that it doesn't shift around
+
+The tests were developed by Andy Green. The DAR correction test is related
+to the QC analysis in section 5.3.3 of the EDR paper (Allen et al 2015) but
+is designed to check the code hasn't screwed up rather than actually measure
+the accuracy.
 """
 
 # Absolute Imports

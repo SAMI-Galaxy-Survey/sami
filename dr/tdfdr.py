@@ -1,3 +1,31 @@
+"""
+Module for controlling 2dfdr.
+
+The actual 2dfdr call is done from run_2dfdr(). Other functions provide
+more convenient access for different tasks: reducing a file
+(run_2dfdr_single), combining files (run_2dfdr_combine) or loading the GUI
+(load_gui).
+
+The visit_dir context manager temporarily changes the working directory to
+the one in which the file to be reduced is.
+
+The temp_imp_scratch context manager temporarily sets the IMP_SCRATCH
+environment variable to a temporary directory, allowing 2dfdr to be run in
+parallel without conflicts. This is becoming unnecessary with recent
+versions of 2dfdr which are ok with multiple instances, but there is no
+particular reason to take it out.
+
+Could easily be spun off as an independent module for general use. The
+only thing holding this back is the assumed use of FITSFile objects as
+defined in sami.manager, in run_2dfdr_single.
+
+Note this module currently exists in two forms in two branches of this
+repository: the default branch is compatible with 2dfdr v5, and the aaorun
+branch is compatible with 2dfdr v6. The original plan had been to phase
+out support for 2dfdr v5 and merge aaorun into default, but it may be
+better to merge them in a way that retains the v5 functionality.
+"""
+
 import subprocess
 import os
 import tempfile

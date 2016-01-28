@@ -1,3 +1,13 @@
+"""
+Plots for the data reducer to examine to check that everything is as
+expected. Each is accessed by a three-letter code that corresponds to the
+flags the manager puts in fits files.
+
+Note that the 2dfdr reduction steps (other than combined calibration files)
+are not covered here, but are done by loading the 2dfdr GUI directly in
+manager.py
+"""
+
 from . import fluxcal2
 from ..utils import IFU
 
