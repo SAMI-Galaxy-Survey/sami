@@ -400,8 +400,13 @@ def dithered_cube_from_rss_wrapper(files, name, size_of_grid=50,
             band = 'g'
         elif ifu_list[0].gratid == '1000R':
             band = 'r'
-        else:
+        elif not nominal:
+            # Need an identified band if we're going to do full WCS matching.
+            # Should try to work something out, like in scale_cube_pair_to_mag()
             raise ValueError('Could not identify band. Exiting')
+        else:
+            # When nominal is True, wcs_solve doesn't even look at band
+            band = None
 
         # Equate Positional WCS
         WCS_pos, WCS_flag=wcs.wcs_solve(ifu_list[0], flux_cube, name, band, size_of_grid, output_pix_size_arcsec, plot, nominal=nominal)
