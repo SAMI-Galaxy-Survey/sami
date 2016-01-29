@@ -593,7 +593,7 @@ def clip_spectrum(flux, noise, wavelength, limit_noise=0.35, limit_flux=10.0,
     flux_ratio = np.abs((flux - filtered_flux) / filtered_noise)
     # This is mostly to get rid of very bad pixels at edges of good regions
     # The presence of NaNs is screwing up the median filter in theses places
-    median_noise = np.median(noise)
+    median_noise = np.nanmedian(noise)
     good = (np.isfinite(flux) &
             np.isfinite(noise) &
             (noise_ratio < limit_noise) &
