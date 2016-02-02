@@ -1,22 +1,3 @@
-import pylab as py
-import numpy as np
-import scipy as sp
-import matplotlib.pyplot as plt
-
-# use astropy for all astronomy related things.
-import astropy.io.fits as pf
-import astropy.io.ascii as tab
-
-import sys
-
-from scipy.stats import stats
-
-from matplotlib.patches import Circle
-
-# Relative imports from sami package
-from .. import utils
-from .. import samifitting as fitting
-
 """
 This file contains a couple of S/N estimation codes 
  designed for use during SAMI observing runs.
@@ -41,7 +22,31 @@ NOTES: 10.04.2013, Iraklis Konstantopoulos
        27.08.2013, Iraklis Konstantopoulos
        - Writing surface brightness map function. 
 
+For reasons I (JTA) don't remember, this code was never quite finished
+or put into action. The intention had been to use S/N measurements to aid
+the observers in deciding when a field was finished, but this code is not
+mentioned in the observers' instructions.
 """
+
+import pylab as py
+import numpy as np
+import scipy as sp
+import matplotlib.pyplot as plt
+
+# use astropy for all astronomy related things.
+import astropy.io.fits as pf
+import astropy.io.ascii as tab
+
+import sys
+
+from scipy.stats import stats
+
+from matplotlib.patches import Circle
+
+# Relative imports from sami package
+from .. import utils
+from .. import samifitting as fitting
+
 
 def sn_map(rssin):
     """ 

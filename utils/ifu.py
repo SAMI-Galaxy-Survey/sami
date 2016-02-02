@@ -1,3 +1,14 @@
+"""
+This module contains the IFU class, used extensively throughout sami.
+
+An IFU instance contains data from a single IFU's observation. As well as
+the observed flux, it stores the variance and a lot of metadata. See the
+code for everything that's copied.
+
+One quirk to be aware of: the data on disk are stored in terms of total
+counts, but the IFU object automatically scales this by exposure time to
+get a flux.
+"""
 
 import numpy as np
 

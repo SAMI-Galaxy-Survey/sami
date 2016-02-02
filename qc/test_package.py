@@ -1,4 +1,10 @@
-"""Functionality to automatically put together test packages."""
+"""
+Functionality to automatically put together test packages.
+
+A test package in this context is a collection of data used to test out
+potential improvements to the data reduction. The test package provides
+a fiducial reduction against which the improvement can be compared.
+"""
 
 import os
 import shutil
