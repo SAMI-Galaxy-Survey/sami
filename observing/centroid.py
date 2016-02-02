@@ -75,9 +75,20 @@ Two figures will also be produced, the first showing the images and fits for the
 second plots the focus values vs fwhm values with a fitted parabola. The minimum of the fit can be picked by eye or the
 official value is also printed to screen.
 
-3) centroid_fit(x,y,data,microns=True)
+3) seeing(infile, ifu):
 
-You shouldn't need to touch this one, it is called by the functions above.
+-infile should be a reduced RSS file, already passed through 2dfdr.
+-ifu should be an integer (1-13).
+
+Calculates the seeing from the star observation in a particular field.
+
+Prints values to screen and makes a plot showing the fit.
+
+Takes one ifu at a time so if you have many stars (i.e. a star field) then use the centroid function above.
+
+4) centroid_fit(x,y,data,microns=True)
+
+You shouldn't need to touch this one, it is called by the functions above (as well as by the align_micron module).
 
 """
 

@@ -1,3 +1,7 @@
+"""
+Wrapper for the C++ drizzle overlap code.
+"""
+
 import ctypes as C
 import numpy as np
 import os.path
