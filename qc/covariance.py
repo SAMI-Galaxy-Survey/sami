@@ -1,3 +1,14 @@
+"""
+Functions for handling the covariance as stored in SAMI data cubes.
+
+The functions can read the data stored in the COVAR extension and
+extrapolate to a full covariance array, and do simple binning of the data
+(but see also sami.dr.binning).
+
+compare_variance() calculates the binned variance with and without
+covariance, to see how strong its effect is.
+"""
+
 import numpy as np
 import astropy.io.fits as pf
 
