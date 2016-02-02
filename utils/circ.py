@@ -1,3 +1,14 @@
+"""
+Functions to calculate the drizzle overlap between a square and a circle.
+
+This calculation is the crucial step in drizzling, to know how much each
+input fibre (circle) overlaps with each output spaxel (square).
+
+In general this code isn't actually used, as there is a C++ version that
+is significantly faster. The functions here are provided as a fall-back in
+case the C++ version hasn't been compiled.
+"""
+
 # ----------------------------------------------------------------------------------------
 # Written by Jon Nielsen 2012
 # A program to generate a weight map for the intersection of a circle with

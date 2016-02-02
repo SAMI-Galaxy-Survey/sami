@@ -1,4 +1,15 @@
-"""Functions relating to quality control of flux calibration."""
+"""
+Functions relating to quality control of flux calibration.
+
+A lot of this functionality is now directly used by the data reduction
+pipeline, particularly stellar_mags_frame_pair and stellar_mags_cube_pair
+for measuring the magnitude of an observed star. get_sdss_stellar_mags is
+used for downloading the correct magnitudes from SDSS. Occasionally,
+calculate_mean_throughput and save_mean_throughput need to be run to
+create a mean throughput file against which observations can be compared,
+to check what the relative throughput on a given night is. Observations
+from nights with very bad throughput (i.e. cloud) can then be rejected.
+"""
 
 from ..dr import fluxcal2
 from ..dr.telluric import identify_secondary_standard
