@@ -1,3 +1,11 @@
+"""
+Quality control for reduced arc frames.
+
+bad_fibres() looks for arc lines that appear in the wrong place. The
+results are saved to the FITS file, although currently no real use is
+made of them.
+"""
+
 import astropy.io.fits as pf
 import numpy as np
 from .fluxcal import get_coords

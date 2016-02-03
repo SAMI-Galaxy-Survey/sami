@@ -1,6 +1,8 @@
 """
+Functions to write flux calibration results to file and read them back in.
+
 This module exists to prevent a circular import between ifu.py and
-fluxcal2.py
+fluxcal2.py.
 """
 
 import numpy as np

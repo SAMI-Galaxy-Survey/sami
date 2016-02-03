@@ -1,3 +1,12 @@
+"""
+Quality control for the telluric correction.
+
+These functions are not called from anywhere else in the package, but were
+used to quantify the accuracy of the telluric correction for the SAMI EDR
+paper, as well as to investigate how much noise is introduced by the
+telluric correction.
+"""
+
 from ..dr import telluric
 
 import astropy.io.fits as pf
