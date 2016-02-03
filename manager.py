@@ -1603,9 +1603,9 @@ class Manager:
     def combine_transfer_function(self, overwrite=False, **kwargs):
         """Combine and save transfer functions from multiple files."""
         # First sort the spectrophotometric files into date/field/CCD/name 
-        # groups. Wouldn't need name except that currently different stars
-        # are on different units; remove the name matching when that's
-        # sorted.
+        # groups. Grouping by name is not strictly necessary and could be
+        # removed, which would cause results from different stars to be
+        # combined.
         groups = self.group_files_by(('date', 'field_id', 'ccd', 'name'),
             ndf_class='MFOBJECT', do_not_use=False,
             spectrophotometric=True, **kwargs)
