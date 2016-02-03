@@ -1626,7 +1626,7 @@ class Manager:
                     if overwrite or not os.path.exists(path_copy):
                         print 'Copying combined file to', path_copy
                         shutil.copy2(path_out, path_copy)
-            self.update_checks('FLX', fits_list, False)
+            update_checks('FLX', fits_list, False)
         return
 
     def flux_calibrate(self, overwrite=False, **kwargs):
