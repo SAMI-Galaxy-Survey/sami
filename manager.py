@@ -1754,7 +1754,8 @@ class Manager:
         inputs_list = []
         for fits_2 in self.files(ndf_class='MFOBJECT', do_not_use=False,
                                  spectrophotometric=False, ccd='ccd_2', 
-                                 telluric_corrected=True, **kwargs):
+                                 telluric_corrected=True, name='main',
+                                 **kwargs):
             if (not overwrite and 'RESCALE' in 
                     pf.getheader(fits_2.telluric_path, 'FLUX_CALIBRATION')):
                 # Already been done; skip to the next file
