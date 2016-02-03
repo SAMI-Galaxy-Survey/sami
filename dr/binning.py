@@ -396,7 +396,7 @@ def prescribed_bin_sami(hdu,sectors=8,radial=5,log=False,
 
     #Rationalize the radial and angular binning and create the bin mask
 
-    bin_mask = np.ones(np.shape(image),dtype=np.int)
+    bin_mask = np.ones(np.shape(image),dtype=np.int32)
     bin_mask[np.isfinite(image) == False] = 0
 
     ang_bins[np.where(ang_bins == np.max(ang_bins))] = 0

@@ -825,7 +825,10 @@ class Manager:
         if not fits.do_not_use:
             fits.make_reduced_link()
         if fits.grating in self.gratlpmm:
-            fits.add_header_item('GRATLPMM', self.gratlpmm[fits.grating])
+            try:
+                fits.add_header_item('GRATLPMM', self.gratlpmm[fits.grating])
+            except IOError:
+                pass
         if fits.grating not in self.idx_files:
             # Without an idx file we would have no way to reduce this file
             self.disable_files([fits])
@@ -1169,13 +1172,14 @@ class Manager:
         return os.path.join(self.abs_root, 'reduced', 'lflat', ccd,
                             self.lflat_combined_filename())
 
-    def reduce_calibrator(self, calibrator_type, overwrite=False, **kwargs):
+    def reduce_calibrator(self, calibrator_type, overwrite=False, check=None,
+                          **kwargs):
         """Reduce all biases, darks of lflats."""
         self.check_calibrator_type(calibrator_type)
         file_iterable = self.files(ndf_class=calibrator_type.upper(), 
                                    do_not_use=False, **kwargs)
         reduced_files = self.reduce_file_iterable(
-            file_iterable, overwrite=overwrite)
+            file_iterable, overwrite=overwrite, check=check)
         return reduced_files
 
     def combine_calibrator(self, calibrator_type, overwrite=False):
@@ -1227,9 +1231,8 @@ class Manager:
 
     def reduce_bias(self, overwrite=False, **kwargs):
         """Reduce all bias frames."""
-        reduced_files = self.reduce_calibrator(
-            'bias', overwrite=overwrite, **kwargs)
-        self.update_checks('BIA', reduced_files, False)
+        self.reduce_calibrator(
+            'bias', overwrite=overwrite, check='BIA', **kwargs)
         return
 
     def combine_bias(self, overwrite=False):
@@ -1244,9 +1247,8 @@ class Manager:
 
     def reduce_dark(self, overwrite=False, **kwargs):
         """Reduce all dark frames."""
-        reduced_files = self.reduce_calibrator(
-            'dark', overwrite=overwrite, **kwargs)
-        self.update_checks('DRK', reduced_files, False)
+        self.reduce_calibrator(
+            'dark', overwrite=overwrite, check='DRK', **kwargs)
         return
         
     def combine_dark(self, overwrite=False):
@@ -1261,9 +1263,8 @@ class Manager:
 
     def reduce_lflat(self, overwrite=False, **kwargs):
         """Reduce all lflat frames."""
-        reduced_files = self.reduce_calibrator(
-            'lflat', overwrite=overwrite, **kwargs)
-        self.update_checks('LFL', reduced_files, False)
+        self.reduce_calibrator(
+            'lflat', overwrite=overwrite, check='LFL', **kwargs)
         return
 
     def combine_lflat(self, overwrite=False):
@@ -1280,10 +1281,9 @@ class Manager:
         """Make TLMs from all files matching given criteria."""
         file_iterable = self.files(ndf_class='MFFFF', do_not_use=False,
                                    **kwargs)
-        reduced_files = self.reduce_file_iterable(
+        self.reduce_file_iterable(
             file_iterable, overwrite=overwrite, tlm=True, 
-            leave_reduced=leave_reduced)
-        self.update_checks('TLM', reduced_files, False)
+            leave_reduced=leave_reduced, check='TLM')
         return
 
     def reduce_arc(self, overwrite=False, **kwargs):
@@ -1291,28 +1291,25 @@ class Manager:
         file_iterable = self.files(ndf_class='MFARC', do_not_use=False,
                                    **kwargs)
         reduced_files = self.reduce_file_iterable(
-            file_iterable, overwrite=overwrite)
+            file_iterable, overwrite=overwrite, check='ARC')
         for fits in reduced_files:
             bad_fibres(fits.reduced_path, save=True)
-        self.update_checks('ARC', reduced_files, False)
         return
 
     def reduce_fflat(self, overwrite=False, **kwargs):
         """Reduce all fibre flat frames matching given criteria."""
         file_iterable = self.files(ndf_class='MFFFF', do_not_use=False,
                                    **kwargs)
-        reduced_files = self.reduce_file_iterable(
-            file_iterable, overwrite=overwrite)
-        self.update_checks('FLT', reduced_files, False)
+        self.reduce_file_iterable(
+            file_iterable, overwrite=overwrite, check='FLT')
         return
 
     def reduce_sky(self, overwrite=False, fake_skies=True, **kwargs):
         """Reduce all offset sky frames matching given criteria."""
         file_iterable = self.files(ndf_class='MFSKY', do_not_use=False,
                                    **kwargs)
-        reduced_files = self.reduce_file_iterable(
-            file_iterable, overwrite=overwrite)
-        self.update_checks('SKY', reduced_files, False)
+        self.reduce_file_iterable(
+            file_iterable, overwrite=overwrite, check='SKY')
         if fake_skies:
             no_sky_list = self.fields_without_skies(**kwargs)
             # Certain parameters will already have been set so don't need
@@ -1394,10 +1391,10 @@ class Manager:
         # Reduce long exposures first, to make sure that any required
         # throughput measurements are available
         file_iterable_long = self.files(
-            ndf_class='MFOBJECT', do_not_use=False, 
+            ndf_class='MFOBJECT', do_not_use=False,
             min_exposure=self.min_exposure_for_throughput, **kwargs)
         reduced_files = self.reduce_file_iterable(
-            file_iterable_long, overwrite=overwrite)
+            file_iterable_long, overwrite=overwrite, check='OBJ')
         # Check how good the sky subtraction was
         for fits in reduced_files:
             self.qc_sky(fits)
@@ -1409,7 +1406,7 @@ class Manager:
             fits_list = [fits for fits in fits_list if fits.has_sky_lines()]
             self.reduce_file_iterable(
                 fits_list, throughput_method='skylines',
-                overwrite=True)
+                overwrite=True, check='OBJ')
             bad_fields = np.unique([fits.field_id for fits in fits_list])
         else:
             bad_fields = []
@@ -1422,7 +1419,7 @@ class Manager:
                     reduced_files.append(fits)
         # Now reduce the short exposures, which might need the long
         # exposure reduced above
-        upper_limit = (self.min_exposure_for_throughput - 
+        upper_limit = (self.min_exposure_for_throughput -
                        np.finfo(self.min_exposure_for_throughput).epsneg)
         file_iterable_short = self.files(
             ndf_class='MFOBJECT', do_not_use=False,
@@ -1439,23 +1436,22 @@ class Manager:
         # short
         reduced_files.extend(self.reduce_file_iterable(
             file_iterable_sky_lines, overwrite=overwrite,
-            throughput_method='skylines'))
+            throughput_method='skylines', check='OBJ'))
         # These will be throughput calibrated using dome flats
         reduced_files.extend(self.reduce_file_iterable(
-            file_iterable_default, overwrite=overwrite))
-        # Mark these files as not checked
-        self.update_checks('OBJ', reduced_files, False)
+            file_iterable_default, overwrite=overwrite, check='OBJ'))
         # Check how good the sky subtraction was
         for fits in reduced_files:
             self.qc_sky(fits)
         return
 
-    def reduce_file_iterable(self, file_iterable, throughput_method='default', 
-                             overwrite=False, tlm=False, leave_reduced=True):
+    def reduce_file_iterable(self, file_iterable, throughput_method='default',
+                             overwrite=False, tlm=False, leave_reduced=True,
+                             check=None):
         """Reduce all files in the iterable."""
         # First establish the 2dfdr options for all files that need reducing
         # Would be more memory-efficient to construct a generator
-        input_list = [(fits, 
+        input_list = [(fits,
                        self.idx_files[fits.grating],
                        tuple(self.tdfdr_options(
                            fits, throughput_method=throughput_method,
@@ -1463,9 +1459,10 @@ class Manager:
                        self.cwd,
                        self.imp_scratch,
                        self.scratch_dir,
+                       check,
                        self.debug)
                       for fits in file_iterable
-                      if (overwrite or 
+                      if (overwrite or
                           not os.path.exists(self.target_path(fits, tlm=tlm)))]
         reduced_files = [item[0] for item in input_list]
         # Send the items out for reducing. Keep track of which ones were done.
@@ -1605,9 +1602,9 @@ class Manager:
     def combine_transfer_function(self, overwrite=False, **kwargs):
         """Combine and save transfer functions from multiple files."""
         # First sort the spectrophotometric files into date/field/CCD/name 
-        # groups. Wouldn't need name except that currently different stars
-        # are on different units; remove the name matching when that's
-        # sorted.
+        # groups. Grouping by name is not strictly necessary and could be
+        # removed, which would cause results from different stars to be
+        # combined.
         groups = self.group_files_by(('date', 'field_id', 'ccd', 'name'),
             ndf_class='MFOBJECT', do_not_use=False,
             spectrophotometric=True, **kwargs)
@@ -1726,10 +1723,6 @@ class Manager:
                 fake_derive_transfer_function):
             done_list = self.map(telluric_correct_pair, inputs_list)
         self.n_cpu = old_n_cpu
-        # Mark telluric corrections as not checked
-        fits_2_list = [inputs['fits_2'] for inputs, done in 
-                       zip(inputs_list, done_list) if done]
-        self.update_checks('TEL', fits_2_list, False)
         for inputs in [inputs for inputs, done in
                        zip(inputs_list, done_list) if done]:
             # Copy the FWHM measurement to the QC header
@@ -1811,8 +1804,6 @@ class Manager:
                     break
         with self.patch_if_demo('sami.manager.find_dither', fake_find_dither):
             self.map(measure_offsets_group, complete_groups)
-        for group in complete_groups:
-            self.update_checks('ALI', group[1], False)
         return
 
     def cube(self, overwrite=False, min_exposure=599.0, name='main', 
@@ -1860,9 +1851,10 @@ class Manager:
             if cubed:
                 # Select the first fits file from this run (not linked runs)
                 for path in inputs[2]:
-                    if self.fits_file(os.path.basename(path)):
+                    fits = self.fits_file(os.path.basename(path))
+                    if fits:
                         break
-                self.update_checks('CUB', [fits], False)
+                update_checks('CUB', [fits], False)
         return
 
     def qc_for_cubing(self, fits_list, min_transmission=0.333, max_seeing=4.0,
@@ -3111,12 +3103,6 @@ class Manager:
             os.rmdir(path)
         return
 
-    def update_checks(self, key, file_iterable, value, force=False):
-        """Set flags for whether the files have been manually checked."""
-        for fits in file_iterable:
-            fits.update_checks(key, value, force)
-        return
-
     def list_checks(self, recent_ever='both', *args, **kwargs):
         """Return a list of checks that need to be done."""
         if 'do_not_use' not in kwargs:
@@ -3818,6 +3804,12 @@ class FITSFile:
         return False
 
 
+def update_checks(key, file_iterable, value, force=False):
+    """Set flags for whether the files have been manually checked."""
+    for fits in file_iterable:
+        fits.update_checks(key, value, force)
+    return
+
 def safe_for_multiprocessing(function):
     @wraps(function)
     def safe_function(*args, **kwargs):
@@ -3890,6 +3882,7 @@ def telluric_correct_pair(inputs):
             os.remove(fits.telluric_path)
         telluric.apply_correction(fits.fluxcal_path, 
                                   fits.telluric_path)
+    update_checks('TEL', [fits_2], False)
     return True
 
 @safe_for_multiprocessing
@@ -3907,6 +3900,7 @@ def measure_offsets_group(group):
         return
     find_dither(path_list, path_list[0], centroid=True,
                 remove_files=True, do_dar_correct=True)
+    update_checks('ALI', fits_list, False)
     if copy_to_other_arm:
         for fits, fits_other_arm in zip(fits_list, fits_list_other_arm):
             hdulist_this_arm = pf.open(best_path(fits))
@@ -3976,7 +3970,8 @@ def best_path(fits):
 @safe_for_multiprocessing
 def run_2dfdr_single_wrapper(group):
     """Run 2dfdr on a single file."""
-    fits, idx_file, options, cwd, imp_scratch, scratch_dir, debug = group
+    fits, idx_file, options, cwd, imp_scratch, scratch_dir, check, debug = \
+        group
     try:
         tdfdr.run_2dfdr_single(
             fits, idx_file, options=options, return_to=cwd, 
@@ -3987,6 +3982,8 @@ def run_2dfdr_single_wrapper(group):
                    ' while other process has directory lock.')
         print message
         return False
+    if check:
+        update_checks(check, [fits], False)
     return True
 
 @safe_for_multiprocessing
