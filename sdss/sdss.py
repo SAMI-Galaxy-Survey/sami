@@ -1,3 +1,13 @@
+"""
+Functionality for getting SDSS imaging data and comparing to SAMI data.
+
+In practice these functions have largely not been used. The only function
+called elsewhere in the sami package is getSDSSimage, called from the wcs
+module, but see that module's documentation for why this doesn't normally
+happen.
+"""
+
+
 # sami.sdss
 # 
 # Contains functions used to interface between SAMI and SDSS. 

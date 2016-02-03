@@ -1,4 +1,8 @@
-""" SDSS throughput library for SNR and surface brightness codes. """
+"""
+SDSS throughput library for SNR and surface brightness codes.
+
+I (JTA) do not know what this is for.
+"""
 import numpy as np
 
 # g' wavelength and throughput

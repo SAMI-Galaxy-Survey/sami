@@ -1,3 +1,11 @@
+"""
+Assorted utility functions that didn't fit elsewhere.
+
+It would make sense to split this file into a few modules, grouping the
+functions in some useful manner, rather than just this big mix of
+everything.
+"""
+
 import numpy as np
 from scipy.ndimage.filters import median_filter
 from astropy import coordinates
@@ -552,7 +560,13 @@ def saturated_partial_pressure_water(air_pressure, air_temperature):
 
 
 def replace_xsym_link(path):
-    """Replace an XSym type link with a proper POSIX symlink."""
+    """
+    Replace an XSym type link with a proper POSIX symlink.
+
+    This function was needed when there was a clash between different
+    symlink types on different filesystems. Hopefully wont be needed
+    again, but left here just in case.
+    """
     # This could be sped up if only the first few lines were read in, but I
     # (JTA) can't be bothered.
     with open(path) as f:

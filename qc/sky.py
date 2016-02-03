@@ -1,3 +1,8 @@
+"""
+Functionality to measure the residuals in reduced sky fibres (which should
+have no flux), to see how good the sky subtraction is.
+"""
+
 import matplotlib
 import pylab as py
 import numpy as np
