@@ -1305,10 +1305,19 @@ class Manager:
 
     def reduce_sky(self, overwrite=False, fake_skies=True, **kwargs):
         """Reduce all offset sky frames matching given criteria."""
-        file_iterable = self.files(ndf_class='MFSKY', do_not_use=False,
-                                   **kwargs)
+        groups = self.group_files_by(
+            ('field_id', 'plate_id', 'date', 'ccd'),
+            ndf_class='MFSKY', do_not_use=False, **kwargs)
+        file_list = []
+        for files in groups.values():
+            file_list.extend(files)
         self.reduce_file_iterable(
-            file_iterable, overwrite=overwrite, check='SKY')
+            file_list, overwrite=overwrite, check='SKY')
+        # Average the throughput values in each group
+        for files in groups.values():
+            path_list = [fits.reduced_path for fits in files]
+            make_clipped_thput_files(
+                path_list, overwrite=overwrite, edit_all=True, median=True)
         if fake_skies:
             no_sky_list = self.fields_without_skies(**kwargs)
             # Certain parameters will already have been set so don't need
@@ -2985,6 +2994,15 @@ class Manager:
             filename = fits_match
         elif match_class.lower().startswith('tlmap'):
             filename = fits_match.tlm_filename
+            raw_filename = fits_match.filename
+            raw_dir = fits_match.raw_dir
+        elif match_class.lower() == 'thput':
+            thput_filename = 'thput_' + fits_match.reduced_filename
+            thput_path = os.path.join(fits_match.reduced_dir, thput_filename)
+            if os.path.exists(thput_path):
+                filename = thput_filename
+            else:
+                filename = fits_match.reduced_filename
             raw_filename = fits_match.filename
             raw_dir = fits_match.raw_dir
         elif match_class.lower() == 'thput_fflat':
