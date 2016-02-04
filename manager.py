@@ -1850,7 +1850,7 @@ class Manager:
             if cubed:
                 # Select the first fits file from this run (not linked runs)
                 for path in inputs[2]:
-                    fits = self.fits_file(os.path.basename(path))
+                    fits = self.fits_file(os.path.basename(path)[:10])
                     if fits:
                         break
                 update_checks('CUB', [fits], False)
