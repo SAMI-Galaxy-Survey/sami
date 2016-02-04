@@ -34,6 +34,7 @@ def ensure_interactive(function):
             if not was_interactive:
                 plt.ioff()
         return result
+    return with_interactive
 
 def check_bia(combined_path):
     """Plot a combined bias calibration frame."""
