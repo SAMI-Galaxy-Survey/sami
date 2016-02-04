@@ -19,6 +19,21 @@ import numpy as np
 import os
 import itertools
 from glob import glob
+from functools import wraps
+
+def ensure_interactive(function):
+    """Decorator to ensure matplotlib is in interactive mode."""
+    @wraps(function)
+    def with_interactive(*args, **kwargs):
+        was_interactive = plt.isinteractive()
+        if not was_interactive:
+            plt.ion()
+        try:
+            result = function(*args, **kwargs)
+        finally:
+            if not was_interactive:
+                plt.ioff()
+        return result
 
 def check_bia(combined_path):
     """Plot a combined bias calibration frame."""
@@ -41,6 +56,7 @@ than normal."""
     check_combined(combined_path, message)
     return
 
+@ensure_interactive
 def check_combined(combined_path, message):
     """Plot a combined calibration frame of some sort."""
     print message
@@ -57,6 +73,7 @@ def check_combined(combined_path, message):
     print "When you're ready to move on..."
     return
 
+@ensure_interactive
 def check_flx(fits_list):
     """Plot the results of flux calibration."""
     # Tell the user what to do
@@ -147,6 +164,7 @@ nomalisation is ok."""
     print "When you're ready to move on..."
     return
 
+@ensure_interactive
 def check_tel(fits_list):
     """Plot the results of telluric correction."""
     message = """Check that each plotted absorption spectrum has the correct
@@ -164,6 +182,7 @@ shape for telluric absorption."""
     print "When you're ready to move on..."
     return
 
+@ensure_interactive
 def check_ali(fits_list):
     """Plot the results of alignment."""
     message = """Check that any bad fits have been rejected."""
@@ -242,7 +261,8 @@ def check_ali(fits_list):
               + '\nSigma clip: ' + ', '.join('{:.2f}'.format(n) 
                                              for n in n_sigma))
     print "When you're ready to move on..."
-    
+
+@ensure_interactive
 def check_cub(fits_list):
     """Plot the results of cubing."""
     message = """Check that the galaxies appear in the centre in each arm, that
