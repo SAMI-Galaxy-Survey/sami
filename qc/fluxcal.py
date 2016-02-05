@@ -119,6 +119,19 @@ def calculate_mean_throughput(path_out, mngr_list, detector, date_start=None,
 
     Dates should be recorded as fractional years, e.g. 2014.461
     If not provided then a semi-infinite or infinite range is allowed.
+
+    The following Python commands were used to make the most recent set of
+    mean throughput files (Feb 2016):
+
+    import sami
+    from glob import glob
+    root_list = glob('/import/opus1/jallen/20*')
+    mngr_list = [sami.manager.Manager(root) for root in root_list]
+    sami.qc.fluxcal.calculate_mean_throughput('mean_throughput_E2V2.fits', mngr_list, 'E2V2')
+    sami.qc.fluxcal.calculate_mean_throughput('mean_throughput_E2V2A.fits', mngr_list, 'E2V2A')
+    sami.qc.fluxcal.calculate_mean_throughput('mean_throughput_E2V3_dirty.fits', mngr_list, 'E2V3', date_finish=2014.208)
+    sami.qc.fluxcal.calculate_mean_throughput('mean_throughput_E2V3_clean.fits', mngr_list, 'E2V3', date_start=2014.208)
+    sami.qc.fluxcal.calculate_mean_throughput('mean_throughput_E2V3A.fits', mngr_list, 'E2V3A')
     """
     thput_list = []
     filename_list = []
