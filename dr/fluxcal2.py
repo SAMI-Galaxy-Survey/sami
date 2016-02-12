@@ -68,6 +68,11 @@ from ..utils.mc_adr import parallactic_angle, adr_r
 from ..utils.other import saturated_partial_pressure_water
 from ..config import millibar_to_mmHg
 from ..utils.fluxcal2_io import read_model_parameters, save_extracted_flux
+from .. import calibrators
+
+calibs_dir = os.path.dirname(os.path.abspath(calibrators.__file__)) \
+    + '/calibrators'
+
 
 
 # Get the astropy version as a tuple of integers
@@ -75,9 +80,9 @@ ASTROPY_VERSION = tuple(int(x) for x in ASTROPY_VERSION.split('.'))
 
 HG_CHANGESET = hg_changeset(__file__)
 
-STANDARD_CATALOGUES = ('./standards/ESO/ESOstandards.dat',
-                       './standards/Bessell/Bessellstandards.dat')
-SSO_EXTINCTION_TABLE = './standards/extinsso.tab'
+STANDARD_CATALOGUES = (calibs_dir + '/standards/ESO/ESOstandards.dat',
+                       calibs_dir + '/standards/Bessell/Bessellstandards.dat')
+SSO_EXTINCTION_TABLE = calibs_dir + '/standards/extinsso.tab'
 
 REFERENCE_WAVELENGTH = 5000.0
 

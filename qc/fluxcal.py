@@ -15,6 +15,7 @@ from ..dr import fluxcal2
 from ..dr.telluric import identify_secondary_standard
 from ..utils import IFU
 from ..utils.other import clip_spectrum
+from .. import calibrators
 
 import astropy.io.fits as pf
 import numpy as np
@@ -22,6 +23,9 @@ from scipy.ndimage.filters import median_filter
 from scipy.optimize import leastsq
 
 import os
+import tempfile
+import warnings
+import subprocess
 from glob import glob
 import multiprocessing
 
@@ -291,7 +295,21 @@ def get_sdss_stellar_mags(mngr, catalogue=None):
     if not name_list:
         # Already had all the stars required
         print 'All magnitudes already in the catalogue.'
-        return False
+        return False, None
+    else:
+        try:
+            return auto_get_sdss_stellar_mags(name_list, coords_list)
+        except Exception as e:
+            err_message = e.message
+            warnings.warn(e.message)
+            return user_get_sdss_stellar_mags(name_list, coords_list)
+
+
+
+def user_get_sdss_stellar_mags(name_list, coords_list):
+    """Get magnitudes for stars from SDSS, asking the user to download the
+    values from the SDSS database."""
+
     print 'Go to:'
     print
     print 'http://cas.sdss.org/dr7/en/tools/crossid/crossid.asp'
@@ -314,7 +332,73 @@ WHERE u.up_id = x.up_id and x.objID=p.objID
 ORDER BY x.up_id"""
     print
     print 'Change output format to CSV, then hit submit.'
-    return True
+    return True, None
+
+
+
+def auto_get_sdss_stellar_mags(name_list, coords_list, search_rad=0.5/60.):
+    """Retrieve magnitudes for stars from the SDSS Database.
+    Parameters
+    ----------
+
+    search_rad : float, optional
+        Search radius around each position, in arcmin
+
+    """
+
+    path_to_sqlcl = os.path.abspath(calibrators.__file__).split('/')[:-1]
+    path_to_sqlcl = '/'.join(path_to_sqlcl) + '/qc/'
+
+    tmp_file_1 = tempfile.NamedTemporaryFile(delete=False)
+    tmp_file_2 = tempfile.NamedTemporaryFile(delete=True)
+    n_stars = len(name_list)
+
+    for n, (name, coords) in enumerate(zip(name_list, coords_list)):
+
+        print "Querying the SDSS Database (query {} of {})".format(
+            n+1, n_stars)
+
+        import pdb
+
+        sql_command = (path_to_sqlcl + "/./sqlcl.py -q \"SELECT" \
+            + " {star_name} as name, p.objID, p.ra, p.dec," \
+            + " dbo.fPhotoTypeN(p.type) as type," \
+            + " p.psfMag_u, p.psfMagErr_u, p.psfMag_g, p.psfMagErr_g," \
+            + " p.psfMag_r, p.psfMagErr_r, p.psfMag_i, p.psfMagErr_i," \
+            + " p.psfMag_z, p.psfMagErr_z " \
+            + " FROM PhotoTag p, " \
+            + " dbo.fGetNearbyObjEq({star_ra},{star_dec},{search_rad}) n" \
+            + " WHERE (n.objID = p.objID)" \
+            + " \" >> " + tmp_file_1.name).format(
+            star_name=name, star_ra=coords[0], star_dec=coords[1],
+            search_rad=search_rad)
+
+        os.system(sql_command)
+        subprocess.call(sql_command, shell=True)
+
+    # Clean the file:
+    subprocess.call("awk '!x[$0]++' " + tmp_file_1.name + " > " \
+        + tmp_file_2.name, shell=True)
+    subprocess.call("sed '/^#/ d' " + tmp_file_2.name + " > " \
+        + tmp_file_1.name, shell=True)
+    tmp_file_1.close()
+    tmp_file_2.close()
+
+    # Check that the data has the correct number of lines.
+    star_data = np.loadtxt(tmp_file_1.name, skiprows=1, delimiter=',',
+        converters={4: lambda x: 1 if x=='STAR' else 0})
+    star_data = star_data.reshape(-1, 15)
+
+    if len(star_data) != n_stars:
+        tmp_file_1.unlink(tmp_file_1.name) # Delete file
+
+        error_message = 'Retrieved {} objects instead of {}'.format(
+            len(star_data), n_stars)
+        raise SDSSQueryError(error_message)
+    else:
+        return True, tmp_file_1.name
+
+
 
 def get_missing_stars(mngr, catalogue=None):
     """Return lists of observed stars missing from the catalogue."""
@@ -1181,6 +1265,5 @@ def moffat_circular(x, y, alpha, beta, x0, y0, intensity):
 
 
 
-
-
-
+class SDSSQueryError(Exception):
+    pass
