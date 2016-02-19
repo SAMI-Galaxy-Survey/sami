@@ -2199,7 +2199,7 @@ class Manager:
         if found_mean:
             relative_throughput = absolute_throughput / mean_throughput
             data = np.vstack((absolute_throughput, relative_throughput))
-            median_relative_throughput = np.median(relative_throughput)
+            median_relative_throughput = np.nanmedian(relative_throughput)
             if not np.isfinite(median_relative_throughput):
                 median_relative_throughput = -1.0
         else:
