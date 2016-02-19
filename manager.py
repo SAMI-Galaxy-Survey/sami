@@ -91,6 +91,7 @@ from .qc.fluxcal import stellar_mags_cube_pair, stellar_mags_frame_pair
 from .qc.fluxcal import throughput, get_sdss_stellar_mags
 from .qc.sky import sky_residuals
 from .qc.arc import bad_fibres
+import calibrators
 
 # Get the astropy version as a tuple of integers
 ASTROPY_VERSION = tuple(int(x) for x in ASTROPY_VERSION.split('.'))
@@ -102,9 +103,9 @@ else:
     def ICRS(*args, **kwargs):
         return coord.SkyCoord(*args, frame='icrs', **kwargs)
 
-IDX_FILES_SLOW = {'580V': 'sami580V_v1_3.idx',
-                  '1500V': 'sami1500V_v1_3.idx',
-                  '1000R': 'sami1000R_v1_3.idx'}
+IDX_FILES_SLOW = {'580V': 'sami580V_v1_2.idx',
+                  '1500V': 'sami1500V_v1_2.idx',
+                  '1000R': 'sami1000R_v1_2.idx'}
 IDX_FILES_FAST = {'580V': 'sami580V.idx',
                   '1500V': 'sami1500V.idx',
                   '1000R': 'sami1000R.idx'}
@@ -228,24 +229,27 @@ CHECK_DATA = {
 # Extra priority for checking re-reductions
 PRIORITY_RECENT = 100
 
+calibs_dir = os.path.dirname(os.path.abspath(calibrators.__file__)) \
+    + '/calibrators'
+
 STELLAR_MAGS_FILES = [
-    ('standards/secondary/APMCC_0917_STARS.txt', 'ATLAS',
+    (calibs_dir + '/standards/secondary/APMCC_0917_STARS.txt', 'ATLAS',
         (0.076, 0.059, 0.041, 0.030, 0.023)),
-    ('standards/secondary/Abell_3880_STARS.txt', 'ATLAS',
+    (calibs_dir + '/standards/secondary/Abell_3880_STARS.txt', 'ATLAS',
         (0.064, 0.050, 0.034, 0.025, 0.019)),
-    ('standards/secondary/Abell_4038_STARS.txt', 'ATLAS',
+    (calibs_dir + '/standards/secondary/Abell_4038_STARS.txt', 'ATLAS',
         (0.081, 0.063, 0.044, 0.033, 0.024)),
-    ('standards/secondary/EDCC_0442_STARS.txt', 'ATLAS',
+    (calibs_dir + '/standards/secondary/EDCC_0442_STARS.txt', 'ATLAS',
         (0.071, 0.052, 0.038, 0.029, 0.020)),
-    ('standards/secondary/Abell_0085.fstarcat.txt', 'SDSS_cluster',
+    (calibs_dir + '/standards/secondary/Abell_0085.fstarcat.txt', 'SDSS_cluster',
         (0.0, 0.0, 0.0, 0.0, 0.0)),
-    ('standards/secondary/Abell_0119.fstarcat.txt', 'SDSS_cluster',
+    (calibs_dir + '/standards/secondary/Abell_0119.fstarcat.txt', 'SDSS_cluster',
         (0.0, 0.0, 0.0, 0.0, 0.0)),
-    ('standards/secondary/Abell_0168.fstarcat.txt', 'SDSS_cluster',
+    (calibs_dir + '/standards/secondary/Abell_0168.fstarcat.txt', 'SDSS_cluster',
         (0.0, 0.0, 0.0, 0.0, 0.0)),
-    ('standards/secondary/Abell_2399.fstarcat.txt', 'SDSS_cluster',
+    (calibs_dir + '/standards/secondary/Abell_2399.fstarcat.txt', 'SDSS_cluster',
         (0.0, 0.0, 0.0, 0.0, 0.0)),
-    ('standards/secondary/sdss_stellar_mags.csv', 'SDSS_GAMA',
+    (calibs_dir + '/standards/secondary/sdss_stellar_mags.csv', 'SDSS_GAMA',
         (0.0, 0.0, 0.0, 0.0, 0.0))]
 
 def stellar_mags_files():
@@ -253,7 +257,7 @@ def stellar_mags_files():
     for mags_file in STELLAR_MAGS_FILES:
         # The pre-determined ones listed above
         yield mags_file
-    for path in glob('standards/secondary/sdss_stellar_mags_*.csv'):
+    for path in glob(calibs_dir + '/standards/secondary/sdss_stellar_mags_*.csv'):
         # Extra files that have been downloaded by the user
         yield (path, 'SDSS_GAMA', (0.0, 0.0, 0.0, 0.0, 0.0))
 
@@ -749,7 +753,6 @@ class Manager:
                 demo = False
         self.demo = demo
         self.demo_data_source = demo_data_source
-        self.debug = False
 
     def map(self, function, input_list):
         """Map inputs to a function, using built-in map or multiprocessing."""
@@ -1468,8 +1471,7 @@ class Manager:
                        self.cwd,
                        self.imp_scratch,
                        self.scratch_dir,
-                       check,
-                       self.debug)
+                       check)
                       for fits in file_iterable
                       if (overwrite or
                           not os.path.exists(self.target_path(fits, tlm=tlm)))]
@@ -1745,17 +1747,21 @@ class Manager:
             catalogue = None
         else:
             catalogue = read_stellar_mags()
-        new = get_sdss_stellar_mags(self, catalogue=catalogue)
-        if not new:
-            # No new magnitudes were downloaded
+        new, new_csv_file = get_sdss_stellar_mags(self, catalogue=catalogue)
+        if not new: # No new magnitudes were downloaded
             return
-        path_in = raw_input('Enter the path to the downloaded file:\n')
+        else:
+            if new_csv_file is None:
+                path_in = raw_input('Enter the path to the downloaded file:\n')
+            else: # new==True and new_csv_file is not None
+                path_in =  new_csv_file
+
         idx = 1
-        path_out = 'standards/secondary/sdss_stellar_mags_{}.csv'.format(idx)
+        path_out = calibs_dir + '/standards/secondary/sdss_stellar_mags_{}.csv'.format(idx)
         while os.path.exists(path_out):
             idx += 1
             path_out = (
-                'standards/secondary/sdss_stellar_mags_{}.csv'.format(idx))
+                calibs_dir + '/standards/secondary/sdss_stellar_mags_{}.csv'.format(idx))
         shutil.move(path_in, path_out)
         return
 
@@ -2176,9 +2182,9 @@ class Manager:
         detector = pf.getval(path_input, 'DETECTOR')
         epoch = pf.getval(path_input, 'EPOCH')
         # Load mean throughput function for that CCD
-        path_list = (glob('standards/throughput/mean_throughput_' +
+        path_list = (glob(calibs_dir + '/standards/throughput/mean_throughput_' +
                           detector + '.fits') + 
-                     glob('standards/throughput/mean_throughput_' + 
+                     glob(calibs_dir + '/standards/throughput/mean_throughput_' + 
                           detector + '_*.fits'))
         for path_mean in path_list:
             hdulist_mean = pf.open(path_mean)
@@ -2299,7 +2305,7 @@ class Manager:
         options = self.tdfdr_options(fits, tlm=tlm)
         # All options have been set, so run 2dfdr
         tdfdr.run_2dfdr_single(fits, self.idx_files[fits.grating], 
-                               options=options, cwd=self.cwd, debug=self.debug)
+                               options=options, cwd=self.cwd)
         if (fits.ndf_class == 'MFFFF' and tlm and not leave_reduced and
             os.path.exists(fits.reduced_path)):
             os.remove(fits.reduced_path)
@@ -2507,16 +2513,11 @@ class Manager:
     def run_2dfdr_combine(self, file_iterable, output_path):
         """Use 2dfdr to combine the specified FITS files."""
         input_path_list = [fits.reduced_path for fits in file_iterable]
-        if not input_path_list:
-            print 'No reduced files found to combine!'
-            return
-        # Following line uses the last FITS file, assuming all are the same CCD
-        idx_file = self.idx_files[fits.grating]
         print 'Combining files to create', output_path
         tdfdr.run_2dfdr_combine(
-            input_path_list, output_path, idx_file, unique_imp_scratch=True, 
+            input_path_list, output_path, unique_imp_scratch=True, 
             return_to=self.cwd, restore_to=self.imp_scratch, 
-            scratch_dir=self.scratch_dir, debug=self.debug)
+            scratch_dir=self.scratch_dir)
         return
 
     def files(self, ndf_class=None, date=None, plate_id=None,
@@ -3105,7 +3106,7 @@ class Manager:
         tdfdr.load_gui(dirname=dirname, idx_file=idx_file, 
                        unique_imp_scratch=True, return_to=self.cwd, 
                        restore_to=self.imp_scratch, 
-                       scratch_dir=self.scratch_dir, debug=self.debug)
+                       scratch_dir=self.scratch_dir)
         return
 
     def find_directory_locks(self, lock_name='2dfdrLockDir'):
@@ -3989,13 +3990,12 @@ def best_path(fits):
 @safe_for_multiprocessing
 def run_2dfdr_single_wrapper(group):
     """Run 2dfdr on a single file."""
-    fits, idx_file, options, cwd, imp_scratch, scratch_dir, check, debug = \
-        group
+    fits, idx_file, options, cwd, imp_scratch, scratch_dir, check = group
     try:
         tdfdr.run_2dfdr_single(
             fits, idx_file, options=options, return_to=cwd, 
             unique_imp_scratch=True, restore_to=imp_scratch, 
-            scratch_dir=scratch_dir, debug=debug)
+            scratch_dir=scratch_dir)
     except tdfdr.LockException:
         message = ('Postponing ' + fits.filename + 
                    ' while other process has directory lock.')
