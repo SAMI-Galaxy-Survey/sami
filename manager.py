@@ -1912,6 +1912,7 @@ class Manager:
             table = pf.getdata(fits_list[0].reduced_path, 'FIBRES_IFU')
             objects = table['NAME'][table['TYPE'] == 'P']
             objects = np.unique(objects).tolist()
+	    objects = [obj.strip() for obj in objects] #Stripping whitespace from object names
             for name in objects:
                 if telluric.is_star(name):
                     break
@@ -1962,6 +1963,7 @@ class Manager:
             table = pf.getdata(fits_list[0].reduced_path, 'FIBRES_IFU')
             objects = table['NAME'][table['TYPE'] == 'P']
             objects = np.unique(objects).tolist()
+	    objects = [obj.strip() for obj in objects] #Strip whitespace from object names
             for name in objects:
                 path_pair = [
                     self.cubed_path(name, arm, fits_list, field_id, 
