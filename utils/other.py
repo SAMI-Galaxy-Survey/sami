@@ -51,6 +51,28 @@ def offset_hexa(csvfile, guide=None, obj=None, linear=False,
     If ignore_allocations is True, any hole will be used, regardless of
     whether there is a probe there."""
 
+    def print_offsets(offset_x, offset_y, name, with_apoff=False):
+        if offset_x <= 0:
+            offset_direction_x = 'E'
+        else:
+            offset_direction_x = 'W'
+        if offset_y <= 0:
+            offset_direction_y = 'N'
+        else:
+            offset_direction_y = 'S'
+
+        print('Move the telescope {0:,.2f} arcsec {1} and {2:,.2f} arcsec {3}'.format(
+            abs(offset_x), offset_direction_x, 
+            abs(offset_y), offset_direction_y))
+        print 'The star will move from the central hole'
+        print '    to', name
+        if with_apoff:
+            print '    (alternately, set the APOFF to X:{0:0.1f}, Y:{1:0.1f})'.format(
+                    -offset_y, -offset_x
+                )
+
+
+
     print '-' * 70
 
     csv = update_csv.CSV(csvfile)
@@ -105,20 +127,9 @@ def offset_hexa(csvfile, guide=None, obj=None, linear=False,
         guide_offset_x, guide_offset_y = plate2sky(
             guide_x, guide_y, linear=linear)
 
-        if guide_offset_x <= 0:
-            offset_direction_x = 'E'
-        else:
-            offset_direction_x = 'W'
-        if guide_offset_y <= 0:
-            offset_direction_y = 'N'
-        else:
-            offset_direction_y = 'S'
+        print_offsets(guide_offset_x, guide_offset_y, guide_name, 
+            with_apoff=True)
 
-        print('Move the telescope {0:,.2f} arcsec {1} and {2:,.2f} arcsec {3}'.format(
-            abs(guide_offset_x), offset_direction_x, 
-            abs(guide_offset_y), offset_direction_y))
-        print 'The star will move from the central hole'
-        print '    to', guide_name
 
     if ignore_allocations:
         valid_objects = np.arange(object_probe.size)
@@ -157,23 +168,11 @@ def offset_hexa(csvfile, guide=None, obj=None, linear=False,
     offset_x = object_offset_x - guide_offset_x
     offset_y = object_offset_y - guide_offset_y
     
-    if offset_x <= 0:
-        offset_direction_x = 'E'
-    else:
-        offset_direction_x = 'W'
-    if offset_y <= 0:
-        offset_direction_y = 'N'
-    else:
-        offset_direction_y = 'S'
+    print_offsets(offset_x, offset_y, object_name, with_apoff=False)
 
-    print('Move the telescope {0:,.2f} arcsec {1} and {2:,.2f} arcsec {3}'.format(
-        abs(offset_x), offset_direction_x, 
-        abs(offset_y), offset_direction_y))
-    print 'The star will move from', guide_name
-    print '    to', object_name
     print '-' * 70
 
-    return
+    return None
     
 def plate2sky(x, y, linear=False):
     """Convert position on plate to position on sky, relative to plate centre.
