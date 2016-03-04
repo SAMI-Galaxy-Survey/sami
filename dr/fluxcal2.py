@@ -616,6 +616,7 @@ def match_standard_star(filename, max_sep_arcsec=60.0,
                         catalogues=STANDARD_CATALOGUES):
     """Return details of the standard star that was observed in this file."""
     fibre_table = pf.getdata(filename, 'FIBRES_IFU')
+    primary_header = pf.getheader(filename)
     probenum_list = np.unique([fibre['PROBENUM'] for fibre in fibre_table
                                if 'SKY' not in fibre['PROBENAME']])
     for probenum in probenum_list:
@@ -623,6 +624,12 @@ def match_standard_star(filename, max_sep_arcsec=60.0,
                       (fibre_table['TYPE'] == 'P'))
         ra = np.mean(fibre_table['FIB_MRA'][this_probe])
         dec = np.mean(fibre_table['FIB_MDEC'][this_probe])
+        if primary_header['AXIS'] != 'REF':
+            # The observation has been taken in an axis other than REF,
+            # therefore the RA and DEC must be adjusted to get correct
+            # coordinates.
+            dec += primary_header['AXIS_X'] * 180/np.pi
+            ra += primary_header['AXIS_Y'] * 180/np.pi
         star_match = match_star_coordinates(
             ra, dec, max_sep_arcsec=max_sep_arcsec, catalogues=catalogues)
         if star_match is not None:
