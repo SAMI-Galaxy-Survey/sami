@@ -561,8 +561,10 @@ def raw(flat_file, object_file, IFU="unknown", sigma_clip=False, log=True,
 
         for Probe in Probe_list:
             Probe_data = object_spec[np.where(flat_fibtab.field('TYPE')=="P") and np.where(flat_fibtab.field('PROBENUM')==Probe)]
-            x = flat_fibtab.field('FIB_PX')[np.where(flat_fibtab.field('TYPE')=="P") and np.where(flat_fibtab.field('PROBENUM')==Probe)] - flat_fibtab.field('FIB_PX')[np.where(flat_fibtab.field('TYPE')=="P") and np.where(flat_fibtab.field('PROBENUM')==Probe) and np.where(flat_fibtab.field('FIBNUM')==1)][3*(-Probe+14) - 2]
-            y = -(flat_fibtab.field('FIB_PY')[np.where(flat_fibtab.field('TYPE')=="P") and np.where(flat_fibtab.field('PROBENUM')==Probe)] - flat_fibtab.field('FIB_PY')[np.where(flat_fibtab.field('TYPE')=="P") and np.where(flat_fibtab.field('PROBENUM')==Probe) and np.where(flat_fibtab.field('FIBNUM')==1)][3*(-Probe+14) - 2])
+            x = flat_fibtab.field('FIB_PX')[np.logical_and(flat_fibtab.field('TYPE')=="P",
+                                                           flat_fibtab['PROBENUM']==Probe)]
+            y = flat_fibtab.field('FIB_PY')[np.logical_and(flat_fibtab.field('TYPE')=="P",
+                                                             flat_fibtab.field('PROBENUM')==Probe)]
 
             mean_x = np.mean(flat_fibtab.field('FIBPOS_X')[
                     np.where(flat_fibtab.field('TYPE')=="P")
@@ -575,6 +577,8 @@ def raw(flat_file, object_file, IFU="unknown", sigma_clip=False, log=True,
             ax.axis([-140000, 140000, -140000, 140000])
             py.setp(ax.get_xticklabels(), visible=False)
             py.setp(ax.get_yticklabels(), visible=False)
+            ax.text(mean_x, mean_y - 20*750, "Probe " + str(Probe),
+                    verticalalignment="bottom", horizontalalignment='center')
 
         ax.arrow(100000,100000,0,15000, color="#aa0000", edgecolor='#aa0000', width=100)
         ax.text(101000,116000, 'North', verticalalignment="bottom", horizontalalignment='left')
