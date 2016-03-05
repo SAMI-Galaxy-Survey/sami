@@ -3180,7 +3180,7 @@ class Manager:
         check_method(fits_list)
         print 'Have you finished checking all the files? (y/n)'
         print 'If yes, the check will be removed from the list.'
-        y_n = raw_input(' > ')
+        y_n = raw_input(' > ') + "n"
         finished = (y_n.lower()[0] == 'y')
         if finished:
             print 'Removing this test from the list.'
