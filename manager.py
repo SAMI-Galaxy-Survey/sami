@@ -750,6 +750,9 @@ class Manager:
         self.demo = demo
         self.demo_data_source = demo_data_source
 
+    def __repr__(self):
+        return "SAMIManagerInstance at {}".format(self.root)
+
     def map(self, function, input_list):
         """Map inputs to a function, using built-in map or multiprocessing."""
         if not input_list:
@@ -1754,7 +1757,7 @@ class Manager:
             idx += 1
             path_out = (
                 'standards/secondary/sdss_stellar_mags_{}.csv'.format(idx))
-        shutil.move(path_in, path_out)
+            shutil.move(path_in, path_out)
         return
 
     def scale_frames(self, overwrite=False, **kwargs):
@@ -3344,6 +3347,9 @@ class FITSFile:
         self.set_copy()
         self.hdulist.close()
         del self.hdulist
+
+    def __repr__(self):
+        return "FITSFile {}, type: {}".format(self.filename, self.ndf_class)
 
     def set_ndf_class(self):
         """Save the NDF_CLASS of an AAT fits file."""
