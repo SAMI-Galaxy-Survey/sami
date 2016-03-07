@@ -1111,6 +1111,8 @@ class Manager:
 
     def disable_files(self, file_iterable):
         """Disable (delete links to) files in provided list (or iterable)."""
+        if isinstance(file_iterable, str):
+            raise ValueError("disable_files must be passed a list of files, e.g., ['07mar10032.fits']")
         for fits in file_iterable:
             if isinstance(fits, str):
                 fits = self.fits_file(fits)
@@ -1125,6 +1127,8 @@ class Manager:
 
     def enable_files(self, file_iterable):
         """Enable files in provided list (or iterable)."""
+        if isinstance(file_iterable, str):
+            raise ValueError("enable_files must be passed a list of files, e.g., ['07mar10032.fits']")
         for fits in file_iterable:
             if isinstance(fits, str):
                 fits = self.fits_file(fits)
@@ -2221,12 +2225,19 @@ class Manager:
         try:
             median_relative_throughput = (
                 pf.getval(pf.getval(path, 'FCALFILE'),
-                          'MEDRELTH', 'THROUGHPUT') / 
+                          'MEDRELTH', 'THROUGHPUT'))
+        except KeyError:
+            # Not all the data is available
+            print "Warning: 'combine_transfer_function' required to calculate transmission."
+            return
+        try:
+            median_relative_throughput /= (
                 pf.getval(path, 'RESCALE', 'FLUX_CALIBRATION'))
         except KeyError:
             # Not all the data is available
-            print 'Warning: Not all data required to calculate transmission is available.'
+            print 'Warning: Flux calibration required to calculate transmission.'
             return
+
         if not np.isfinite(median_relative_throughput):
             median_relative_throughput = -1.0
         self.ensure_qc_hdu(path)
