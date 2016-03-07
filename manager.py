@@ -1059,7 +1059,18 @@ class Manager:
     def import_aat(self, username=None, password=None, date=None,
                    server='aatlxa', path='/data_lxy/aatobs/OptDet_data'):
         """Import from the AAT data disks."""
-        with self.connection(server=server, username=username, 
+        if os.path.exists(path):
+            # Assume we are on a machine at the AAT which has direct access to
+            # the data directories
+            if date is None:
+                date_options = [s for s in os.listdir(path)
+                                if re.match(r'\d{6}', s) and os.path.isdir(s)]
+                date = sorted(date_options)[-1]
+            self.import_dir(os.path.join(path, date))
+            return
+
+        # Otherwise, it is necessary to SCP!
+        with self.connection(server=server, username=username,
                              password=password) as srv:
             if srv is None:
                 return
