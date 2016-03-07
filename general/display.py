@@ -565,17 +565,15 @@ def raw(flat_file, object_file, IFU="unknown", sigma_clip=False, log=True,
 
         for Probe in Probe_list:
             Probe_data = object_spec[np.where(object_fibtab.field('TYPE')=="P") and np.where(object_fibtab.field('PROBENUM')==Probe)]
-            x = object_fibtab.field('FIB_PX')[np.logical_and(object_fibtab.field('TYPE')=="P",
-                                                           object_fibtab['PROBENUM']==Probe)]
-            y = object_fibtab.field('FIB_PY')[np.logical_and(object_fibtab.field('TYPE')=="P",
-                                                             object_fibtab.field('PROBENUM')==Probe)]
 
-            mean_x = np.mean(object_fibtab.field('FIBPOS_X')[
-                    np.where(object_fibtab.field('TYPE')=="P")
-                    and np.where(object_fibtab.field('PROBENUM')==Probe)])
-            mean_y = np.mean(object_fibtab.field('FIBPOS_Y')[
-                    np.where(object_fibtab.field('TYPE')=="P")
-                    and np.where(object_fibtab.field('PROBENUM')==Probe)])
+            mask = np.logical_and(object_fibtab.field('TYPE')=="P",
+                                  object_fibtab['PROBENUM']==Probe)
+
+            mean_x = np.mean(object_fibtab.field('FIBPOS_X')[mask])
+            mean_y = np.mean(object_fibtab.field('FIBPOS_Y')[mask])
+
+            x = object_fibtab.field('FIBPOS_X')[mask] - mean_x
+            y = object_fibtab.field('FIBPOS_Y')[mask] - mean_y
 
             ax.add_collection(display_ifu(x, y, mean_x, mean_y, scale_factor, Probe_data))
             ax.axis([-140000, 140000, -140000, 140000])
