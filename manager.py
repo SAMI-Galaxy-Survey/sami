@@ -700,6 +700,32 @@ class Manager:
     The other functions defined probably aren't useful to you.
     """
 
+
+    # Task list provides the list of standard reduction tasks in the necessary
+    # order. This is used by `reduce_all`, and also by each reduction step to provide instructions on the next step to run.
+    task_list = (
+        ('reduce_bias', True),
+        ('combine_bias', False),
+        ('reduce_dark', True),
+        ('combine_dark', False),
+        ('reduce_lflat', True),
+        ('combine_lflat', False),
+        ('make_tlm', True),
+        ('reduce_arc', True),
+        ('reduce_fflat', True),
+        ('reduce_sky', True),
+        ('reduce_object', True),
+        ('derive_transfer_function', True),
+        ('combine_transfer_function', True),
+        ('flux_calibrate', True),
+        ('telluric_correct', True),
+        ('scale_frames', True),
+        ('measure_offsets', True),
+        ('cube', True),
+        ('scale_cubes', True),
+        ('bin_cubes', True),
+    )
+
     def __init__(self, root, copy_files=False, move_files=False, fast=False,
                  gratlpmm=GRATLPMM, n_cpu=1, demo=False,
                  demo_data_source='demo'):
@@ -749,6 +775,18 @@ class Manager:
                 demo = False
         self.demo = demo
         self.demo_data_source = demo_data_source
+
+    def next_step(self, step, print_message=False):
+        task_name_list = list(map(lambda x: x[0], self.task_list))
+        current_index = task_name_list.index(step)
+        if current_index + 1 < len(task_name_list):
+            next_step = task_name_list[current_index + 1]
+        else:
+            # nothing left
+            next_step = None
+        if print_message:
+            print "'{}' step complete. Next step is '{}'".format(step, next_step)
+        return next_step
 
     def __repr__(self):
         return "SAMIManagerInstance at {}".format(self.root)
@@ -1251,11 +1289,13 @@ class Manager:
         """Reduce all bias frames."""
         self.reduce_calibrator(
             'bias', overwrite=overwrite, check='BIA', **kwargs)
+        self.next_step('reduce_bias', print_message=True)
         return
 
     def combine_bias(self, overwrite=False):
         """Produce and link necessary BIAScombined.fits files."""        
         self.combine_calibrator('bias', overwrite=overwrite)
+        self.next_step('combine_bias', print_message=True)
         return
 
     def link_bias(self, overwrite=False):
@@ -1267,11 +1307,13 @@ class Manager:
         """Reduce all dark frames."""
         self.reduce_calibrator(
             'dark', overwrite=overwrite, check='DRK', **kwargs)
+        self.next_step('reduce_dark', print_message=True)
         return
         
     def combine_dark(self, overwrite=False):
         """Produce and link necessary DARKcombinedXXXX.fits files."""
         self.combine_calibrator('dark', overwrite=overwrite)
+        self.next_step('combine_dark', print_message=True)
         return
 
     def link_dark(self, overwrite=False):
@@ -1288,6 +1330,7 @@ class Manager:
     def combine_lflat(self, overwrite=False):
         """Produce and link necessary LFLATcombined.fits files."""
         self.combine_calibrator('lflat', overwrite=overwrite)
+        self.next_step('combine_lflat', print_message=True)
         return
 
     def link_lflat(self, overwrite=False):
@@ -1302,6 +1345,7 @@ class Manager:
         self.reduce_file_iterable(
             file_iterable, overwrite=overwrite, tlm=True, 
             leave_reduced=leave_reduced, check='TLM')
+        self.next_step('make_tlm', print_message=True)
         return
 
     def reduce_arc(self, overwrite=False, **kwargs):
@@ -1312,6 +1356,7 @@ class Manager:
             file_iterable, overwrite=overwrite, check='ARC')
         for fits in reduced_files:
             bad_fibres(fits.reduced_path, save=True)
+        self.next_step('reduce_arc', print_message=True)
         return
 
     def reduce_fflat(self, overwrite=False, **kwargs):
@@ -1320,6 +1365,7 @@ class Manager:
                                    **kwargs)
         self.reduce_file_iterable(
             file_iterable, overwrite=overwrite, check='FLT')
+        self.next_step('reduce_fflat', print_message=True)
         return
 
     def reduce_sky(self, overwrite=False, fake_skies=True, **kwargs):
@@ -1355,6 +1401,7 @@ class Manager:
                         self.copy_as(fits, 'MFSKY', overwrite=overwrite))
             # Now reduce the fake sky files from all fields
             self.reduce_file_iterable(fits_sky_list, overwrite=overwrite)
+        self.next_step('reduce_sky', print_message=True)
         return
 
     def fields_without_skies(self, **kwargs):
@@ -1470,6 +1517,7 @@ class Manager:
         # Check how good the sky subtraction was
         for fits in reduced_files:
             self.qc_sky(fits)
+        self.next_step('reduce_object', print_message=True)
         return
 
     def reduce_file_iterable(self, file_iterable, throughput_method='default',
@@ -1623,6 +1671,7 @@ class Manager:
                 'sami.dr.fluxcal2.derive_transfer_function',
                 fake_derive_transfer_function):
             self.map(derive_transfer_function_pair, inputs_list)
+        self.next_step('derive_transfer_function', print_message=True)
         return
 
     def combine_transfer_function(self, overwrite=False, **kwargs):
@@ -1655,6 +1704,7 @@ class Manager:
                         print 'Copying combined file to', path_copy
                         shutil.copy2(path_out, path_copy)
             update_checks('FLX', fits_list, False)
+        self.next_step('combine_transfer_function', print_message=True)
         return
 
     def flux_calibrate(self, overwrite=False, **kwargs):
@@ -1679,6 +1729,7 @@ class Manager:
                     fits.reduced_path,
                     fits.fluxcal_path,
                     path_transfer_fn)
+        self.next_step('flux_calibrate', print_message=True)
         return
 
     def telluric_correct(self, overwrite=False, model_name=None, name='main',
@@ -1754,6 +1805,7 @@ class Manager:
             # Copy the FWHM measurement to the QC header
             self.qc_seeing(inputs['fits_1'])
             self.qc_seeing(inputs['fits_2'])
+        self.next_step('telluric_correct', print_message=True)
         return
 
     def get_stellar_photometry(self, refresh=False):
@@ -1795,6 +1847,7 @@ class Manager:
         for (path_1, path_2) in inputs_list:
             self.qc_throughput_frame(path_1)
             self.qc_throughput_frame(path_2)
+        self.next_step('scale_frames', print_message=True)
         return
 
     def measure_offsets(self, overwrite=False, min_exposure=599.0, name='main',
@@ -1831,6 +1884,7 @@ class Manager:
                     break
         with self.patch_if_demo('sami.manager.find_dither', fake_find_dither):
             self.map(measure_offsets_group, complete_groups)
+        self.next_step('measure_offsets', print_message=True)
         return
 
     def cube(self, overwrite=False, min_exposure=599.0, name='main', 
@@ -1882,6 +1936,7 @@ class Manager:
                     if fits:
                         break
                 update_checks('CUB', [fits], False)
+        self.next_step('cube', print_message=True)
         return
 
     def qc_for_cubing(self, fits_list, min_transmission=0.333, max_seeing=4.0,
@@ -1966,6 +2021,7 @@ class Manager:
         with self.patch_if_demo('sami.manager.stellar_mags_cube_pair',
                                 fake_stellar_mags_cube_pair):
             self.map(scale_cubes_field, input_list)
+        self.next_step('scale_cubes', print_message=True)
         return
 
     def bin_cubes(self, overwrite=False, min_exposure=599.0, name='main',
@@ -1997,6 +2053,7 @@ class Manager:
                     if not skip:
                         path_pair_list.append(path_pair)
         self.map(bin_cubes_pair, path_pair_list)
+        self.next_step('bin_cubes', print_message=True)
         return
 
     def record_dust(self, overwrite=False, min_exposure=599.0, name='main',
@@ -2061,28 +2118,8 @@ class Manager:
 
     def reduce_all(self, start=None, finish=None, overwrite=False, **kwargs):
         """Reduce everything, in order. Don't use unless you're sure."""
-        task_list = (
-            ('reduce_bias', True),
-            ('combine_bias', False),
-            ('reduce_dark', True),
-            ('combine_dark', False),
-            ('reduce_lflat', True),
-            ('combine_lflat', False),
-            ('make_tlm', True),
-            ('reduce_arc', True),
-            ('reduce_fflat', True),
-            ('reduce_sky', True),
-            ('reduce_object', True),
-            ('derive_transfer_function', True),
-            ('combine_transfer_function', True),
-            ('flux_calibrate', True),
-            ('telluric_correct', True),
-            ('scale_frames', True),
-            ('measure_offsets', True),
-            ('cube', True),
-            ('scale_cubes', True),
-            ('bin_cubes', True),
-            )
+
+        task_list = self.task_list
 
         # Check for valid inputs:
         task_name_list = map(lambda x:x[0], task_list)
