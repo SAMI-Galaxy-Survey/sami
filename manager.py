@@ -2059,7 +2059,7 @@ class Manager:
             self.map(gzip_wrapper, input_list)
         return
 
-    def reduce_all(self, overwrite=False, start=None, finish=None, **kwargs):
+    def reduce_all(self, start=None, finish=None, overwrite=False, **kwargs):
         """Reduce everything, in order. Don't use unless you're sure."""
         task_list = (
             ('reduce_bias', True),
@@ -2083,6 +2083,14 @@ class Manager:
             ('scale_cubes', True),
             ('bin_cubes', True),
             )
+
+        # Check for valid inputs:
+        task_name_list = map(lambda x:x[0], task_list)
+        if start not in task_name_list:
+            raise ValueError("Invalid start step! Must be one of: {}".format(", ".join(task_name_list)))
+        if finish not in task_name_list:
+            raise ValueError("Invalid finish step! Must be one of: {}".format(", ".join(task_name_list)))
+
         if start is None:
             start = task_list[0][0]
         if finish is None:
@@ -2094,6 +2102,7 @@ class Manager:
                 continue
             started = True
             method = getattr(self, task)
+            print "Starting reduction step '{}'".format(task)
             if include_kwargs:
                 method(overwrite, **kwargs)
             else:
