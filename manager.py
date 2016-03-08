@@ -1217,9 +1217,10 @@ class Manager:
                 for link_dir in self.reduced_dirs(dir_type, ccd=ccd,
                                                   do_not_use=False):
                     link_path = os.path.join(link_dir, filename)
-                    if overwrite and os.path.exists(link_path):
+                    if overwrite and (os.path.exists(link_path) or
+                                      os.path.islink(link_path)):
                         os.remove(link_path)
-                    if not os.path.exists(link_path):
+                    if (not os.path.exists(link_path)) and os.path.exists(path):
                         os.symlink(os.path.relpath(path, link_dir),
                                    link_path)
         return        
