@@ -1064,7 +1064,8 @@ class Manager:
             # the data directories
             if date is None:
                 date_options = [s for s in os.listdir(path)
-                                if re.match(r'\d{6}', s) and os.path.isdir(s)]
+                                if (re.match(r'\d{6}', s) and
+                                    os.path.isdir(os.path.join(path, s)))]
                 date = sorted(date_options)[-1]
             self.import_dir(os.path.join(path, date))
             return
