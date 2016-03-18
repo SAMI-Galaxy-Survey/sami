@@ -246,6 +246,8 @@ STELLAR_MAGS_FILES = [
     ('standards/secondary/Abell_2399.fstarcat.txt', 'SDSS_cluster',
         (0.0, 0.0, 0.0, 0.0, 0.0)),
     ('standards/secondary/sdss_stellar_mags.csv', 'SDSS_GAMA',
+        (0.0, 0.0, 0.0, 0.0, 0.0)),
+    ('standards/secondary/fornax_stellar_mags.txt', 'FORNAX',
         (0.0, 0.0, 0.0, 0.0, 0.0))]
 
 def stellar_mags_files():
