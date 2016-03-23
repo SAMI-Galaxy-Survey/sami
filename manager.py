@@ -1828,10 +1828,10 @@ class Manager:
         # right place
         cubed_root = os.path.join(self.root, 'cubed')
         inputs_list = []
-        
+
         failed_qc_file = os.path.join(self.root,'failed_qc_fields.txt')
-        with open(failed_qc_file,"r+") as infile:
-            failed_fields = infile.readlines()
+        with open(failed_qc_file,"w+") as infile:
+            failed_fields = [line.rstrip() for line in infile]
             
             for (field_id, ccd), fits_list in groups.items():
                 good_fits_list = self.qc_for_cubing(
@@ -1842,7 +1842,7 @@ class Manager:
                     # Not enough good frames to bother making the cubes
                     if field_id not in failed_fields:
                         failed_fields.append(field_id)
-                if star_only:
+                elif star_only:
                     objects = [pf.getval(path_list[0], 'STDNAME', 'FLUX_CALIBRATION')]
                 else:
                     objects = get_object_names(path_list[0])
@@ -1859,48 +1859,22 @@ class Manager:
                     inputs_list.append(
                         (field_id, ccd, path_list, name, cubed_root, drop_factor,
                         tag, update_tol, size_of_grid, output_pix_size_arcsec,
-                        overwrite))
-        
+                        overwrite))       
+ 
         with open(failed_qc_file,"w") as outfile:
+	    failed_fields = [field+'\n' for field in failed_fields]
             outfile.writelines(failed_fields)
-
-
-        cubed_root = os.path.join(self.root, 'cubed')
-        inputs_list = []
-        for (field_id, ccd), fits_list in groups.items():
-            good_fits_list = self.qc_for_cubing(
-                fits_list, min_transmission=min_transmission,
-                max_seeing=max_seeing, min_exposure=min_exposure)
-            path_list = [best_path(fits) for fits in good_fits_list]
-            if len(path_list) < min_frames:
-                # Not enough good frames to bother making the cubes
-                continue
-            if star_only:
-                objects = [
-                    pf.getval(path_list[0], 'STDNAME', 'FLUX_CALIBRATION')]
-            else:
-                objects = get_object_names(path_list[0])
-            if drop_factor is None:
-                if fits_list[0].epoch < 2013.0:
-                    # Large pitch of pilot data requires a larger drop size
-                    drop_factor = 0.75
-                else:
-                    drop_factor = 0.5
-            for name in objects:
-                inputs_list.append(
-                    (field_id, ccd, path_list, name, cubed_root, drop_factor,
-                     tag, update_tol, size_of_grid, output_pix_size_arcsec,
-                     overwrite))
-        # Send the cubing tasks off to multiple CPUs
+        
+	# Send the cubing tasks off to multiple CPUs
         with self.patch_if_demo('sami.manager.dithered_cubes_from_rss_wrapper',
                                 fake_dithered_cube_from_rss_wrapper):
             cubed_list = self.map(cube_object, inputs_list)
         # Mark cubes as not checked. Only mark the first file in each input set
         for inputs, cubed in zip(inputs_list, cubed_list):
             if cubed:
-                # Select the first fits file from this run (not linked runs)
-                for path in inputs[2]:
-                    fits = self.fits_file(os.path.basename(path)[:10])
+               # Select the first fits file from this run (not linked runs)
+               for path in inputs[2]:
+               	    fits = self.fits_file(os.path.basename(path)[:10])
                     if fits:
                         break
                 update_checks('CUB', [fits], False)
