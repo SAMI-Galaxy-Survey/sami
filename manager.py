@@ -1877,7 +1877,7 @@ class Manager:
                	    fits = self.fits_file(os.path.basename(path)[:10])
                     if fits:
                         break
-                update_checks('CUB', [fits], False)
+               update_checks('CUB', [fits], False)
         return
 
     def qc_for_cubing(self, fits_list, min_transmission=0.333, max_seeing=4.0,
