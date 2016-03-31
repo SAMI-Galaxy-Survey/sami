@@ -3243,11 +3243,20 @@ class Manager:
 
     def check_next_group(self, *args, **kwargs):
         """Perform required checks on the highest priority group."""
+        if len(self.list_checks(*args, **kwargs)) == 0:
+            print "Yay! no more checks to do."
+            return
         self.check_group(0, *args, **kwargs)
 
     def check_group(self, index, *args, **kwargs):
         """Perform required checks on the specified group."""
-        key, fits_list = self.list_checks(*args, **kwargs)[index]
+        try:
+            key, fits_list = self.list_checks(*args, **kwargs)[index]
+        except IndexError:
+            print ("Check group '{}' does not exist.\n" 
+                   + "Try mngr.print_checks() for a list of "
+                   + "available checks.").format(index)
+            return
         check_method = getattr(self, 'check_' + key[0].lower())
         check_method(fits_list)
         print 'Have you finished checking all the files? (y/n)'
