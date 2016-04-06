@@ -1329,6 +1329,7 @@ def scale_cube_pair_to_mag(file_pair, axis, hdu='PRIMARY', band=None):
             if overlap_new > overlap:
                 # Better coverage than previous best
                 band = band_new
+                overlap = overlap_new
     key = 'MAG' + band.upper()
     measured_mag = header[key]
     catalogue_mag = header['CAT' + key]
