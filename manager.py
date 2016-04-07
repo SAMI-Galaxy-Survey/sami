@@ -102,9 +102,9 @@ else:
     def ICRS(*args, **kwargs):
         return coord.SkyCoord(*args, frame='icrs', **kwargs)
 
-IDX_FILES_SLOW = {'580V': 'sami580V_v1_2.idx',
-                  '1500V': 'sami1500V_v1_2.idx',
-                  '1000R': 'sami1000R_v1_2.idx'}
+IDX_FILES_SLOW = {'580V': 'sami580V_v1_3.idx',
+                  '1500V': 'sami1500V_v1_3.idx',
+                  '1000R': 'sami1000R_v1_3.idx'}
 IDX_FILES_FAST = {'580V': 'sami580V.idx',
                   '1500V': 'sami1500V.idx',
                   '1000R': 'sami1000R.idx'}
@@ -775,6 +775,7 @@ class Manager:
                 demo = False
         self.demo = demo
         self.demo_data_source = demo_data_source
+        self.debug = False
 
     def next_step(self, step, print_message=False):
         task_name_list = list(map(lambda x: x[0], self.task_list))
@@ -1271,9 +1272,10 @@ class Manager:
                 for link_dir in self.reduced_dirs(dir_type, ccd=ccd,
                                                   do_not_use=False):
                     link_path = os.path.join(link_dir, filename)
-                    if overwrite and os.path.exists(link_path):
+                    if overwrite and (os.path.exists(link_path) or
+                                      os.path.islink(link_path)):
                         os.remove(link_path)
-                    if not os.path.exists(link_path):
+                    if (not os.path.exists(link_path)) and os.path.exists(path):
                         os.symlink(os.path.relpath(path, link_dir),
                                    link_path)
         return        
@@ -1534,7 +1536,8 @@ class Manager:
                        self.cwd,
                        self.imp_scratch,
                        self.scratch_dir,
-                       check)
+                       check,
+                       self.debug)
                       for fits in file_iterable
                       if (overwrite or
                           not os.path.exists(self.target_path(fits, tlm=tlm)))]
@@ -1899,31 +1902,44 @@ class Manager:
         # right place
         cubed_root = os.path.join(self.root, 'cubed')
         inputs_list = []
-        for (field_id, ccd), fits_list in groups.items():
-            good_fits_list = self.qc_for_cubing(
-                fits_list, min_transmission=min_transmission,
-                max_seeing=max_seeing, min_exposure=min_exposure)
-            path_list = [best_path(fits) for fits in good_fits_list]
-            if len(path_list) < min_frames:
-                # Not enough good frames to bother making the cubes
-                continue
-            if star_only:
-                objects = [
-                    pf.getval(path_list[0], 'STDNAME', 'FLUX_CALIBRATION')]
-            else:
-                objects = get_object_names(path_list[0])
-            if drop_factor is None:
-                if fits_list[0].epoch < 2013.0:
-                    # Large pitch of pilot data requires a larger drop size
-                    drop_factor = 0.75
+
+        failed_qc_file = os.path.join(self.root,'failed_qc_fields.txt')
+        with open(failed_qc_file,"w+") as infile:
+            failed_fields = [line.rstrip() for line in infile]
+            
+            for (field_id, ccd), fits_list in groups.items():
+                good_fits_list = self.qc_for_cubing(
+                    fits_list, min_transmission=min_transmission,
+                    max_seeing=max_seeing, min_exposure=min_exposure)
+                path_list = [best_path(fits) for fits in good_fits_list]
+                if len(path_list) < min_frames:
+                    # Not enough good frames to bother making the cubes
+                    if field_id not in failed_fields:
+                        failed_fields.append(field_id)
+                elif star_only:
+                    objects = [pf.getval(path_list[0], 'STDNAME', 'FLUX_CALIBRATION')]
                 else:
-                    drop_factor = 0.5
-            for name in objects:
-                inputs_list.append(
-                    (field_id, ccd, path_list, name, cubed_root, drop_factor,
-                     tag, update_tol, size_of_grid, output_pix_size_arcsec,
-                     overwrite))
-        # Send the cubing tasks off to multiple CPUs
+                    objects = get_object_names(path_list[0])
+                    if field_id in failed_fields:
+                        failed_fields.remove(field_id)
+                if drop_factor is None:
+                    if fits_list[0].epoch < 2013.0:
+                        # Large pitch of pilot data requires a larger drop size
+                        drop_factor = 0.75
+                    else:
+                        drop_factor = 0.5
+                        
+                for name in objects:
+                    inputs_list.append(
+                        (field_id, ccd, path_list, name, cubed_root, drop_factor,
+                        tag, update_tol, size_of_grid, output_pix_size_arcsec,
+                        overwrite))       
+ 
+        with open(failed_qc_file,"w") as outfile:
+	    failed_fields = [field+'\n' for field in failed_fields]
+            outfile.writelines(failed_fields)
+        
+	# Send the cubing tasks off to multiple CPUs
         with self.patch_if_demo('sami.manager.dithered_cubes_from_rss_wrapper',
                                 fake_dithered_cube_from_rss_wrapper):
             cubed_list = self.map(cube_object, inputs_list)
@@ -1984,6 +2000,7 @@ class Manager:
             table = pf.getdata(fits_list[0].reduced_path, 'FIBRES_IFU')
             objects = table['NAME'][table['TYPE'] == 'P']
             objects = np.unique(objects).tolist()
+	    objects = [obj.strip() for obj in objects] #Stripping whitespace from object names
             for name in objects:
                 if telluric.is_star(name):
                     break
@@ -2035,6 +2052,7 @@ class Manager:
             table = pf.getdata(fits_list[0].reduced_path, 'FIBRES_IFU')
             objects = table['NAME'][table['TYPE'] == 'P']
             objects = np.unique(objects).tolist()
+	    objects = [obj.strip() for obj in objects] #Strip whitespace from object names
             for name in objects:
                 path_pair = [
                     self.cubed_path(name, arm, fits_list, field_id, 
@@ -2262,7 +2280,7 @@ class Manager:
         if found_mean:
             relative_throughput = absolute_throughput / mean_throughput
             data = np.vstack((absolute_throughput, relative_throughput))
-            median_relative_throughput = np.median(relative_throughput)
+            median_relative_throughput = np.nanmedian(relative_throughput)
             if not np.isfinite(median_relative_throughput):
                 median_relative_throughput = -1.0
         else:
@@ -2369,7 +2387,7 @@ class Manager:
         options = self.tdfdr_options(fits, tlm=tlm)
         # All options have been set, so run 2dfdr
         tdfdr.run_2dfdr_single(fits, self.idx_files[fits.grating], 
-                               options=options, cwd=self.cwd)
+                               options=options, cwd=self.cwd, debug=self.debug)
         if (fits.ndf_class == 'MFFFF' and tlm and not leave_reduced and
             os.path.exists(fits.reduced_path)):
             os.remove(fits.reduced_path)
@@ -2577,11 +2595,16 @@ class Manager:
     def run_2dfdr_combine(self, file_iterable, output_path):
         """Use 2dfdr to combine the specified FITS files."""
         input_path_list = [fits.reduced_path for fits in file_iterable]
+        if not input_path_list:
+            print 'No reduced files found to combine!'
+            return
+        # Following line uses the last FITS file, assuming all are the same CCD
+        idx_file = self.idx_files[fits.grating]
         print 'Combining files to create', output_path
         tdfdr.run_2dfdr_combine(
-            input_path_list, output_path, unique_imp_scratch=True, 
+            input_path_list, output_path, idx_file, unique_imp_scratch=True, 
             return_to=self.cwd, restore_to=self.imp_scratch, 
-            scratch_dir=self.scratch_dir)
+            scratch_dir=self.scratch_dir, debug=self.debug)
         return
 
     def files(self, ndf_class=None, date=None, plate_id=None,
@@ -3170,7 +3193,7 @@ class Manager:
         tdfdr.load_gui(dirname=dirname, idx_file=idx_file, 
                        unique_imp_scratch=True, return_to=self.cwd, 
                        restore_to=self.imp_scratch, 
-                       scratch_dir=self.scratch_dir)
+                       scratch_dir=self.scratch_dir, debug=self.debug)
         return
 
     def find_directory_locks(self, lock_name='2dfdrLockDir'):
@@ -4066,12 +4089,13 @@ def best_path(fits):
 @safe_for_multiprocessing
 def run_2dfdr_single_wrapper(group):
     """Run 2dfdr on a single file."""
-    fits, idx_file, options, cwd, imp_scratch, scratch_dir, check = group
+    fits, idx_file, options, cwd, imp_scratch, scratch_dir, check, debug = \
+        group
     try:
         tdfdr.run_2dfdr_single(
             fits, idx_file, options=options, return_to=cwd, 
             unique_imp_scratch=True, restore_to=imp_scratch, 
-            scratch_dir=scratch_dir)
+            scratch_dir=scratch_dir, debug=debug)
     except tdfdr.LockException:
         message = ('Postponing ' + fits.filename + 
                    ' while other process has directory lock.')
