@@ -1811,24 +1811,31 @@ class Manager:
         self.next_step('telluric_correct', print_message=True)
         return
 
-    def get_stellar_photometry(self, refresh=False):
+    def get_stellar_photometry(self, refresh=False, automatic=True):
         """Get photometry of stars, with help from the user."""
         if refresh:
             catalogue = None
         else:
             catalogue = read_stellar_mags()
-        new = get_sdss_stellar_mags(self, catalogue=catalogue)
-        if not new:
+        new = get_sdss_stellar_mags(self, catalogue=catalogue, automatic=automatic)
+        # Note: with automatic=True, get_sdss_stellar_mags will try to download
+        # the data and return it as a string
+        if isinstance(new, bool) and not new:
             # No new magnitudes were downloaded
             return
-        path_in = raw_input('Enter the path to the downloaded file:\n')
         idx = 1
         path_out = 'standards/secondary/sdss_stellar_mags_{}.csv'.format(idx)
         while os.path.exists(path_out):
             idx += 1
             path_out = (
                 'standards/secondary/sdss_stellar_mags_{}.csv'.format(idx))
+        if isinstance(new, bool) and new:
+            # get_sdss_stellar_mags could not do an automatic retrieval.
+            path_in = raw_input('Enter the path to the downloaded file:\n')
             shutil.move(path_in, path_out)
+        else:
+            with open(path_out, 'w') as f:
+                f.write(new)
         return
 
     def scale_frames(self, overwrite=False, **kwargs):
