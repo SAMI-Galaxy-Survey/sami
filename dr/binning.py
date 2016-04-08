@@ -91,6 +91,7 @@ def aperture_spectra_pair(path_blue, path_red, path_to_catalogs):
 
     def get_cat_column_for_id(catalog, column, sami_id):
         """Return the value from the catalog for the given CATAID"""
+        sami_id = int(sami_id)
         if sami_id not in catalog['CATAID']:
             print "SAMI ID %s not in GAMA catalogs - no aperture spectra produced" % sami_id
             raise KeyError("SAMI ID %s Not in GAMA Catalog" % sami_id)
@@ -99,7 +100,7 @@ def aperture_spectra_pair(path_blue, path_red, path_to_catalogs):
             return catalog[catalog['CATAID'] == sami_id][column][0]
 
     # Open the two cubes
-    with pf.open(path_blue) as hdulist_blue, pf.open(path_red) as hdulist_red:
+    with pf.open(path_blue, memmap=True) as hdulist_blue, pf.open(path_red, memmap=True) as hdulist_red:
 
         # Work out the standard apertures to extract
         #
@@ -108,9 +109,10 @@ def aperture_spectra_pair(path_blue, path_red, path_to_catalogs):
 
         from astropy.cosmology import WMAP9 as cosmo
         from astropy import units as u
+        from astropy.wcs import WCS
         standard_apertures = dict()
 
-        sami_id = int(hdulist_blue[0].header['NAME'])
+        sami_id = hdulist_blue[0].header['NAME']
 
         # The position angle must be adjusted to get PA on the sky.
         # See http://www.gama-survey.org/dr2/schema/dmu.php?id=36
@@ -146,16 +148,16 @@ def aperture_spectra_pair(path_blue, path_red, path_to_catalogs):
             'ellipticity': 0
         }
 
-        # std_id = hdulist_blue[0].header['STDNAME']
-        #
-        # pf.getval(file_pair[0], 'PSFFWHM')
-        #
-        # standard_apertures['seeing'] = {
-        #     'aperture_radius': ang_size,
-        #     'pa': 0,
-        #     'ellipticity': 0
-        # }
-
+        try:
+            seeing = get_seeing(hdulist_blue)
+        except:
+            print "Unable to determine seeing for %s, aperture spectra not included" % path_blue
+        else:
+            standard_apertures['seeing'] = {
+                'aperture_radius': seeing/pix_size,
+                'pa': 0,
+                'ellipticity': 0
+            }
 
         bin_mask = None
 
@@ -175,8 +177,8 @@ def aperture_spectra_pair(path_blue, path_red, path_to_catalogs):
                 bin_mask = dict()
                 for aper in standard_apertures:
                     bin_mask[aper] = aperture_bin_sami(hdulist, **standard_apertures[aper])
-                    print "Aperture {} contains {} spaxels ".format(aper, np.sum(bin_mask[aper] == 1))
-                    print standard_apertures[aper]
+                    # print "Aperture {} contains {} spaxels ".format(aper, np.sum(bin_mask[aper] == 1))
+                    # print standard_apertures[aper]
 
             for aper in standard_apertures:
                 binned_cube, binned_var = bin_cube(hdulist, bin_mask[aper])
@@ -201,6 +203,17 @@ def aperture_spectra_pair(path_blue, path_red, path_to_catalogs):
                 output_header['POS_ANG'] = (
                     standard_apertures[aper]['aperture_radius'],
                     "Position angle of the major axis, N->E")
+                output_header['KPC_SIZE'] = (
+                    ang_size_kpc,
+                    "Size of 1 kpc at galaxy distance in pixels")
+                output_header['Z_TONRY'] = (
+                    redshift,
+                    "Redshift used to calculate galaxy distance")
+                # Copy the wavelength axis WCS information into the new header.
+                # This is done by creating a new WCS for the cube header,
+                # dropping the first two axes (which are spatial coordinates),
+                # and then appending the remaining header keywords.
+                output_header.extend(WCS(hdulist[0].header).dropaxis(0).dropaxis(0).to_header())
 
             aperture_hdulist.writeto(output_filename, clobber=True)
 
@@ -640,3 +653,18 @@ def aperture_bin_sami(hdu, aperture_radius=1, ellipticity=1, pa=0):
 
 
     return rad_bins
+
+def get_seeing(hdulist):
+
+    sami_id = hdulist[0].header['NAME']
+    std_id = hdulist[0].header['STDNAME']
+    obj_cube_path = hdulist.filename()
+
+    id_path_section = "{0}/{0}".format(sami_id)
+
+    start = obj_cube_path.rfind(id_path_section)
+    star_cube_path = (obj_cube_path[:start] +
+                      "{0}/{0}".format(std_id) +
+                      obj_cube_path[start+len(id_path_section):])
+
+    return pf.getval(star_cube_path, 'PSFFWHM')
