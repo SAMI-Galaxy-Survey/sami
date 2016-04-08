@@ -1984,6 +1984,32 @@ class Manager:
         self.map(bin_cubes_pair, path_pair_list)
         return
 
+    def bin_aperture_spectra(self, overwrite=False, min_exposure=599.0, name='main',
+                  min_transmission=0.333, max_seeing=4.0, tag=None, **kwargs):
+        """Create aperture spectra."""
+        path_pair_list = []
+        groups = self.group_files_by(
+            'field_id', ccd='ccd_1', ndf_class='MFOBJECT', do_not_use=False,
+            reduced=True, name=name, include_linked_managers=True, **kwargs)
+        for (field_id, ), fits_list in groups.items():
+            table = pf.getdata(fits_list[0].reduced_path, 'FIBRES_IFU')
+            objects = table['NAME'][table['TYPE'] == 'P']
+            objects = np.unique(objects).tolist()
+            for name in objects:
+                path_pair = [
+                    self.cubed_path(name, arm, fits_list, field_id,
+                                    exists=True, min_exposure=min_exposure,
+                                    min_transmission=min_transmission,
+                                    max_seeing=max_seeing, tag=tag)
+                    for arm in ('blue', 'red')]
+                if path_pair[0] and path_pair[1]:
+                    # std_name = pf.open(path_pair[0])
+                    #
+                    # pf.getval(file_pair[0], 'PSFFWHM')
+                    path_pair_list.append(path_pair)
+        self.map(aperture_spectra_pair, path_pair_list)
+        return
+
     def record_dust(self, overwrite=False, min_exposure=599.0, name='main',
                     min_transmission=0.333, max_seeing=4.0, tag=None, **kwargs):
         """Record information about dust in the output datacubes."""
@@ -4065,6 +4091,15 @@ def bin_cubes_pair(path_pair):
     for name, kwargs in binning_settings:
         binning.bin_cube_pair(path_blue, path_red, name=name, **kwargs)
     return
+
+def aperture_spectra_pair(path_pair):
+    """Create aperture spectra for a pair of data cubes using default apertures."""
+    path_blue, path_red = path_pair
+    print 'Building aperture spectra for datacubes:'
+    print os.path.basename(path_blue), os.path.basename(path_red)
+    binning.aperture_spectra_pair(path_blue, path_red)
+    return
+
 
 @safe_for_multiprocessing
 def gzip_wrapper(path):
