@@ -4092,6 +4092,7 @@ def bin_cubes_pair(path_pair):
         binning.bin_cube_pair(path_blue, path_red, name=name, **kwargs)
     return
 
+@safe_for_multiprocessing
 def aperture_spectra_pair(path_pair):
     """Create aperture spectra for a pair of data cubes using default apertures."""
     path_blue, path_red = path_pair
