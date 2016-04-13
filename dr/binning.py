@@ -209,6 +209,9 @@ def aperture_spectra_pair(path_blue, path_red, path_to_catalogs):
                 output_header['Z_TONRY'] = (
                     redshift,
                     "Redshift used to calculate galaxy distance")
+                output_header['N_SPAX'] = (
+                    int(np.sum(bin_mask[aper] == 1)),
+                    "Number of spaxels included in mask")
                 # Copy the wavelength axis WCS information into the new header.
                 # This is done by creating a new WCS for the cube header,
                 # dropping the first two axes (which are spatial coordinates),
@@ -247,13 +250,6 @@ def return_bin_mask(hdu, mode='adaptive', targetSN=10, minSN=None, sectors=8,rad
     elif mode == 'prescriptive':
         bin_mask = prescribed_bin_sami(hdu,sectors=sectors,radial=radial,log=log)
 
-    elif mode == 'aperture':
-        bin_mask = aperture_bin_sami(
-            hdu, 
-            aperture_radius=aperture_radius, 
-            ellipticity=ellipticity
-            )
-        
     else:
         raise Exception('Invalid binning mode requested')
 
