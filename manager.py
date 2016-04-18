@@ -2147,16 +2147,17 @@ class Manager:
         task_list = self.task_list
 
         # Check for valid inputs:
+        if start is None:
+            start = task_list[0][0]
+        if finish is None:
+            finish = task_list[-1][0]
+        
         task_name_list = map(lambda x:x[0], task_list)
         if start not in task_name_list:
             raise ValueError("Invalid start step! Must be one of: {}".format(", ".join(task_name_list)))
         if finish not in task_name_list:
             raise ValueError("Invalid finish step! Must be one of: {}".format(", ".join(task_name_list)))
 
-        if start is None:
-            start = task_list[0][0]
-        if finish is None:
-            finish = task_list[-1][0]
         started = False
         for task, include_kwargs in task_list:
             if not started and task != start:

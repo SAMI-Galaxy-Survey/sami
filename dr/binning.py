@@ -200,7 +200,7 @@ def adaptive_bin_sami(hdu, targetSN=10.0, minSN=None):
     # Reconstruct then flatten covariance cube
     covar = reconstruct_covariance(covar,covar_header,n_wave=data.shape[0])
     covar_image = nanmedian(covar,axis=0)
-    covar_matrix = np.transpose(covar_image[:,:,x[goodpixels[0]],y[goodpixels[0]]])
+    covar_matrix = np.rollaxis(covar_image[:,:,x[goodpixels[0]],y[goodpixels[0]]],2)
                           
     x = x[goodpixels]
     y = y[goodpixels]
