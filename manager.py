@@ -1921,6 +1921,7 @@ class Manager:
                 path_list = [best_path(fits) for fits in good_fits_list]
                 if len(path_list) < min_frames:
                     # Not enough good frames to bother making the cubes
+                    objects = ''
                     if field_id not in failed_fields:
                         failed_fields.append(field_id)
                 elif star_only:
