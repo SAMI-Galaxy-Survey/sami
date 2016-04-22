@@ -34,6 +34,7 @@ from glob import glob
 
 from .. import slogging
 log = slogging.getLogger(__name__)
+log.setLevel(slogging.INFO)
 
 import astropy.io.fits as pf
 import numpy as np
@@ -54,6 +55,8 @@ def bin_cube_pair(path_blue, path_red, name=None, **kwargs):
 
 def aperture_spectra_pair(path_blue, path_red, path_to_catalogs):
     """Calculate binned spectra and save as new file for each pair of cubes."""
+
+    log.debug("Starting aperture_spectra_pair: %s, %s, %s", path_blue, path_red, path_to_catalogs)
 
     # Check that the required catalogs are available.
     #
@@ -99,6 +102,7 @@ def aperture_spectra_pair(path_blue, path_red, path_to_catalogs):
             # Cut down the catalog to only contain the row for this SAMI ID.
             return catalog[catalog['CATAID'] == sami_id][column][0]
 
+    log.debug("Catalog data is loaded and available.")
     # Open the two cubes
     with pf.open(path_blue, memmap=True) as hdulist_blue, pf.open(path_red, memmap=True) as hdulist_red:
 
@@ -116,8 +120,15 @@ def aperture_spectra_pair(path_blue, path_red, path_to_catalogs):
 
         # The position angle must be adjusted to get PA on the sky.
         # See http://www.gama-survey.org/dr2/schema/dmu.php?id=36
-        pos_angle_adjust = (get_cat_column_for_id(catalogs['ApMatchedCat'], 'THETA_J2000', sami_id) -
-                            get_cat_column_for_id(catalogs['ApMatchedCat'], 'THETA_IMAGE', sami_id))
+        try:
+            pos_angle_adjust = (get_cat_column_for_id(catalogs['ApMatchedCat'], 'THETA_J2000', sami_id) -
+                                get_cat_column_for_id(catalogs['ApMatchedCat'], 'THETA_IMAGE', sami_id))
+        except KeyError as e:
+            # Probably the SAMI ID is not available in the GAMA catalog.
+            if e.message.startswith("SAMI ID"):
+                return None
+            else:
+                raise
 
         # size of a pixel in angular units. CDELT1 is the WCS pixel size, and CTYPE1 is "DEGREE"
         pix_size = np.abs((hdulist_blue[0].header['CDELT1'] * u.deg).to(u.arcsec).value)
@@ -151,7 +162,7 @@ def aperture_spectra_pair(path_blue, path_red, path_to_catalogs):
         try:
             seeing = get_seeing(hdulist_blue)
         except:
-            print "Unable to determine seeing for %s, aperture spectra not included" % path_blue
+            print "Unable to determine seeing for %s, seeing aperture not included" % path_blue
         else:
             standard_apertures['seeing'] = {
                 'aperture_radius': seeing/pix_size,
@@ -166,28 +177,49 @@ def aperture_spectra_pair(path_blue, path_red, path_to_catalogs):
             # Construct a path name for the output spectra:
             path = hdulist.filename()
             out_dir = os.path.dirname(path)
+            if out_dir == "":
+                out_dir = '.'
             out_file_base = os.path.basename(path).split(".")[0]
             output_filename = out_dir + "/" + out_file_base + "_aperture_spec.fits"
 
             # Create a new output FITS file:
             aperture_hdulist = pf.HDUList([pf.PrimaryHDU()])
 
+            # Copy the header from the fits CUBE to primary HDU
+            aperture_hdulist[0].header = hdulist[0].header
+
             # Calculate the aperture bins based on first file only.
             if bin_mask is None:
                 bin_mask = dict()
+                log.info("Aperture Information for %s:", sami_id)
+                log.info("   {:<11s} {:>8s} {:>8s} {:>8s} {:>8s}".format(
+                    'Aperture', 'n_pix', 'radius', 'ellip', 'PA'))
                 for aper in standard_apertures:
                     bin_mask[aper] = aperture_bin_sami(hdulist, **standard_apertures[aper])
-                    # print "Aperture {} contains {} spaxels ".format(aper, np.sum(bin_mask[aper] == 1))
-                    # print standard_apertures[aper]
+                    log.info("   {:11s} {:8.0f} {:8.2f} {:8.2f} {:8.2f}".format(
+                        aper,
+                        np.sum(bin_mask[aper] == 1),
+                        standard_apertures[aper]['aperture_radius'],
+                        standard_apertures[aper]['ellipticity'],
+                        standard_apertures[aper]['pa']))
 
             for aper in standard_apertures:
                 binned_cube, binned_var = bin_cube(hdulist, bin_mask[aper])
 
-                # Find the x, y index of a spectrum inside the first (only) bin:
-                x, y = np.transpose(np.where(bin_mask[aper] == 1))[0]
+                if log.isEnabledFor(slogging.DEBUG):
+                    print "Bins: ", np.unique(bin_mask[aper]).tolist()
 
-                aperture_spectrum = binned_cube[:, x, y]
-                aperture_variance = binned_var[:, x, y]
+                n_spax_included = int(np.sum(bin_mask[aper] == 1))
+
+
+                if n_spax_included > 0:
+                    # Find the x, y index of a spectrum inside the first (only) bin:
+                    x, y = np.transpose(np.where(bin_mask[aper] == 1))[0]
+                    aperture_spectrum = binned_cube[:, x, y]
+                    aperture_variance = binned_var[:, x, y]
+                else:
+                    aperture_spectrum = np.zeros_like(binned_cube[:, 0, 0])
+                    aperture_variance = np.zeros_like(binned_var[:, 0, 0])
 
                 aperture_hdulist.extend([
                     pf.ImageHDU(aperture_spectrum, name=aper.upper()),
@@ -198,10 +230,10 @@ def aperture_spectra_pair(path_blue, path_red, path_to_catalogs):
                     standard_apertures[aper]['aperture_radius'],
                     "Radius of the aperture in spaxels")
                 output_header['ELLIP'] = (
-                    standard_apertures[aper]['aperture_radius'],
+                    standard_apertures[aper]['ellipticity'],
                     "Ellipticity of the aperture (1-b/a)")
                 output_header['POS_ANG'] = (
-                    standard_apertures[aper]['aperture_radius'],
+                    standard_apertures[aper]['pa'],
                     "Position angle of the major axis, N->E")
                 output_header['KPC_SIZE'] = (
                     ang_size_kpc,
@@ -210,7 +242,7 @@ def aperture_spectra_pair(path_blue, path_red, path_to_catalogs):
                     redshift,
                     "Redshift used to calculate galaxy distance")
                 output_header['N_SPAX'] = (
-                    int(np.sum(bin_mask[aper] == 1)),
+                    n_spax_included,
                     "Number of spaxels included in mask")
                 # Copy the wavelength axis WCS information into the new header.
                 # This is done by creating a new WCS for the cube header,
@@ -218,8 +250,10 @@ def aperture_spectra_pair(path_blue, path_red, path_to_catalogs):
                 # and then appending the remaining header keywords.
                 output_header.extend(WCS(hdulist[0].header).dropaxis(0).dropaxis(0).to_header())
 
-            aperture_hdulist.writeto(output_filename, clobber=True)
+                log.debug("Aperture %s completed", aper)
 
+            aperture_hdulist.writeto(output_filename, clobber=True)
+            log.debug("Aperture spectra written to %s", output_filename)
 
 
 def bin_and_save(hdulist, bin_mask, name=None):
@@ -257,7 +291,7 @@ def return_bin_mask(hdu, mode='adaptive', targetSN=10, minSN=None, sectors=8,rad
 
 def bin_cube(hdu, bin_mask):
     """Produce a SAMI cube where each spaxel contains the
-    #spectrum of the bin it is associated with.
+    spectrum of the bin it is associated with.
     
     Parameters
 
@@ -601,47 +635,73 @@ def prescribed_bin_sami(hdu,sectors=8,radial=5,log=False,
 
     return bin_mask
 
-def aperture_bin_sami(hdu, aperture_radius=1, ellipticity=1, pa=0):
+def aperture_bin_sami(hdu, aperture_radius=1, ellipticity=0, pa=0):
     """Produce an aperture bin (inside and outside) for the aperture given."""
+    log.debug("Arguments: %s, %s, %s", aperture_radius, ellipticity, pa)
 
-    cube = hdu['PRIMARY'].data
+    # Note, pyfits transposes axes compared to python, so we un-do that below.
+    # `cube` will now have RA on the first axis, DEC on the second axis, and
+    # WAVELENGTH on the 3rd.
+    cube = np.transpose(hdu['PRIMARY'].data)
     n_spax = cube.shape[1]
 
-    image = np.median(cube,axis=0)
-    image0 = np.copy(image)
-    image0[np.isfinite(image) == False] = -1
-    try:
-        maj0,eps0,pa0,xpeak0,ypeak0,xmed0,ymed0,n_blobs = find_galaxy(image0,quiet=True,fraction=0.05)
-    except:
-        eps0,pa0,xmed0,ymed0 = 0.0,0.0,0.5*n_spax,0.5*n_spax
-    n = 1
+    # image = np.median(cube, axis=0)
+    # image0 = np.copy(image)
+    # image0[np.isfinite(image) == False] = -1
+    # try:
+    #     maj0, eps0, pa0, xpeak0, ypeak0, xmed0, ymed0, n_blobs = \
+    #         find_galaxy(image0, quiet=True, fraction=0.05)
+    # except:
+    #     eps0, pa0, xmed0, ymed0 = 0.0, 0.0, 0.5 * n_spax, 0.5 * n_spax
+    # n = 1
+    #
+    # while ((np.abs(xmed0 - 0.5*n_spax) > 3) or (np.abs(ymed0 - 0.5*n_spax) > 3)) and (n <= n_blobs):
+    #     try:
+    #         maj0, eps0, pa0, xpeak0, ypeak0, xmed0, ymed0, junk = \
+    #             find_galaxy(image0, quiet=True, fraction=0.05, nblob=n)
+    #         n += 1
+    #     except:
+    #         eps0, pa0, xmed0, ymed0 = 0.0, 0.0, 0.5 * n_spax, 0.5 * n_spax
+    #         n = n_blobs + 1
+    #
+    # xmed = xmed0
+    # ymed = ymed0
+    # # ellipticity = eps0
+    # # pa = pa0
 
-    while ((np.abs(xmed0 - 0.5*n_spax) > 3) or (np.abs(ymed0 - 0.5*n_spax) > 3)) and (n <= n_blobs) :
-        try:
-            maj0,eps0,pa0,xpeak0,ypeak0,xmed0,ymed0,junk = find_galaxy(image0,quiet=True,fraction=0.05,nblob=n)
-            n+=1
-        except:
-            eps0,pa0,xmed0,ymed0 = 0.0,0.0,0.5*n_spax,0.5*n_spax
-            n = n_blobs+1
-
-    xmed = xmed0
-    ymed = ymed0
-    # ellipticity = eps0
-    # pa = pa0
+    # Use the centre of the cube...
+    xmed = float(cube.shape[0] - 1)/2.0
+    ymed = float(cube.shape[1] - 1)/2.0
 
     pa_rad = np.radians(pa)
 
-    # Shift and rotate the spaxel coordinates so that the galaxy centre
-    # is at (0,0) and the major axis is aligned with the x axis
-    spax_pos = np.indices(np.shape(image), dtype=np.float)
-    spax_pos[0,:] = spax_pos[0,:] - round(xmed)
-    spax_pos[1,:] = spax_pos[1,:] - round(ymed)
-    spax_pos_rot = np.zeros(np.shape(spax_pos))
-    spax_pos_rot[0,:] = spax_pos[0,:,:]*np.cos(pa_rad) - spax_pos[1,:,:]*np.sin(pa_rad)
-    spax_pos_rot[1,:] = spax_pos[0,:,:]*np.sin(pa_rad) + spax_pos[1,:,:]*np.cos(pa_rad)
+    # Compute coordinates of input spaxels in the coordinate system of the
+    # galaxy, i.e., distance from the major axis in the first coordinate and
+    # distance from the minor axis in the second coordinate
+
+    spax_pos = np.indices((n_spax, n_spax), dtype=np.float)
+    # Shift centre to be centre of cube.
+    spax_pos[0, :] = spax_pos[0, :, :] - xmed
+    spax_pos[1, :] = spax_pos[1, :, :] - ymed
+    spax_pos_rot = np.zeros_like(spax_pos)
+    # The following is a rotation by `pa_rad` radians counter-clockwise in the xy plane.
+    # Here, the first axis is RA and the second axis is DEC (because we have transposed the data
+    # from pyfits above)
+    spax_pos_rot[0, :] = spax_pos[0, :, :] * np.cos(pa_rad) - spax_pos[1, :, :] * np.sin(pa_rad)
+    spax_pos_rot[1, :] = spax_pos[0, :, :] * np.sin(pa_rad) + spax_pos[1, :, :] * np.cos(pa_rad)
 
     # Determine the elliptical distance of each spaxel to the origin
-    dist_ellipse = np.sqrt(spax_pos_rot[0,:,:]**2 + (spax_pos_rot[1,:,:]/(1. - ellipticity))**2)
+    dist_ellipse = np.sqrt((spax_pos_rot[0, :, :] / (1. - ellipticity)) ** 2 + spax_pos_rot[1, :, :] ** 2)
+
+    log.debug("Range of distances: %s to %s", np.min(dist_ellipse), np.max(dist_ellipse))
+    log.debug("Pixels within radius: %s", np.sum(dist_ellipse < aperture_radius))
+
+    log.debug(dist_ellipse)
+
+    # Finally, we transpose back to the coordinate system y, x so that the
+    # output of this code will match the expectation of `bin_cube`, which does
+    # not transpose the FITS data.
+    dist_ellipse = np.transpose(dist_ellipse)
 
     # Assign each spaxel to a different radial bin
     rad_bins = np.digitize(np.ravel(dist_ellipse), (0, aperture_radius)).reshape(n_spax, n_spax)
