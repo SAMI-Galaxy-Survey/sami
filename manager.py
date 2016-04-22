@@ -1945,10 +1945,10 @@ class Manager:
                         overwrite))       
  
         with open(failed_qc_file,"w") as outfile:
-	    failed_fields = [field+'\n' for field in failed_fields]
+            failed_fields = [field+'\n' for field in failed_fields]
             outfile.writelines(failed_fields)
         
-	# Send the cubing tasks off to multiple CPUs
+        # Send the cubing tasks off to multiple CPUs
         with self.patch_if_demo('sami.manager.dithered_cubes_from_rss_wrapper',
                                 fake_dithered_cube_from_rss_wrapper):
             cubed_list = self.map(cube_object, inputs_list)
@@ -2009,7 +2009,7 @@ class Manager:
             table = pf.getdata(fits_list[0].reduced_path, 'FIBRES_IFU')
             objects = table['NAME'][table['TYPE'] == 'P']
             objects = np.unique(objects).tolist()
-	    objects = [obj.strip() for obj in objects] #Stripping whitespace from object names
+            objects = [obj.strip() for obj in objects] #Stripping whitespace from object names
             for name in objects:
                 if telluric.is_star(name):
                     break
@@ -2061,7 +2061,7 @@ class Manager:
             table = pf.getdata(fits_list[0].reduced_path, 'FIBRES_IFU')
             objects = table['NAME'][table['TYPE'] == 'P']
             objects = np.unique(objects).tolist()
-	    objects = [obj.strip() for obj in objects] #Strip whitespace from object names
+            objects = [obj.strip() for obj in objects] #Strip whitespace from object names
             for name in objects:
                 path_pair = [
                     self.cubed_path(name, arm, fits_list, field_id, 
@@ -2093,18 +2093,15 @@ class Manager:
         for (field_id, ), fits_list in groups.items():
             table = pf.getdata(fits_list[0].reduced_path, 'FIBRES_IFU')
             objects = table['NAME'][table['TYPE'] == 'P']
-            objects = np.unique(objects).tolist()
+            objects = np.unique(objects)
             for name in objects:
                 path_pair = [
-                    self.cubed_path(name, arm, fits_list, field_id,
+                    self.cubed_path(name.strip(), arm, fits_list, field_id,
                                     exists=True, min_exposure=min_exposure,
                                     min_transmission=min_transmission,
                                     max_seeing=max_seeing, tag=tag)
                     for arm in ('blue', 'red')]
                 if path_pair[0] and path_pair[1]:
-                    # std_name = pf.open(path_pair[0])
-                    #
-                    # pf.getval(file_pair[0], 'PSFFWHM')
                     path_pair_list.append(path_pair)
         self.map(aperture_spectra_pair, path_pair_list)
         return
@@ -3533,7 +3530,7 @@ class FITSFile:
     def set_fibres_extno(self):
         """Save the extension number for the fibre table."""
         self.fibres_extno = find_fibre_table(self.hdulist)
-	
+
     def set_plate_id(self):
         """Save the plate ID."""
         try:
@@ -4206,8 +4203,6 @@ def bin_cubes_pair(path_pair):
 def aperture_spectra_pair(path_pair):
     """Create aperture spectra for a pair of data cubes using default apertures."""
     path_blue, path_red = path_pair
-    print 'Building aperture spectra for datacubes:'
-    print os.path.basename(path_blue), os.path.basename(path_red)
     global CATALOG_PATH
     binning.aperture_spectra_pair(path_blue, path_red, CATALOG_PATH)
     return
