@@ -52,11 +52,26 @@ def bin_and_save(hdulist, bin_mask, name=None):
     # want to either overwrite or just return without doing anything, but
     # occasionally the user might want to append duplicate extensions (the
     # current behaviour). (JTA 14/9/2015)
+
+    # Default behaviour here is now to overwrite extensions. If extension exists
+    # and overwrite=False this should have been caught by manager.bin_cubes()
+
     binned_cube, binned_var = bin_cube(hdulist, bin_mask)
     if name is None:
         suffix = ''
     else:
         suffix = '_' + name
+
+    duplicate_extensions = []
+    for ext in hdulist:
+        if ((ext.name == 'BIN_MASK'+suffix.upper()) 
+                or (ext.name == 'BINNED_FLUX'+suffix.upper())
+                or (ext.name == 'BINNED_VARIANCE'+suffix.upper())):
+            duplicate_extensions.append(ext.name)
+
+    for ext in duplicate_extensions:
+        del hdulist[ext]
+
     hdu_mask = pf.ImageHDU(bin_mask, name='BIN_MASK'+suffix)
     hdu_flux = pf.ImageHDU(binned_cube, name='BINNED_FLUX'+suffix)
     hdu_var = pf.ImageHDU(binned_var, name='BINNED_VARIANCE'+suffix)
@@ -315,7 +330,7 @@ def prescribed_bin_sami(hdu,sectors=8,radial=5,log=False,
 
     #Check if all the pa,eps,xc,yc information has been supplied. If not fill in missing info
     if (xmed == '') or (ymed == '') or (eps == '') or (pa == ''):
-        image = np.median(cube,axis=0)
+        image = np.nanmedian(cube,axis=0)
         image0 = np.copy(image)
         image0[np.isfinite(image) == False] = -1
         try:
