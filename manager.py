@@ -2092,6 +2092,7 @@ class Manager:
             table = pf.getdata(fits_list[0].reduced_path, 'FIBRES_IFU')
             objects = table['NAME'][table['TYPE'] == 'P']
             objects = np.unique(objects).tolist()
+            objects = [obj.strip() for obj in objects]
             for name in objects:
                 for arm in ('blue', 'red'):
                     path = self.cubed_path(
@@ -2123,6 +2124,7 @@ class Manager:
                 table = pf.getdata(fits_list[0].reduced_path, 'FIBRES_IFU')
                 objects = table['NAME'][table['TYPE'] == 'P']
                 objects = np.unique(objects).tolist()
+                objects = [obj.strip() for obj in objects]
             for obj in objects:
                 input_path = self.cubed_path(
                     obj, arm, fits_list, field_id,
