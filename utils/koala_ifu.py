@@ -167,7 +167,10 @@ class KoalaIFU(object):
         self.var = variance_in/(self.exptime*self.exptime)
 
         # Master sky spectrum:
-        self.sky_spectra = hdulist['RWSS'].data
+        # try:
+        #     self.sky_spectra = hdulist['RWSS'].data
+        # except KeyError:
+        #     pass
         #    TODO: It would be more useful to have the sky spectrum subtracted from
         #    each fibre which requires the RWSS file/option in 2dfdr
 
