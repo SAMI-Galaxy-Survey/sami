@@ -1327,6 +1327,7 @@ class Manager:
         """Reduce all lflat frames."""
         self.reduce_calibrator(
             'lflat', overwrite=overwrite, check='LFL', **kwargs)
+        self.next_step('reduce_lflat', print_message=True)
         return
 
     def combine_lflat(self, overwrite=False):
