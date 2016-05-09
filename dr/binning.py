@@ -211,19 +211,32 @@ def aperture_spectra_pair(path_blue, path_red, path_to_catalogs):
 
                 n_spax_included = int(np.sum(bin_mask[aper] == 1))
 
+                # Calculate area correction:
+                #
+                #     The minimum quantum for binning spectra is whole spaxels.
+                #     So the area of the binned aperture spectra will generally
+                #     not exactly match the area of the aperture. We compute a
+                #     scaling that will standardize this, so that comparing
+                #     aperture spectra will not introduce any systematics.
+                spaxel_area = n_spax_included * ang_size_kpc**2
+                aperture_area = (2 * np.pi *
+                                 (standard_apertures[aper]['aperture_radius'])**2 *
+                                 standard_apertures[aper]['ellipticity'])
+                area_correction = aperture_area / spaxel_area
 
                 if n_spax_included > 0:
                     # Find the x, y index of a spectrum inside the first (only) bin:
                     x, y = np.transpose(np.where(bin_mask[aper] == 1))[0]
-                    aperture_spectrum = binned_cube[:, x, y]
-                    aperture_variance = binned_var[:, x, y]
+                    aperture_spectrum = binned_cube[:, x, y] * n_spax_included
+                    aperture_variance = binned_var[:, x, y] * n_spax_included
                 else:
                     aperture_spectrum = np.zeros_like(binned_cube[:, 0, 0])
                     aperture_variance = np.zeros_like(binned_var[:, 0, 0])
 
                 aperture_hdulist.extend([
                     pf.ImageHDU(aperture_spectrum, name=aper.upper()),
-                    pf.ImageHDU(aperture_variance, name=aper.upper() + "_VAR")])
+                    pf.ImageHDU(aperture_variance, name=aper.upper() + "_VAR"),
+                    pf.ImageHDU((bin_mask[aper] == 1).astype(int), name=aper.upper() + "_MASK")])
 
                 output_header = aperture_hdulist[aper.upper()].header
                 output_header['RADIUS'] = (
@@ -244,6 +257,10 @@ def aperture_spectra_pair(path_blue, path_red, path_to_catalogs):
                 output_header['N_SPAX'] = (
                     n_spax_included,
                     "Number of spaxels included in mask")
+                output_header['AREACORR'] = (
+                    area_correction,
+                    "Ratio of included spaxel area to aper area")
+
                 # Copy the wavelength axis WCS information into the new header.
                 # This is done by creating a new WCS for the cube header,
                 # dropping the first two axes (which are spatial coordinates),
