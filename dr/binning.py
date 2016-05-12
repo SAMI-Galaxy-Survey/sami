@@ -125,10 +125,9 @@ def aperture_spectra_pair(path_blue, path_red, path_to_catalogs):
                                 get_cat_column_for_id(catalogs['ApMatchedCat'], 'THETA_IMAGE', sami_id))
         except KeyError as e:
             # Probably the SAMI ID is not available in the GAMA catalog.
-            if e.message.startswith("SAMI ID"):
-                return None
-            else:
-                raise
+            print("Skipping {} due to error:".format(sami_id))
+            print(e.message)
+            return None
 
         # size of a pixel in angular units. CDELT1 is the WCS pixel size, and CTYPE1 is "DEGREE"
         pix_size = np.abs((hdulist_blue[0].header['CDELT1'] * u.deg).to(u.arcsec).value)
