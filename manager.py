@@ -62,6 +62,7 @@ from time import sleep
 from glob import glob
 from pydoc import pager
 import itertools
+import traceback
 
 import astropy.coordinates as coord
 from astropy import units
@@ -4204,8 +4205,13 @@ def aperture_spectra_pair(path_pair):
     """Create aperture spectra for a pair of data cubes using default apertures."""
     path_blue, path_red = path_pair
     global CATALOG_PATH
-    binning.aperture_spectra_pair(path_blue, path_red, CATALOG_PATH)
+    try:
+        binning.aperture_spectra_pair(path_blue, path_red, CATALOG_PATH)
+    except Exception as e:
+        print("ERROR on pair %s, %s:\n %s" % (path_blue, path_red, e.message))
+        traceback.print_exc()
     return
+
 
 
 @safe_for_multiprocessing
