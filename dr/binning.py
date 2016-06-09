@@ -53,10 +53,66 @@ def bin_cube_pair(path_blue, path_red, name=None, **kwargs):
     hdulist_blue.close()
     hdulist_red.close()
 
+def is_id_in_catalogs(sami_id, catalogs):
+    sami_id = int(sami_id)
+    for cat in catalogs:
+        if sami_id not in catalogs[cat]['CATAID']:
+            print "SAMI ID %s not in GAMA catalog %s" % (sami_id, cat)
+            return False
+    # Found in all catalogs
+    return True
+
+
+class CatalogAccessor(object):
+    def __init__(self, path_to_catalogs, catalog_descriptions):
+        self.path_to_catalogs = path_to_catalogs
+        self.catalog_names = catalog_descriptions.keys()
+        self.catalog_descriptions = catalog_descriptions
+        self.catalogs = dict()
+
+        self.load_catalogs()
+
+    def load_catalogs(self):
+        for cat in self.catalog_names:
+            try:
+                files_found = glob(self.path_to_catalogs + "/*" + cat + "*.fits")
+                if len(files_found) > 1:
+                    log.warning("Multiple potential catalogs found for %s!", cat)
+                self.catalog_filenames[cat] = files_found[0]
+                with pf.open(self.catalog_filenames[cat]) as f:
+                    self.catalogs[cat] = f[1].data
+                for col in self.catalog_descriptions[cat]:
+                    assert col in self.catalogs[cat].columns.dtype.names
+            except:
+                raise ValueError("Invalid or missing GAMA Catalog %s in directory %s" %
+                                 (cat, os.path.abspath(self.path_to_catalogs)))
+
+    def cataid_available(self, sami_id):
+        sami_id = int(sami_id)
+        for cat in self.catalog_names:
+            if sami_id not in self.catalogs[cat]['CATAID']:
+                print "SAMI ID %s not in GAMA catalog %s" % (sami_id, cat)
+                return False
+        # Found in all catalogs
+        return True
+
+    def retrieve(self, catalog_name, column, cataid):
+        """Return the value from the catalog for the given CATAID"""
+        cataid = int(cataid)
+        catalog = self.catalogs[catalog_name]
+        if cataid not in catalog['CATAID']:
+            # print "SAMI ID %s not in GAMA catalogs - no aperture spectra produced" % cataid
+            raise ValueError("CATAID %s not in GAMA Catalog" % cataid)
+        else:
+            # Cut down the catalog to only contain the row for this SAMI ID.
+            return catalog[catalog['CATAID'] == cataid][column][0]
+
 def aperture_spectra_pair(path_blue, path_red, path_to_catalogs):
     """Calculate binned spectra and save as new file for each pair of cubes."""
 
     log.debug("Starting aperture_spectra_pair: %s, %s, %s", path_blue, path_red, path_to_catalogs)
+
+    log.info("Running aperture_spectra_pair v6")
 
     # Check that the required catalogs are available.
     #
@@ -92,11 +148,12 @@ def aperture_spectra_pair(path_blue, path_red, path_to_catalogs):
             raise ValueError("Invalid or missing GAMA Catalog %s in directory %s" %
                              (cat, os.path.abspath(path_to_catalogs)))
 
+
     def get_cat_column_for_id(catalog, column, sami_id):
         """Return the value from the catalog for the given CATAID"""
         sami_id = int(sami_id)
         if sami_id not in catalog['CATAID']:
-            print "SAMI ID %s not in GAMA catalogs - no aperture spectra produced" % sami_id
+            # print "SAMI ID %s not in GAMA catalogs - no aperture spectra produced" % sami_id
             raise KeyError("SAMI ID %s Not in GAMA Catalog" % sami_id)
         else:
             # Cut down the catalog to only contain the row for this SAMI ID.
@@ -118,16 +175,17 @@ def aperture_spectra_pair(path_blue, path_red, path_to_catalogs):
 
         sami_id = hdulist_blue[0].header['NAME']
 
+        if is_id_in_catalogs(sami_id, catalogs):
+            log.info("Constructing apertures using GAMA data for SAMI ID %s", sami_id)
+        else:
+            print("No aperture spectra produced for {} because it is not in the GAMA catalogs".format(sami_id))
+            return None
+
+
         # The position angle must be adjusted to get PA on the sky.
         # See http://www.gama-survey.org/dr2/schema/dmu.php?id=36
-        try:
-            pos_angle_adjust = (get_cat_column_for_id(catalogs['ApMatchedCat'], 'THETA_J2000', sami_id) -
-                                get_cat_column_for_id(catalogs['ApMatchedCat'], 'THETA_IMAGE', sami_id))
-        except KeyError as e:
-            # Probably the SAMI ID is not available in the GAMA catalog.
-            print("Skipping {} due to error:".format(sami_id))
-            print(e.message)
-            return None
+        pos_angle_adjust = (get_cat_column_for_id(catalogs['ApMatchedCat'], 'THETA_J2000', sami_id) -
+                            get_cat_column_for_id(catalogs['ApMatchedCat'], 'THETA_IMAGE', sami_id))
 
         # size of a pixel in angular units. CDELT1 is the WCS pixel size, and CTYPE1 is "DEGREE"
         pix_size = np.abs((hdulist_blue[0].header['CDELT1'] * u.deg).to(u.arcsec).value)
@@ -190,20 +248,21 @@ def aperture_spectra_pair(path_blue, path_red, path_to_catalogs):
             # Calculate the aperture bins based on first file only.
             if bin_mask is None:
                 bin_mask = dict()
-                log.info("Aperture Information for %s:", sami_id)
-                log.info("   {:<11s} {:>8s} {:>8s} {:>8s} {:>8s}".format(
+                aperture_info = "Aperture Information for %s:\n" % sami_id
+                aperture_info += ("   {:<11s} {:>8s} {:>8s} {:>8s} {:>8s}\n".format(
                     'Aperture', 'n_pix', 'radius', 'ellip', 'PA'))
                 for aper in standard_apertures:
                     bin_mask[aper] = aperture_bin_sami(hdulist, **standard_apertures[aper])
-                    log.info("   {:11s} {:8.0f} {:8.2f} {:8.2f} {:8.2f}".format(
+                    aperture_info += ("   {:11s} {:8.0f} {:8.2f} {:8.2f} {:8.2f}\n".format(
                         aper,
                         np.sum(bin_mask[aper] == 1),
                         standard_apertures[aper]['aperture_radius'],
                         standard_apertures[aper]['ellipticity'],
                         standard_apertures[aper]['pa']))
-
+                log.info(aperture_info)
             for aper in standard_apertures:
-                binned_cube, binned_var = bin_cube(hdulist, bin_mask[aper])
+                mask = bin_mask[aper].copy()
+                binned_cube, binned_var = bin_cube(hdulist, mask)
 
                 if log.isEnabledFor(slogging.DEBUG):
                     print "Bins: ", np.unique(bin_mask[aper]).tolist()
@@ -217,10 +276,11 @@ def aperture_spectra_pair(path_blue, path_red, path_to_catalogs):
                 #     not exactly match the area of the aperture. We compute a
                 #     scaling that will standardize this, so that comparing
                 #     aperture spectra will not introduce any systematics.
-                spaxel_area = n_spax_included * ang_size_kpc**2
+                spaxel_area = n_spax_included * pix_size**2
+                # (remember aperture_radius is in pix_size, so the ellipse is initially pix_size)
                 aperture_area = (2 * np.pi *
                                  (standard_apertures[aper]['aperture_radius'])**2 *
-                                 standard_apertures[aper]['ellipticity'])
+                                 (1 - standard_apertures[aper]['ellipticity'])) * pix_size**2
                 area_correction = aperture_area / spaxel_area
 
                 if n_spax_included > 0:
@@ -269,7 +329,7 @@ def aperture_spectra_pair(path_blue, path_red, path_to_catalogs):
                 log.debug("Aperture %s completed", aper)
 
             aperture_hdulist.writeto(output_filename, clobber=True)
-            log.debug("Aperture spectra written to %s", output_filename)
+            log.info("Aperture spectra written to %s", output_filename)
 
 
 def bin_and_save(hdulist, bin_mask, name=None):
@@ -661,30 +721,6 @@ def aperture_bin_sami(hdu, aperture_radius=1, ellipticity=0, pa=0):
     cube = np.transpose(hdu['PRIMARY'].data)
     n_spax = cube.shape[1]
 
-    # image = np.median(cube, axis=0)
-    # image0 = np.copy(image)
-    # image0[np.isfinite(image) == False] = -1
-    # try:
-    #     maj0, eps0, pa0, xpeak0, ypeak0, xmed0, ymed0, n_blobs = \
-    #         find_galaxy(image0, quiet=True, fraction=0.05)
-    # except:
-    #     eps0, pa0, xmed0, ymed0 = 0.0, 0.0, 0.5 * n_spax, 0.5 * n_spax
-    # n = 1
-    #
-    # while ((np.abs(xmed0 - 0.5*n_spax) > 3) or (np.abs(ymed0 - 0.5*n_spax) > 3)) and (n <= n_blobs):
-    #     try:
-    #         maj0, eps0, pa0, xpeak0, ypeak0, xmed0, ymed0, junk = \
-    #             find_galaxy(image0, quiet=True, fraction=0.05, nblob=n)
-    #         n += 1
-    #     except:
-    #         eps0, pa0, xmed0, ymed0 = 0.0, 0.0, 0.5 * n_spax, 0.5 * n_spax
-    #         n = n_blobs + 1
-    #
-    # xmed = xmed0
-    # ymed = ymed0
-    # # ellipticity = eps0
-    # # pa = pa0
-
     # Use the centre of the cube...
     xmed = float(cube.shape[0] - 1)/2.0
     ymed = float(cube.shape[1] - 1)/2.0
@@ -700,11 +736,20 @@ def aperture_bin_sami(hdu, aperture_radius=1, ellipticity=0, pa=0):
     spax_pos[0, :] = spax_pos[0, :, :] - xmed
     spax_pos[1, :] = spax_pos[1, :, :] - ymed
     spax_pos_rot = np.zeros_like(spax_pos)
-    # The following is a rotation by `pa_rad` radians counter-clockwise in the xy plane.
-    # Here, the first axis is RA and the second axis is DEC (because we have transposed the data
-    # from pyfits above)
-    spax_pos_rot[0, :] = spax_pos[0, :, :] * np.cos(pa_rad) - spax_pos[1, :, :] * np.sin(pa_rad)
-    spax_pos_rot[1, :] = spax_pos[0, :, :] * np.sin(pa_rad) + spax_pos[1, :, :] * np.cos(pa_rad)
+
+    # Here, for SAMI, the first axis is RA and the second axis -DEC.
+    # (This gives for north up, east to the left.)
+    #
+    # Below is the standard form of the rotation matrix formula, which rotates
+    # counter-clockwise in the x-y plane.
+    #
+    # However, we are rotating the input coordinates, before applying the
+    # elipticity. This reverses the sense of the rotation.
+    #
+    # Therefore, we rotate by `-pa_rad` so that the rotation is North  through
+    # east, or counter-clockwise.
+    spax_pos_rot[0, :] = spax_pos[0, :, :] * np.cos(-pa_rad) - spax_pos[1, :, :] * np.sin(-pa_rad)
+    spax_pos_rot[1, :] = spax_pos[0, :, :] * np.sin(-pa_rad) + spax_pos[1, :, :] * np.cos(-pa_rad)
 
     # Determine the elliptical distance of each spaxel to the origin
     dist_ellipse = np.sqrt((spax_pos_rot[0, :, :] / (1. - ellipticity)) ** 2 + spax_pos_rot[1, :, :] ** 2)
@@ -722,9 +767,10 @@ def aperture_bin_sami(hdu, aperture_radius=1, ellipticity=0, pa=0):
     # Assign each spaxel to a different radial bin
     rad_bins = np.digitize(np.ravel(dist_ellipse), (0, aperture_radius)).reshape(n_spax, n_spax)
 
-
+    pf.PrimaryHDU((rad_bins==1).astype(int)).writeto("masktmp.fits", clobber=True)
 
     return rad_bins
+
 
 def get_seeing(hdulist):
 
