@@ -64,15 +64,28 @@ def is_id_in_catalogs(sami_id, catalogs):
 
 
 class CatalogAccessor(object):
+    """Class to handle accessing GAMA catalogs stored in FITS files."""
+
     def __init__(self, path_to_catalogs, catalog_descriptions):
         self.path_to_catalogs = path_to_catalogs
         self.catalog_names = catalog_descriptions.keys()
         self.catalog_descriptions = catalog_descriptions
         self.catalogs = dict()
+        self.catalog_filenames = dict()
 
         self.load_catalogs()
+        log.debug("Catalog data is loaded and available.")
+
 
     def load_catalogs(self):
+        """Find, load, and check the catalogs.
+
+        For each, search in the path_to_catalogs directory for a likely looking
+        file, open it, find the data, and then check that the expected columns
+        are present.
+
+        """
+
         for cat in self.catalog_names:
             try:
                 files_found = glob(self.path_to_catalogs + "/*" + cat + "*.fits")
@@ -83,7 +96,8 @@ class CatalogAccessor(object):
                     self.catalogs[cat] = f[1].data
                 for col in self.catalog_descriptions[cat]:
                     assert col in self.catalogs[cat].columns.dtype.names
-            except:
+            except Exception as e:
+                print("Original error: %s" % e.message)
                 raise ValueError("Invalid or missing GAMA Catalog %s in directory %s" %
                                  (cat, os.path.abspath(self.path_to_catalogs)))
 
@@ -110,15 +124,8 @@ class CatalogAccessor(object):
 def aperture_spectra_pair(path_blue, path_red, path_to_catalogs):
     """Calculate binned spectra and save as new file for each pair of cubes."""
 
+    log.info("Running aperture_spectra_pair v7")
     log.debug("Starting aperture_spectra_pair: %s, %s, %s", path_blue, path_red, path_to_catalogs)
-
-    log.info("Running aperture_spectra_pair v6")
-
-    # Check that the required catalogs are available.
-    #
-    #     For each, search in the catalog directory given for a likely looking
-    #     file, open it, find the data, and then check that the expected columns
-    #     are present.
 
     # A dictionary of required catalogs and the columns required in each catalog.
     catalogs_required = {
@@ -132,34 +139,8 @@ def aperture_spectra_pair(path_blue, path_red, path_to_catalogs):
         'DistanceFrames': ['Z_TONRY_2']
     }
 
-    catalogs = dict()
+    gama_catalogs = CatalogAccessor(path_to_catalogs, catalogs_required)
 
-    for cat in catalogs_required:
-        try:
-            cat_filename = glob(path_to_catalogs + "/*" + cat + "*.fits")
-            if len(cat_filename) > 1:
-                log.warning("Multiple catalogs found for %s!", cat)
-            cat_filename = cat_filename[0]
-            with pf.open(cat_filename) as f:
-                catalogs[cat] = f[1].data
-            for col in catalogs_required[cat]:
-                assert col in catalogs[cat].columns.dtype.names
-        except:
-            raise ValueError("Invalid or missing GAMA Catalog %s in directory %s" %
-                             (cat, os.path.abspath(path_to_catalogs)))
-
-
-    def get_cat_column_for_id(catalog, column, sami_id):
-        """Return the value from the catalog for the given CATAID"""
-        sami_id = int(sami_id)
-        if sami_id not in catalog['CATAID']:
-            # print "SAMI ID %s not in GAMA catalogs - no aperture spectra produced" % sami_id
-            raise KeyError("SAMI ID %s Not in GAMA Catalog" % sami_id)
-        else:
-            # Cut down the catalog to only contain the row for this SAMI ID.
-            return catalog[catalog['CATAID'] == sami_id][column][0]
-
-    log.debug("Catalog data is loaded and available.")
     # Open the two cubes
     with pf.open(path_blue, memmap=True) as hdulist_blue, pf.open(path_red, memmap=True) as hdulist_red:
 
@@ -175,7 +156,7 @@ def aperture_spectra_pair(path_blue, path_red, path_to_catalogs):
 
         sami_id = hdulist_blue[0].header['NAME']
 
-        if is_id_in_catalogs(sami_id, catalogs):
+        if gama_catalogs.cataid_available(sami_id):
             log.info("Constructing apertures using GAMA data for SAMI ID %s", sami_id)
         else:
             print("No aperture spectra produced for {} because it is not in the GAMA catalogs".format(sami_id))
@@ -184,8 +165,9 @@ def aperture_spectra_pair(path_blue, path_red, path_to_catalogs):
 
         # The position angle must be adjusted to get PA on the sky.
         # See http://www.gama-survey.org/dr2/schema/dmu.php?id=36
-        pos_angle_adjust = (get_cat_column_for_id(catalogs['ApMatchedCat'], 'THETA_J2000', sami_id) -
-                            get_cat_column_for_id(catalogs['ApMatchedCat'], 'THETA_IMAGE', sami_id))
+        pos_angle_adjust = (gama_catalogs.retrieve('ApMatchedCat', 'THETA_J2000', sami_id) -
+                            gama_catalogs.retrieve('ApMatchedCat', 'THETA_IMAGE', sami_id))
+
 
         # size of a pixel in angular units. CDELT1 is the WCS pixel size, and CTYPE1 is "DEGREE"
         pix_size = np.abs((hdulist_blue[0].header['CDELT1'] * u.deg).to(u.arcsec).value)
@@ -196,18 +178,18 @@ def aperture_spectra_pair(path_blue, path_red, path_to_catalogs):
 
 
         standard_apertures['re'] = {
-            'aperture_radius': get_cat_column_for_id(catalogs['SersicCatAll'], 'GAL_RE_R', sami_id)/pix_size,
-            'pa': get_cat_column_for_id(catalogs['SersicCatAll'], 'GAL_PA_R', sami_id) + pos_angle_adjust,
-            'ellipticity': get_cat_column_for_id(catalogs['SersicCatAll'], 'GAL_ELLIP_R', sami_id)
+            'aperture_radius': gama_catalogs.retrieve('SersicCatAll', 'GAL_RE_R', sami_id)/pix_size,
+            'pa': gama_catalogs.retrieve('SersicCatAll', 'GAL_PA_R', sami_id) + pos_angle_adjust,
+            'ellipticity': gama_catalogs.retrieve('SersicCatAll', 'GAL_ELLIP_R', sami_id)
         }
 
         standard_apertures['r90'] = {
-            'aperture_radius': get_cat_column_for_id(catalogs['SersicCatAll'], 'GAL_R90_R', sami_id)/pix_size,
-            'pa': get_cat_column_for_id(catalogs['SersicCatAll'], 'GAL_PA_R', sami_id) + pos_angle_adjust,
-            'ellipticity': get_cat_column_for_id(catalogs['SersicCatAll'], 'GAL_ELLIP_R', sami_id)
+            'aperture_radius': gama_catalogs.retrieve('SersicCatAll', 'GAL_R90_R', sami_id)/pix_size,
+            'pa': gama_catalogs.retrieve('SersicCatAll', 'GAL_PA_R', sami_id) + pos_angle_adjust,
+            'ellipticity': gama_catalogs.retrieve('SersicCatAll', 'GAL_ELLIP_R', sami_id)
         }
 
-        redshift = get_cat_column_for_id(catalogs['DistanceFrames'], 'Z_TONRY_2', sami_id)
+        redshift = gama_catalogs.retrieve('DistanceFrames', 'Z_TONRY_2', sami_id)
         ang_size_kpc = (1*u.kpc / cosmo.kpc_proper_per_arcmin(redshift)).to(u.arcsec).value / pix_size
 
         standard_apertures['3kpc_round'] = {
@@ -248,26 +230,21 @@ def aperture_spectra_pair(path_blue, path_red, path_to_catalogs):
             # Calculate the aperture bins based on first file only.
             if bin_mask is None:
                 bin_mask = dict()
-                aperture_info = "Aperture Information for %s:\n" % sami_id
-                aperture_info += ("   {:<11s} {:>8s} {:>8s} {:>8s} {:>8s}\n".format(
-                    'Aperture', 'n_pix', 'radius', 'ellip', 'PA'))
                 for aper in standard_apertures:
                     bin_mask[aper] = aperture_bin_sami(hdulist, **standard_apertures[aper])
-                    aperture_info += ("   {:11s} {:8.0f} {:8.2f} {:8.2f} {:8.2f}\n".format(
-                        aper,
-                        np.sum(bin_mask[aper] == 1),
-                        standard_apertures[aper]['aperture_radius'],
-                        standard_apertures[aper]['ellipticity'],
-                        standard_apertures[aper]['pa']))
-                log.info(aperture_info)
+                    standard_apertures[aper]['mask'] = (bin_mask[aper] == 1)
+                    standard_apertures[aper]['n_pix_included'] = int(np.sum(standard_apertures[aper]['mask']))
+                log_aperture_data(standard_apertures, sami_id)
+
             for aper in standard_apertures:
-                mask = bin_mask[aper].copy()
-                binned_cube, binned_var = bin_cube(hdulist, mask)
+                aperture_data = standard_apertures[aper]
+
+                binned_cube, binned_var = bin_cube(hdulist, aperture_data['mask'])
 
                 if log.isEnabledFor(slogging.DEBUG):
                     print "Bins: ", np.unique(bin_mask[aper]).tolist()
 
-                n_spax_included = int(np.sum(bin_mask[aper] == 1))
+                n_spax_included = aperture_data['n_pix_included']
 
                 # Calculate area correction:
                 #
@@ -279,8 +256,8 @@ def aperture_spectra_pair(path_blue, path_red, path_to_catalogs):
                 spaxel_area = n_spax_included * pix_size**2
                 # (remember aperture_radius is in pix_size, so the ellipse is initially pix_size)
                 aperture_area = (2 * np.pi *
-                                 (standard_apertures[aper]['aperture_radius'])**2 *
-                                 (1 - standard_apertures[aper]['ellipticity'])) * pix_size**2
+                                 (aperture_data['aperture_radius'])**2 *
+                                 (1 - aperture_data['ellipticity'])) * pix_size**2
                 area_correction = aperture_area / spaxel_area
 
                 if n_spax_included > 0:
@@ -299,13 +276,13 @@ def aperture_spectra_pair(path_blue, path_red, path_to_catalogs):
 
                 output_header = aperture_hdulist[aper.upper()].header
                 output_header['RADIUS'] = (
-                    standard_apertures[aper]['aperture_radius'],
+                    aperture_data['aperture_radius'],
                     "Radius of the aperture in spaxels")
                 output_header['ELLIP'] = (
-                    standard_apertures[aper]['ellipticity'],
+                    aperture_data['ellipticity'],
                     "Ellipticity of the aperture (1-b/a)")
                 output_header['POS_ANG'] = (
-                    standard_apertures[aper]['pa'],
+                    aperture_data['pa'],
                     "Position angle of the major axis, N->E")
                 output_header['KPC_SIZE'] = (
                     ang_size_kpc,
@@ -786,3 +763,19 @@ def get_seeing(hdulist):
                       obj_cube_path[start+len(id_path_section):])
 
     return pf.getval(star_cube_path, 'PSFFWHM')
+
+
+def log_aperture_data(standard_apertures, sami_id):
+    """Log aperture information in a readable format"""
+    if log.isEnabledFor(slogging.INFO):
+        aperture_info = "Aperture Information for %s:\n" % sami_id
+        aperture_info += ("   {:<11s} {:>8s} {:>8s} {:>8s} {:>8s}\n".format(
+            'Aperture', 'n_pix', 'radius', 'ellip', 'PA'))
+        for aper in standard_apertures:
+            aperture_info += ("   {:11s} {:8.0f} {:8.2f} {:8.2f} {:8.2f}\n".format(
+                aper,
+                standard_apertures[aper]['n_pix_included'],
+                standard_apertures[aper]['aperture_radius'],
+                standard_apertures[aper]['ellipticity'],
+                standard_apertures[aper]['pa']))
+        log.info(aperture_info)
