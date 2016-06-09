@@ -42,6 +42,7 @@ from scipy.stats import nanmedian
 from scipy.ndimage.filters import median_filter
 from scipy.ndimage.measurements import label
 from . import voronoi_2d_binning_wcovar
+from ..utils.other import hg_changeset
 
 def bin_cube_pair(path_blue, path_red, name=None, **kwargs):
     """Calculate bins, do binning and save results for a pair of cubes."""
@@ -226,6 +227,8 @@ def aperture_spectra_pair(path_blue, path_red, path_to_catalogs):
 
             # Copy the header from the fits CUBE to primary HDU
             aperture_hdulist[0].header = hdulist[0].header
+
+            aperture_hdulist[0].header['HGAPER'] = (hg_changeset(__file__), "Hg changeset ID for aperture code")
 
             # Calculate the aperture bins based on first file only.
             if bin_mask is None:
