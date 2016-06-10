@@ -747,8 +747,6 @@ def aperture_bin_sami(hdu, aperture_radius=1, ellipticity=0, pa=0):
     # Assign each spaxel to a different radial bin
     rad_bins = np.digitize(np.ravel(dist_ellipse), (0, aperture_radius)).reshape(n_spax, n_spax)
 
-    pf.PrimaryHDU((rad_bins==1).astype(int)).writeto("masktmp.fits", clobber=True)
-
     return rad_bins
 
 
