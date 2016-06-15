@@ -421,6 +421,9 @@ def dithered_cube_from_rss_wrapper(files, name, size_of_grid=50,
         hdr_new['BUNIT'] = ('10**(-16) erg /s /cm**2 /angstrom /pixel', 
                             'Units')
 
+        # Add the drop factor used to the datacube header
+        hdr_new['DROPFACT'] = (drop_factor, 'Drizzle drop scaling')
+
         # Create HDUs for each cube.
         
         list_of_hdus = []
