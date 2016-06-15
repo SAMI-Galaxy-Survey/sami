@@ -125,7 +125,8 @@ class CatalogAccessor(object):
 def aperture_spectra_pair(path_blue, path_red, path_to_catalogs):
     """Calculate binned spectra and save as new file for each pair of cubes."""
 
-    log.info("Running aperture_spectra_pair v7")
+    if log.isEnabledFor(slogging.INFO):
+        log.info("Running aperture_spectra_pair HG version %s", hg_changeset(__file__))
     log.debug("Starting aperture_spectra_pair: %s, %s, %s", path_blue, path_red, path_to_catalogs)
 
     # A dictionary of required catalogs and the columns required in each catalog.
@@ -378,20 +379,20 @@ def bin_cube(hdu, bin_mask):
 
     n_bins = int(np.max(bin_mask))
 
-    for i in range(n_bins):
-        spaxel_coords = np.array(np.where(bin_mask == i+1))
-        binned_spectrum = np.nansum(cube[:,spaxel_coords[0,:],spaxel_coords[1,:]],axis=1)/len(spaxel_coords[0])
-        binned_weighted_spectrum = np.nansum(weighted_cube[:,spaxel_coords[0,:],spaxel_coords[1,:]],axis=1)/len(spaxel_coords[0])
-        binned_weight = np.nansum(weight[:,spaxel_coords[0,:],spaxel_coords[1,:]],axis=1)
-        binned_weight2 = np.nansum(weight[:,spaxel_coords[0,:],spaxel_coords[1,:]]**2,axis=1)
-        temp = np.tile(np.reshape(binned_spectrum,(len(binned_spectrum),1)),len(spaxel_coords[0,:]))
-        binned_cube[:,spaxel_coords[0,:],spaxel_coords[1,:]] = temp
-        binned_weighted_variance = np.nansum(weighted_var[:,spaxel_coords[0,:],spaxel_coords[1,:]]*
-                                    np.nansum(np.nansum(covar[:,:,:,spaxel_coords[0,:],spaxel_coords[1,:]],
-                                    axis=1)/2.0,axis=1),axis=1)
-        binned_variance = binned_weighted_variance*((binned_spectrum/binned_weighted_spectrum)**2)/(len(spaxel_coords[0])**2)
-        binned_var[:,spaxel_coords[0,:],spaxel_coords[1,:]] = np.tile(
-                                np.reshape(binned_variance,(len(binned_variance),1)),len(spaxel_coords[0,:]))
+        for i in range(n_bins):
+            spaxel_coords = np.array(np.where(bin_mask == i+1))
+            binned_spectrum = np.nansum(cube[:,spaxel_coords[0,:],spaxel_coords[1,:]],axis=1)/len(spaxel_coords[0])
+            binned_weighted_spectrum = np.nansum(weighted_cube[:,spaxel_coords[0,:],spaxel_coords[1,:]],axis=1)/len(spaxel_coords[0])
+            binned_weight = np.nansum(weight[:,spaxel_coords[0,:],spaxel_coords[1,:]],axis=1)
+            binned_weight2 = np.nansum(weight[:,spaxel_coords[0,:],spaxel_coords[1,:]]**2,axis=1)
+            temp = np.tile(np.reshape(binned_spectrum,(len(binned_spectrum),1)),len(spaxel_coords[0,:]))
+            binned_cube[:,spaxel_coords[0,:],spaxel_coords[1,:]] = temp
+            binned_weighted_variance = np.nansum(weighted_var[:,spaxel_coords[0,:],spaxel_coords[1,:]]*
+                                        np.nansum(np.nansum(covar[:,:,:,spaxel_coords[0,:],spaxel_coords[1,:]],
+                                        axis=1)/2.0,axis=1),axis=1)
+            binned_variance = binned_weighted_variance*((binned_spectrum/binned_weighted_spectrum)**2)/(len(spaxel_coords[0])**2)
+            binned_var[:,spaxel_coords[0,:],spaxel_coords[1,:]] = np.tile(
+                                    np.reshape(binned_variance,(len(binned_variance),1)),len(spaxel_coords[0,:]))
 
     return binned_cube,binned_var
 
