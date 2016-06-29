@@ -617,13 +617,16 @@ def list_star_files(mngr, gzip=True, verbose=True):
                             break
                         red_filename = (blue_filename[:5] + '2' + 
                                         blue_filename[6:10] + 'sci.fits')
-                        blue_frame_path = glob(
-                            mngr.abs_root+'/reduced/*/*/*/*/*/'+
-                            blue_filename)[0]
-                        red_frame_path = glob(
-                            mngr.abs_root+'/reduced/*/*/*/*/*/'+
-                            red_filename)[0]
-                        frame[-1].append((blue_frame_path, red_frame_path))
+                        try:
+                            blue_frame_path = glob(
+                                mngr.abs_root+'/reduced/*/*/*/*/*/'+
+                                blue_filename)[0]
+                            red_frame_path = glob(
+                                mngr.abs_root+'/reduced/*/*/*/*/*/'+
+                                red_filename)[0]
+                            frame[-1].append((blue_frame_path, red_frame_path))
+                        except KeyError:
+                            break
     return result, frame
     
 def list_galaxy_files(mngr, gzip=True, verbose=True):
@@ -663,13 +666,16 @@ def list_galaxy_files(mngr, gzip=True, verbose=True):
                             break
                         red_filename = (blue_filename[:5] + '2' + 
                                         blue_filename[6:10] + 'sci.fits')
-                        blue_frame_path = glob(
-                            mngr.abs_root+'/reduced/*/*/*/*/*/'+
-                            blue_filename)[0]
-                        red_frame_path = glob(
-                            mngr.abs_root+'/reduced/*/*/*/*/*/'+
-                            red_filename)[0]
-                        frame[-1].append((blue_frame_path, red_frame_path))
+                        try:
+                            blue_frame_path = glob(
+                                mngr.abs_root+'/reduced/*/*/*/*/*/'+
+                                blue_filename)[0]
+                            red_frame_path = glob(
+                                mngr.abs_root+'/reduced/*/*/*/*/*/'+
+                                red_filename)[0]
+                            frame[-1].append((blue_frame_path, red_frame_path))
+                        except KeyError:
+                            break
     return result, frame
 
 def red_cube_path(blue_path):
