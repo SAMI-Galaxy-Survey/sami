@@ -61,8 +61,11 @@ def make_clipped_thput_files(path_list, overwrite=True, edit_all=False,
     # 2dfdr Gauss extraction now replaces dodgy throughput values with 0
     good = (thput > 0) & np.isfinite(thput)
     if median:
-        avg_thput = np.array([np.median(thput[good[:, i], i])
-                             for i in xrange(n_fibre)])
+        thput_nan = thput.copy()
+        thput_nan[~good] = np.nan
+        avg_thput = np.nanmedian(thput_nan, axis=0)
+        # avg_thput = np.array([np.median(thput[good[:, i], i])
+        #                      for i in xrange(n_fibre)])
     else:
         avg_thput = np.sum(thput * good, 0) / np.sum(good, 0)
     avg_thput = np.outer(np.ones(n_file), avg_thput)

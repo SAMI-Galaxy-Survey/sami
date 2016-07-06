@@ -285,36 +285,73 @@ def stability(mngr):
 #     observed_colours = [measure_colour(model, model_catalogue['wavelength']) 
 #                         for model in model_list]
 #     return file_pair_list, observed_colours
-def get_sdss_stellar_mags(mngr, catalogue=None):
-    """Get magnitudes for stars from SDSS, with a little help from the user."""
+def get_sdss_stellar_mags(mngr, catalogue=None, automatic=False):
+    """Get magnitudes for stars from SDSS, possibly with a little help from the user.
+
+    If automatic=True, then it will try to download the data directly, and will
+    return it as a string.
+
+    If automatic=False, or the automatic downloading fails, then it will prompt the
+    user to go and download the file directly, in which case it simply returns True.
+
+    If the stars are already in the catalogue, then it returns False.
+    """
     name_list, coords_list = get_missing_stars(mngr, catalogue=catalogue)
     if not name_list:
         # Already had all the stars required
         print 'All magnitudes already in the catalogue.'
         return False
-    print 'Go to:'
-    print
-    print 'http://cas.sdss.org/dr7/en/tools/crossid/crossid.asp'
-    print
-    print 'Copy-paste the following into the upload list box:'
-    print
-    print 'name ra dec'
+
+    url = 'http://cas.sdss.org/dr7/en/tools/crossid/x_crossid.asp'
+
+    query_list = ""
+    query_list += "name ra dec\n"
     for name, coords in zip(name_list, coords_list):
-        print name, coords[0], coords[1]
-    print
-    print 'And the following into the SQL query box:'
-    print
-    print """SELECT 
+        query_list += "{}, {}, {}\n".format(name, coords[0], coords[1])
+
+    sql = """SELECT
    p.objID, p.ra, p.dec,
    dbo.fPhotoTypeN(p.type) as type,
    p.psfMag_u, p.psfMagErr_u, p.psfMag_g, p.psfMagErr_g, p.psfMag_r,
-   p.psfMagErr_r, p.psfMag_i, p.psfMagErr_i, p.psfMag_z, p.psfMagErr_z 
+   p.psfMagErr_r, p.psfMag_i, p.psfMagErr_i, p.psfMag_z, p.psfMagErr_z
 FROM #x x, #upload u, PhotoTag p
-WHERE u.up_id = x.up_id and x.objID=p.objID 
+WHERE u.up_id = x.up_id and x.objID=p.objID
 ORDER BY x.up_id"""
-    print
-    print 'Change output format to CSV, then hit submit.'
-    return True
+
+    if automatic:
+        try:
+            import requests
+        except ImportError:
+            print "Install the python 'requests' library to allow automatic downloading."
+            automatic = False
+    if automatic:
+        post_data = {'searchType': "photo",
+            'photoScope': "nearPrim",
+            'photoUpType': "ra-dec",
+            'radius': "0.5",
+            'firstcol': "1",
+            'paste': query_list,
+		    'uquery': sql,
+	        'format': "csv" }
+        r = requests.post(url, data=post_data, files={'upload':("", "")})
+        if r.status_code != 200:
+            raise IOError("Error connectiong to SDSS servers. Try with 'automatic=False'")
+        return r.text
+    else:
+        print 'Go to:'
+        print
+        print url
+        print
+        print 'Copy-paste the following into the upload list box:'
+        print
+        print query_list
+        print
+        print 'And the following into the SQL query box:'
+        print
+        print sql
+        print
+        print 'Change output format to CSV, then hit submit.'
+        return True
 
 def get_missing_stars(mngr, catalogue=None):
     """Return lists of observed stars missing from the catalogue."""
@@ -580,13 +617,16 @@ def list_star_files(mngr, gzip=True, verbose=True):
                             break
                         red_filename = (blue_filename[:5] + '2' + 
                                         blue_filename[6:10] + 'sci.fits')
-                        blue_frame_path = glob(
-                            mngr.abs_root+'/reduced/*/*/*/*/*/'+
-                            blue_filename)[0]
-                        red_frame_path = glob(
-                            mngr.abs_root+'/reduced/*/*/*/*/*/'+
-                            red_filename)[0]
-                        frame[-1].append((blue_frame_path, red_frame_path))
+                        try:
+                            blue_frame_path = glob(
+                                mngr.abs_root+'/reduced/*/*/*/*/*/'+
+                                blue_filename)[0]
+                            red_frame_path = glob(
+                                mngr.abs_root+'/reduced/*/*/*/*/*/'+
+                                red_filename)[0]
+                            frame[-1].append((blue_frame_path, red_frame_path))
+                        except KeyError:
+                            break
     return result, frame
     
 def list_galaxy_files(mngr, gzip=True, verbose=True):
@@ -626,13 +666,16 @@ def list_galaxy_files(mngr, gzip=True, verbose=True):
                             break
                         red_filename = (blue_filename[:5] + '2' + 
                                         blue_filename[6:10] + 'sci.fits')
-                        blue_frame_path = glob(
-                            mngr.abs_root+'/reduced/*/*/*/*/*/'+
-                            blue_filename)[0]
-                        red_frame_path = glob(
-                            mngr.abs_root+'/reduced/*/*/*/*/*/'+
-                            red_filename)[0]
-                        frame[-1].append((blue_frame_path, red_frame_path))
+                        try:
+                            blue_frame_path = glob(
+                                mngr.abs_root+'/reduced/*/*/*/*/*/'+
+                                blue_filename)[0]
+                            red_frame_path = glob(
+                                mngr.abs_root+'/reduced/*/*/*/*/*/'+
+                                red_filename)[0]
+                            frame[-1].append((blue_frame_path, red_frame_path))
+                        except KeyError:
+                            break
     return result, frame
 
 def red_cube_path(blue_path):
