@@ -54,6 +54,7 @@ import re
 import subprocess
 import multiprocessing
 import signal
+import warnings
 from functools import wraps
 from contextlib import contextmanager
 from collections import defaultdict
@@ -96,8 +97,10 @@ from .qc.arc import bad_fibres
 ASTROPY_VERSION = tuple(int(x) for x in ASTROPY_VERSION.split('.'))
 if ASTROPY_VERSION[:2] == (0, 2):
     ICRS = coord.ICRSCoordinates
+    warnings.warn('Support for astropy {} is being phased out. Please update your software!'.format(ASTROPY_VERSION))
 elif ASTROPY_VERSION[:2] == (0, 3):
     ICRS = coord.ICRS
+    warnings.warn('Support for astropy {} is being phased out. Please update your software!'.format(ASTROPY_VERSION))
 else:
     def ICRS(*args, **kwargs):
         return coord.SkyCoord(*args, frame='icrs', **kwargs)
