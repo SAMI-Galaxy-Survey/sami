@@ -94,6 +94,14 @@ from .qc.fluxcal import throughput, get_sdss_stellar_mags
 from .qc.sky import sky_residuals
 from .qc.arc import bad_fibres
 
+# Temporary edit. Prevent bottleneck 1.0.0 being used.
+try:
+    import bottleneck.__version__ as BOTTLENECK_VERSION
+    if BOTTLENECK_VERSION=='1.0.0':
+        raise ImportError('Bottleneck {} has a Blue Whale sized bug. Please update your library NOW')
+except ImportError
+    pass
+
 # Get the astropy version as a tuple of integers
 ASTROPY_VERSION = tuple(int(x) for x in ASTROPY_VERSION.split('.'))
 if ASTROPY_VERSION[:2] == (0, 2):
