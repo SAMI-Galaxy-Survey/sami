@@ -953,14 +953,14 @@ def perform_telluric_correction( samifitsfilename=None, verbose=1 ):
     
     hdr.add_history( 'Telluric corrected using secondary standard star.' )
     hdr.add_history( 'Empirical DAR correction fit for.' )
-    hdr.update( 'DARFITPA', datadict[ 'DAR_FIT_POSANG' ], 
-             'DAR position angle - deg N of E' )
-    hdr.update( 'DARLAM0', datadict[ 'DAR_FIT_LAM0' ], 
-             'Reference wavelength for DAR fit' )
-    hdr.update( 'DARNORM', datadict[ 'DAR_FIT_ACOEFF' ],
-                'DAR fit: D R = DARNORM x (wl/DARLAM0)^DARPOWER' )
-    hdr.update( 'DARPOWER', datadict[ 'DAR_FIT_PCOEFF' ],
-                'DAR fit: D R = DARNORM x (wl/DARLAM0)^DARPOWER' )
+    hdr['DARFITPA'] = (datadict[ 'DAR_FIT_POSANG' ], 
+             'DAR position angle - deg N of E')
+    hdr['DARLAM0'] = (datadict[ 'DAR_FIT_LAM0' ], 
+             'Reference wavelength for DAR fit')
+    hdr['DARNORM'] = (datadict[ 'DAR_FIT_ACOEFF' ],
+                'DAR fit: D R = DARNORM x (wl/DARLAM0)^DARPOWER')
+    hdr['DARPOWER'] = (datadict[ 'DAR_FIT_PCOEFF' ],
+                'DAR fit: D R = DARNORM x (wl/DARLAM0)^DARPOWER')
 
     print hdr
 
