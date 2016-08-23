@@ -10,7 +10,6 @@ import astropy.io.fits as pf
 import string
 import itertools
 
-from scipy.stats import stats
 from scipy.ndimage.filters import median_filter
 
 # Circular patch.
@@ -628,7 +627,7 @@ def centroid_fit(x,y,data,microns=True, circular=True):
         
     # Now sum the data over a large range to get broad band "image"
     data_sum=np.nansum(data_smooth[:,200:1800],axis=1)
-    data_med=stats.nanmedian(data_smooth[:,200:1800], axis=1)
+    data_med=np.nanmedian(data_smooth[:,200:1800], axis=1)
 
     # Use the crude distributed centre-of-mass to get the rough centre of mass
     com=utils.comxyz(x,y,data_sum)

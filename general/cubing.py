@@ -139,7 +139,7 @@ from astropy.stats import sigma_clip
 try:
     from bottleneck import nanmedian, nansum, nanmean
 except:
-    from scipy.stats import nanmedian, nanmean
+    from numpy import nanmedian, nanmean
     nansum = np.nansum
 
 # Utils code.

@@ -28,7 +28,7 @@ from matplotlib import pyplot as plt
 
 from scipy.optimize import leastsq, fmin, fmin_powell, curve_fit
 from scipy.ndimage.filters import median_filter
-from scipy.stats.stats import nanmean
+from numpy import nanmean
 
 from astropy import coordinates as coord
 from astropy import units
@@ -2499,7 +2499,13 @@ Dying gracelessly in 3 seconds ...\n\n\n""" % standardcat
             RAstring = '%sh%sm%ss' % ( star[2], star[3], star[4] )
             Decstring= '%sd%sm%ss' % ( star[5], star[6], star[7] )
 
-            coords_star = coord.ICRSCoordinates( RAstring, Decstring )
+            if ASTROPY_VERSION[:2] == (0, 2):
+                coords_star = coord.ICRSCoordinates(RAstring, Decstring)
+            else:
+                ra_star = coord.Angle(RAstring, unit=units.hour)
+                dec_star = coord.Angle(Decstring, unit=units.degree)
+                coords_star = coord.ICRS(ra_star, dec_star)
+
             ra_star = coords_star.ra.degrees
             dec_star= coords_star.dec.degrees
 
