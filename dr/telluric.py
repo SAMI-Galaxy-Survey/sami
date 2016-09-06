@@ -286,7 +286,8 @@ def is_star(name):
     gama_star = '(1000[0-9]{4})'
     abell_star = '(Abell[0-9]+_SS[0-9]+)'
     cluster_star = '(((999)|(888))[0-9]{9})'
-    star_re = '|'.join((pilot_star, gama_star, abell_star, cluster_star))
+    fornax_star = r'((?<!\-)\b(\d\d|\d)\b)'
+    star_re = '|'.join((pilot_star, gama_star, abell_star, cluster_star,fornax_star))
     return bool(re.match(star_re, name))
 
 def apply_correction(path_in, path_out):
