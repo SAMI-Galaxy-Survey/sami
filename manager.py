@@ -62,6 +62,7 @@ from time import sleep
 from glob import glob
 from pydoc import pager
 import itertools
+import code
 
 import astropy.coordinates as coord
 from astropy import units
@@ -1902,7 +1903,7 @@ class Manager:
 
     def cube(self, overwrite=False, min_exposure=599.0, name='main', 
              star_only=False, drop_factor=None, tag='', update_tol=0.02,
-             size_of_grid=50, output_pix_size_arcsec=0.5,
+             size_of_grid=25, output_pix_size_arcsec=1.0,
              min_transmission=0.333, max_seeing=4.0, min_frames=6, **kwargs):
         """Make datacubes from the given RSS files."""
         groups = self.group_files_by(
@@ -4242,6 +4243,13 @@ def read_stellar_mags():
             skiprows = 1
             delimiter = ','
             name_func = lambda d: d['name']
+        elif catalogue_type == 'FORNAX':
+            names = ('ID','radeg','decdeg','g','r','i','u','z')
+            formats = ('S20','f8','f8','f8','f8','f8','f8','f8')
+            skiprows = 1
+            delimiter = None
+            name_func = lambda d: d['ID']
+        #code.interact(local=dict(globals(),**locals()))
         data = np.loadtxt(path, skiprows=skiprows, delimiter=delimiter,
                           dtype={'names': names, 'formats': formats})
         if data.shape == ():
