@@ -21,7 +21,7 @@ from collections import namedtuple
 try:
     from bottleneck import nanmedian
 except:
-    from scipy.stats import nanmedian
+    from numpy import nanmedian
     print("Not Using bottleneck: Speed will be improved if you install bottleneck")
 
 from sami import update_csv
