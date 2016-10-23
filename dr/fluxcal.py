@@ -28,7 +28,7 @@ from matplotlib import pyplot as plt
 
 from scipy.optimize import leastsq, fmin, fmin_powell, curve_fit
 from scipy.ndimage.filters import median_filter
-from scipy.stats.stats import nanmean
+from numpy import nanmean
 
 from astropy import coordinates as coord
 from astropy import units
@@ -953,14 +953,14 @@ def perform_telluric_correction( samifitsfilename=None, verbose=1 ):
     
     hdr.add_history( 'Telluric corrected using secondary standard star.' )
     hdr.add_history( 'Empirical DAR correction fit for.' )
-    hdr.update( 'DARFITPA', datadict[ 'DAR_FIT_POSANG' ], 
-             'DAR position angle - deg N of E' )
-    hdr.update( 'DARLAM0', datadict[ 'DAR_FIT_LAM0' ], 
-             'Reference wavelength for DAR fit' )
-    hdr.update( 'DARNORM', datadict[ 'DAR_FIT_ACOEFF' ],
-                'DAR fit: D R = DARNORM x (wl/DARLAM0)^DARPOWER' )
-    hdr.update( 'DARPOWER', datadict[ 'DAR_FIT_PCOEFF' ],
-                'DAR fit: D R = DARNORM x (wl/DARLAM0)^DARPOWER' )
+    hdr['DARFITPA'] = (datadict[ 'DAR_FIT_POSANG' ], 
+             'DAR position angle - deg N of E')
+    hdr['DARLAM0'] = (datadict[ 'DAR_FIT_LAM0' ], 
+             'Reference wavelength for DAR fit')
+    hdr['DARNORM'] = (datadict[ 'DAR_FIT_ACOEFF' ],
+                'DAR fit: D R = DARNORM x (wl/DARLAM0)^DARPOWER')
+    hdr['DARPOWER'] = (datadict[ 'DAR_FIT_PCOEFF' ],
+                'DAR fit: D R = DARNORM x (wl/DARLAM0)^DARPOWER')
 
     print hdr
 
@@ -2499,7 +2499,13 @@ Dying gracelessly in 3 seconds ...\n\n\n""" % standardcat
             RAstring = '%sh%sm%ss' % ( star[2], star[3], star[4] )
             Decstring= '%sd%sm%ss' % ( star[5], star[6], star[7] )
 
-            coords_star = coord.ICRSCoordinates( RAstring, Decstring )
+            if ASTROPY_VERSION[:2] == (0, 2):
+                coords_star = coord.ICRSCoordinates(RAstring, Decstring)
+            else:
+                ra_star = coord.Angle(RAstring, unit=units.hour)
+                dec_star = coord.Angle(Decstring, unit=units.degree)
+                coords_star = coord.ICRS(ra_star, dec_star)
+
             ra_star = coords_star.ra.degrees
             dec_star= coords_star.dec.degrees
 
