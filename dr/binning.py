@@ -31,7 +31,7 @@ See sami.manager.bin_cubes_pair() for an example of calling this function.
 
 import astropy.io.fits as pf
 import numpy as np
-from scipy.stats import nanmedian
+from numpy import nanmedian
 from scipy.ndimage.filters import median_filter
 from scipy.ndimage.measurements import label
 from . import voronoi_2d_binning_wcovar

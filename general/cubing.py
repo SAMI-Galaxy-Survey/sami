@@ -139,7 +139,7 @@ from astropy.stats import sigma_clip
 try:
     from bottleneck import nanmedian, nansum, nanmean
 except:
-    from scipy.stats import nanmedian, nanmean
+    from numpy import nanmedian, nanmean
     nansum = np.nansum
 
 # Utils code.
@@ -184,7 +184,22 @@ def get_object_names(infile):
 
     return object_names_unique
 
-def get_probe(infile, object_name, verbose=True):
+def _get_probe_all(files, name, verbose=True):
+    """Obtain a list of probe names, and write it to the cube header."""
+
+    probes = [_get_probe_single(fl, name, verbose=verbose) for fl in files]
+    probes = np.unique(probes)
+
+    if len(probes)==1:
+        return probes[0]
+    else:
+        message = ('Object {} appears to have dithers from multiple IFU ' \
+            + 'probes.\n The input files are {}').format(name, files)
+        raise IOError(message)
+
+
+
+def _get_probe_single(infile, object_name, verbose=True):
     """ This should read in the RSS files and return the probe number the object was observed in"""
 
     # First find the IFU the object was returned in
@@ -423,6 +438,9 @@ def dithered_cube_from_rss_wrapper(files, name, size_of_grid=50,
 
         # Add the drop factor used to the datacube header
         hdr_new['DROPFACT'] = (drop_factor, 'Drizzle drop scaling')
+
+        hdr_new['IFUPROBE'] = (_get_probe_all(files, name, verbose=False),
+                               'Id number of the SAMI IFU probe')
 
         # Create HDUs for each cube.
         
@@ -1061,7 +1079,8 @@ def create_primary_header(ifu_list,name,files,WCS_pos,WCS_flag):
             
     # Create a header
     hdr_new=wcs_new.to_header(relax=True)
-    hdr_new.update('WCS_SRC',WCS_flag,'WCS Source')
+    #hdr_new.update('WCS_SRC',WCS_flag,'WCS Source')
+    hdr_new['WCS_SRC'] = (WCS_flag, 'WCS Source')
 
     # Putting in the units by hand, because otherwise astropy converts
     # 'Angstrom' to 'm'. Note 2dfdr uses 'Angstroms', which is non-standard.
@@ -1070,7 +1089,7 @@ def create_primary_header(ifu_list,name,files,WCS_pos,WCS_flag):
     hdr_new['CUNIT3'] = 'Angstrom'
             
     # Add the name to the header
-    hdr_new.update('NAME', name, 'Object ID')
+    hdr_new['NAME'] = (name, 'Object ID')
     # Need to implement a database specific-specific OBSTYPE keyword to indicate galaxies
     # *NB* This is different to the OBSTYPE keyword already in the header below
     
@@ -1078,17 +1097,17 @@ def create_primary_header(ifu_list,name,files,WCS_pos,WCS_flag):
     total_exptime = 0.
     for ifu in ifu_list:
         total_exptime+=ifu.primary_header['EXPOSED']
-    hdr_new.update('TOTALEXP',total_exptime,'Total exposure (seconds)')
+    hdr_new['TOTALEXP'] = (total_exptime, 'Total exposure (seconds)')
 
     # Add the mercurial changeset ID to the header
-    hdr_new.update('HGCUBING', HG_CHANGESET, 'Hg changeset ID for cubing code')
+    hdr_new['HGCUBING'] = (HG_CHANGESET, 'Hg changeset ID for cubing code')
     # Need to implement a global version number for the database
     
     # Put the RSS files into the header
     for num in xrange(len(files)):
         rss_key='HIERARCH RSS_FILE '+str(num+1)
         rss_string='Input RSS file '+str(num+1)
-        hdr_new.update(rss_key, os.path.basename(files[num]), rss_string)
+        hdr_new[rss_key] = (os.path.basename(files[num]), rss_string)
 
     # Extract header keywords of interest from the metadata table, check for consistency
     # then append to the main header
