@@ -54,6 +54,7 @@ import re
 import subprocess
 import multiprocessing
 import signal
+import warnings
 from functools import wraps
 from contextlib import contextmanager
 from collections import defaultdict
@@ -62,8 +63,7 @@ from time import sleep
 from glob import glob
 from pydoc import pager
 import itertools
-import code
-
+import datetime
 import astropy.coordinates as coord
 from astropy import units
 import astropy.io.fits as pf
@@ -93,12 +93,23 @@ from .qc.fluxcal import throughput, get_sdss_stellar_mags
 from .qc.sky import sky_residuals
 from .qc.arc import bad_fibres
 
+# Temporary edit. Prevent bottleneck 1.0.0 being used.
+try:
+    import bottleneck.__version__ as BOTTLENECK_VERSION
+except ImportError:
+    BOTTLENECK_VERSION=''
+
+if BOTTLENECK_VERSION=='1.0.0':
+    raise ImportError('Bottleneck {} has a Blue Whale sized bug. Please update your library NOW')
+
 # Get the astropy version as a tuple of integers
 ASTROPY_VERSION = tuple(int(x) for x in ASTROPY_VERSION.split('.'))
 if ASTROPY_VERSION[:2] == (0, 2):
     ICRS = coord.ICRSCoordinates
+    warnings.warn('Support for astropy {} is being phased out. Please update your software!'.format(ASTROPY_VERSION))
 elif ASTROPY_VERSION[:2] == (0, 3):
     ICRS = coord.ICRS
+    warnings.warn('Support for astropy {} is being phased out. Please update your software!'.format(ASTROPY_VERSION))
 else:
     def ICRS(*args, **kwargs):
         return coord.SkyCoord(*args, frame='icrs', **kwargs)
@@ -3307,8 +3318,10 @@ class Manager:
                 fits.update_checks(key[0], True)
         else:
             print 'Leaving this test in the list.'
-        print 'If any files need to be disabled, use commands like:'
+        print '\nIf any files need to be disabled, use commands like:'
         print ">>> mngr.disable_files(['" + fits_list[0].filename + "'])"
+        print 'To add comments to a specifc file, use commands like:'
+        print ">>> mngr.add_comment(['" + fits_list[0].filename + "'])"
         return
 
     def check_2dfdr(self, fits_list, message, filename_type='reduced_filename'):
@@ -3402,6 +3415,79 @@ class Manager:
     def check_cub(self, fits_list):
         """Check a set of final datacubes."""
         check_plots.check_cub(fits_list)
+        return
+
+    def _add_comment_to_file(self, fits_file_name, user_comment):
+        """Add a comment to the FITS file corresponding to the name (with path)
+        ``fits_file_name``.
+        """
+
+        try:
+            hdulist = pf.open(fits_file_name, 'update',
+                              do_not_scale_image_data=True)
+            hdulist[0].header['COMMENT'] = user_comment
+            hdulist.close()
+        except IOError:
+            return
+
+
+
+    def add_comment(self, fits_list):
+        """Add a comment to the FITS header of the files in ``fits_list``."""
+
+        # Separate file names from vanilla names.
+        # Run one thing on vanilla names
+        # Run the other thing on file names.
+
+        user_comment = raw_input('Please enter a comment (type n to abort):\n')
+
+        # If ``user_comment`` is equal to ``'n'``, skip updating the FITS
+        # headers and jump to the ``return`` statement.
+        if user_comment!='n':
+    
+            time_stamp = 'Comment added by SAMI Observer on '
+            time_stamp += '{:%Y-%b-%d %H:%M:%S}'.format(datetime.datetime.now())
+            user_comment += ' (' + time_stamp + ')'
+
+            fits_file_list, FITSFile_list = [], []
+            for fits_file in fits_list:
+                if os.path.isfile(fits_file):
+                    fits_file_list.append(fits_file)
+                elif isinstance(self.fits_file(fits_file), FITSFile):
+                    FITSFile_list.append(self.fits_file(fits_file))
+                else:
+                    error_message = "'{}' must be a valid file name".format(
+                        fits_file)
+                    error_message += "Please use the full path for combined "
+                    error_message += "products, and simple filenames for raw "
+                    error_message += "files."
+
+                    raise ValueError(error_message)
+
+            # Add the comments to each FITSFile instance.
+            map(FITSFile.add_header_item,
+                FITSFile_list,
+                ['COMMENT' for _ in FITSFile_list],
+                [user_comment for _ in FITSFile_list])
+
+            # Add the comments to each instance of pyfits.
+            map(Manager._add_comment_to_file,
+                [self for _ in fits_file_list],
+                fits_file_list,
+                [user_comment for _ in fits_file_list])
+
+            comments_file = os.path.join(self.root, 'observer_comments.txt')
+            with open(comments_file, "a") as infile:
+                comments_list = [
+                    '{}: '.format(fits_file) \
+                        + user_comment + '\n'
+                    for fits_file in FITSFile_list]
+                comments_list += [
+                    '{}: '.format(fits_file) \
+                        + user_comment + '\n'
+                    for fits_file in fits_file_list]
+                infile.writelines(comments_list)
+
         return
 
     @contextmanager

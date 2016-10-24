@@ -50,12 +50,12 @@ so can be extended for further models quite straightforwardly.
 """
 
 import os
+import warnings
 
 import numpy as np
 from scipy.optimize import leastsq, curve_fit
 from scipy.interpolate import LSQUnivariateSpline
 from scipy.ndimage.filters import median_filter, gaussian_filter1d
-from scipy.stats.stats import nanmean
 
 from astropy import coordinates as coord
 from astropy import units
@@ -68,6 +68,13 @@ from ..utils.mc_adr import parallactic_angle, adr_r
 from ..utils.other import saturated_partial_pressure_water
 from ..config import millibar_to_mmHg
 from ..utils.fluxcal2_io import read_model_parameters, save_extracted_flux
+
+try:
+    from bottleneck import nansum, nanmean
+except ImportError:
+    from numpy import nansum, nanmean
+    warnings.warn("Not Using bottleneck: Speed will be improved if you install bott    leneck")
+
 
 
 # Get the astropy version as a tuple of integers
@@ -176,8 +183,14 @@ def chunk_data(ifu, n_drop=None, n_chunk=None, sigma_clip=None):
         data[clip] = data_smooth[clip]
     else:
         data = ifu.data
+
+    # Convert to integer for future compatibility.
+    n_chunk = np.int(np.floor(n_chunk))
+    chunk_size = np.int(np.floor(chunk_size))
+
     start = n_drop
     end = n_drop + n_chunk * chunk_size
+
     data = data[:, start:end].reshape(n_fibre, n_chunk, chunk_size)
     variance = ifu.var[:, start:end].reshape(n_fibre, n_chunk, chunk_size)
     wavelength = ifu.lambda_range[start:end].reshape(n_chunk, chunk_size)
@@ -660,11 +673,23 @@ def match_star_coordinates(ra, dec, max_sep_arcsec=60.0,
                         dec_star *= -1.0
                 sep = coord.angles.AngularSeparation(
                     ra, dec, ra_star, dec_star, units.degree).arcsecs
-            else:
+            elif (ASTROPY_VERSION[0]<=1) and (ASTROPY_VERSION[1]<=1):
                 coords_star = coord.ICRS(RAstring, Decstring)
                 coords = coord.ICRS(
                     str(ra)+' degree',str(dec)+' degree')
                 sep = coords.separation(coords_star).arcsec
+            else: # Astropy version >= 1.2.x
+                ra_star = coord.Angle(RAstring, unit=units.hour) 
+                dec_star = coord.Angle(Decstring, unit=units.degree)
+                coords_star = coord.ICRS(ra_star, dec_star)
+
+                ra_tgt = coord.Angle(ra, unit=units.degree)
+                dec_tgt = coord.Angle(dec, unit=units.degree)
+
+                coords = coord.ICRS(ra_tgt, dec_tgt)
+
+                sep = coords.separation(coords_star).arcsec
+
             if sep < max_sep_arcsec:
                 star_match = {
                     'path': os.path.join(os.path.dirname(index_path), star[0]),

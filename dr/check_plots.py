@@ -17,9 +17,17 @@ import astropy.io.fits as pf
 import numpy as np
 
 import os
+import warnings
 import itertools
 from glob import glob
 from functools import wraps
+
+try:
+    from bottleneck import nansum
+except ImportError:
+    from numpy import nansum
+    warnings.warn("Not Using bottleneck: Speed will be improved if you install bott    leneck")
+
 
 def ensure_interactive(function):
     """Decorator to ensure matplotlib is in interactive mode."""
@@ -71,6 +79,9 @@ def check_combined(combined_path, message):
     fig = plt.figure('Combined calibration', figsize=(6., 10.))
     plt.imshow(image, vmin=vmin, vmax=vmax, cmap='GnBu')
     plt.colorbar()
+    print 'To add comments to a specifc file, use commands like:'
+    print ">>> mngr.add_comment(['{}'])".format(combined_path)
+
     print "When you're ready to move on..."
     return
 
@@ -317,7 +328,7 @@ they look galaxy-like, and the spectra have no obvious artefacts."""
         trim = 100
         if blue_available:
             ax_blue = fig.add_subplot(221)
-            image = np.nansum(data_blue[trim:-1*trim, :, :], axis=0)
+            image = nansum(data_blue[trim:-1*trim, :, :], axis=0)
             image_sorted = np.sort(image[np.isfinite(image)])
             vmax = image_sorted[int(0.97*image_sorted.size)]
             plt.imshow(image, origin='lower', interpolation='nearest',
@@ -327,7 +338,7 @@ they look galaxy-like, and the spectra have no obvious artefacts."""
                 1 + np.arange(header_blue['NAXIS3']) - header_blue['CRPIX3'])
         if red_available:
             ax_red = fig.add_subplot(222)
-            image = np.nansum(data_red[trim:-1*trim, :, :], axis=0)
+            image = nansum(data_red[trim:-1*trim, :, :], axis=0)
             image_sorted = np.sort(image[np.isfinite(image)])
             vmax = image_sorted[int(0.97*image_sorted.size)]
             plt.imshow(image, origin='lower', interpolation='nearest',
@@ -342,7 +353,7 @@ they look galaxy-like, and the spectra have no obvious artefacts."""
         for name, coords in position_dict.items():
             color = next(color_cycle)
             if blue_available:
-                flux_blue = np.nansum(np.nansum(
+                flux_blue = nansum(nansum(
                     data_blue[:, int(coords[0]):int(coords[0])+2, 
                               int(coords[1]):int(coords[1])+2], 
                     axis=2), axis=1) / 4.0
@@ -352,7 +363,7 @@ they look galaxy-like, and the spectra have no obvious artefacts."""
                 if 2*np.median(flux_blue) > ymax:
                     ymax = 2*np.median(flux_blue)
             if red_available:
-                flux_red = np.nansum(np.nansum(
+                flux_red = nansum(nansum(
                     data_red[:, int(coords[0]):int(coords[0])+2, 
                              int(coords[1]):int(coords[1])+2], 
                     axis=2), axis=1) / 4.0
