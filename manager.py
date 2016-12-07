@@ -847,6 +847,7 @@ class Manager:
         source_path = os.path.join(dirname, filename)
         fits = FITSFile(source_path)
         if fits.copy:
+            print 'this is a copy, do not import:',dirname,filename
             # This is a copy of a file, don't add it to the list
             return
         if fits.ndf_class not in [
@@ -1354,10 +1355,34 @@ class Manager:
         self.link_calibrator('lflat', overwrite=overwrite)
         return
 
-    def make_tlm(self, overwrite=False, leave_reduced=False, **kwargs):
-        """Make TLMs from all files matching given criteria."""
+    def make_tlm(self, overwrite=False, leave_reduced=False, use_twilight=False, **kwargs):
+        """Make TLMs from all files matching given criteria.
+        If the use_twilight keyword is set to True, then we will also
+        attempt to get a tramline map from twilight frames.  This is done
+        by copying them to a different file that has class MFFFF using the
+        copy_as function."""
+
+        if (use_twilight):
+            fits_twilight_list=[]
+            print 'Processing twilight frames to get TLM'
+            # for each twilight frame use the copy_as() function to
+            # make a copy with file type MFFFF.  The copied files are
+            # placed in the list fits_twilight_list and then can be
+            # processed as normal MFFFF files.
+            for fits in self.files(ndf_class='MFSKY'):
+                fits_twilight_list.append(self.copy_as(fits,'MFFFF',overwrite=overwrite))
+                
+            # use the iterable file reducer to loop over the copied twilight list and
+            # reduce them as MFFFF files to make TLMs.
+            self.reduce_file_iterable(fits_twilight_list, overwrite=overwrite, tlm=True,leave_reduced=leave_reduced, check='TLM')
+
+        # now we will process the normal MFFFF files
+        # this currently only allows TLMs to be made from MFFFF files
         file_iterable = self.files(ndf_class='MFFFF', do_not_use=False,
                                    **kwargs)
+
+        print file_iterable
+        
         self.reduce_file_iterable(
             file_iterable, overwrite=overwrite, tlm=True, 
             leave_reduced=leave_reduced, check='TLM')
@@ -1460,8 +1485,14 @@ class Manager:
         new_fits.raw_path = new_path
         new_fits.reduced_dir = fits.reduced_dir
         new_fits.reduced_link = new_path
-        new_fits.reduced_path = os.path.join(
-            fits.reduced_dir, new_fits.reduced_filename)
+        new_fits.reduced_path = os.path.join(fits.reduced_dir, new_fits.reduced_filename)
+        # as this file has not been imported normally, we need to also set the check_data:
+        new_fits.set_check_data()
+        # if the new class is MFFFF, then add tlm_path to the FITSfile instance as this
+        # is also usually done by set_reduced_path.
+        if ndf_class == 'MFFFF':
+            new_fits.tlm_path = os.path.join(new_fits.reduced_dir, new_fits.tlm_filename)
+
         return new_fits
 
     def copy_path(self, path):
@@ -1556,6 +1587,7 @@ class Manager:
                       if (overwrite or
                           not os.path.exists(self.target_path(fits, tlm=tlm)))]
         reduced_files = [item[0] for item in input_list]
+        print 'input list:',input_list
         # Send the items out for reducing. Keep track of which ones were done.
         while input_list:
             print len(input_list), 'files remaining.'
