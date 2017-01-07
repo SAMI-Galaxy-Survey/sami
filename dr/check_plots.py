@@ -281,11 +281,11 @@ def check_cub(fits_list):
 they look galaxy-like, and the spectra have no obvious artefacts."""
     print message
     # The positions of points to plot
-    position_dict = {'Centre': (24.5, 24.5),
-                     'North': (24.5, 31.5),
-                     'East': (17.5, 24.5),
-                     'South': (24.5, 17.5),
-                     'West': (31.5, 24.5)}
+    position_dict = {'Centre': (13.0, 13.0),
+                     'North': (13.0, 16.0),
+                     'East': (10.0, 13.0),
+                     'South': (13.0, 10.0),
+                     'West': (16.0, 13.0)}
     # Construct the list of object names
     # We're assuming that a single field was sent
     fibre_table = pf.getdata(fits_list[0].reduced_path, 'FIBRES_IFU')
