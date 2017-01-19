@@ -56,11 +56,13 @@ def run_2dfdr(dirname, options=None, return_to=None, unique_imp_scratch=False,
             with visit_dir(dirname, return_to=return_to, 
                            cleanup_2dfdr=True, lockdir=lockdir):
                 with open(os.devnull, 'w') as dump:
+                    print '2dFdr call options:',command_line
                     call(command_line, stdout=dump, debug=debug)
     else:
         with visit_dir(dirname, return_to=return_to, 
                        cleanup_2dfdr=True, lockdir=lockdir):
             with open(os.devnull, 'w') as dump:
+                print 'check 2:',command_line
                 call(command_line, stdout=dump, debug=debug)
     return
 
