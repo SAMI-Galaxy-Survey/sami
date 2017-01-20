@@ -3296,6 +3296,8 @@ class Manager:
             filename = fits_match.tlm_filename
             raw_filename = fits_match.filename
             raw_dir = fits_match.raw_dir
+            # add im file as this is needed for tlm offset estimate:
+            imfilename = fits_match.im_filename
         elif match_class.lower() == 'thput':
             thput_filename = 'thput_' + fits_match.reduced_filename
             thput_path = os.path.join(fits_match.reduced_dir, thput_filename)
@@ -3324,12 +3326,17 @@ class Manager:
             source_path = os.path.join(fits_match.reduced_dir, filename)
             raw_link_path = os.path.join(fits.reduced_dir, raw_filename)
             raw_source_path = os.path.join(raw_dir, raw_filename)
+            # add paths for links to im files:
+            im_link_path = os.path.join(fits.reduced_dir, imfilename)
+            im_source_path = os.path.join(fits_match.reduced_dir, imfilename)
             # If the link path is occupied by a link, delete it
             # Leave actual files in place
             if os.path.islink(link_path):
                 os.remove(link_path)
             if os.path.islink(raw_link_path):
                 os.remove(raw_link_path)
+            if os.path.islink(im_link_path):
+                os.remove(im_link_path)
             # Make a link, unless the file is already there
             if not os.path.exists(link_path):
                 os.symlink(os.path.relpath(source_path, fits.reduced_dir),
@@ -3337,6 +3344,9 @@ class Manager:
             if not os.path.exists(raw_link_path):
                 os.symlink(os.path.relpath(raw_source_path, fits.reduced_dir),
                            raw_link_path)
+            if not os.path.exists(im_link_path):
+                os.symlink(os.path.relpath(im_source_path, fits.reduced_dir),
+                           im_link_path)
         return filename
 
     def change_speed(self, speed=None):
@@ -3768,6 +3778,10 @@ class FITSFile:
     def set_reduced_filename(self):
         """Set the filename for the reduced file."""
         self.reduced_filename = self.filename_root + 'red.fits'
+        # also set the intermediate im.fits filename as this can
+        # be used for some processing steps, for example cross-matching
+        # to get the best TLM offset:
+        self.im_filename = self.filename_root + 'im.fits'
         if self.ndf_class == 'MFFFF':
             self.tlm_filename = self.filename_root + 'tlm.fits'
         # If the object is an MFSKY, then set the name of the
