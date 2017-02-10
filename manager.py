@@ -3288,7 +3288,8 @@ class Manager:
                 do_not_use=False,
                 ):
             test_fom = fom(fits, fits_test)
-            print 'match test (fom):',fits,fits_test,test_fom
+# output match testing stuff:            
+#            print 'match test (fom):',fits,fits_test,test_fom
             if test_fom < best_fom:
                 fits_match = fits_test
                 best_fom = test_fom
