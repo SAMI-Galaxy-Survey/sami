@@ -3298,7 +3298,7 @@ class Manager:
 
     def match_link(self, fits, match_class):
         """Match and make a link to a file, and return the filename."""
-        print 'started match_link: ',match_class,fits.filename
+#        print 'started match_link: ',match_class,fits.filename
         fits_match = self.matchmaker(fits, match_class)
         if fits_match is None:
             # No match was found, send the lack of match onwards
