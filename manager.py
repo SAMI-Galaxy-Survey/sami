@@ -752,7 +752,7 @@ class Manager:
 
     def __init__(self, root, copy_files=False, move_files=False, fast=False,
                  gratlpmm=GRATLPMM, n_cpu=1, demo=False,
-                 demo_data_source='demo',use_twilight_tlm=False):
+                 demo_data_source='demo',use_twilight_tlm=False,verbose=False):
         if fast:
             self.speed = 'fast'
         else:
@@ -761,6 +761,10 @@ class Manager:
         # define the internal flag that allows twilights to be used for
         # making tramline maps:
         self.use_twilight_tlm = use_twilight_tlm
+        # Internal flag to allow for greater output during processing.
+        # this is not actively used at present, but show be at some point
+        # so we can easily get output for testing
+        self.verbose = verbose
         self.gratlpmm = gratlpmm
         self.n_cpu = n_cpu
         self.root = root
@@ -2521,7 +2525,12 @@ class Manager:
                 files_to_match = ['bias', 'dark', 'lflat', 'tlmap_flap', 
                                   'wavel']
             else:
-                files_to_match = ['bias', 'dark', 'lflat', best_tlm, 'wavel']
+                # if this is an MFFFF then always assure that we are using the
+                # TLM that came from that file.  The main reason for this is that
+                # if we pass a different TLM file, then a new TLM will be generated
+                # anyway, but overwritten into the filename that is passed (e.g.
+                # a twilight TLM could be overwritten by a dome flat TLM): 
+                files_to_match = ['bias', 'dark', 'lflat', 'tlmap', 'wavel']
         elif fits.ndf_class == 'MFSKY':
             files_to_match = ['bias', 'dark', 'lflat', best_tlm, 'wavel',
                               'fflat']
@@ -3365,6 +3374,22 @@ class Manager:
             raise ValueError("Speed must be 'fast' or 'slow'.")
         self.speed = speed
         self.idx_files = IDX_FILES[self.speed]
+        return
+
+    def change_verbose(self, verbose=None):
+        """Switch between verbose and quiet reductions."""
+        # is no option give, just switch modes:
+        if (verbose is None):
+            if (self.verbose):
+                self.verbose = False
+                print 'verbose now set to False'
+            else:
+                self.verbose = True
+                print 'verbose now set to True'
+
+        if verbose not in (True, False):
+            raise ValueError("Verbose must be True or False.")
+        self.verbose = verbose
         return
 
     @contextmanager
