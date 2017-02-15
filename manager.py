@@ -2500,6 +2500,12 @@ class Manager:
                 options.extend(['-SKYSCRUNCH', '0'])
             # Turn off bias and dark subtraction
             options.extend(['-USEBIASIM', '0', '-USEDARKIM', '0'])
+        # turn off bias and dark for new CCD. These are named
+        # E2V2A (blue) and E2V3A (red).  The old ones are E2V2 (blue
+        # and E2V3 (red).
+        if ((fits.detector == 'E2V2A') or (fits.detector == E2V3A)):
+            options.extend(['-USEBIASIM', '0', '-USEDARKIM', '0'])
+            
         if fits.ndf_class == 'BIAS':
             files_to_match = []
         elif fits.ndf_class == 'DARK':
@@ -3759,6 +3765,7 @@ class FITSFile:
             self.field_no = None
             self.field_id = None
         self.set_ccd()
+        self.set_detector()
         self.set_grating()
         self.set_exposure()
         self.set_epoch()
@@ -3990,6 +3997,18 @@ class FITSFile:
                 self.coords = None
         else:
             self.cfg_coords = None
+        return
+    
+    def set_detector(self):
+        """Set the specific detector name, e.g. E2V2A etc.  This is different from
+        the ccd name as ccd is just whether ccd_1 (blue) or ccd_2 (red).  We need
+        to know which detector as some reduction steps can be different, e.g. treatment
+        of bias and dark frames."""
+        if self.ndf_class:
+            detector_id = self.header['DETECTOR']
+            self.detector = detector_id
+        else:
+            self.detector = None
         return
     
     def set_ccd(self):
