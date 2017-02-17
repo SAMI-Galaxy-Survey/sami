@@ -583,10 +583,11 @@ def save_results(results):
     yref_median_col = pf.Column(name='Y_REFMED', format='E', 
                                 array=results['yref_median'])
     good_col = pf.Column(name='GOOD', format='B', array=results['good'])
-    hdu = pf.new_table(pf.ColDefs([ifus_col, xin_col, yin_col, xref_col, 
-                                   yref_col, xshift_col, yshift_col, 
-                                   xref_median_col, yref_median_col,
-                                   good_col]))
+    hdu = pf.BinTableHDU.from_columns(
+        pf.ColDefs([ifus_col, xin_col, yin_col, xref_col, 
+                    yref_col, xshift_col, yshift_col, 
+                    xref_median_col, yref_median_col,
+                    good_col]))
     hdu.header['X_RMS'] = (results['xrms'], 'RMS of X_SHIFT')
     hdu.header['Y_RMS'] = (results['yrms'], 'RMS of Y_SHIFT')
     hdu.header['SIGMA'] = (results['sigma'], 'Sigma clipping used in the fit')
