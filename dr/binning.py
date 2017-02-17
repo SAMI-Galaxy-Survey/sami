@@ -35,18 +35,19 @@ from numpy import nanmedian
 from scipy.ndimage.filters import median_filter
 from scipy.ndimage.measurements import label
 from . import voronoi_2d_binning_wcovar
+import code
 
 def bin_cube_pair(path_blue, path_red, name=None, **kwargs):
     """Calculate bins, do binning and save results for a pair of cubes."""
     hdulist_blue = pf.open(path_blue, 'update')
     hdulist_red = pf.open(path_red, 'update')
     bin_mask = return_bin_mask(hdulist_blue, **kwargs)
-    bin_and_save(hdulist_blue, bin_mask, name=name)
-    bin_and_save(hdulist_red, bin_mask, name=name)
+    bin_and_save(hdulist_blue, bin_mask,name=name, **kwargs)
+    bin_and_save(hdulist_red, bin_mask,name=name, **kwargs)
     hdulist_blue.close()
     hdulist_red.close()
 
-def bin_and_save(hdulist, bin_mask, name=None):
+def bin_and_save(hdulist, bin_mask,name=None, **kwargs):
     """Do binning and save results for an HDUList."""
     # TODO: Check if the extensions already exist. In most cases you would
     # want to either overwrite or just return without doing anything, but
@@ -56,7 +57,7 @@ def bin_and_save(hdulist, bin_mask, name=None):
     # Default behaviour here is now to overwrite extensions. If extension exists
     # and overwrite=False this should have been caught by manager.bin_cubes()
 
-    binned_cube, binned_var = bin_cube(hdulist, bin_mask)
+    binned_cube, binned_var = bin_cube(hdulist, bin_mask, **kwargs)
     if name is None:
         suffix = ''
     else:
@@ -81,7 +82,7 @@ def bin_and_save(hdulist, bin_mask, name=None):
     hdulist.flush()
     return
 
-def return_bin_mask(hdu, mode='adaptive', targetSN=10, minSN=None, sectors=8,radial=5,log=False):
+def return_bin_mask(hdu, mode='adaptive', targetSN=5, minSN=None, sectors=8,radial=5,log=False):
     
     if mode == 'adaptive':
         bin_mask = adaptive_bin_sami(hdu,targetSN=targetSN, minSN=minSN)
@@ -94,7 +95,7 @@ def return_bin_mask(hdu, mode='adaptive', targetSN=10, minSN=None, sectors=8,rad
 
     return bin_mask
 
-def bin_cube(hdu,bin_mask):
+def bin_cube(hdu,bin_mask,mode='adaptive',sectors=0):
     #Produce a SAMI cube where each spaxel contains the
     #spectrum of the bin it is associated with
     
@@ -122,7 +123,10 @@ def bin_cube(hdu,bin_mask):
         binned_weighted_spectrum = np.nansum(weighted_cube[:,spaxel_coords[0,:],spaxel_coords[1,:]],axis=1)/len(spaxel_coords[0])
         binned_weight = np.nansum(weight[:,spaxel_coords[0,:],spaxel_coords[1,:]],axis=1)
         binned_weight2 = np.nansum(weight[:,spaxel_coords[0,:],spaxel_coords[1,:]]**2,axis=1)
-        temp = np.tile(np.reshape(binned_spectrum,(len(binned_spectrum),1)),len(spaxel_coords[0,:]))
+        if mode == 'prescriptive':
+            temp = np.tile(np.reshape(binned_spectrum,(len(binned_spectrum),1)),len(spaxel_coords[0,:]))
+        else:
+            temp = np.tile(np.reshape(binned_weighted_spectrum,(len(binned_weighted_spectrum),1)),len(spaxel_coords[0,:]))
         binned_cube[:,spaxel_coords[0,:],spaxel_coords[1,:]] = temp
         binned_weighted_variance = np.nansum(weighted_var[:,spaxel_coords[0,:],spaxel_coords[1,:]]*
                                     np.nansum(np.nansum(covar[:,:,:,spaxel_coords[0,:],spaxel_coords[1,:]],
@@ -171,7 +175,7 @@ def reconstruct_covariance(covar_array_red,covar_header,n_wave=2048):
                                    
     return covar_array_full
 
-def adaptive_bin_sami(hdu, targetSN=10.0, minSN=None):
+def adaptive_bin_sami(hdu, targetSN=5.0, minSN=None):
     """
         Wrapper for handling SAMI data. Returns an 'image'
         where each spaxels' value indicates the bin it belongs

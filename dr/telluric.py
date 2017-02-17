@@ -116,7 +116,7 @@ def derive_transfer_function(frame_list, PS_spec_file=None, use_PS=False,
         # Save the data back into the FITS file
         hdu.data = data
         hdulist.close()
-    
+
     return
 
 def residual(A, SS_transfer_function, PS_transfer_function, PS_wave_axis):
@@ -288,7 +288,7 @@ def is_star(name):
     cluster_star = '(((999)|(888))[0-9]{9})'
     fornax_star1 = r'((?<!\-)\b(\d\d|\d)\b)'
     fornax_star2 = r'(100[0-9]{3})'
-    star_re = '|'.join((pilot_star, gama_star, abell_star, cluster_star,fornax_star,fornax_star2))
+    star_re = '|'.join((pilot_star, gama_star, abell_star, cluster_star,fornax_star1,fornax_star2))
     return bool(re.match(star_re, name))
 
 def apply_correction(path_in, path_out):
