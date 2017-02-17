@@ -69,6 +69,8 @@ from astropy import units
 import astropy.io.fits as pf
 from astropy import __version__ as ASTROPY_VERSION
 import numpy as np
+import code
+
 try:
     import pysftp
     PYSFTP_AVAILABLE = True
@@ -260,6 +262,8 @@ STELLAR_MAGS_FILES = [
     ('standards/secondary/sdss_stellar_mags.csv', 'SDSS_GAMA',
         (0.0, 0.0, 0.0, 0.0, 0.0)),
     ('standards/secondary/fornax_stellar_mags.txt', 'FORNAX',
+        (0.0, 0.0, 0.0, 0.0, 0.0)),
+    ('standards/secondary/fornax_stellar_mags2.txt','FORNAX',
         (0.0, 0.0, 0.0, 0.0, 0.0))]
 
 def stellar_mags_files():
@@ -1818,6 +1822,8 @@ class Manager:
                 fake_derive_transfer_function):
             done_list = self.map(telluric_correct_pair, inputs_list)
         self.n_cpu = old_n_cpu
+        print 'Seeing QC'
+        code.interact(local=dict(globals(),**locals()))
         for inputs in [inputs for inputs, done in
                        zip(inputs_list, done_list) if done]:
             # Copy the FWHM measurement to the QC header
