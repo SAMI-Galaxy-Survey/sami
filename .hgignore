@@ -6,3 +6,5 @@ syntax: glob
 ^.pydevproject
 utils/libcCirc\.so
 utils/cCirc\.o
+general/libcCovar\.so
+general/cCovar\.o
