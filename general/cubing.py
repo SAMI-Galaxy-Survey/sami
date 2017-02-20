@@ -157,8 +157,6 @@ from . import wcs
 # Function for reading a filter response
 from ..qc.fluxcal import read_filter, get_coords
 
-import code
-
 # Some global constants:
 HG_CHANGESET = utils.hg_changeset(__file__)
 
@@ -782,6 +780,8 @@ def dithered_cube_from_rss(ifu_list, size_of_grid=50, output_pix_size_arcsec=0.5
         if (l == 0) and (covar_mode != 'none'):
             covariance_array_slice = create_covar_matrix(overlap_array,var_rss_slice)
             s_covar_slice = np.shape(covariance_array_slice)
+            if np.nansum(covariance_array_slice == 0):
+                covariance_array_slice = np.ones(s_covar_slice)*np.nan
             covariance_array = covariance_array_slice.reshape(np.append(s_covar_slice,1))
             covariance_slice_locs = [0]
 
@@ -805,13 +805,13 @@ def dithered_cube_from_rss(ifu_list, size_of_grid=50, output_pix_size_arcsec=0.5
             recompute_tracker = overlap_maps.n_drizzle_recompute
             recompute_flag = 0
 
-        elif (((l%200 == 0) and (l != 0)) or (l == (n_slices-2)) or (l == (n_slices-1))) and (covar_mode != 'none'):
-            covariance_array_slice = create_covar_matrix(overlap_array,var_rss_slice)
-            covariance_array_slice = covariance_array_slice.reshape(np.append(s_covar_slice,1))
-            covariance_array = np.append(covariance_array,covariance_array_slice,axis=len(s_covar_slice))
-            covariance_slice_locs.append(l)
+        #elif (((l%200 == 0) and (l != 0)) or (l == (n_slices-2)) or (l == (n_slices-1))) and (covar_mode != 'none'):
+        #    covariance_array_slice = create_covar_matrix(overlap_array,var_rss_slice)
+        #    covariance_array_slice = covariance_array_slice.reshape(np.append(s_covar_slice,1))
+        #    covariance_array = np.append(covariance_array,covariance_array_slice,axis=len(s_covar_slice))
+        #    covariance_slice_locs.append(l)
 
-        elif (l == (n_slices-1)) and (covar_mode != 'none'):
+        elif ((l == (n_slices-2)) or (l == (n_slices-1))) and (covar_mode != 'none'):
             covariance_array_slice = create_covar_matrix(overlap_array,var_rss_slice)
             covariance_array_slice = covariance_array_slice.reshape(np.append(s_covar_slice,1))
             covariance_array = np.append(covariance_array,covariance_array_slice,axis=len(s_covar_slice))
@@ -824,6 +824,7 @@ def dithered_cube_from_rss(ifu_list, size_of_grid=50, output_pix_size_arcsec=0.5
         
         if recompute_tracker != overlap_maps.n_drizzle_recompute:
             recompute_flag = 1
+
         ##########################################
         
         # Map RSS slices onto gridded slices
@@ -1272,7 +1273,7 @@ def create_covar_matrix(overlap_array,variances):
     #Set up the covariance array
     covariance_array = np.zeros((s[0],s[1],(covarS*2)+1,(covarS*2)+1))
     if len(np.where(np.isfinite(variances) == True)[0]) == 0:
-        return covariance_array
+        return np.ones((s[0],s[1],(covarS*2)+1,(covarS*2)+1))*np.nan
     
     #Set up coordinate arrays for the covariance sub-arrays
     xB = np.zeros(((covarS*2+1)**2),dtype=np.int)
@@ -1301,14 +1302,14 @@ def create_covar_matrix(overlap_array,variances):
                     a = overlap_array[xA+covarS,yA+covarS,f]*np.sqrt(variances[f])
                     if np.isfinite(a) == False:
                         a = 1.0
-                    #except:
-                    #    code.interact(local=locals())
 
                     b = overlap_array[xC,yC,f]*np.sqrt(variances[f])
                     b[np.where(np.isfinite(b) == False)] = 0.0
                     covariance_array[xA,yA,:,:] = covariance_array[xA,yA,:,:] + (a*b).reshape(covarS*2+1,covarS*2+1)
             covariance_array[xA,yA,:,:] = covariance_array[xA,yA,:,:]/covariance_array[xA,yA,covarS,covarS]
-    
+            if np.nansum(covariance_array[xA,yA,:,:]) == 0:
+                covariance_array[xA,yA,:,:] = np.ones(((covarS*2)+1,(covarS*2)+1))*np.nan
+
     return covariance_array
     
 def scale_cube_pair(file_pair, scale, **kwargs):
