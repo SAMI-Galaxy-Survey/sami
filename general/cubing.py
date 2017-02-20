@@ -1,3 +1,5 @@
+from __future__ import print_function
+
 """
 This module covers functions required to create cubes from a dithered set
 of RSS frames. See Sharp et al (2015) for a detailed description of the
@@ -126,7 +128,28 @@ import itertools
 import os
 import sys
 import datetime
+import warnings
 from glob import glob
+
+try:
+    from cCovar import create_covar_matrix
+except ImportError:
+    print('Failed to import the C version of covar using traditional')
+    from covar import create_covar_matrix_original as create_covar_matrix
+
+
+try:
+    from tqdm import tqdm # `tqdm` required to show progress meter bars.
+    use_old_progress_meter = False
+except ImportError:
+    warning_message = ('\n' + '*'*80 + '\n'
+        '* `tqdm` module is not available. No progress bars will be shown.\n'
+        + '* We currently recommend to install `tqdm`. This can be done e.g. by \n'
+        + '* `~# pip install tqdm`\n'
+        + '*'*80 + '\n')
+    warnings.warn(warning_message)
+    use_old_progress_meter = True
+    tqdm = lambda x: x    # If `tqdm` is not available, overload it to identity.
 
 # Cross-correlation function from scipy.signal (slow)
 from scipy.signal import correlate
@@ -156,6 +179,19 @@ from . import wcs
 
 # Function for reading a filter response
 from ..qc.fluxcal import read_filter, get_coords
+
+import code
+
+from pdb import set_trace
+
+if 1:
+    warnings.warn('Using traditional drizzling approach')
+    from ..utils.circ import resample_circle as compute_weights
+    cubing_method = 'Tophat'
+else:
+    warnings.warn('Using new Gaussian integration approach')
+    from ..utils.circ import inteGrauss2d as compute_weights
+    cubing_method = 'Gaussian'
 
 # Some global constants:
 HG_CHANGESET = utils.hg_changeset(__file__)
@@ -215,7 +251,7 @@ def _get_probe_single(infile, object_name, verbose=True):
     ifu=ifu_array[0]
 
     if verbose==True:
-        print "Object", object_name, "was observed in IFU", ifu, "in file", infile
+        print("Object", object_name, "was observed in IFU", ifu, "in file", infile)
 
     hdulist.close()
 
@@ -329,17 +365,16 @@ def dithered_cubes_from_rss_list(files, objects='all', **kwargs):
         object_names=get_object_names(files[0])
     else:
         object_names=objects
-    print "--------------------------------------------------------------"
-    print "The following objects will be cubed:"
-    print
+    print("--------------------------------------------------------------")
+    print("The following objects will be cubed:\n\n")
     for name in object_names:
-        print name
-    print "--------------------------------------------------------------"
-    for name in object_names:
-        print
-        print "--------------------------------------------------------------"
-        print "Cubing object:", name
-        print
+        print(name, end=' ')
+    print("\n--------------------------------------------------------------")
+    for name in tqdm(object_names):
+        print()
+        print("--------------------------------------------------------------")
+        print("Cubing object:", name)
+        print()
         dithered_cube_from_rss_wrapper(files, name, **kwargs)            
     print("Time dithered_cubes_from_files wall time: {0}".format(datetime.datetime.now() - start_time))
     return
@@ -365,10 +400,10 @@ def dithered_cube_from_rss_wrapper(files, name, size_of_grid=50,
         try:
             os.makedirs(directory)
         except OSError:
-            print "Directory Exists", directory
-            print "Writing files to the existing directory"
+            print("Directory Exists", directory)
+            print("Writing files to the existing directory")
         else:
-            print "Making directory", directory
+            print("Making directory", directory)
 
         # Filename to write to
         arm = ifu_list[0].spectrograph_arm            
@@ -380,9 +415,9 @@ def dithered_cube_from_rss_wrapper(files, name, size_of_grid=50,
             if overwrite:
                 os.remove(outfile_name_full)
             else:
-                print 'Output file already exists:'
-                print outfile_name_full
-                print 'Skipping this object'
+                print('Output file already exists:')
+                print(outfile_name_full)
+                print('Skipping this object')
                 return False
 
         if overwrite:
@@ -437,6 +472,8 @@ def dithered_cube_from_rss_wrapper(files, name, size_of_grid=50,
         # Add the drop factor used to the datacube header
         hdr_new['DROPFACT'] = (drop_factor, 'Drizzle drop scaling')
 
+        hdr_new['CBINGMET'] = (cubing_method, 'Method adopted for cubing')
+
         hdr_new['IFUPROBE'] = (_get_probe_all(files, name, verbose=False),
                                'Id number of the SAMI IFU probe')
 
@@ -470,8 +507,8 @@ def dithered_cube_from_rss_wrapper(files, name, size_of_grid=50,
         hdulist = pf.HDUList(list_of_hdus)
 
         # Write the file
-        print "Writing", outfile_name_full
-        "--------------------------------------------------------------"
+        print("Writing", outfile_name_full)
+        print("--------------------------------------------------------------")
         hdulist.writeto(outfile_name_full)
 
         # Close the open file
@@ -506,13 +543,12 @@ def dithered_cube_from_rss(ifu_list, size_of_grid=50, output_pix_size_arcsec=0.5
             size_of_grid, output_pix_size_arcsec, 1, n_obs * n_fibres,
             update_tol=update_tol)
                 
-    # Empty lists for positions and data. Could be arrays, might be faster? Should test...
-    xfibre_all=[]
-    yfibre_all=[]
-    data_all=[]
-    var_all=[]
-
-    ifus_all=[]
+    # Empty lists for positions and data.
+    xfibre_all = np.empty((n_obs, n_fibres))
+    yfibre_all = np.empty((n_obs, n_fibres))
+    data_all= np.empty((n_obs, n_fibres, n_slices))
+    var_all = np.empty((n_obs, n_fibres, n_slices))
+    ifus_all= np.empty(n_obs)
 
     # The following loop:
     #
@@ -565,7 +601,7 @@ def dithered_cube_from_rss(ifu_list, size_of_grid=50, output_pix_size_arcsec=0.5
         # Check that we're not trying to use data that isn't there
         # Change the offsets method if necessary
         if offsets == 'file' and not hasattr(galaxy_data, 'x_refmed'):
-            print 'Offsets have not been pre-measured! Fitting them now.'
+            print('Offsets have not been pre-measured! Fitting them now.')
             offsets = 'fit'
 
         if (offsets == 'fit'):
@@ -608,28 +644,18 @@ def dithered_cube_from_rss(ifu_list, size_of_grid=50, output_pix_size_arcsec=0.5
             galaxy_data.data[bad_throughput, :] = np.nan
             galaxy_data.var[bad_throughput, :] = np.nan
     
-        xfibre_all.append(xm)
-        yfibre_all.append(ym)
+        xfibre_all[j, :] = xm
+        yfibre_all[j, :] = ym
 
-        data_all.append(galaxy_data.data)
-        var_all.append(galaxy_data.var)
+        data_all[j, :, :] = galaxy_data.data
+        var_all[j, :, :] = galaxy_data.var
 
-        ifus_all.append(galaxy_data.ifu)
-
-
-    xfibre_all=np.asanyarray(xfibre_all)
-    yfibre_all=np.asanyarray(yfibre_all)
+        ifus_all[j] = galaxy_data.ifu
 
     # Scale these up to have a wavelength axis as well
     xfibre_all = xfibre_all.reshape(n_obs, n_fibres, 1).repeat(n_slices,2)
     yfibre_all = yfibre_all.reshape(n_obs, n_fibres, 1).repeat(n_slices,2)
     
-    
-    data_all=np.asanyarray(data_all)
-    var_all=np.asanyarray(var_all)
-
-    ifus_all=np.asanyarray(ifus_all)
-
     # @TODO: Rescaling between observations.
     #
     #     This may be done here (_before_ the reshaping below). There also may
@@ -723,7 +749,7 @@ def dithered_cube_from_rss(ifu_list, size_of_grid=50, output_pix_size_arcsec=0.5
     covariance_slice_locs = []
     
     # This loops over wavelength slices (e.g., 2048).
-    for l in xrange(n_slices):
+    for l in tqdm(xrange(n_slices)):
 
         # In this loop, we will map the RSS fluxes from individual fibres
         # onto the output grid.
@@ -737,17 +763,22 @@ def dithered_cube_from_rss(ifu_list, size_of_grid=50, output_pix_size_arcsec=0.5
         #     np.shape(data_grid_slice_fibres) -> (outsize, outsize, n_fibres * n_files)
         #     np.shape(data_rss_slice_final)   -> (outsize, outsize)
         
-        # Estimate time to loop completion, and display to user:
-        if (l == 1):
-            start_time = datetime.datetime.now()
-        elif (l == 10):
-            time_diff = datetime.datetime.now() - start_time
-            print("Mapping slices onto output grid, wavelength slice by slice...")
-            print("Estimated time to complete all {0} slices: {1}".format(
-                n_slices, n_slices * time_diff / 9))
-            sys.stdout.flush()
-            del start_time
-            del time_diff
+        """ Olden time estimate, we ditched it for `tqdm` which is A)rabic
+        B)etter and C)ool.
+        """
+        if use_old_progress_meter:
+            # Estimate time to loop completion, and display to user:
+            if (l == 1):
+                start_time = datetime.datetime.now()
+            elif (l == 10):
+                time_diff = datetime.datetime.now() - start_time
+                print("Mapping slices onto output grid, wavelength slice by slice...")
+                print("Estimated time to complete all {0} slices: {1}".format(
+                    n_slices, n_slices * time_diff / 9))
+                sys.stdout.flush()
+                del start_time
+                del time_diff
+
 
 
         # Create pointers to slices of the RSS data for convenience (these are
@@ -943,7 +974,7 @@ class SAMIDrizzler:
     DAR)"""  
 
     def __init__(self, size_of_grid, output_pix_size_arcsec, drop_factor,
-                 n_fibres, update_tol=0.02):
+                 n_fibres, n_sigma=5., update_tol=0.02):
         """Construct a new SAMIDrizzler isntance with the necessary information.
         
         Parameters
@@ -992,6 +1023,12 @@ class SAMIDrizzler:
         # Number of times drizzle has been recomputed in this instance
         self.n_drizzle_recompute = 0
 
+        # If using the Gaussian drizzling, `n_sigma` is the number of
+        # standard deviations inside which the Gaussian is integrated. Beyond
+        # a radius equal to `n_sigma` * `drop_diameter_pix` the Gaussian is set
+        # to zero.
+        self.n_sigma = n_sigma
+
     def single_overlap_map(self, fibre_position_x, fibre_position_y):
         """Compute the mapping from a single input drop to output pixel grid.
         
@@ -1027,10 +1064,10 @@ class SAMIDrizzler:
         # is in the first index, and y-coordinate (east positive) is in the
         # second index.
         weight_map = np.transpose(
-            utils.circ.resample_circle(
+            compute_weights(
                 self.output_dimension, self.output_dimension, 
                 xfib, yfib,
-                self.drop_diameter_pix / 2.0))
+                self.drop_diameter_pix / 2.0, self.n_sigma))
 
         return weight_map
 
@@ -1129,7 +1166,7 @@ def create_primary_header(ifu_list,name,files,WCS_pos,WCS_flag):
             if len(set(val)) == 1: 
                 hdr_new.append(hdr.cards[keyword])
             else:
-                print 'Non-unique value for keyword:',keyword
+                print('Non-unique value for keyword:',keyword)
 
     # Extract the couple of relevant keywords from the fibre table header and again
     # check for consistency of keyword values
@@ -1142,7 +1179,7 @@ def create_primary_header(ifu_list,name,files,WCS_pos,WCS_flag):
         if len(set(val)) == 1:
             hdr_new.append(ifu_list[0].fibre_table_header.cards[keyword])
         else:
-            print 'Non-unique value for keyword:', keyword
+            print('Non-unique value for keyword:', keyword)
 
     # Append HISTORY from the initial RSS file header, assuming HISTORY is
     # common for all RSS frames.
@@ -1164,7 +1201,7 @@ def create_primary_header(ifu_list,name,files,WCS_pos,WCS_flag):
         try:
             add_hdr_list = [pf.getheader(f, extname) for f in files]
         except KeyError:
-            print 'Extension not found:', extname
+            print('Extension not found:', extname)
             continue
         for key in key_list:
             val = []
@@ -1172,12 +1209,12 @@ def create_primary_header(ifu_list,name,files,WCS_pos,WCS_flag):
                 for add_hdr in add_hdr_list:
                     val.append(add_hdr[key])
             except KeyError:
-                print 'Keyword not found:', key, 'in extension', extname
+                print('Keyword not found:', key, 'in extension', extname)
                 continue
             if len(set(val)) == 1:
                 hdr_new.append(add_hdr.cards[key])
             else:
-                print 'Non-unique value for keyword:', key, 'in extension', extension
+                print('Non-unique value for keyword:', key, 'in extension', extension)
 
     return hdr_new
 
@@ -1256,62 +1293,10 @@ def create_metadata_table(ifu_list):
     #columns.append(pf.Column(name='COMMENTS', format='80PA(100)')) # Up to 100 80-character lines
     #columns.append(pf.Column(name='HISTORY', format='80PA(100)')) # Up to 100 80-character lines
    
-    return pf.new_table(columns)
+    return pf.BinTableHDU.from_columns(columns)
 
-def create_covar_matrix(overlap_array,variances):
-    """Create the covariance matrix for a single wavelength slice. 
-        As input takes the output of the drizzle class, overlap_array, 
-        and the variances of the individual fibres"""
     
-    covarS = 2 # Radius of sub-region to record covariance information - probably
-               # shouldn't be hard coded, but scaled to drop size in some way
-    
-    s = np.shape(overlap_array)
-    if s[2] != len(variances):
-        raise Exception('Length of variance array must be equal to the number of fibre overlap maps supplied')
-    
-    #Set up the covariance array
-    covariance_array = np.zeros((s[0],s[1],(covarS*2)+1,(covarS*2)+1))
-    if len(np.where(np.isfinite(variances) == True)[0]) == 0:
-        return np.ones((s[0],s[1],(covarS*2)+1,(covarS*2)+1))*np.nan
-    
-    #Set up coordinate arrays for the covariance sub-arrays
-    xB = np.zeros(((covarS*2+1)**2),dtype=np.int)
-    yB = np.zeros(((covarS*2+1)**2),dtype=np.int)
-    for i in range(covarS*2+1):
-        for j in range(covarS*2+1):
-            xB[j+i*(covarS*2+1)] = i
-            yB[j+i*(covarS*2+1)] = j
-    xB = xB - covarS
-    yB = yB - covarS
-    
-    #Pad overlap_array with covarS blank space in the spatial axis
-    
-    overlap_array_padded = np.zeros([s[0]+2*covarS,s[1]+2*covarS,s[2]])
-    overlap_array_padded[covarS:-covarS,covarS:-covarS,:] = overlap_array
-    overlap_array = overlap_array_padded
 
-    #Loop over output pixels
-    for xA in range(s[0]):
-        for yA in range(s[1]):
-            #Loop over each fibre
-            for f in range(len(variances)):
-                if np.isfinite(overlap_array[xA+covarS,yA+covarS,f]):
-                    xC = xA +covarS + xB
-                    yC = yA + covarS + yB
-                    a = overlap_array[xA+covarS,yA+covarS,f]*np.sqrt(variances[f])
-                    if np.isfinite(a) == False:
-                        a = 1.0
-
-                    b = overlap_array[xC,yC,f]*np.sqrt(variances[f])
-                    b[np.where(np.isfinite(b) == False)] = 0.0
-                    covariance_array[xA,yA,:,:] = covariance_array[xA,yA,:,:] + (a*b).reshape(covarS*2+1,covarS*2+1)
-            covariance_array[xA,yA,:,:] = covariance_array[xA,yA,:,:]/covariance_array[xA,yA,covarS,covarS]
-            if np.nansum(covariance_array[xA,yA,:,:]) == 0:
-                covariance_array[xA,yA,:,:] = np.ones(((covarS*2)+1,(covarS*2)+1))*np.nan
-
-    return covariance_array
-    
 def scale_cube_pair(file_pair, scale, **kwargs):
     """Scale both blue and red cubes by a given value."""
     for path in file_pair:
