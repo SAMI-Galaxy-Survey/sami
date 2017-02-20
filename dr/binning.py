@@ -41,12 +41,12 @@ def bin_cube_pair(path_blue, path_red, name=None, **kwargs):
     hdulist_blue = pf.open(path_blue, 'update')
     hdulist_red = pf.open(path_red, 'update')
     bin_mask = return_bin_mask(hdulist_blue, **kwargs)
-    bin_and_save(hdulist_blue, bin_mask, name=name)
-    bin_and_save(hdulist_red, bin_mask, name=name)
+    bin_and_save(hdulist_blue, bin_mask, name=name, **kwargs)
+    bin_and_save(hdulist_red, bin_mask, name=name, **kwargs)
     hdulist_blue.close()
     hdulist_red.close()
 
-def bin_and_save(hdulist, bin_mask, name=None):
+def bin_and_save(hdulist, bin_mask, name=None, **kwargs):
     """Do binning and save results for an HDUList."""
     # TODO: Check if the extensions already exist. In most cases you would
     # want to either overwrite or just return without doing anything, but
@@ -56,7 +56,7 @@ def bin_and_save(hdulist, bin_mask, name=None):
     # Default behaviour here is now to overwrite extensions. If extension exists
     # and overwrite=False this should have been caught by manager.bin_cubes()
 
-    binned_cube, binned_var = bin_cube(hdulist, bin_mask)
+    binned_cube, binned_var = bin_cube(hdulist, bin_mask, **kwargs)
     if name is None:
         suffix = ''
     else:
@@ -94,7 +94,7 @@ def return_bin_mask(hdu, mode='adaptive', targetSN=10, minSN=None, sectors=8,rad
 
     return bin_mask
 
-def bin_cube(hdu,bin_mask):
+def bin_cube(hdu,bin_mask, mode=''):
     #Produce a SAMI cube where each spaxel contains the
     #spectrum of the bin it is associated with
     
@@ -111,25 +111,39 @@ def bin_cube(hdu,bin_mask):
     weighted_cube = cube*weight
     weighted_var = var*weight*weight
 
-    binned_cube = np.zeros(np.shape(cube))
-    binned_var = np.zeros(np.shape(cube))
+    binned_cube = np.ones(np.shape(cube))*np.nan
+    binned_var = np.ones(np.shape(var))*np.nan
 
     n_bins = int(np.max(bin_mask))
 
     for i in range(n_bins):
         spaxel_coords = np.array(np.where(bin_mask == i+1))
-        binned_spectrum = np.nansum(cube[:,spaxel_coords[0,:],spaxel_coords[1,:]],axis=1)/len(spaxel_coords[0])
-        binned_weighted_spectrum = np.nansum(weighted_cube[:,spaxel_coords[0,:],spaxel_coords[1,:]],axis=1)/len(spaxel_coords[0])
-        binned_weight = np.nansum(weight[:,spaxel_coords[0,:],spaxel_coords[1,:]],axis=1)
-        binned_weight2 = np.nansum(weight[:,spaxel_coords[0,:],spaxel_coords[1,:]]**2,axis=1)
-        temp = np.tile(np.reshape(binned_spectrum,(len(binned_spectrum),1)),len(spaxel_coords[0,:]))
-        binned_cube[:,spaxel_coords[0,:],spaxel_coords[1,:]] = temp
-        binned_weighted_variance = np.nansum(weighted_var[:,spaxel_coords[0,:],spaxel_coords[1,:]]*
-                                    np.nansum(np.nansum(covar[:,:,:,spaxel_coords[0,:],spaxel_coords[1,:]],
-                                    axis=1)/2.0,axis=1),axis=1)
-        binned_variance = binned_weighted_variance*((binned_spectrum/binned_weighted_spectrum)**2)/(len(spaxel_coords[0])**2)
-        binned_var[:,spaxel_coords[0,:],spaxel_coords[1,:]] = np.tile(
-                                np.reshape(binned_variance,(len(binned_variance),1)),len(spaxel_coords[0,:]))
+        n_spaxels = len(spaxel_coords[0])
+        if n_spaxels == 1:
+            binned_cube[:,spaxel_coords[0,:],spaxel_coords[1,:]] = cube[:,spaxel_coords[0,:],spaxel_coords[1,:]]
+            binned_var[:,spaxel_coords[0,:],spaxel_coords[1,:]] = var[:,spaxel_coords[0,:],spaxel_coords[1,:]]
+        else:
+            binned_spectrum = np.nansum(cube[:,spaxel_coords[0,:],spaxel_coords[1,:]],axis=1)/n_spaxels
+            binned_weighted_spectrum = np.nansum(weighted_cube[:,spaxel_coords[0,:],spaxel_coords[1,:]],axis=1)#/n_spaxels
+            binned_weight = np.nansum(weight[:,spaxel_coords[0,:],spaxel_coords[1,:]],axis=1)
+            binned_weight2 = np.nansum(weight[:,spaxel_coords[0,:],spaxel_coords[1,:]]**2,axis=1)
+            if mode == 'adaptive':
+                temp = np.tile(np.reshape(binned_weighted_spectrum/binned_weight,(len(binned_spectrum),1)),n_spaxels)
+            else:
+                temp = np.tile(np.reshape(binned_spectrum,(len(binned_spectrum),1)),n_spaxels)
+            binned_cube[:,spaxel_coords[0,:],spaxel_coords[1,:]] = temp
+            #covar_factor = np.nansum(np.nansum(covar[:,:,:,spaxel_coords[0,:],spaxel_coords[1,:]],axis=1)/2.0,axis=1) #This needs to be an accurate calculation of the covar factor
+            order = np.argsort(np.nanmedian(weight[:,spaxel_coords[0,:],spaxel_coords[1,:]],axis=0))[::-1]
+            covar_factor = return_covar_factor(spaxel_coords[0,:],spaxel_coords[1,:],covar,order)
+            #binned_weighted_variance = np.nansum(weighted_var[:,spaxel_coords[0,:],spaxel_coords[1,:]],axis=1)*covar_factor
+            binned_weighted_variance = np.nansum(weighted_var[:,spaxel_coords[0,:],spaxel_coords[1,:]]*covar_factor,axis=1)
+            binned_variance = binned_weighted_variance*((binned_spectrum/binned_weighted_spectrum)**2)#/(n_spaxels**2)
+            if mode == 'adaptive':
+                temp_var = np.tile(np.reshape(binned_weighted_variance/(binned_weight**2),(len(binned_variance),1)),n_spaxels)
+            else:
+                temp_var = np.tile(np.reshape(binned_variance,(len(binned_variance),1)),n_spaxels)
+            
+            binned_var[:,spaxel_coords[0,:],spaxel_coords[1,:]] = temp_var
 
     return binned_cube,binned_var
 
@@ -170,6 +184,40 @@ def reconstruct_covariance(covar_array_red,covar_header,n_wave=2048):
                 covar_array_full[i,:,:,:,:] = covar_array_full[i-1,:,:,:,:]
                                    
     return covar_array_full
+
+def return_covar_factor(xin,yin,covar,order):
+
+    xin = xin[order]
+    yin = yin[order]
+
+    n_grid = covar.shape[1]
+    xin2 = np.transpose(np.tile(xin,(n_grid**2,1)))
+    yin2 = np.transpose(np.tile(yin,(n_grid**2,1)))
+    
+    ximprint = np.repeat(np.arange(n_grid)-(n_grid-1)/2,n_grid)
+    yimprint = np.tile(np.arange(n_grid)-(n_grid-1)/2,n_grid)
+    
+    covar_factor = np.zeros((covar.shape[0],len(xin)))
+    covar_factor[:,0] = np.ones(covar.shape[0])
+
+    #covar_image = np.nanmedian(covar,axis=0)
+    #covar_matrix = np.rollaxis(covar_image[:,:,xin,yin],2)
+    #covar_flat = np.reshape(covar_matrix,(len(xin),n_grid**2))
+    
+    covar_matrix = np.rollaxis(covar[:,:,:,xin,yin],3)
+    covar_flat = np.reshape(covar_matrix,(len(xin),covar.shape[0],n_grid**2))
+    
+    for i in range(1,covar_factor.shape[1]):
+        #w = np.where((abs(xin - xin[i]) < 2) & (abs(yin-yin[i]) < 2))
+        xoverlap = xin2[:i,:] - (ximprint + xin[i])
+        yoverlap = yin2[:i,:] - (yimprint + yin[i])
+        w = np.where((xoverlap == 0) & (yoverlap == 0))[1]
+        #covar_factor[i] = np.nansum(covar_flat[i,w]+1)
+        covar_factor[:,i] = np.nansum(covar_flat[i,:,w]+1,axis=0)
+    
+    covar_factor = covar_factor[:,np.argsort(order)]
+    
+    return covar_factor
 
 def adaptive_bin_sami(hdu, targetSN=10.0, minSN=None):
     """
@@ -214,7 +262,7 @@ def adaptive_bin_sami(hdu, targetSN=10.0, minSN=None):
                           
     # Reconstruct then flatten covariance cube
     covar = reconstruct_covariance(covar,covar_header,n_wave=data.shape[0])
-    covar_image = nanmedian(covar,axis=0)
+    covar_image = np.nanmedian(covar,axis=0)
     covar_matrix = np.rollaxis(covar_image[:,:,x[goodpixels[0]],y[goodpixels[0]]],2)
                           
     x = x[goodpixels]
@@ -397,17 +445,22 @@ def prescribed_bin_sami(hdu,sectors=8,radial=5,log=False,
             else:
                 ang_ellipse[i,j] = 180. + np.degrees(np.arctan(spax_pos_rot[1,i,j]/spax_pos_rot[0,i,j]))
 
+    ang_ellipse[np.where(np.isfinite(ang_ellipse) == False)] = 0.0
+
     #Define the radial binning scheme
     max_rad = np.max(dist_ellipse[np.isfinite(image) == True])
+    max_rad_maj = max_rad*eps
     if log == True:
         radii = 10.0**np.linspace(np.log10(0.5),np.log10(max_rad),num=radial+1)
         radii[0] = 0.0
     else:
         radii = np.linspace(0.0,max_rad,num=radial+1)
 
+    radii[0] = -1
+
     #Assign each spaxel to a different radial and angular bin
-    rad_bins = np.digitize(np.ravel(dist_ellipse),radii).reshape(n_spax,n_spax)
-    ang_bins = np.digitize(np.ravel(ang_ellipse),angles).reshape(n_spax,n_spax)
+    rad_bins = np.digitize(np.ravel(dist_ellipse),radii,right=True).reshape(n_spax,n_spax)
+    ang_bins = np.digitize(np.ravel(ang_ellipse),angles,right=True).reshape(n_spax,n_spax)
 
     #Rationalize the radial and angular binning and create the bin mask
 
