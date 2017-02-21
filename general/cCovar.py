@@ -66,6 +66,7 @@ if __name__ == "__main__":
 
     # import pickle
     import time
+    import warnings
 
     from covar import create_covar_matrix_original
     from covar import create_covar_matrix_vectorised
