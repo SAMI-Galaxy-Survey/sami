@@ -48,7 +48,7 @@ from numpy import sum, sqrt, min, max, any
 from numpy import argmax, argmin, mean, abs
 from numpy import int32 as Nint
 from numpy import float32 as Nfloat
-import copy,code
+import copy
 
 class Error(Exception):
     """Base class for exceptions in this module."""
@@ -106,16 +106,17 @@ def sn_w_covariance(xin,yin,signal,noise,covar) :
     yimprint = np.tile(np.arange(n_grid)-(n_grid-1)/2,n_grid)
     
     scaled_var = np.zeros((len(xin)))
+    scaled_var[0] = noise[0]**2
     covar_flat = np.reshape(covar,(len(xin),n_grid**2))
-    for i in range(len(scaled_var)):
+    for i in range(1,len(scaled_var)):
         #w = np.where((abs(xin - xin[i]) < 2) & (abs(yin-yin[i]) < 2))
-        xoverlap = xin2 - (ximprint + xin[i])
-        yoverlap = yin2 - (yimprint + yin[i])
+        xoverlap = xin2[:i,:] - (ximprint + xin[i])
+        yoverlap = yin2[:i,:] - (yimprint + yin[i])
         w = np.where((xoverlap == 0) & (yoverlap == 0))[1]
-        scaled_var[i] = noise[i]**2*sum(covar_flat[i,w])
+        scaled_var[i] = noise[i]**2*(sum(covar_flat[i,w])+1.)
 
     newSN = sum(signal)/sqrt(sum(scaled_var))
-
+    
     return newSN
 
 def guess_regular_grid(xnodes, ynodes, pixelsize=None) :
@@ -290,7 +291,7 @@ class bin2D :
         for ind in range(1,self.npix+1) :  ## Running over the index of the Voronoi BIN
             ## Only one pixel at this stage
             currentSN = self.SN[currentBin]
-            if verbose : print "Bin %d"%(ind)
+            if verbose : print "Bin %d, x: %d, y: %d"%(ind,self.xin[currentBin],self.yin[currentBin])
 
             self.status[currentBin] = ind   # only one pixel at this stage
             ## Barycentric centroid for 1 pixel...

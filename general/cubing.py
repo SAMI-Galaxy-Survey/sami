@@ -385,14 +385,14 @@ def dithered_cube_from_rss_wrapper(files, name, size_of_grid=50,
                                    nominal=False, root='', overwrite=False,
                                    offsets='file', covar_mode='optimal',
                                    do_dar_correct=True, clip_throughput=True,
-                                   update_tol=0.02, flag_name=True):
+                                   update_tol=0.02):
     """Cubes and saves a single object."""
     n_files = len(files)
 
     ifu_list = []
     
     for filename in files:
-        ifu_list.append(utils.IFU(filename, name, flag_name=flag_name))
+        ifu_list.append(utils.IFU(filename, name, flag_name=True))
 
     if write:
         # First check if the object directory already exists or not.
@@ -811,6 +811,8 @@ def dithered_cube_from_rss(ifu_list, size_of_grid=50, output_pix_size_arcsec=0.5
         if (l == 0) and (covar_mode != 'none'):
             covariance_array_slice = create_covar_matrix(overlap_array,var_rss_slice)
             s_covar_slice = np.shape(covariance_array_slice)
+            if np.nansum(covariance_array_slice == 0):
+                covariance_array_slice = np.ones(s_covar_slice)*np.nan
             covariance_array = covariance_array_slice.reshape(np.append(s_covar_slice,1))
             covariance_slice_locs = [0]
 
@@ -834,13 +836,13 @@ def dithered_cube_from_rss(ifu_list, size_of_grid=50, output_pix_size_arcsec=0.5
             recompute_tracker = overlap_maps.n_drizzle_recompute
             recompute_flag = 0
 
-        elif (((l%200 == 0) and (l != 0)) or (l == (n_slices-2)) or (l == (n_slices-1))) and (covar_mode != 'none'):
-            covariance_array_slice = create_covar_matrix(overlap_array,var_rss_slice)
-            covariance_array_slice = covariance_array_slice.reshape(np.append(s_covar_slice,1))
-            covariance_array = np.append(covariance_array,covariance_array_slice,axis=len(s_covar_slice))
-            covariance_slice_locs.append(l)
+        #elif (((l%200 == 0) and (l != 0)) or (l == (n_slices-2)) or (l == (n_slices-1))) and (covar_mode != 'none'):
+        #    covariance_array_slice = create_covar_matrix(overlap_array,var_rss_slice)
+        #    covariance_array_slice = covariance_array_slice.reshape(np.append(s_covar_slice,1))
+        #    covariance_array = np.append(covariance_array,covariance_array_slice,axis=len(s_covar_slice))
+        #    covariance_slice_locs.append(l)
 
-        elif (l == (n_slices-1)) and (covar_mode != 'none'):
+        elif ((l == (n_slices-2)) or (l == (n_slices-1))) and (covar_mode != 'none'):
             covariance_array_slice = create_covar_matrix(overlap_array,var_rss_slice)
             covariance_array_slice = covariance_array_slice.reshape(np.append(s_covar_slice,1))
             covariance_array = np.append(covariance_array,covariance_array_slice,axis=len(s_covar_slice))
@@ -853,6 +855,7 @@ def dithered_cube_from_rss(ifu_list, size_of_grid=50, output_pix_size_arcsec=0.5
         
         if recompute_tracker != overlap_maps.n_drizzle_recompute:
             recompute_flag = 1
+
         ##########################################
         
         # Map RSS slices onto gridded slices
