@@ -594,7 +594,8 @@ def save_results(results):
     hdu.header['N_GOOD'] = (results['n_good'], 'Number of galaxies used in fit')
     hdu.header['REF_FILE'] = (results['reference'], 'Reference filename')
     hdu.header['HGALIGN'] = (HG_CHANGESET, 'Hg changeset ID for alignment code')
-    hdu.update_ext_name('ALIGNMENT')
+
+    hdu.header['EXTNAME'] = 'ALIGNMENT'
     # Open up the file for editing
     hdulist = pf.open(results['filename'], 'update')
     # Remove the existing HDU, if it's there
