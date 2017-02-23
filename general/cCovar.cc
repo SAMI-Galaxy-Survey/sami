@@ -100,10 +100,29 @@ extern "C" int create_covar_matrix(int covarRad, int nx, int ny, int n_fibres,
 
     // Pre-compute all the `n_fibres` calls to `sqrt` (this saves time!).
     double sqrtvars[n_fibres];
-    for (int k=0; k<n_fibres; k++) {*(sqrtvars + k) = sqrt(*(pvars + k)); }
+    int n_good = 0, good_vars[n_fibres];
+
+    for (int k=0; k<n_fibres; k++) {
+        if (*(pvars + k)==*(pvars + k)) {
+            // If variances[k] is valid, take a note of `k`...
+            *(good_vars + n_good) = k;
+            n_good++;
+
+            // ...and precompute the square root of variances[k].
+            *(sqrtvars + k) = sqrt(*(pvars + k));
+
+        } else {
+            // If variances[k] is inf or NaN, do not call `sqrt`.
+            *(sqrtvars + k) = NAN;
+        }
+    }
+
+
+    // If all variances are invalid, leave the covariance matrix as 0 (to match
+    if (n_good == 0) { return 0; } // If all variances are invalid, leave 
 
     double a, b, norm, sqrtvar;
-    int xC, yC;
+    int xC, yC, k;
 
     // This triple loop is optimised by the compiler and therefore does not
     // need switching to a single loop. The end of this module contains an
@@ -112,7 +131,10 @@ extern "C" int create_covar_matrix(int covarRad, int nx, int ny, int n_fibres,
     for (int i=0; i<nx; i++) {
         for (int j=0; j<ny; j++) {
 
-            for (int k=0; k<n_fibres; k++) {
+            // for (int k=0; k<n_fibres; k++) {
+            for (int w=0; w<n_good; w++) {
+
+                k = *(good_vars + w);
 
                 a = *(overlap_array + (ny * i + j) * n_fibres + k);
 
