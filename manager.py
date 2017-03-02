@@ -1398,7 +1398,7 @@ class Manager:
             # make a copy with file type MFFFF.  The copied files are
             # placed in the list fits_twilight_list and then can be
             # processed as normal MFFFF files.
-            for fits in self.files(ndf_class='MFSKY'):
+            for fits in self.files(ndf_class='MFSKY',do_not_use=False,**kwargs):
                 
                 fits_twilight_list.append(self.copy_as(fits,'MFFFF',overwrite=overwrite))
                 
@@ -2503,7 +2503,7 @@ class Manager:
         # turn off bias and dark for new CCD. These are named
         # E2V2A (blue) and E2V3A (red).  The old ones are E2V2 (blue
         # and E2V3 (red).
-        if ((fits.detector == 'E2V2A') or (fits.detector == E2V3A)):
+        if ((fits.detector == 'E2V2A') or (fits.detector == 'E2V3A')):
             options.extend(['-USEBIASIM', '0', '-USEDARKIM', '0'])
             
         if fits.ndf_class == 'BIAS':
