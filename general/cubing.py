@@ -188,14 +188,16 @@ def _get_probe_all(files, name, verbose=True):
     probes = [_get_probe_single(fl, name, verbose=verbose) for fl in files]
     probes = np.unique(probes)
 
-    if len(probes)==1:
-        return probes[0]
-    else:
-        message = ('Object {} appears to have dithers from multiple IFU ' \
-            + 'probes.\n The input files are {}').format(name, files)
-        raise IOError(message)
+    #if len(probes)==1:
+    #    return probes[0]
+    #else:
+    #    message = ('Object {} appears to have dithers from multiple IFU ' \
+    #        + 'probes.\n The input files are {}').format(name, files)
+    #    raise IOError(message)
 
+    probes_string = np.array2string(probes,separator=',')[1:-1]
 
+    return probes_string
 
 def _get_probe_single(infile, object_name, verbose=True):
     """ This should read in the RSS files and return the probe number the object was observed in"""
@@ -438,7 +440,7 @@ def dithered_cube_from_rss_wrapper(files, name, size_of_grid=50,
         hdr_new['DROPFACT'] = (drop_factor, 'Drizzle drop scaling')
 
         hdr_new['IFUPROBE'] = (_get_probe_all(files, name, verbose=False),
-                               'Id number of the SAMI IFU probe')
+                               'Id number(s) of the SAMI IFU probe(s)')
 
         # Create HDUs for each cube.
         
