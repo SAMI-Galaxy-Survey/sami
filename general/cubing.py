@@ -131,10 +131,20 @@ import datetime
 import warnings
 from glob import glob
 
+# This switch selects wich implementation to use to compute the covariance
+# matrix. The two implementations differ only in their technical aspects, but
+# the results are the same (within the numerical precision). The C
+# implementation is the fastest.
 try:
     from cCovar import create_covar_matrix
 except ImportError:
-    print('Failed to import the C version of covar using traditional')
+    # Here we use the original implementation from James (or Nic?). The module
+    # contains a python, vectorised implementation that is significantly faster,
+    # but still slower than the C implementation. Should you prefer the python,
+    # vectorised implementation, please run:
+    # from covar import create_covar_matrix_vectorised as create_covar_matrix
+    warn_message('Failed to import the C version of covar using traditional')
+    warnings.warn(warn_message, ImportWarning, stacklevel=2)
     from covar import create_covar_matrix_original as create_covar_matrix
 
 
@@ -147,7 +157,7 @@ except ImportError:
         + '* We currently recommend to install `tqdm`. This can be done e.g. by \n'
         + '* `~# pip install tqdm`\n'
         + '*'*80 + '\n')
-    warnings.warn(warning_message)
+    warnings.warn(warning_message, DeprecationWarning, stacklevel=2)
     use_old_progress_meter = True
     tqdm = lambda x: x    # If `tqdm` is not available, overload it to identity.
 
@@ -184,12 +194,13 @@ import code
 
 from pdb import set_trace
 
+# This simple switch allows to test the alternative cubing methods. Do not change.
 if 1:
-    warnings.warn('Using traditional drizzling approach')
     from ..utils.circ import resample_circle as compute_weights
     cubing_method = 'Tophat'
 else:
-    warnings.warn('Using new Gaussian integration approach')
+    warning_message = 'The Gaussian weighting scheme is not fully assessed.'
+    warnings.warn(warning_message, FutureWarning, stacklevel=2)
     from ..utils.circ import inteGrauss2d as compute_weights
     cubing_method = 'Gaussian'
 
