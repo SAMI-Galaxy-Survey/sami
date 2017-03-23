@@ -307,16 +307,30 @@ class Manager:
     At this point the manager is not aware of any actual data - skip to
     "Importing data" and carry on from there.
 
-    You may also set the manager to make tram-line maps from twilight sky frames
-    and use these in preference to dome flats by using the use_twilight_tlm
-    keyword, as in:
+    Deriving the tram-line maps from the twilight sky frames (blue arm only)
+    ========================================================================
 
-    mngr = sami.manager.Manager('130305_130317',use_twilight_tlm=True)
+    The keyword `use_twilight_tlm_blue` instructs the manager to use the
+    twilight sky frames to derive the tram-line maps (default value is `False`).
+    For the blue arm, using tram-line maps derived from the twilight sky frames
+    reduces the noise at the blue end of the spectra.
 
-    The reductions will then search for a twilight from the same plate to use as
+    When this keyword is set to `True`, two sets of tram-line maps are derived:
+    one contains the tram-line maps from each twilight sky frame, and one
+    contains the tram-line maps derived from each dome flat frame. The tram-line
+    maps derived from the dome flats are used: a) for the red arm in *any* case 
+    b) for the blue arm if no twilight frame was available to derive the
+    tram-line maps.
+
+    >>> mngr = sami.manager.Manager('130305_130317',use_twilight_tlm_blue=True)
+
+    The reductions will search for a twilight from the same plate to use as
     a TLM file.  If one from the same plate cannot be found, a twilight from another
     plate (or another night) will be used in preference to a dome flat.  The current
-    default is use_twilight_tlm=False until full testing has been completed.
+    default is use_twilight_tlm_blue=False until full testing has been completed.
+
+    For the on site data reduction, it might be advisable to use `False`
+    (default), because this requires less time.
 
     Continuing a previous session
     =============================
@@ -752,7 +766,7 @@ class Manager:
 
     def __init__(self, root, copy_files=False, move_files=False, fast=False,
                  gratlpmm=GRATLPMM, n_cpu=1, demo=False,
-                 demo_data_source='demo',use_twilight_tlm=False,verbose=False):
+                 demo_data_source='demo',use_twilight_tlm_blue=False,verbose=False):
         if fast:
             self.speed = 'fast'
         else:
@@ -760,7 +774,7 @@ class Manager:
         self.idx_files = IDX_FILES[self.speed]
         # define the internal flag that allows twilights to be used for
         # making tramline maps:
-        self.use_twilight_tlm = use_twilight_tlm
+        self.use_twilight_tlm_blue = use_twilight_tlm_blue
         # Internal flag to allow for greater output during processing.
         # this is not actively used at present, but show be at some point
         # so we can easily get output for testing
@@ -805,7 +819,7 @@ class Manager:
                 print 'Continuing in normal mode.'
                 demo = False
 
-        if use_twilight_tlm:
+        if use_twilight_tlm_blue:
             print 'Using twilight frames to derive TLM and profile map'
         else:
             print 'NOT using twilight frames to derive TLM and profile map'
@@ -1385,20 +1399,21 @@ class Manager:
 
     def make_tlm(self, overwrite=False, leave_reduced=False, **kwargs):
         """Make TLMs from all files matching given criteria.
-        If the use_twilight_tlm keyword is set to True in the manager
+        If the use_twilight_tlm_blue keyword is set to True in the manager
         (when the manager is initialized), then we will also
         attempt to get a tramline map from twilight frames.  This is done
         by copying them to a different file that has class MFFFF using the
         copy_as function."""
 
-        if (self.use_twilight_tlm):
+        if (self.use_twilight_tlm_blue):
             fits_twilight_list=[]
             print 'Processing twilight frames to get TLM'
             # for each twilight frame use the copy_as() function to
             # make a copy with file type MFFFF.  The copied files are
             # placed in the list fits_twilight_list and then can be
             # processed as normal MFFFF files.
-            for fits in self.files(ndf_class='MFSKY',do_not_use=False,**kwargs):
+            #for fits in self.files(ndf_class='MFSKY',do_not_use=False,**kwargs):
+            for fits in self.files(ndf_class='MFSKY',do_not_use=False,ccd='ccd_1',**kwargs):
                 
                 fits_twilight_list.append(self.copy_as(fits,'MFFFF',overwrite=overwrite))
                 
@@ -2486,7 +2501,7 @@ class Manager:
         options = []
 
         # Define what the best choice is for a TLM:
-        if (self.use_twilight_tlm):
+        if (self.use_twilight_tlm_blue):
             best_tlm = 'tlmap_mfsky'
         else:
             best_tlm = 'tlmap'
@@ -2627,7 +2642,7 @@ class Manager:
                     # twilight options first.  If they are not found, then default
                     # back to the normal tlmap route.
                     found = 0
-                    if self.use_twilight_tlm:
+                    if self.use_twilight_tlm_blue:
                         filename_match = self.match_link(fits, 'tlmap_mfsky')
                         if filename_match is None:
                             filename_match = self.match_link(fits, 'tlmap_mfsky_loose')
