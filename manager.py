@@ -307,6 +307,31 @@ class Manager:
     At this point the manager is not aware of any actual data - skip to
     "Importing data" and carry on from there.
 
+    Deriving the tram-line maps from the twilight sky frames (blue arm only)
+    ========================================================================
+
+    The keyword `use_twilight_tlm_blue` instructs the manager to use the
+    twilight sky frames to derive the tram-line maps (default value is `False`).
+    For the blue arm, using tram-line maps derived from the twilight sky frames
+    reduces the noise at the blue end of the spectra.
+
+    When this keyword is set to `True`, two sets of tram-line maps are derived:
+    one contains the tram-line maps from each twilight sky frame, and one
+    contains the tram-line maps derived from each dome flat frame. The tram-line
+    maps derived from the dome flats are used: a) for the red arm in *any* case 
+    b) for the blue arm if no twilight frame was available to derive the
+    tram-line maps.
+
+    >>> mngr = sami.manager.Manager('130305_130317',use_twilight_tlm_blue=True)
+
+    The reductions will search for a twilight from the same plate to use as
+    a TLM file.  If one from the same plate cannot be found, a twilight from another
+    plate (or another night) will be used in preference to a dome flat.  The current
+    default is use_twilight_tlm_blue=False until full testing has been completed.
+
+    For the on site data reduction, it might be advisable to use `False`
+    (default), because this requires less time.
+
     Continuing a previous session
     =============================
 
@@ -741,12 +766,19 @@ class Manager:
 
     def __init__(self, root, copy_files=False, move_files=False, fast=False,
                  gratlpmm=GRATLPMM, n_cpu=1, demo=False,
-                 demo_data_source='demo'):
+                 demo_data_source='demo',use_twilight_tlm_blue=False,verbose=False):
         if fast:
             self.speed = 'fast'
         else:
             self.speed = 'slow'
         self.idx_files = IDX_FILES[self.speed]
+        # define the internal flag that allows twilights to be used for
+        # making tramline maps:
+        self.use_twilight_tlm_blue = use_twilight_tlm_blue
+        # Internal flag to allow for greater output during processing.
+        # this is not actively used at present, but show be at some point
+        # so we can easily get output for testing
+        self.verbose = verbose
         self.gratlpmm = gratlpmm
         self.n_cpu = n_cpu
         self.root = root
@@ -786,6 +818,12 @@ class Manager:
                 print 'You must install the mock module to use the demo mode.'
                 print 'Continuing in normal mode.'
                 demo = False
+
+        if use_twilight_tlm_blue:
+            print 'Using twilight frames to derive TLM and profile map'
+        else:
+            print 'NOT using twilight frames to derive TLM and profile map'
+            
         self.demo = demo
         self.demo_data_source = demo_data_source
         self.debug = False
@@ -845,8 +883,10 @@ class Manager:
                     trust_header=True, copy_files=True, move_files=False):
         """Add details of a file to the manager"""
         source_path = os.path.join(dirname, filename)
+        # Initialize an instance of the FITSFile:
         fits = FITSFile(source_path)
         if fits.copy:
+            #print 'this is a copy, do not import:',dirname,filename
             # This is a copy of a file, don't add it to the list
             return
         if fits.ndf_class not in [
@@ -1081,6 +1121,9 @@ class Manager:
         fits.reduced_link = os.path.join(fits.reduced_dir, fits.filename)
         fits.reduced_path = os.path.join(fits.reduced_dir,
                                          fits.reduced_filename)
+        # set the tlm_path for MFSKY frames that can be used as a TLM:
+        if fits.ndf_class == 'MFSKY':
+            fits.tlm_path = os.path.join(fits.reduced_dir, fits.tlm_filename)
         if fits.ndf_class == 'MFFFF':
             fits.tlm_path = os.path.join(fits.reduced_dir, fits.tlm_filename)
         elif fits.ndf_class == 'MFOBJECT':
@@ -1355,9 +1398,34 @@ class Manager:
         return
 
     def make_tlm(self, overwrite=False, leave_reduced=False, **kwargs):
-        """Make TLMs from all files matching given criteria."""
+        """Make TLMs from all files matching given criteria.
+        If the use_twilight_tlm_blue keyword is set to True in the manager
+        (when the manager is initialized), then we will also
+        attempt to get a tramline map from twilight frames.  This is done
+        by copying them to a different file that has class MFFFF using the
+        copy_as function."""
+
+        if (self.use_twilight_tlm_blue):
+            fits_twilight_list=[]
+            print 'Processing twilight frames to get TLM'
+            # for each twilight frame use the copy_as() function to
+            # make a copy with file type MFFFF.  The copied files are
+            # placed in the list fits_twilight_list and then can be
+            # processed as normal MFFFF files.
+            #for fits in self.files(ndf_class='MFSKY',do_not_use=False,**kwargs):
+            for fits in self.files(ndf_class='MFSKY',do_not_use=False,ccd='ccd_1',**kwargs):
+                
+                fits_twilight_list.append(self.copy_as(fits,'MFFFF',overwrite=overwrite))
+                
+            # use the iterable file reducer to loop over the copied twilight list and
+            # reduce them as MFFFF files to make TLMs.
+            self.reduce_file_iterable(fits_twilight_list, overwrite=overwrite, tlm=True,leave_reduced=leave_reduced, check='TLM')
+
+        # now we will process the normal MFFFF files
+        # this currently only allows TLMs to be made from MFFFF files
         file_iterable = self.files(ndf_class='MFFFF', do_not_use=False,
                                    **kwargs)
+        
         self.reduce_file_iterable(
             file_iterable, overwrite=overwrite, tlm=True, 
             leave_reduced=leave_reduced, check='TLM')
@@ -1452,7 +1520,10 @@ class Manager:
                 True, 'True if this is a copy created by a Manager')
             hdulist.flush()
             hdulist.close()
+            
         new_fits = FITSFile(new_path)
+
+#        print 'new_fits:',new_fits
         # Add paths to the new FITSFile instance.
         # Don't use Manager.set_reduced_path because the raw location is
         # unusual
@@ -1460,8 +1531,15 @@ class Manager:
         new_fits.raw_path = new_path
         new_fits.reduced_dir = fits.reduced_dir
         new_fits.reduced_link = new_path
-        new_fits.reduced_path = os.path.join(
-            fits.reduced_dir, new_fits.reduced_filename)
+        new_fits.reduced_path = os.path.join(fits.reduced_dir, new_fits.reduced_filename)
+        # as this file has not been imported normally, we need to also set the check_data:
+        new_fits.set_check_data()
+        # if the new class is MFFFF, then add tlm_path to the FITSfile instance as this
+        # is also usually done by set_reduced_path.
+        if ndf_class == 'MFFFF':
+            new_fits.tlm_path = os.path.join(new_fits.reduced_dir, new_fits.tlm_filename)
+            # Do we also set the lamp? Probably not.
+                        
         return new_fits
 
     def copy_path(self, path):
@@ -2421,6 +2499,14 @@ class Manager:
     def tdfdr_options(self, fits, throughput_method='default', tlm=False):
         """Set the 2dfdr reduction options for this file."""
         options = []
+
+        # Define what the best choice is for a TLM:
+        if (self.use_twilight_tlm_blue):
+            best_tlm = 'tlmap_mfsky'
+        else:
+            best_tlm = 'tlmap'
+
+        # add options for just CCD_2:
         if fits.ccd == 'ccd_2':
             if fits.exposure >= self.min_exposure_for_sky_wave:
                 # Adjust wavelength calibration of red frames using sky lines
@@ -2429,6 +2515,12 @@ class Manager:
                 options.extend(['-SKYSCRUNCH', '0'])
             # Turn off bias and dark subtraction
             options.extend(['-USEBIASIM', '0', '-USEDARKIM', '0'])
+        # turn off bias and dark for new CCD. These are named
+        # E2V2A (blue) and E2V3A (red).  The old ones are E2V2 (blue
+        # and E2V3 (red).
+        if ((fits.detector == 'E2V2A') or (fits.detector == 'E2V3A')):
+            options.extend(['-USEBIASIM', '0', '-USEDARKIM', '0'])
+            
         if fits.ndf_class == 'BIAS':
             files_to_match = []
         elif fits.ndf_class == 'DARK':
@@ -2438,7 +2530,7 @@ class Manager:
         elif fits.ndf_class == 'MFFFF' and tlm:
             files_to_match = ['bias', 'dark', 'lflat']
         elif fits.ndf_class == 'MFARC':
-            files_to_match = ['bias', 'dark', 'lflat', 'tlmap']
+            files_to_match = ['bias', 'dark', 'lflat', best_tlm]
             # Arc frames can't use optimal extraction because 2dfdr screws up
             # and marks entire columns as bad when it gets too many saturated
             # pixels
@@ -2446,21 +2538,30 @@ class Manager:
         elif fits.ndf_class == 'MFFFF' and not tlm:
             if fits.lamp == 'Flap':
                 # Flap flats should use their own tramline maps, not those
-                # generated by dome flats
+                # generated by dome flats.  Do we want this to happen, even
+                # if the best TLM could be from a twilight frame?  For now
+                # leave it as this, but it may be that the twilight tlm (if
+                # available) is better, at least in regard to the measurement
+                # of the fibre profile widths.
                 files_to_match = ['bias', 'dark', 'lflat', 'tlmap_flap', 
                                   'wavel']
             else:
+                # if this is an MFFFF then always assure that we are using the
+                # TLM that came from that file.  The main reason for this is that
+                # if we pass a different TLM file, then a new TLM will be generated
+                # anyway, but overwritten into the filename that is passed (e.g.
+                # a twilight TLM could be overwritten by a dome flat TLM): 
                 files_to_match = ['bias', 'dark', 'lflat', 'tlmap', 'wavel']
         elif fits.ndf_class == 'MFSKY':
-            files_to_match = ['bias', 'dark', 'lflat', 'tlmap', 'wavel',
+            files_to_match = ['bias', 'dark', 'lflat', best_tlm, 'wavel',
                               'fflat']
         elif fits.ndf_class == 'MFOBJECT':
             if throughput_method == 'default':
-                files_to_match = ['bias', 'dark', 'lflat', 'tlmap', 'wavel',
+                files_to_match = ['bias', 'dark', 'lflat', best_tlm, 'wavel',
                                   'fflat', 'thput']
                 options.extend(['-TPMETH', 'OFFSKY'])
             elif throughput_method == 'external':
-                files_to_match = ['bias', 'dark', 'lflat', 'tlmap', 'wavel',
+                files_to_match = ['bias', 'dark', 'lflat', best_tlm, 'wavel',
                                   'fflat']
                 options.extend(['-TPMETH', 'OFFSKY'])
                 options.extend(['-THPUT_FILENAME',
@@ -2468,11 +2569,11 @@ class Manager:
             elif throughput_method == 'skylines':
                 if (fits.exposure >= self.min_exposure_for_throughput and 
                         fits.has_sky_lines()):
-                    files_to_match = ['bias', 'dark', 'lflat', 'tlmap', 'wavel',
+                    files_to_match = ['bias', 'dark', 'lflat', best_tlm, 'wavel',
                                       'fflat']
                     options.extend(['-TPMETH', 'SKYFLUX(MED)'])
                 else:
-                    files_to_match = ['bias', 'dark', 'lflat', 'tlmap', 'wavel',
+                    files_to_match = ['bias', 'dark', 'lflat', best_tlm, 'wavel',
                                       'fflat', 'thput_object']
                     options.extend(['-TPMETH', 'OFFSKY'])
         else:
@@ -2496,6 +2597,7 @@ class Manager:
         if 'lflat' not in files_to_match and '-USEFLATIM' not in options:
             options.extend(['-USEFLATIM', '0'])
         for match_class in files_to_match:
+            # this is the main call to the matching routine:
             filename_match = self.match_link(fits, match_class)
             if filename_match is None:
                 # What to do if no match was found
@@ -2535,32 +2637,72 @@ class Manager:
                             # This is a long exposure, so use the sky lines
                             options[options.index('-TPMETH') + 1] = (
                                 'SKYFLUX(MED)')
-                elif match_class == 'tlmap':
-                    # Try with looser criteria
-                    filename_match = self.match_link(fits, 'tlmap_loose')
-                    if filename_match is None:
-                        # Try using a flap flat instead
-                        filename_match = self.match_link(fits, 'tlmap_flap')
+                elif match_class == best_tlm:
+                    # If we are using twilights, then go through the 3 different
+                    # twilight options first.  If they are not found, then default
+                    # back to the normal tlmap route.
+                    found = 0
+                    if self.use_twilight_tlm_blue:
+                        filename_match = self.match_link(fits, 'tlmap_mfsky')
+                        if filename_match is None:
+                            filename_match = self.match_link(fits, 'tlmap_mfsky_loose')
+                            if filename_match is None:
+                                filename_match = self.match_link(fits, 'tlmap_mfsky_any')
+                                if filename_match is None:
+                                    print ('Warning: no matching twilight frames found for TLM.'
+                                       'Will default to wsing flat field frames instead'
+                                       'for '+fits.filename)
+                                else:
+                                    print ('Warning: No matching twilight found for TLM.'
+                                        'Using a twilight frame from a differnt night'
+                                        'for '+fits.filename)
+                                    found = 1
+                            else:
+                                print ('Warning: No matching twilight found for TLM.'
+                                    'Using a twilight frame from the same night'
+                                    'for '+fits.filename)
+                                found = 1
+                        else:
+                            print ('Found matching twilight found for TLM '
+                                    'for '+fits.filename)
+                            found = 1
+                            
+                    # if we haven't already found a matching TLM above (i.e. if found = 0), then
+                    # go through the options with the flats:
+                    if (found == 0):
+                    # Try with normal TLM from flat:
+                        filename_match = self.match_link(fits, 'tlmap')
                         if filename_match is None:
                             # Try with looser criteria
-                            filename_match = self.match_link(
-                                fits, 'tlmap_flap_loose')
+                            filename_match = self.match_link(fits, 'tlmap_loose')
                             if filename_match is None:
-                                # Still nothing. Raise an exception
-                                raise MatchException(
-                                    'No matching tlmap found for ' + 
-                                    fits.filename)
+                                # Try using a flap flat instead
+                                filename_match = self.match_link(fits, 'tlmap_flap')
+                                if filename_match is None:
+                                    # Try with looser criteria
+                                    filename_match = self.match_link(
+                                        fits, 'tlmap_flap_loose')
+                                    if filename_match is None:
+                                        # Still nothing. Raise an exception
+                                        raise MatchException(
+                                            'No matching tlmap found for ' + 
+                                            fits.filename)
+                                    else:
+                                        print ('Warning: No good flat found for TLM. '
+                                            'Using flap flat from different field '
+                                            'for ' + fits.filename)
+                                else:
+                                    print ('Warning: No dome flat found for TLM. '
+                                        'Using flap flat instead for ' + fits.filename)
                             else:
-                                print ('Warning: No good flat found for TLM. '
-                                    'Using flap flat from different field '
-                                    'for ' + fits.filename)
+                                print ('Warning: No matching flat found for TLM. '
+                                        'Using flat from different field for ' + 
+                                    fits.filename)
                         else:
-                            print ('Warning: No dome flat found for TLM. '
-                                'Using flap flat instead for ' + fits.filename)
-                    else:
-                        print ('Warning: No matching flat found for TLM. '
-                            'Using flat from different field for ' + 
-                            fits.filename)
+                            print ('Warning: No matching twilight found for TLM. '
+                                    'Using a dome flat instead ' + 
+                                    fits.filename)
+                            
                 elif match_class == 'fflat':
                     # Try with looser criteria
                     filename_match = self.match_link(fits, 'fflat_loose')
@@ -2609,7 +2751,14 @@ class Manager:
                 # Note we can't use else for the above line, because
                 # filename_match might have changed
                 # Make sure that 2dfdr gets the correct option names
+                # We have added the tlmap_mfsky option here.
                 if match_class == 'tlmap_flap':
+                    match_class = 'tlmap'
+                elif match_class == 'tlmap_mfsky':
+                    match_class = 'tlmap'
+                elif match_class == 'tlmap_mfsky_loose':
+                    match_class = 'tlmap'
+                elif match_class == 'tlmap_mfsky_any':
                     match_class = 'tlmap'
                 elif match_class == 'thput_object':
                     match_class = 'thput'
@@ -2638,7 +2787,8 @@ class Manager:
               min_exposure=None, max_exposure=None,
               reduced_dir=None, reduced=None, copy_reduced=None,
               tlm_created=None, flux_calibrated=None, telluric_corrected=None,
-              spectrophotometric=None, name=None, lamp=None,
+              spectrophotometric=None, name=None, lamp=None, min_fluxlev=None,
+              max_fluxlev=None,
               central_wavelength=None, include_linked_managers=False):
         """Generator for FITS files that satisfy requirements."""
         if include_linked_managers:
@@ -2664,6 +2814,8 @@ class Manager:
                     (do_not_use is None or fits.do_not_use == do_not_use) and
                     (min_exposure is None or fits.exposure >= min_exposure) and
                     (max_exposure is None or fits.exposure <= max_exposure) and
+                    (min_fluxlev is None or fits.fluxlev >= min_fluxlev) and  # add flux level limits
+                    (max_fluxlev is None or fits.fluxlev <= max_fluxlev) and
                     (reduced_dir is None or
                      os.path.realpath(reduced_dir) ==
                      os.path.realpath(fits.reduced_dir)) and
@@ -2857,6 +3009,9 @@ class Manager:
         """Return the file that should be used to help reduce the FITS file.
 
         match_class is one of the following:
+        tlmap_mfsky      -- Find a tramline map from twilight flat fields
+        tlmap_mfsky_loose-- Find a tramline map from any twilight flat field on a night
+        tlmap_mfsky_any  -- Find a tramline map from any twilight flat field in a manager set 
         tlmap            -- Find a tramline map from the dome lamp
         tlmap_loose      -- As tlmap, but with less strict criteria
         tlmap_flap       -- As tlmap, but from the flap lamp
@@ -2899,6 +3054,14 @@ class Manager:
         spectrophotometric = None
         lamp = None
         central_wavelength = None
+        # extra match criteria that is the amount of flux in the
+        # frame, based on the FLXU90P value (9-95th percentile value
+        # of raw frame).  This is for twilights used as flats for
+        # TLMs.  If a frame is a twilight, then this paramater is
+        # set on initialization of the FITSFile object.  Then we
+        # have easy access to the value.
+        min_fluxlev = None
+        max_fluxlev = None
         # Define some functions for figures of merit
         time_difference = lambda fits, fits_test: (
             abs(fits_test.epoch - fits.epoch))
@@ -2906,6 +3069,11 @@ class Manager:
             -1.0 * os.stat(fits_test.reduced_path).st_mtime)
         copy_recent_reduction = lambda fits, fits_test: (
             -1.0 * os.stat(self.copy_path(fits_test.reduced_path)).st_mtime)
+        # merit function that returns the best fluxlev value.  As the
+        # general f-o-m selects objects if the f-o-m is LESS than other values
+        # we should just multiple fluxlev by -1:
+        flux_level = lambda fits, fits_test: (
+            -1.0 * fits_test.fluxlev)
         def time_difference_min_exposure(min_exposure):
             def retfunc(fits, fits_test):
                 if fits_test.exposure <= min_exposure:
@@ -2914,8 +3082,48 @@ class Manager:
                     return time_difference(fits, fits_test)
             return retfunc
         # Determine what actually needs to be matched, depending on match_class
-        if match_class.lower() == 'tlmap':
-            # Find a tramline map, so need a dome fibre flat field
+        #
+        # this case is where we want to use a twilight sky frame to derive the
+        # tramline maps, rather than a flat field, as the flat can often have too
+        # little flux in the far blue to do a good job.  The order of matching for
+        # the twilights should be:
+        # 1) The brightest twilight frame of the same field (needs to be brighter than
+        #    some nominal level, say FLUX90P>500) - tlmap_mfsky.
+        # 2) The brightest twilight frame from the same night (same constraint on
+        #    brightness) - tlmap_mfsky_loose.
+        # 3) The brightest twilight frame from a different night (same constraint on
+        #    brightness) - tlmap_mfsky_any.
+        if match_class.lower() == 'tlmap_mfsky':
+            # allow MFSKY to be used:
+            ndf_class = 'MFSKY'
+            date = fits.date
+            plate_id = fits.plate_id
+            field_id = fits.field_id
+            min_fluxlev = 1000.0
+            max_fluxlev = 40000.0  # use a max_fluxlev to reduce the chance of saturated twilights
+            ccd = fits.ccd
+            tlm_created = True
+            fom = flux_level
+        elif match_class.lower() == 'tlmap_mfsky_loose':
+            # this is the case where we take the brightest twilight on the same
+            # night, irrespective of whether its from the same plate.
+            ndf_class = 'MFSKY'
+            date = fits.date
+            min_fluxlev = 1000.0
+            max_fluxlev = 40000.0  # use a max_fluxlev to reduce the chance of saturated twilights
+            ccd = fits.ccd
+            tlm_created = True
+            fom = flux_level
+        elif match_class.lower() == 'tlmap_mfsky_any':
+            # in this case find the best (brightest) twilight frame from anywhere
+            # during the run.
+            ndf_class = 'MFSKY'
+            min_fluxlev = 1000.0
+            max_fluxlev = 40000.0  # use a max_fluxlev to reduce the chance of saturated twilights
+            ccd = fits.ccd
+            tlm_created = True
+            fom = flux_level
+        elif match_class.lower() == 'tlmap':
             ndf_class = 'MFFFF'
             date = fits.date
             plate_id = fits.plate_id
@@ -3096,16 +3304,22 @@ class Manager:
                 telluric_corrected=telluric_corrected,
                 spectrophotometric=spectrophotometric,
                 lamp=lamp,
+                min_fluxlev=min_fluxlev,
+                max_fluxlev=max_fluxlev,
                 do_not_use=False,
                 ):
             test_fom = fom(fits, fits_test)
+# output match testing stuff:            
+#            print 'match test (fom):',fits,fits_test,test_fom
             if test_fom < best_fom:
                 fits_match = fits_test
                 best_fom = test_fom
+#        exit()
         return fits_match
 
     def match_link(self, fits, match_class):
         """Match and make a link to a file, and return the filename."""
+#        print 'started match_link: ',match_class,fits.filename
         fits_match = self.matchmaker(fits, match_class)
         if fits_match is None:
             # No match was found, send the lack of match onwards
@@ -3117,6 +3331,8 @@ class Manager:
             filename = fits_match.tlm_filename
             raw_filename = fits_match.filename
             raw_dir = fits_match.raw_dir
+            # add im file as this is needed for tlm offset estimate:
+            imfilename = fits_match.im_filename
         elif match_class.lower() == 'thput':
             thput_filename = 'thput_' + fits_match.reduced_filename
             thput_path = os.path.join(fits_match.reduced_dir, thput_filename)
@@ -3136,9 +3352,10 @@ class Manager:
             raw_dir = fits_match.raw_dir
         # These are the cases where we do want to make a link
         require_link = [
+            'tlmap_mfsky', 'tlmap_mfsky_loose', 'tlmap_mfsky_any',
             'tlmap', 'tlmap_loose', 'tlmap_flap', 'tlmap_flap_loose', 
             'fflat', 'fflat_loose', 'fflat_flap', 'fflat_flap_loose',
-            'wavel', 'wavel_loose', 'thput', 'thput_fflat', 'thput_object']
+            'wavel', 'wavel_loose', 'thput', 'thput_fflat', 'thput_object', 'tlmap_mfsky']
         if match_class.lower() in require_link:
             link_path = os.path.join(fits.reduced_dir, filename)
             source_path = os.path.join(fits_match.reduced_dir, filename)
@@ -3157,6 +3374,15 @@ class Manager:
             if not os.path.exists(raw_link_path):
                 os.symlink(os.path.relpath(raw_source_path, fits.reduced_dir),
                            raw_link_path)
+            # add links to im files if we are looking for a TLM:
+            if match_class.lower().startswith('tlmap'):       
+                im_link_path = os.path.join(fits.reduced_dir, imfilename)
+                im_source_path = os.path.join(fits_match.reduced_dir, imfilename)
+                if os.path.islink(im_link_path):
+                    os.remove(im_link_path)
+                if not os.path.exists(im_link_path):
+                    os.symlink(os.path.relpath(im_source_path, fits.reduced_dir),
+                            im_link_path)
         return filename
 
     def change_speed(self, speed=None):
@@ -3170,6 +3396,22 @@ class Manager:
             raise ValueError("Speed must be 'fast' or 'slow'.")
         self.speed = speed
         self.idx_files = IDX_FILES[self.speed]
+        return
+
+    def change_verbose(self, verbose=None):
+        """Switch between verbose and quiet reductions."""
+        # is no option give, just switch modes:
+        if (verbose is None):
+            if (self.verbose):
+                self.verbose = False
+                print 'verbose now set to False'
+            else:
+                self.verbose = True
+                print 'verbose now set to True'
+
+        if verbose not in (True, False):
+            raise ValueError("Verbose must be True or False.")
+        self.verbose = verbose
         return
 
     @contextmanager
@@ -3538,9 +3780,20 @@ class FITSFile:
             self.field_no = None
             self.field_id = None
         self.set_ccd()
+        self.set_detector()
         self.set_grating()
         self.set_exposure()
         self.set_epoch()
+        # define the fluxlev property that is the 5-95th percentile range for the
+        # raw frame.  This is a reasonable metric to use for assessing whether
+        # twilight frames have sufficient flux:
+        if self.ndf_class == 'MFSKY':
+            flux = self.hdulist[0].data
+            p05 = np.nanpercentile(flux,5.0)
+            p95 = np.nanpercentile(flux,95.0)
+            self.fluxlev = p95-p05
+            print self.filename,': 5th,95th flux percentile:',p05,p95,', range:',self.fluxlev
+            
         self.set_lamp()
         self.set_central_wavelength()
         self.set_do_not_use()
@@ -3578,8 +3831,25 @@ class FITSFile:
     def set_reduced_filename(self):
         """Set the filename for the reduced file."""
         self.reduced_filename = self.filename_root + 'red.fits'
+        # also set the intermediate im.fits filename as this can
+        # be used for some processing steps, for example cross-matching
+        # to get the best TLM offset:
+        self.im_filename = self.filename_root + 'im.fits'
         if self.ndf_class == 'MFFFF':
             self.tlm_filename = self.filename_root + 'tlm.fits'
+        # If the object is an MFSKY, then set the name of the
+        # tlm_filename to be the copy of the MFSKY that is reduced
+        # as a MFFFF:
+        elif self.ndf_class == 'MFSKY':
+            old_num = int(self.filename_root[6:10])
+            new_num = old_num + 1000 * (9 - (old_num / 1000))
+            new_filename_root = (self.filename_root[:6] + '{:04d}'.format(new_num) + self.filename_root[10:])
+            self.tlm_filename = new_filename_root + 'tlm.fits'
+            # If the file is a copy, then we'll also need to set the copy name as
+            # the im_filename, as this is the one that will be looked for when
+            # doing the TLM offset measurements:
+            self.im_filename =  new_filename_root + 'im.fits'
+            
         elif self.ndf_class == 'MFOBJECT':
             self.fluxcal_filename = self.filename_root + 'fcal.fits'
             self.telluric_filename = self.filename_root + 'sci.fits'
@@ -3742,6 +4012,18 @@ class FITSFile:
                 self.coords = None
         else:
             self.cfg_coords = None
+        return
+    
+    def set_detector(self):
+        """Set the specific detector name, e.g. E2V2A etc.  This is different from
+        the ccd name as ccd is just whether ccd_1 (blue) or ccd_2 (red).  We need
+        to know which detector as some reduction steps can be different, e.g. treatment
+        of bias and dark frames."""
+        if self.ndf_class:
+            detector_id = self.header['DETECTOR']
+            self.detector = detector_id
+        else:
+            self.detector = None
         return
     
     def set_ccd(self):
