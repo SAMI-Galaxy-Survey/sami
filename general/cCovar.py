@@ -27,8 +27,12 @@ import os.path
 try:
     libccovar = C.CDLL(os.path.join(os.path.dirname(__file__), "libcCovar.so"))
 except:
-    pass
-    #libccovar = C.CDLL(os.path.join('/home/franz/software/dev/sami-software-dev/dr0.10/utils', 'libcCirc.so'))
+    message = ('Failed to import the C version of covar using '
+        + ' the python implementation (this takes longer).\n'
+        + 'To use the C implementation, please navigate to the folder where '
+        + 'the sami pipeline is located, and run `Make` from the terminal. ')
+    raise ImportError(message)
+
 
 # Specify the arguments our function takes:
 #  First argument is a regular C long.

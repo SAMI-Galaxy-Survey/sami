@@ -129,6 +129,8 @@ import os
 import sys
 import datetime
 import warnings
+warnings.simplefilter('always', DeprecationWarning)
+warnings.simplefilter('always', ImportWarning)
 from glob import glob
 
 # This switch selects wich implementation to use to compute the covariance
@@ -143,8 +145,11 @@ except ImportError:
     # but still slower than the C implementation. Should you prefer the python,
     # vectorised implementation, please run:
     # from covar import create_covar_matrix_vectorised as create_covar_matrix
-    warn_message('Failed to import the C version of covar using traditional')
-    warnings.warn(warn_message, ImportWarning, stacklevel=2)
+    warn_message = ('Failed to import the C version of covar using '
+        + ' the python implementation (this takes longer).\n'
+        + 'To use the C implementation, please navigate to the folder where '
+        + 'the sami pipeline is located, and run `Make` from the terminal. ')
+    warnings.warn(warn_message, ImportWarning)
     from covar import create_covar_matrix_original as create_covar_matrix
 
 
