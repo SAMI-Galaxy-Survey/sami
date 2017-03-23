@@ -42,7 +42,7 @@ except:
 libccovar.create_covar_matrix.argtypes = [
     C.c_long, C.c_long, C.c_long, C.c_long,
     np.ctypeslib.ndpointer(dtype='d', ndim=1, flags='C_CONTIGUOUS'),
-    np.ctypeslib.ndpointer(dtype='d', ndim=1),
+    np.ctypeslib.ndpointer(dtype='d', ndim=1, flags='C_CONTIGUOUS'),
     np.ctypeslib.ndpointer(dtype='d', ndim=1, flags='C_CONTIGUOUS')]
 
 
@@ -52,9 +52,17 @@ def create_covar_matrix(overlap_array, variances, covarRad=2):
 
   nc = 2 * covarRad + 1
 
+  # Ravel and (if necessary) make `overlap_array` contiguous in memory.
   overlap_array = overlap_array.ravel()
+  overlap_array = np.ascontiguousarray(overlap_array, dtype=np.float64)
 
-  output = np.zeros(nx*ny*nc*nc, dtype=np.float64)
+  # (If necessary) make `overlap_array` contiguous in memory. It is often the
+  # case that ``small'' arrays (which `variances` can be) are not contiguous in
+  # memory as created by python.
+  variances = np.ascontiguousarray(variances, dtype=np.float64)
+
+  # (If necessary) make `overlap_array` contiguous in memory. It is often the
+  output = np.ascontiguousarray(np.zeros(nx*ny*nc*nc), dtype=np.float64)
 
   libccovar.create_covar_matrix(covarRad, nx, ny, n_fibres,
                                  overlap_array, variances, output)
@@ -66,6 +74,7 @@ if __name__ == "__main__":
 
     # import pickle
     import time
+    import warnings
 
     from covar import create_covar_matrix_original
     from covar import create_covar_matrix_vectorised
