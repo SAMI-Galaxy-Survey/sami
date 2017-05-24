@@ -281,11 +281,7 @@ def check_cub(fits_list):
 they look galaxy-like, and the spectra have no obvious artefacts."""
     print message
     # The positions of points to plot
-<<<<<<< local
-    position_dict = {'Centre': (13.0,13.0),
-=======
     position_dict = {'Centre': (13.0, 13.0),
->>>>>>> other
                      'North': (13.0, 16.0),
                      'East': (10.0, 13.0),
                      'South': (13.0, 10.0),
