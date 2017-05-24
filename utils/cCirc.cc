@@ -1,18 +1,35 @@
 /*
  *
- * A set of routines to generate a weight map for the intersection of a circle
- * with a square grid.  Squares on the grid that are completely within the circle
- * receive a weight of 1.  Square that intersect the circle are given a weight
- * that is proportional to the area of the square inside the circle.
+ * Functions to calculate the:
+ * 1) drizzle overlap between a square and a circle (function `resample_circle`
+ *   by Jon Nielsen 2012)
+ * 2) Gaussian overlap between a circular Gaussian and a square grid (function
+ *   `inteGrauss2d` by Francesco D'Eugenio 2017)
  *
- * Callable from C or python (via cm.py):
- *   extern "C" int weight_map(int nx, int ny, double xc, double yc, double r, double* output)
+ *  These calculations are the crucial step in drizzling, to know how much each
+ * input fibre (circle) contributes to each output spaxel (square).
+ *
+ * Callable from C or python (via cCirc.py):
+ *   extern "C" int weight_map(int nx, int ny, double xc, double yc, double r,
+ *                             double* output)
  *     nx,ny defines the size of the square grid
  *     xc,yc is the centre of the circl
  *     r is the radius of the circle
  *     output is the weight map, as a 1D array (which cm.py reshapes to 2D)
  *
- * Jon Nielsen <jon.nielsen@anu.edu.au>
+ *   Jon Nielsen <jon.nielsen@anu.edu.au>
+ *
+ * extern "C" int weight_map_Gaussian(int nx, int ny, double xc, double yc,
+ *                                    double sigma, double n_sigma, 
+ *                                    double* output)
+ *     nx,ny defines the size of the square grid
+ *     xc,yc is the centre of the circl
+ *     sigma is the standard deviation of the Gaussian, in units of pixels
+ *     support is the number of standard deviations beyond which the Gaussian
+ *         is truncated.
+ *     output is the weight map, as a 1D array (which cm.py reshapes to 2D)
+ *
+ *   Francesco D'Eugenio <fdeugenio@gmail.com>
  */
 
 #include <iostream>
@@ -23,6 +40,11 @@
 #include <limits>
 
 static const double eps = std::numeric_limits<double>::epsilon();
+static const double SQRT2 = sqrt(2.);
+
+// +---+------------------------------------------------------------------------+
+// | 1.| Drizziling functions by Jon Nielsen.                                   |
+// +---+------------------------------------------------------------------------+
 
 /* A structure that contains relevant information about the intersection points
  * between the circle and the grid */
@@ -319,5 +341,139 @@ extern "C" int weight_map(int nx, int ny, double xc, double yc, double r, double
 
   printf("%.8f %.8f\n", total_area, M_PI*r*r);
   */
+  return 0;
+}
+
+
+
+// +---+-----------------------------------------------------------------------+
+// | 2.| Gaussian integration methods by Francesco D'Eugenio.                  |
+// +---+-----------------------------------------------------------------------+
+
+// +---------------------------------------------------------------------------+
+// | Written by Francesco D'Eugenio on the Couch to Canberra. A slow but       |
+// | comfortable ride.                                                         |
+// | 15/02/2017 - but would you trust the date from Windows OS?                |
+// |                                                                           |
+// +---------------------------------------------------------------------------+
+
+
+
+double _inteGRaussian(double a, double b) {
+    /*Computes the integral of the univariate normal distribution between the
+    extremes `a` and `b`. In terms of the Error Function `erf` the cumulative
+    distribution of the univariate Normal Distribution is:
+        1/2 (1 + erf( z/sqrt(2)) )
+    */
+    return .5 * (erf(b/SQRT2) - erf(a/SQRT2));
+}
+
+
+
+/* This function calculates the integral of the 2D Gaussian of mean
+ *  (`xc`, `yc`) and standard deviation (`sigma`, `sigma`) on a `xpix` by `ypix`
+ *  grid. The Gaussian is truncated to zero beyond the box of half side
+ *  `support` times `sigma`. We call the truncated function `Gc`, because it
+ *  has compact support.
+ *
+ * Parameters
+ * ----------
+ *
+ * xpix: int
+ *     Number of pixels in the x-dimension of the output grid
+ * ypix: int
+ *     Number of pixels in the y-dimension of the output grid
+ * xc: float
+ *     x-position of the centre of the circle.
+ * yc: float
+ *     y-position of the centre of the circle.
+ * r: float
+ *     standard deviation of the Gaussian, in units of pixels.
+ * support : float
+ *     number of standard deviations beyond which the Gaussian is truncated.
+ *
+ * Return
+ * ------
+ *
+ * 2D array of floats, containing the integral of the function Gc over each
+ * pixel.
+ *
+ * Notes
+ * -----
+ *
+ * The zeroth axis of the output array is for the y-dimension and the
+ * first axis is for the x-dimension. i.e., out.shape -> (ypix, xpix)
+ * This can be VERY CONFUSING, particularly when one remembers that imshow's
+ * behaviour is to plot the zeroth axis as the vertical coordinate and the first
+ * axis as the horizontal coordinate.
+ *
+ * Here we treat function Gc as a Gaussian within the set `U` and zero outside.
+ * Therefore the set `U` is effectively the support of the function `f`. `U` is
+ * defined as the set of points (x,y) in the grid such that:
+ * U := {(x,y) in Grid: |x-xc| <= support * sigma; |y-yc| <= support * sigma}
+ * The reason why the support `U` has a square shape is that this is a
+ * convenient grid where to compute the factorizable integral of f(x,y).
+ * In the future the algorithm might use the circle Uc of centre (xc, yc) and
+ * radius
+ *  `support * sigma` as support. This does not make a difference in most cases,
+ *  provided that the light profile under study does not fall off as fast as a
+ *  Gaussian and `support` is a reasonable number (here ``reasonable`` is short
+ *  for: five is safe, three is risky, one is crazy and seven is too cautios).
+ */
+extern "C" int weight_map_Gaussian(int nx, int ny, double xc, double yc, double sigma, double n_sigma, double* output)
+{
+    double supp_radius = n_sigma * sigma;
+    int x_supp_min = floor(xc - supp_radius) > 0 ? int(floor(xc - supp_radius)) : 0;
+    int x_supp_max = ceil(xc + supp_radius) < nx ? int(ceil(xc + supp_radius)) : nx;
+    int y_supp_min = floor(yc - supp_radius) > 0 ? int(floor(yc - supp_radius)) : 0;
+    int y_supp_max = ceil(yc + supp_radius) < ny ? int(ceil(yc + supp_radius)) : ny;
+
+    // Before performing the integrals, we operate a change of variables. This is
+    // elegant, efficient and exquisitely stable.
+    double xNorm_supp_min = (double(x_supp_min) - xc)/sigma;
+    double yNorm_supp_min = (double(y_supp_min) - yc)/sigma;
+    double xNorm_supp_max = (double(x_supp_max) - xc)/sigma;
+    double yNorm_supp_max = (double(y_supp_max) - yc)/sigma;
+
+    int x_supp_size = x_supp_max - x_supp_min;
+    int y_supp_size = y_supp_max - y_supp_min;
+
+    // Arrays to store the integrals of the Gaussian.
+    double integrx[x_supp_size], integry[y_supp_size];
+    double *pintegrx = integrx, *pintegry = integry;
+    //integrx = np.array([_inteGRaussian(xk, xk + 1.) for xk in supp_x])
+    //integry = np.array([_inteGRaussian(yk, yk + 1.) for yk in supp_y])
+    double delta = 1./sigma;
+
+    //std::cout << "Size of supp is (" << x_supp_size << ", " << y_supp_size << ")" << std::endl;
+    //std::cout << "The support is given by " << x_supp_min << ", " << x_supp_max << ";  " << y_supp_min << ", " << y_supp_max << std::endl;
+    //std::cout << "Centre is (" << xc << ", " << yc <<  ")" << std::endl;
+
+    for (int i=0; i<x_supp_size; i++) {
+        *(pintegrx+i) = _inteGRaussian(
+             xNorm_supp_min+double(i)*delta,
+             xNorm_supp_min+double(i+1)*delta);
+    }
+    for (int i=0; i<y_supp_size; i++) {
+        *(pintegry+i) = _inteGRaussian(
+             yNorm_supp_min+double(i)*delta,
+             yNorm_supp_min+double(i+1)*delta);
+    }
+
+    // Assign zero to all the elements of the array outside the circle...
+    // TODO
+
+    // Now assign the values of the 2D-integral.
+    double *poutput = output;
+    //for (int j=y_supp_min; j<=y_supp_max; j++) {
+    for (int j=0; j<y_supp_size; j++) {
+        //for (int i=x_supp_min; i<=x_supp_max; i++) {
+        for (int i=0; i<x_supp_size; i++) {
+            //std::cout << "Assigning 2D Integral at step (" << i << ", " << j << ")" << std::endl;
+            //*(poutput + j*nx+i) = *(pintegrx + i) * *(pintegry + j);
+            *(poutput + (j+y_supp_min)*nx+i+x_supp_min) = *(pintegrx + i) * *(pintegry + j);
+        }
+    }
+
   return 0;
 }
