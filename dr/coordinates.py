@@ -163,7 +163,7 @@ def copy_coords(hdulist):
     fibre_table_extension = hdulist[find_fibre_table(hdulist)]
     new_extension = fibre_table_extension.copy()
     # Name the extension so it can be found later
-    new_extension.update_ext_name('OLD_COORDS')
+    new_extension.header['EXTNAME'] = 'OLD_COORDS'
     hdulist.append(new_extension)
     return
     
