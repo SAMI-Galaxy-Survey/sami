@@ -1900,8 +1900,6 @@ class Manager:
                 fake_derive_transfer_function):
             done_list = self.map(telluric_correct_pair, inputs_list)
         self.n_cpu = old_n_cpu
-        print 'Seeing QC'
-        code.interact(local=dict(globals(),**locals()))
         for inputs in [inputs for inputs, done in
                        zip(inputs_list, done_list) if done]:
             # Copy the FWHM measurement to the QC header
@@ -4623,7 +4621,6 @@ def read_stellar_mags():
             skiprows = 1
             delimiter = None
             name_func = lambda d: d['ID']
-        #code.interact(local=dict(globals(),**locals()))
         data = np.loadtxt(path, skiprows=skiprows, delimiter=delimiter,
                           dtype={'names': names, 'formats': formats})
         if data.shape == ():
