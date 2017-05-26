@@ -36,6 +36,8 @@ from scipy.ndimage.filters import median_filter
 from scipy.ndimage.measurements import label
 from . import voronoi_2d_binning_wcovar
 
+import code
+
 def bin_cube_pair(path_blue, path_red, name=None, **kwargs):
     """Calculate bins, do binning and save results for a pair of cubes."""
     hdulist_blue = pf.open(path_blue, 'update')
@@ -94,7 +96,7 @@ def return_bin_mask(hdu, mode='adaptive', targetSN=10, minSN=None, sectors=8,rad
 
     return bin_mask
 
-def bin_cube(hdu,bin_mask, mode=''):
+def bin_cube(hdu,bin_mask, mode='', **kwargs):
     #Produce a SAMI cube where each spaxel contains the
     #spectrum of the bin it is associated with
     
@@ -122,7 +124,7 @@ def bin_cube(hdu,bin_mask, mode=''):
         if n_spaxels == 1:
             binned_cube[:,spaxel_coords[0,:],spaxel_coords[1,:]] = cube[:,spaxel_coords[0,:],spaxel_coords[1,:]]
             binned_var[:,spaxel_coords[0,:],spaxel_coords[1,:]] = var[:,spaxel_coords[0,:],spaxel_coords[1,:]]
-        else:
+        elif n_spaxels > 1:
             binned_spectrum = np.nansum(cube[:,spaxel_coords[0,:],spaxel_coords[1,:]],axis=1)/n_spaxels
             binned_weighted_spectrum = np.nansum(weighted_cube[:,spaxel_coords[0,:],spaxel_coords[1,:]],axis=1)#/n_spaxels
             binned_weight = np.nansum(weight[:,spaxel_coords[0,:],spaxel_coords[1,:]],axis=1)
@@ -199,7 +201,6 @@ def return_covar_factor(xin,yin,covar,order):
     
     covar_factor = np.zeros((covar.shape[0],len(xin)))
     covar_factor[:,0] = np.ones(covar.shape[0])
-
     #covar_image = np.nanmedian(covar,axis=0)
     #covar_matrix = np.rollaxis(covar_image[:,:,xin,yin],2)
     #covar_flat = np.reshape(covar_matrix,(len(xin),n_grid**2))
