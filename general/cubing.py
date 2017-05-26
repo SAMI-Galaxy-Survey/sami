@@ -201,7 +201,7 @@ from pdb import set_trace
 
 # This simple switch allows to test the alternative cubing methods. Do not change.
 if 1:
-    from ..utils.circ import resample_circle as compute_weights
+    from ..utils.cCirc import resample_circle as compute_weights
     cubing_method = 'Tophat'
 else:
     warning_message = 'The Gaussian weighting scheme is not fully assessed.'
