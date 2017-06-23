@@ -115,9 +115,9 @@ else:
     def ICRS(*args, **kwargs):
         return coord.SkyCoord(*args, frame='icrs', **kwargs)
 
-IDX_FILES_SLOW = {'580V': 'sami580V_v1_3.idx',
-                  '1500V': 'sami1500V_v1_3.idx',
-                  '1000R': 'sami1000R_v1_3.idx'}
+IDX_FILES_SLOW = {'580V': 'sami580V_v1_5.idx',
+                  '1500V': 'sami1500V_v1_5.idx',
+                  '1000R': 'sami1000R_v1_5.idx'}
 IDX_FILES_FAST = {'580V': 'sami580V.idx',
                   '1500V': 'sami1500V.idx',
                   '1000R': 'sami1000R.idx'}
@@ -766,7 +766,7 @@ class Manager:
 
     def __init__(self, root, copy_files=False, move_files=False, fast=False,
                  gratlpmm=GRATLPMM, n_cpu=1, demo=False,
-                 demo_data_source='demo',use_twilight_tlm_blue=False,verbose=False):
+                 demo_data_source='demo',use_twilight_tlm_blue=False,use_twilight_flat_blue=False,verbose=False):
         if fast:
             self.speed = 'fast'
         else:
@@ -775,6 +775,9 @@ class Manager:
         # define the internal flag that allows twilights to be used for
         # making tramline maps:
         self.use_twilight_tlm_blue = use_twilight_tlm_blue
+        # define the internal flag that allows twilights to be used for
+        # fibre flat fielding:
+        self.use_twilight_flat_blue = use_twilight_flat_blue
         # Internal flag to allow for greater output during processing.
         # this is not actively used at present, but show be at some point
         # so we can easily get output for testing
@@ -823,6 +826,11 @@ class Manager:
             print 'Using twilight frames to derive TLM and profile map'
         else:
             print 'NOT using twilight frames to derive TLM and profile map'
+            
+        if use_twilight_flat_blue:
+            print 'Using twilight frames for fibre flat field'
+        else:
+            print 'NOT using twilight frames for fibre flat field'
             
         self.demo = demo
         self.demo_data_source = demo_data_source
@@ -1405,7 +1413,22 @@ class Manager:
         by copying them to a different file that has class MFFFF using the
         copy_as function."""
 
-        if (self.use_twilight_tlm_blue):
+        # check if ccd keyword argument is set, as we need to account for the
+        # fact that it is also set for the twilight reductions (ccd1 only).
+        do_twilight = True
+        if ('ccd' in kwargs):
+            if (kwargs['ccd'] == 'ccd_1'):
+                do_twilight = True
+                
+            else:
+                do_twilight = False
+            # make a copy of the keywords, but remove the ccd flag for the
+            # reduction of twilights, as it is set again in the call below.
+            kwargs_copy = dict(kwargs)
+            del kwargs_copy['ccd']
+
+            
+        if (self.use_twilight_tlm_blue and do_twilight):
             fits_twilight_list=[]
             print 'Processing twilight frames to get TLM'
             # for each twilight frame use the copy_as() function to
@@ -1413,7 +1436,7 @@ class Manager:
             # placed in the list fits_twilight_list and then can be
             # processed as normal MFFFF files.
             #for fits in self.files(ndf_class='MFSKY',do_not_use=False,**kwargs):
-            for fits in self.files(ndf_class='MFSKY',do_not_use=False,ccd='ccd_1',**kwargs):
+            for fits in self.files(ndf_class='MFSKY',do_not_use=False,ccd='ccd_1',**kwargs_copy):
                 
                 fits_twilight_list.append(self.copy_as(fits,'MFFFF',overwrite=overwrite))
                 
@@ -1443,12 +1466,50 @@ class Manager:
         self.next_step('reduce_arc', print_message=True)
         return
 
-    def reduce_fflat(self, overwrite=False, **kwargs):
+    def reduce_fflat(self, overwrite=False, twilight_only=False,**kwargs):
         """Reduce all fibre flat frames matching given criteria."""
-        file_iterable = self.files(ndf_class='MFFFF', do_not_use=False,
+
+        # check if ccd keyword argument is set, as we need to account for the
+        # fact that it is also set for the twilight reductions (ccd1 only).
+        do_twilight = True
+        if ('ccd' in kwargs):
+            if (kwargs['ccd'] == 'ccd_1'):
+                do_twilight = True
+                
+            else:
+                do_twilight = False
+            # make a copy of the keywords, but remove the ccd flag for the
+            # reduction of twilights, as it is set again in the call below.
+            kwargs_copy = dict(kwargs)
+            del kwargs_copy['ccd']
+
+        
+        if (self.use_twilight_flat_blue and do_twilight):
+            fits_twilight_list=[]
+            print 'Processing twilight frames to get fibre flat field'
+            # The twilights should already have been copied as MFFFF
+            # at the make_tlm stage, but we can do this again here without
+            # any penalty (easier to sue the same code).  So for   
+            # each twilight frame use the copy_as() function to
+            # make a copy with file type MFFFF.  The copied files are
+            # placed in the list fits_twilight_list and then can be
+            # processed as normal MFFFF files.
+            #for fits in self.files(ndf_class='MFSKY',do_not_use=False,**kwargs):
+            for fits in self.files(ndf_class='MFSKY',do_not_use=False,ccd='ccd_1',**kwargs_copy):
+                
+                fits_twilight_list.append(self.copy_as(fits,'MFFFF',overwrite=overwrite))
+                
+            # use the iterable file reducer to loop over the copied twilight list and
+            # reduce them as MFFFF files:
+            self.reduce_file_iterable(fits_twilight_list, overwrite=overwrite, check='FLT')
+
+        # now we will process the normal MFFFF files
+        if (not twilight_only):
+            file_iterable = self.files(ndf_class='MFFFF', do_not_use=False,
                                    **kwargs)
-        self.reduce_file_iterable(
-            file_iterable, overwrite=overwrite, check='FLT')
+            self.reduce_file_iterable(
+                file_iterable, overwrite=overwrite, check='FLT')
+            
         self.next_step('reduce_fflat', print_message=True)
         return
 
@@ -2505,6 +2566,13 @@ class Manager:
             best_tlm = 'tlmap_mfsky'
         else:
             best_tlm = 'tlmap'
+            
+        # Define what the best choice is for a FFLAT, in particular
+        # if we are going to use a twilight flat:
+        if (self.use_twilight_flat_blue):
+            best_fflat = 'fflat_mfsky'
+        else:
+            best_fflat = 'fflat'
 
         # add options for just CCD_2:
         if fits.ccd == 'ccd_2':
@@ -2543,26 +2611,32 @@ class Manager:
                 # leave it as this, but it may be that the twilight tlm (if
                 # available) is better, at least in regard to the measurement
                 # of the fibre profile widths.
-                files_to_match = ['bias', 'dark', 'lflat', 'tlmap_flap', 
-                                  'wavel']
+                #files_to_match = ['bias', 'dark', 'lflat', 'tlmap_flap', 
+                #                  'wavel']
+                # 2dfdr always remakes a TLM for an MFFFF, so don't set the
+                # tlmap for these anyway:
+                files_to_match = ['bias', 'dark', 'lflat','wavel']
             else:
                 # if this is an MFFFF then always assure that we are using the
                 # TLM that came from that file.  The main reason for this is that
                 # if we pass a different TLM file, then a new TLM will be generated
                 # anyway, but overwritten into the filename that is passed (e.g.
                 # a twilight TLM could be overwritten by a dome flat TLM): 
-                files_to_match = ['bias', 'dark', 'lflat', 'tlmap', 'wavel']
+                #files_to_match = ['bias', 'dark', 'lflat', 'tlmap', 'wavel']
+                # 2dfdr always remakes a TLM for an MFFFF, so don't set the
+                # tlmap for these anyway:
+                files_to_match = ['bias', 'dark', 'lflat','wavel']
         elif fits.ndf_class == 'MFSKY':
             files_to_match = ['bias', 'dark', 'lflat', best_tlm, 'wavel',
-                              'fflat']
+                              best_fflat]
         elif fits.ndf_class == 'MFOBJECT':
             if throughput_method == 'default':
                 files_to_match = ['bias', 'dark', 'lflat', best_tlm, 'wavel',
-                                  'fflat', 'thput']
+                                  best_fflat, 'thput']
                 options.extend(['-TPMETH', 'OFFSKY'])
             elif throughput_method == 'external':
                 files_to_match = ['bias', 'dark', 'lflat', best_tlm, 'wavel',
-                                  'fflat']
+                                 best_fflat]
                 options.extend(['-TPMETH', 'OFFSKY'])
                 options.extend(['-THPUT_FILENAME',
                                 'thput_'+fits.reduced_filename])
@@ -2570,11 +2644,11 @@ class Manager:
                 if (fits.exposure >= self.min_exposure_for_throughput and 
                         fits.has_sky_lines()):
                     files_to_match = ['bias', 'dark', 'lflat', best_tlm, 'wavel',
-                                      'fflat']
+                                      best_fflat]
                     options.extend(['-TPMETH', 'SKYFLUX(MED)'])
                 else:
                     files_to_match = ['bias', 'dark', 'lflat', best_tlm, 'wavel',
-                                      'fflat', 'thput_object']
+                                      best_fflat, 'thput_object']
                     options.extend(['-TPMETH', 'OFFSKY'])
         else:
             raise ValueError('Unrecognised NDF_CLASS: '+fits.ndf_class)
@@ -2650,11 +2724,11 @@ class Manager:
                                 filename_match = self.match_link(fits, 'tlmap_mfsky_any')
                                 if filename_match is None:
                                     print ('Warning: no matching twilight frames found for TLM.'
-                                       'Will default to wsing flat field frames instead'
+                                       'Will default to using flat field frames instead'
                                        'for '+fits.filename)
                                 else:
                                     print ('Warning: No matching twilight found for TLM.'
-                                        'Using a twilight frame from a differnt night'
+                                        'Using a twilight frame from a different night'
                                         'for '+fits.filename)
                                     found = 1
                             else:
@@ -2663,7 +2737,7 @@ class Manager:
                                     'for '+fits.filename)
                                 found = 1
                         else:
-                            print ('Found matching twilight found for TLM '
+                            print ('Found matching twilight for TLM '
                                     'for '+fits.filename)
                             found = 1
                             
@@ -2703,35 +2777,102 @@ class Manager:
                                     'Using a dome flat instead ' + 
                                     fits.filename)
                             
-                elif match_class == 'fflat':
-                    # Try with looser criteria
-                    filename_match = self.match_link(fits, 'fflat_loose')
-                    if filename_match is None:
-                        # Try using a flap flat instead
-                        filename_match = self.match_link(fits, 'fflat_flap')
+                elif match_class == best_fflat:
+                    # If we are using twilights, then go through the 3 different
+                    # twilight options first.  If they are not found, then default
+                    # back to the normal fflat route (this is a copy of the version
+                    # for the TLM above - with minor changes):
+                    found = 0
+                    if self.use_twilight_flat_blue:
+                        filename_match = self.match_link(fits, 'fflat_mfsky')
+                        if filename_match is None:
+                            filename_match = self.match_link(fits, 'fflat_mfsky_loose')
+                            if filename_match is None:
+                                filename_match = self.match_link(fits, 'fflat_mfsky_any')
+                                if filename_match is None:
+                                    print ('Warning: no matching twilight frames found for FFLAT.'
+                                       'Will default to using flat field frames instead'
+                                       'for '+fits.filename)
+                                else:
+                                    print ('Warning: No matching twilight found for FFLAT.'
+                                        'Using a twilight frame from a different night'
+                                        'for '+fits.filename)
+                                    found = 1
+                            else:
+                                print ('Warning: No matching twilight found for FFLAT.'
+                                    'Using a twilight frame from the same night'
+                                    'for '+fits.filename)
+                                found = 1
+                        else:
+                            print ('Found matching twilight for FFLAT '
+                                    'for '+fits.filename)
+                            found = 1
+                            
+                    # if we haven't already found a matching FFLAT above (i.e. if found = 0), then
+                    # go through the options with the flats:
+                    if (found == 0):
+                    # Try with normal FFLAT from flat:
+                        filename_match = self.match_link(fits, 'fflat')
                         if filename_match is None:
                             # Try with looser criteria
-                            filename_match = self.match_link(
-                                fits, 'fflat_flap_loose')
+                            filename_match = self.match_link(fits, 'fflat_loose')
                             if filename_match is None:
-                                # Still nothing. Raise an exception
-                                raise MatchException(
-                                    'No matching fflat found for ' + 
-                                    fits.filename)
+                                # Try using a flap flat instead
+                                filename_match = self.match_link(fits, 'fflat_flap')
+                                if filename_match is None:
+                                    # Try with looser criteria
+                                    filename_match = self.match_link(
+                                        fits, 'fflat_flap_loose')
+                                    if filename_match is None:
+                                        # Still nothing. Raise an exception
+                                        raise MatchException(
+                                            'No matching tlmap found for ' + 
+                                            fits.filename)
+                                    else:
+                                        print ('Warning: No good flat found for FFLAT. '
+                                            'Using flap flat from different field '
+                                            'for ' + fits.filename)
+                                else:
+                                    print ('Warning: No dome flat found for FFLAT. '
+                                        'Using flap flat instead for ' + fits.filename)
                             else:
-                                print ('Warning: No good flat found for '
-                                    'flat fielding. '
-                                    'Using flap flat from different field '
-                                    'for ' + fits.filename)
+                                print ('Warning: No matching flat found for FFLAT. '
+                                        'Using flat from different field for ' + 
+                                    fits.filename)
                         else:
-                            print ('Warning: No dome flat found for flat '
-                                'fielding. '
-                                'Using flap flat instead for ' + fits.filename)
-                    else:
-                        print ('Warning: No matching flat found for flat '
-                            'fielding. '
-                            'Using flat from different field for ' + 
-                            fits.filename)
+                            print ('Warning: No matching twilight found for FFLAT. '
+                                    'Using a dome flat instead ' + 
+                                    fits.filename)
+                            
+                ## elif match_class == 'fflat':
+                ##     # Try with looser criteria
+                ##     filename_match = self.match_link(fits, 'fflat_loose')
+                ##     if filename_match is None:
+                ##         # Try using a flap flat instead
+                ##         filename_match = self.match_link(fits, 'fflat_flap')
+                ##         if filename_match is None:
+                ##             # Try with looser criteria
+                ##             filename_match = self.match_link(
+                ##                 fits, 'fflat_flap_loose')
+                ##             if filename_match is None:
+                ##                 # Still nothing. Raise an exception
+                ##                 raise MatchException(
+                ##                     'No matching fflat found for ' + 
+                ##                     fits.filename)
+                ##             else:
+                ##                 print ('Warning: No good flat found for '
+                ##                     'flat fielding. '
+                ##                     'Using flap flat from different field '
+                ##                     'for ' + fits.filename)
+                ##         else:
+                ##             print ('Warning: No dome flat found for flat '
+                ##                 'fielding. '
+                ##                 'Using flap flat instead for ' + fits.filename)
+                ##     else:
+                ##         print ('Warning: No matching flat found for flat '
+                ##             'fielding. '
+                ##             'Using flat from different field for ' + 
+                ##             fits.filename)
                 elif match_class == 'wavel':
                     # Try with looser criteria
                     filename_match = self.match_link(fits, 'wavel_loose')
@@ -2762,6 +2903,17 @@ class Manager:
                     match_class = 'tlmap'
                 elif match_class == 'thput_object':
                     match_class = 'thput'
+                elif match_class == 'fflat_flap':
+                    match_class = 'fflat'
+                elif match_class == 'fflat_loose':
+                    match_class = 'fflat'
+                elif match_class == 'fflat_mfsky':
+                    match_class = 'fflat'
+                elif match_class == 'fflat_mfsky_loose':
+                    match_class = 'fflat'
+                elif match_class == 'fflat_mfsky_any':
+                    match_class = 'fflat'
+
                 options.extend(['-'+match_class.upper()+'_FILENAME',
                                 filename_match])
         return options        
@@ -3018,6 +3170,9 @@ class Manager:
         tlmap_flap_loose -- As tlmap_flap, but with less strict criteria
         wavel            -- Find a reduced arc file
         wavel_loose      -- As wavel, but with less strict criteria
+        fflat_mfsky      -- Find a reduced fibre flat field from a twilight flat
+        fflat_mfsky_loose-- Find a reduced fibre flat field from any twilight flat field on a night
+        fflat_mksky_any  -- Find a reduced fibre flat field from any twilight flat field in a manager set 
         fflat            -- Find a reduced fibre flat field from the dome lamp
         fflat_loose      -- As fflat, but with less strict criteria
         fflat_flap       -- As fflat, but from the flap lamp
@@ -3171,6 +3326,37 @@ class Manager:
             ccd = fits.ccd
             reduced = True
             fom = time_difference
+        # options for using twilight frame as flibre flat:
+        elif match_class.lower() == 'fflat_mfsky':
+            # allow MFSKY to be used:
+            ndf_class = 'MFSKY'
+            date = fits.date
+            plate_id = fits.plate_id
+            field_id = fits.field_id
+            min_fluxlev = 1000.0
+            max_fluxlev = 40000.0  # use a max_fluxlev to reduce the chance of saturated twilights
+            ccd = fits.ccd
+            copy_reduced = True
+            fom = flux_level
+        elif match_class.lower() == 'fflat_mfsky_loose':
+            # this is the case where we take the brightest twilight on the same
+            # night, irrespective of whether its from the same plate.
+            ndf_class = 'MFSKY'
+            date = fits.date
+            min_fluxlev = 1000.0
+            max_fluxlev = 40000.0  # use a max_fluxlev to reduce the chance of saturated twilights
+            ccd = fits.ccd
+            copy_reduced = True
+            fom = flux_level
+        elif match_class.lower() == 'fflat_mfsky_any':
+            # in this case find the best (brightest) twilight frame from anywhere
+            # during the run.
+            ndf_class = 'MFSKY'
+            min_fluxlev = 1000.0
+            max_fluxlev = 40000.0  # use a max_fluxlev to reduce the chance of saturated twilights
+            ccd = fits.ccd
+            copy_reduced = True
+            fom = flux_level            
         elif match_class.lower() == 'fflat':
             # Find a reduced fibre flat field from the dome lamp
             ndf_class = 'MFFFF'
@@ -3321,6 +3507,7 @@ class Manager:
         """Match and make a link to a file, and return the filename."""
 #        print 'started match_link: ',match_class,fits.filename
         fits_match = self.matchmaker(fits, match_class)
+
         if fits_match is None:
             # No match was found, send the lack of match onwards
             return None
@@ -3346,6 +3533,13 @@ class Manager:
             filename = self.copy_path(fits_match.reduced_filename)
             raw_filename = self.copy_path(fits_match.filename)
             raw_dir = fits_match.reduced_dir
+        elif match_class.lower().startswith('fflat_mfsky'):
+            # case of using twilight frame for fibre flat.  In this case
+            # we need to use the copy_reduced_filename, that is the one
+            # with the leading 9 in the file name:
+            filename = fits_match.copy_reduced_filename
+            raw_filename = fits_match.filename
+            raw_dir = fits_match.raw_dir
         else:
             filename = fits_match.reduced_filename
             raw_filename = fits_match.filename
@@ -3355,7 +3549,8 @@ class Manager:
             'tlmap_mfsky', 'tlmap_mfsky_loose', 'tlmap_mfsky_any',
             'tlmap', 'tlmap_loose', 'tlmap_flap', 'tlmap_flap_loose', 
             'fflat', 'fflat_loose', 'fflat_flap', 'fflat_flap_loose',
-            'wavel', 'wavel_loose', 'thput', 'thput_fflat', 'thput_object', 'tlmap_mfsky']
+            'wavel', 'wavel_loose', 'thput', 'thput_fflat', 'thput_object',
+             'tlmap_mfsky', 'fflat_mfsky', 'fflat_mfsky_loose', 'fflat_mfsky_any']
         if match_class.lower() in require_link:
             link_path = os.path.join(fits.reduced_dir, filename)
             source_path = os.path.join(fits_match.reduced_dir, filename)
@@ -3763,6 +3958,7 @@ class FITSFile:
         self.header = self.hdulist[0].header
         self.set_ndf_class()
         self.set_reduced_filename()
+        self.set_copy_reduced_filename()
         self.set_date()
         if self.ndf_class and self.ndf_class not in ['BIAS', 'DARK', 'LFLAT']:
             self.set_fibres_extno()
@@ -3853,6 +4049,17 @@ class FITSFile:
         elif self.ndf_class == 'MFOBJECT':
             self.fluxcal_filename = self.filename_root + 'fcal.fits'
             self.telluric_filename = self.filename_root + 'sci.fits'
+        return
+    
+    def set_copy_reduced_filename(self):
+        """Set the filename for the reduced version of a copied file.
+        This will be numbered 06mar19001red.fits rather than  06mar10001red.fits"""
+        self.copy_reduced_filename = self.filename_root + 'red.fits'
+        old_num = int(self.filename_root[6:10])
+        new_num = old_num + 1000 * (9 - (old_num / 1000))
+        new_filename_root = (self.filename_root[:6] + '{:04d}'.format(new_num) + self.filename_root[10:])
+        self.copy_reduced_filename = new_filename_root + 'red.fits'
+
         return
 
     def set_date(self):
