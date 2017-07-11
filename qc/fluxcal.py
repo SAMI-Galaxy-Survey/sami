@@ -302,7 +302,7 @@ def get_sdss_stellar_mags(mngr, catalogue=None, automatic=False):
         print 'All magnitudes already in the catalogue.'
         return False
 
-    url = 'http://cas.sdss.org/dr7/en/tools/crossid/x_crossid.asp'
+    url = 'https://skyserver.sdss.org/dr10/en/tools/crossid/crossid.asp'
 
     query_list = ""
     query_list += "name ra dec\n"
