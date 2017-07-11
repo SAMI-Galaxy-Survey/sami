@@ -93,6 +93,7 @@ from .qc.fluxcal import stellar_mags_cube_pair, stellar_mags_frame_pair
 from .qc.fluxcal import throughput, get_sdss_stellar_mags
 from .qc.sky import sky_residuals
 from .qc.arc import bad_fibres
+from .dr.fflat import correct_bad_fibres
 
 # Temporary edit. Prevent bottleneck 1.0.0 being used.
 try:
@@ -118,6 +119,7 @@ else:
 IDX_FILES_SLOW = {'580V': 'sami580V_v1_5.idx',
                   '1500V': 'sami1500V_v1_5.idx',
                   '1000R': 'sami1000R_v1_5.idx'}
+
 IDX_FILES_FAST = {'580V': 'sami580V.idx',
                   '1500V': 'sami1500V.idx',
                   '1000R': 'sami1000R.idx'}
@@ -1426,6 +1428,8 @@ class Manager:
             # reduction of twilights, as it is set again in the call below.
             kwargs_copy = dict(kwargs)
             del kwargs_copy['ccd']
+        else:
+            kwargs_copy = dict(kwargs)
 
             
         if (self.use_twilight_tlm_blue and do_twilight):
@@ -1482,7 +1486,8 @@ class Manager:
             # reduction of twilights, as it is set again in the call below.
             kwargs_copy = dict(kwargs)
             del kwargs_copy['ccd']
-
+        else:
+            kwargs_copy = dict(kwargs)
         
         if (self.use_twilight_flat_blue and do_twilight):
             fits_twilight_list=[]
@@ -1501,7 +1506,12 @@ class Manager:
                 
             # use the iterable file reducer to loop over the copied twilight list and
             # reduce them as MFFFF files:
-            self.reduce_file_iterable(fits_twilight_list, overwrite=overwrite, check='FLT')
+            reduced_twilights = self.reduce_file_iterable(fits_twilight_list, overwrite=overwrite, check='FLT')
+
+            # Identify bad fibres and replace with an average over all other twilights
+            if len(reduced_twilights) >= 3:
+                    path_list = [os.path.join(fits.reduced_dir,fits.copy_reduced_filename) for fits in reduced_twilights]
+                    correct_bad_fibres(path_list)
 
         # now we will process the normal MFFFF files
         if (not twilight_only):
