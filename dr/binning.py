@@ -258,8 +258,8 @@ def adaptive_bin_sami(hdu, targetSN=10.0, minSN=None):
 
         # Added by DEF for JVDS.
         if len(goodpixels) == 0:
-        goodpixels = np.where((np.isfinite(signal) == True) &
-                              (np.isfinite(noise) == True))
+            goodpixels = np.where((np.isfinite(signal) == True) &
+                                  (np.isfinite(noise) == True))
 
     signal = signal[goodpixels]
     noise = noise[goodpixels]
