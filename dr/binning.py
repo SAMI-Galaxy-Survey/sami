@@ -187,11 +187,11 @@ def aperture_spectra_pair(path_blue, path_red, path_to_catalogs):
             'ellipticity': gama_catalogs.retrieve('SersicCatAll', 'GAL_ELLIP_R', sami_id)
         }
 
-        standard_apertures['r90'] = {
-            'aperture_radius': gama_catalogs.retrieve('SersicCatAll', 'GAL_R90_R', sami_id)/pix_size,
-            'pa': gama_catalogs.retrieve('SersicCatAll', 'GAL_PA_R', sami_id) + pos_angle_adjust,
-            'ellipticity': gama_catalogs.retrieve('SersicCatAll', 'GAL_ELLIP_R', sami_id)
-        }
+#        standard_apertures['r90'] = {
+#            'aperture_radius': gama_catalogs.retrieve('SersicCatAll', 'GAL_R90_R', sami_id)/pix_size,
+#            'pa': gama_catalogs.retrieve('SersicCatAll', 'GAL_PA_R', sami_id) + pos_angle_adjust,
+#            'ellipticity': gama_catalogs.retrieve('SersicCatAll', 'GAL_ELLIP_R', sami_id)
+#        }
 
         redshift = gama_catalogs.retrieve('DistanceFrames', 'Z_TONRY_2', sami_id)
         ang_size_kpc = (1*u.kpc / cosmo.kpc_proper_per_arcmin(redshift)).to(u.arcsec).value / pix_size
@@ -202,16 +202,40 @@ def aperture_spectra_pair(path_blue, path_red, path_to_catalogs):
             'ellipticity': 0
         }
 
-        try:
-            seeing = get_seeing(hdulist_blue)
-        except:
-            print "Unable to determine seeing for %s, seeing aperture not included" % path_blue
-        else:
-            standard_apertures['seeing'] = {
-                'aperture_radius': seeing/pix_size,
-                'pa': 0,
-                'ellipticity': 0
+        standard_apertures['1.4_arcsecond'] = {
+            'aperture_radius': 1.4/pix_size,
+            'pa': 0,
+            'ellipticity': 0
+        }
+
+        standard_apertures['2_arcsecond'] = {
+            'aperture_radius': 2.0/pix_size,
+            'pa': 0,
+            'ellipticity': 0
+        }
+
+        standard_apertures['3_arcsecond'] = {
+            'aperture_radius': 3.0/pix_size,
+            'pa': 0,
+            'ellipticity': 0
             }
+
+        standard_apertures['4_arcsecond'] = {
+            'aperture_radius': 4.0/pix_size,
+            'pa': 0,
+            'ellipticity': 0
+            }
+
+#        try:
+#            seeing = get_seeing(hdulist_blue)
+#        except:
+#            print "Unable to determine seeing for %s, seeing aperture not included" % path_blue
+#        else:
+#            standard_apertures['seeing'] = {
+#                'aperture_radius': seeing/pix_size,
+#                'pa': 0,
+#                'ellipticity': 0
+#            }
 
         bin_mask = None
 
