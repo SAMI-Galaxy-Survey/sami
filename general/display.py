@@ -14,8 +14,6 @@ import astropy.io.fits as pf
 import string
 import itertools
 
-from scipy.stats import stats
-
 # Circular patch.
 from matplotlib.patches import Circle
 from matplotlib.collections import PatchCollection
@@ -77,7 +75,7 @@ def display(infile, ifus='all', log=True):
 
         # Sum up the data - across a broad band, 200:1800 pixels.
         data_sum=np.nansum(ifu_data.data[:,200:1800],axis=1)
-        data_med=stats.nanmedian(ifu_data.data[:,200:1800],axis=1)
+        data_med=np.nanmedian(ifu_data.data[:,200:1800],axis=1)
 
         # X and Y positions in microns.
         x_m=ifu_data.x_microns
@@ -186,7 +184,7 @@ def display_list(inlist, ifu, log=True):
 
         # Sum up the data - across a broad band, 200:1800 pixels.
         data_sum=np.nansum(ifu_data.data[:,200:1800],axis=1)
-        data_med=stats.nanmedian(ifu_data.data[:,200:1800],axis=1)
+        data_med=np.nanmedian(ifu_data.data[:,200:1800],axis=1)
 
         # X and Y positions in microns.
         x_m=ifu_data.x_microns
@@ -258,7 +256,7 @@ def summed_spectrum(infile, ifu, overplot=False):
 
     # Sum up the data - across all fibres in the hexabundle.
     data_sum=np.nansum(ifu_data.data,axis=0)
-    data_med=stats.nanmedian(ifu_data.data,axis=0)
+    data_med=np.nanmedian(ifu_data.data,axis=0)
     
     # Plot the spectrum.
     py.plot(L, data_sum)
@@ -290,7 +288,7 @@ def field(infile, ifus='all', log=True):
         
         # Sum up the data - across a broad band, 200:1800 pixels.
         data_sum=np.nansum(ifu_data.data[:,200:1800],axis=1)
-        data_med=stats.nanmedian(ifu_data.data[:,200:1800],axis=1)
+        data_med=np.nanmedian(ifu_data.data[:,200:1800],axis=1)
 
         # X and Y positions in microns.
         x_m=ifu_data.x_microns

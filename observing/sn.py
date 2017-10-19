@@ -39,8 +39,6 @@ import astropy.io.ascii as tab
 
 import sys
 
-from scipy.stats import stats
-
 from matplotlib.patches import Circle
 
 # Relative imports from sami package
@@ -310,7 +308,7 @@ def sn_re(insami, tablein, l1, l2, plot=False, ifus='all',
         sn_spec = myIFU.data/np.sqrt(myIFU.var)
         
         # Median SN over lambda range (per Angstrom)
-        sn = stats.nanmedian(sn_spec[:, idx1:idx2], axis=1) * (1./myIFU.cdelt1)
+        sn = np.nanmedian(sn_spec[:, idx1:idx2], axis=1) * (1./myIFU.cdelt1)
         
         # ----------------------------------
         # (5) Find galaxy centre (peak SNR)
@@ -371,13 +369,13 @@ def sn_re(insami, tablein, l1, l2, plot=False, ifus='all',
             
             # Get median S/N of cores @Re: 
             if 1 in good_core:
-                sn_Re = stats.nanmedian(sn[good_core == True])        
+                sn_Re = np.nanmedian(sn[good_core == True])        
                 sn_min = min(sn[good_core == True])
                 sn_max = max(sn[good_core == True])
                 
             if verbose: 
                 if not 1 in good_core:
-                    sn_str = str(np.round(stats.nanmedian(sn)))
+                    sn_str = str(np.round(np.nanmedian(sn)))
                     print("** Could not match Re")
                     print('=> Median overall S/N = '+sn_str)
                     print('')

@@ -163,7 +163,7 @@ def copy_coords(hdulist):
     fibre_table_extension = hdulist[find_fibre_table(hdulist)]
     new_extension = fibre_table_extension.copy()
     # Name the extension so it can be found later
-    new_extension.update_ext_name('OLD_COORDS')
+    new_extension.header['EXTNAME'] = 'OLD_COORDS'
     hdulist.append(new_extension)
     return
     
@@ -198,7 +198,7 @@ def correct_coordinates(filename):
     if do_rotate or do_switch:
         header = hdulist[0].header
         # We will edit the file, so record which version of the code was used
-        header.update('HGCOORDS', HG_CHANGESET,
+        header['HGCOORDS'] = (HG_CHANGESET,
                       'Hg changeset ID for coordinates code')
         try:
             # First try to copy the old coordinates back into the fibre table
@@ -210,17 +210,17 @@ def correct_coordinates(filename):
         # Do the manipulations
         if do_rotate:
             rotate_all_hexas(fibre_table)
-            header.update('COORDROT', True,
+            header['COORDROT'] = (True,
                           'The hexabundle coordinates were rotated')
         else:
-            header.update('COORDROT', False,
+            header['COORDROT'] = (False,
                           'The hexabundle coordinates were rotated')
         if do_switch:
             reverse_probes(fibre_table)
-            header.update('COORDREV', True,
+            header['COORDREV'] = (True,
                           'The hexabundle probe allocations were reversed')
         else:
-            header.update('COORDREV', False,
+            header['COORDREV'] = (False,
                           'The hexabundle probe allocations were reversed')
         hdulist.close()
     
