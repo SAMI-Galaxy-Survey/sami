@@ -63,12 +63,8 @@ from time import sleep
 from glob import glob
 from pydoc import pager
 import itertools
-<<<<<<< local
 import traceback
-=======
 import datetime
->>>>>>> other
-
 import astropy.coordinates as coord
 from astropy import units
 import astropy.io.fits as pf

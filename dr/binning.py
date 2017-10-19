@@ -56,7 +56,6 @@ def bin_cube_pair(path_blue, path_red, name=None, **kwargs):
     hdulist_blue.close()
     hdulist_red.close()
 
-<<<<<<< local
 def is_id_in_catalogs(sami_id, catalogs):
     sami_id = int(sami_id)
     for cat in catalogs:
@@ -316,10 +315,7 @@ def aperture_spectra_pair(path_blue, path_red, path_to_catalogs):
             log.info("Aperture spectra written to %s", output_filename)
 
 
-def bin_and_save(hdulist, bin_mask, name=None):
-=======
 def bin_and_save(hdulist, bin_mask, name=None, **kwargs):
->>>>>>> other
     """Do binning and save results for an HDUList."""
     # TODO: Check if the extensions already exist. In most cases you would
     # want to either overwrite or just return without doing anything, but
@@ -367,15 +363,10 @@ def return_bin_mask(hdu, mode='adaptive', targetSN=10, minSN=None, sectors=8,rad
 
     return bin_mask
 
-<<<<<<< local
-def bin_cube(hdu, bin_mask):
-    """Produce a SAMI cube where each spaxel contains the
-    spectrum of the bin it is associated with.
-=======
+    """
 def bin_cube(hdu,bin_mask, mode='', **kwargs):
     #Produce a SAMI cube where each spaxel contains the
     #spectrum of the bin it is associated with
->>>>>>> other
     
     Parameters
 
@@ -406,12 +397,6 @@ def bin_cube(hdu,bin_mask, mode='', **kwargs):
 
     n_bins = int(np.max(bin_mask))
 
-<<<<<<< local
-        for i in range(n_bins):
-            spaxel_coords = np.array(np.where(bin_mask == i+1))
-            binned_spectrum = np.nansum(cube[:,spaxel_coords[0,:],spaxel_coords[1,:]],axis=1)/len(spaxel_coords[0])
-            binned_weighted_spectrum = np.nansum(weighted_cube[:,spaxel_coords[0,:],spaxel_coords[1,:]],axis=1)/len(spaxel_coords[0])
-=======
     for i in range(n_bins):
         spaxel_coords = np.array(np.where(bin_mask == i+1))
         n_spaxels = len(spaxel_coords[0])
@@ -421,26 +406,15 @@ def bin_cube(hdu,bin_mask, mode='', **kwargs):
         elif n_spaxels > 1:
             binned_spectrum = np.nansum(cube[:,spaxel_coords[0,:],spaxel_coords[1,:]],axis=1)/n_spaxels
             binned_weighted_spectrum = np.nansum(weighted_cube[:,spaxel_coords[0,:],spaxel_coords[1,:]],axis=1)#/n_spaxels
->>>>>>> other
             binned_weight = np.nansum(weight[:,spaxel_coords[0,:],spaxel_coords[1,:]],axis=1)
             binned_weight2 = np.nansum(weight[:,spaxel_coords[0,:],spaxel_coords[1,:]]**2,axis=1)
-<<<<<<< local
-            temp = np.tile(np.reshape(binned_spectrum,(len(binned_spectrum),1)),len(spaxel_coords[0,:]))
-=======
+
             if mode == 'adaptive':
                 temp = np.tile(np.reshape(binned_weighted_spectrum/binned_weight,(len(binned_spectrum),1)),n_spaxels)
             else:
                 temp = np.tile(np.reshape(binned_spectrum,(len(binned_spectrum),1)),n_spaxels)
->>>>>>> other
+
             binned_cube[:,spaxel_coords[0,:],spaxel_coords[1,:]] = temp
-<<<<<<< local
-            binned_weighted_variance = np.nansum(weighted_var[:,spaxel_coords[0,:],spaxel_coords[1,:]]*
-                                        np.nansum(np.nansum(covar[:,:,:,spaxel_coords[0,:],spaxel_coords[1,:]],
-                                        axis=1)/2.0,axis=1),axis=1)
-            binned_variance = binned_weighted_variance*((binned_spectrum/binned_weighted_spectrum)**2)/(len(spaxel_coords[0])**2)
-            binned_var[:,spaxel_coords[0,:],spaxel_coords[1,:]] = np.tile(
-                                    np.reshape(binned_variance,(len(binned_variance),1)),len(spaxel_coords[0,:]))
-=======
             #covar_factor = np.nansum(np.nansum(covar[:,:,:,spaxel_coords[0,:],spaxel_coords[1,:]],axis=1)/2.0,axis=1) #This needs to be an accurate calculation of the covar factor
             order = np.argsort(np.nanmedian(weight[:,spaxel_coords[0,:],spaxel_coords[1,:]],axis=0))[::-1]
             covar_factor = return_covar_factor(spaxel_coords[0,:],spaxel_coords[1,:],covar,order)
@@ -453,7 +427,6 @@ def bin_cube(hdu,bin_mask, mode='', **kwargs):
                 temp_var = np.tile(np.reshape(binned_variance,(len(binned_variance),1)),n_spaxels)
             
             binned_var[:,spaxel_coords[0,:],spaxel_coords[1,:]] = temp_var
->>>>>>> other
 
     return binned_cube,binned_var
 
