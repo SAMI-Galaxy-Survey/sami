@@ -1,30 +1,70 @@
-"""
-Functions to calculate the drizzle overlap between a square and a circle.
+from __future__ import print_function
 
-This calculation is the crucial step in drizzling, to know how much each
-input fibre (circle) overlaps with each output spaxel (square).
+"""
+Functions to calculate the:
+1) drizzle overlap between a square and a circle (function `resample_circle`
+   by Jon Nielsen 2012)
+2) Gaussian overlap between a circular Gaussian and a square grid (function
+   `inteGrauss2d` by Francesco D'Eugenio 2017)
+
+These calculations are the crucial step in drizzling, to know how much each
+input fibre (circle) contributes to each output spaxel (square).
 
 In general this code isn't actually used, as there is a C++ version that
 is significantly faster. The functions here are provided as a fall-back in
 case the C++ version hasn't been compiled.
+
+WARNING by Francesco D'Eugenio 16/02/2017
+The original drizzle overlap as it is implemented in Python has a
+severe bug, in that if the circle falls partially outside the grid, the
+weights are ``wrapped around`` and distributed to the opposide side of the
+grid, as illustrated below.
+
++---+---+---+---+---+---+---+
+|   |   | x | x | x |   |   |
++---+---+---+---+---+---+---+
+|   |   |   | x |   |   |   |
++---+---+---+---+---+---+---+
+|   |   |   |   |   |   |   |
++---+---+---+---+---+---+---+
+|   |   |   |   |   |   |   |
++---+---+---+---+---+---+---+
+|   |   |   | x |   |   |   |
++---+---+---+---+---+---+---+
+|   |   | x | x | x |   |   |
++---+---+---+---+---+---+---+
+|   | x | x | x | x | x |   |
++---+---+---+---+---+---+---+
+
+Because of this bug that I do not have time to address, every time you load
+the pipeline and use this implementation (as opposed to the C++ implementation)
+you will receive a horrible warning. You're welcome.
+
+
 """
 
-# ----------------------------------------------------------------------------------------
-# Written by Jon Nielsen 2012
-# A program to generate a weight map for the intersection of a circle with
-# a square grid.    Squares on the grid that are completely within the circle
-# receive a weight of 1.    Square that intersect the circle are given a weight
-# that is proportional to the area of the square inside the circle.
-#
-# Requires numpy and matplotlib.    Although if you don't care about plotting
-# then you can do without matplotlib.
-# ----------------------------------------------------------------------------------------
 
 import sys
 import math
 import itertools
+import warnings
 
 import numpy as np
+
+from scipy.special import erf
+
+warning_mess = (
+    'There is a bug in the python implementation of `circ`. We recommend that'
+  + ' you read the documentation of this module to assess whether this bug'
+  + ' will affect your science.')
+warnings.warn(warning_mess)
+
+
+SQRT2 = np.sqrt(2.)
+
+# +---+------------------------------------------------------------------------+
+# | 1.| Drizzling functions by Jon Nielsen.                                    |
+# +---+------------------------------------------------------------------------+
 
 def find_squares_in_circle(xc, yc, r):
     # Establish bounds in y
@@ -266,8 +306,9 @@ def area_contribution(p1, p2, xc, yc, r):
 
     return i, j, area
 
-def resample_circle(xpix, ypix, xc, yc, r):
+def resample_circle(xpix, ypix, xc, yc, r, *args):
     """Resample a circle/drop onto an output grid.
+    Written by Jon Nielsen 2012
     
     Parameters
     ----------
@@ -276,10 +317,21 @@ def resample_circle(xpix, ypix, xc, yc, r):
     xc: (float) x-position of the centre of the circle.
     yc: (float) y-position of the centre of the circle.
     r: (float) radius of the circle
+    args: any additional arguments. This is ignored in the context of this
+        function (its purpose is to gather additional arguments that may be
+        passed to equivalent functions with a different signature).
     
     Output
     ------
-    2D array of floats. Note that the zeroth axis is for the y-dimension and the
+    2D array of floats. A weight map for the intersection of a circle with
+    a square grid. Squares on the grid that are completely within the circle
+    receive a weight of 1. Square that intersect the circle are given a weight
+    that is proportional to the area of the square inside the circle.
+
+    Notes
+    -----
+
+    The zeroth axis of the output array is for the y-dimension and the
     first axis is for the x-dimension. i.e., out.shape -> (ypix, xpix)
     This can be VERY CONFUSING, particularly when one remembers that imshow's
     behaviour is to plot the zeroth axis as the vertical coordinate and the first
@@ -326,3 +378,118 @@ def pairwise(iterable):
     a, b = itertools.tee(iterable)
     next(b, None)
     return itertools.izip(a, b)
+
+
+
+# +---+------------------------------------------------------------------------+
+# | 2.| Gaussian integration methods by Francesco D'Eugenio.                   |
+# +---+------------------------------------------------------------------------+
+# Written by Francesco D'Eugenio on the Couch to Canberra. A slow but comfortable ride.
+# 15/02/2017 - but would you trust the date from Windows OS?
+
+
+def _inteGRaussian(a, b):
+
+    """Computes the integral of the univariate normal distribution between the
+    extremes `a` and `b`. In terms of the Error Function `erf` the cumulative
+    distribution of the univariate Normal Distribution is:
+        1/2 (1 + erf( z/sqrt(2)) )
+    """
+
+    return  .5 * (erf(b/SQRT2) - erf(a/SQRT2))
+
+
+
+def inteGrauss2d(xpix, ypix, xc, yc, sigma, support):
+
+    """This function calculates the integral of the 2D Gaussian of mean
+    (`xc`, `yc`) and standard deviation (`sigma`, `sigma`) on a `xpix` by `ypix`
+    grid. The Gaussian is truncated to zero beyond the box of half side
+    `support` times `sigma`. We call the truncated function `Gc`, because it
+    has compact support.
+
+    Parameters
+    ----------
+
+    xpix: int
+        Number of pixels in the x-dimension of the output grid
+    ypix: int
+        Number of pixels in the y-dimension of the output grid
+    xc: float
+        x-position of the centre of the circle.
+    yc: float
+        y-position of the centre of the circle.
+    sigma: float
+        standard deviation of the Gaussian, in units of pixels.
+    support : float
+        number of standard deviations beyond which the Gaussian is truncated.
+
+    Return
+    ------
+
+    2D array of floats, containing the integral of the function Gc over each
+    pixel.
+
+    Notes
+    -----
+
+    The zeroth axis of the output array is for the y-dimension and the
+    first axis is for the x-dimension. i.e., out.shape -> (ypix, xpix)
+    This can be VERY CONFUSING, particularly when one remembers that imshow's
+    behaviour is to plot the zeroth axis as the vertical coordinate and the first
+    axis as the horizontal coordinate.
+
+    Here we treat function Gc as a Gaussian within the set `U` and zero outside.
+    Therefore the set `U` is effectively the support of the function `f`. `U` is
+    defined as the set of points (x,y) in the grid such that:
+      U := {(x,y) in Grid: |x-xc| <= support * sigma; |y-yc| <= support * sigma}
+    The reason why the support `U` has a square shape is that this is a
+    convenient grid where to compute the factorizable integral of f(x,y).
+    In the future the algorithm might use the circle Uc of centre (xc, yc) and
+    radius
+    `support * sigma` as support. This does not make a difference in most cases,
+    provided that the light profile under study does not fall off as fast as a
+    Gaussian and `support` is a reasonable number (here ``reasonable`` is short
+    for: five is safe, three is risky, one is crazy and seven is too cautios).
+    """
+
+    supp_radius = support * sigma
+
+    # Define the support of the function
+    supp_x_min, supp_x_max = (np.max([0., np.floor(xc - supp_radius)]),
+                              np.min([np.ceil(xc + supp_radius), xpix]))
+    supp_y_min, supp_y_max = (np.max([0., np.floor(yc - supp_radius)]),
+                              np.min([np.ceil(yc + supp_radius), ypix]))
+    supp_x = np.arange(supp_x_min, supp_x_max, step=1)
+    supp_y = np.arange(supp_y_min, supp_y_max, step=1)
+
+    #print("Size of supp is ({}, {})".format(supp_x_max-supp_x_min, supp_y_max - supp_y_min))
+    #print("The support is given by: {}, {}, {}, {}".format(
+    #    supp_x_min, supp_x_max, supp_y_min, supp_y_max))
+    #print("Centre is ({}, {})".format(xc, yc))
+
+    # Before performing the integrals, we operate a change of variables. This is
+    # elegant, efficient and exquisitely stable.
+    supp_x -= xc
+    supp_y -= yc
+    supp_x /= sigma
+    supp_y /= sigma
+    delta = 1./sigma
+
+    integrx = np.array([_inteGRaussian(xk, xk + delta) for xk in supp_x])
+    integry = np.array([_inteGRaussian(yk, yk + delta) for yk in supp_y])
+
+    # This is the array of the integrals inside the support.
+    supp_xgrid, supp_ygrid = np.meshgrid(supp_x, supp_y, indexing='xy')
+    weights_insupp = np.array([[ix*iy for ix in integrx] for iy in integry])
+
+    # Now change the support to a circle.
+    #weights_insupp[np.where(supp_xgrid**2. + supp_ygrid**2. > support**2.)] = 0.
+
+    # Finally assign the values of the integral of f inside the circluar support
+    # to the output grid.
+    weights = np.zeros((ypix, xpix))
+    weights[supp_y_min.astype(np.int):supp_y_max.astype(np.int),
+            supp_x_min.astype(np.int):supp_x_max.astype(np.int)] = weights_insupp
+
+    return weights
