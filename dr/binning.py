@@ -176,9 +176,9 @@ def aperture_spectra_pair(path_blue, path_red, path_to_catalogs):
         # size of a pixel in angular units. CDELT1 is the WCS pixel size, and CTYPE1 is "DEGREE"
         pix_size = np.abs((hdulist_blue[0].header['CDELT1'] * u.deg).to(u.arcsec).value)
         # confirm that both files are the same!
-        assert hdulist_blue[0].header['CTYPE1'] == 'DEGREE'
-        assert hdulist_blue[0].header['CTYPE1'] == hdulist_red[0].header['CTYPE1']
-        assert hdulist_blue[0].header['CDELT1'] == hdulist_red[0].header['CDELT1']
+        #assert hdulist_blue[0].header['CTYPE1'] == 'DEGREE'
+        #assert hdulist_blue[0].header['CTYPE1'] == hdulist_red[0].header['CTYPE1']
+        #assert hdulist_blue[0].header['CDELT1'] == hdulist_red[0].header['CDELT1']
 
 
         standard_apertures['re'] = {
@@ -331,7 +331,20 @@ def aperture_spectra_pair(path_blue, path_red, path_to_catalogs):
                 # This is done by creating a new WCS for the cube header,
                 # dropping the first two axes (which are spatial coordinates),
                 # and then appending the remaining header keywords.
-                output_header.extend(WCS(hdulist[0].header).dropaxis(0).dropaxis(0).to_header())
+                #output_header.extend(WCS(hdulist[0].header).dropaxis(0).dropaxis(0).to_header())
+
+
+                output_header['CRVAL1'] = (hdulist[0].header['CRVAL3'],
+                        '[A] Coordinate value at reference point')
+                output_header['CRPIX1'] = (hdulist[0].header['CRPIX3'],
+                        hdulist[0].header.comments['CRPIX3'])
+                output_header['CDELT1'] = (hdulist[0].header['CDELT3'],
+                        '[A] Coordinate increment at reference point')
+                output_header['CUNIT1'] = (hdulist[0].header['CUNIT3'],
+                        hdulist[0].header.comments['CUNIT3'])
+                output_header['CTYPE1'] = (hdulist[0].header['CTYPE3'],
+                        hdulist[0].header.comments['CTYPE3'])
+                output_header['WCSAXES'] = (1,'Number of coordinate axes')
 
                 log.debug("Aperture %s completed", aper)
 
@@ -387,10 +400,10 @@ def return_bin_mask(hdu, mode='adaptive', targetSN=10, minSN=None, sectors=8,rad
 
     return bin_mask
 
-    """
 def bin_cube(hdu,bin_mask, mode='', **kwargs):
-    #Produce a SAMI cube where each spaxel contains the
-    #spectrum of the bin it is associated with
+    """
+    Produce a SAMI cube where each spaxel contains the
+    spectrum of the bin it is associated with
     
     Parameters
 
