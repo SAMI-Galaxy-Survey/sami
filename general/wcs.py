@@ -17,6 +17,18 @@ from scipy.interpolate import griddata
 import astropy.io.fits as pf
 import os
 import urllib
+import warnings
+warnings.simplefilter('always', DeprecationWarning)
+
+from matplotlib import pyplot as plt
+
+# Temporary switch to allow using the old ``wcs_position_coords`` method (now
+# renamed ``__wcs_position_coords_old``. Default (True) uses the new method
+# (temporarily named ``__wcs_position_coords_new``). The switch is inside the
+# wrapper method ``wcs_position_coords``.
+__WCS_XCORR__ = True
+if __WCS_XCORR__:
+    from .. import imaging
 
 from .. import samifitting as fitting
 from ..sdss import sdss
@@ -50,9 +62,165 @@ def wcs_solve(myIFU, object_flux_cube, object_name, band, size_of_grid, output_p
     
     return wcs_position_coords(object_RA, object_DEC, wave, object_flux_cube, object_name, band, size_of_grid, output_pix_size_arcsec, plot=plot, write=write, nominal=nominal)
 
+
 def wcs_position_coords(object_RA, object_DEC, wave, object_flux_cube, object_name, band, size_of_grid, output_pix_size_arcsec, plot=False, write=False, nominal=False, remove_thput_file=True):
+    if __WCS_XCORR__:
+        return __wcs_position_coords_new(object_RA, object_DEC, wave, object_flux_cube, object_name, band, size_of_grid, output_pix_size_arcsec, plot=plot, write=write, nominal=nominal, remove_thput_file=remove_thput_file)
+    else:
+        return __wcs_position_coords_old(object_RA, object_DEC, wave, object_flux_cube, object_name, band, size_of_grid, output_pix_size_arcsec, plot=plot, write=write, nominal=nominal, remove_thput_file=remove_thput_file)
+
+
+
+def __wcs_position_coords_new(object_RA, object_DEC, wave, object_flux_cube, object_name, band, size_of_grid, output_pix_size_arcsec, plot=False, write=False, nominal=False, remove_thput_file=True):
     """Equate the WCS position information from a cross-correlation between a
         g-band SAMI cube and a g-band SDSS image."""
+
+    if nominal:
+       WCS_pos = __wcs_position_coords_nominal(object_RA, object_DEC, wave, object_flux_cube, object_name, band, size_of_grid, output_pix_size_arcsec, plot=plot, write=write, remove_thput_file=remove_thput_file)
+    else:
+        try:
+            WCS_pos = __wcs_position_coords_xcorr(object_RA, object_DEC, wave, object_flux_cube, object_name, band, size_of_grid, output_pix_size_arcsec, plot=plot, write=write, remove_thput_file=remove_thput_file)
+
+        except:
+            raise
+            warnings.warn('Exception in ``__wcs_position_coords_xcorr``. Using nominal=True')
+            WCS_pos = __wcs_position_coords_nominal(object_RA, object_DEC, wave, object_flux_cube, object_name, band, size_of_grid, output_pix_size_arcsec, plot=plot, write=write, remove_thput_file=remove_thput_file)
+
+    WCS_flag = WCS_pos['WCS_SRC']
+
+    return WCS_pos, WCS_flag
+
+
+
+def __wcs_position_coords_nominal(object_RA, object_DEC, wave, object_flux_cube, object_name, band, size_of_grid, output_pix_size_arcsec, plot=False, write=False, remove_thput_file=True):
+
+    # Return this dictionary.
+    WCS_pos = {'WCS_SRC': ('Nominal', 'Cross-correlation with GAMA/SDSS/VST imaging.')}
+    
+    img_crval1 = object_RA
+    img_crval2 = object_DEC
+    xcube = size_of_grid
+    ycube = size_of_grid
+    img_cdelt1 = -1.0 * output_pix_size_arcsec / 3600.0
+    img_cdelt2 = output_pix_size_arcsec / 3600.0
+    y_offset_degree = 0.0
+    x_offset_degree = 0.0
+
+    # Update dictionary of positional WCS
+    WCS_pos["CRVAL1"] = (img_crval1 + x_offset_degree)
+    WCS_pos["CRVAL2"] = (img_crval2 + y_offset_degree)
+    WCS_pos["CDELT1"] = (img_cdelt1)
+    WCS_pos["CDELT2"] = (img_cdelt2)
+    WCS_pos["CTYPE1"] = "RA---TAN"
+    WCS_pos["CTYPE2"] = "DEC--TAN"
+    WCS_pos["CUNIT1"] = "deg"
+    WCS_pos["CUNIT2"] = "deg"
+    if (xcube/2)==(xcube//2):
+        WCS_pos["CRPIX1"] = (xcube//2 + 0.5)
+        WCS_pos["CRPIX2"] = (ycube//2 + 0.5)
+    else:
+        WCS_pos["CRPIX1"] = (xcube/2)
+        WCS_pos["CRPIX2"] = (ycube/2)
+
+    return WCS_pos
+
+
+
+def __wcs_position_coords_xcorr(object_RA, object_DEC, wave, object_flux_cube, object_name, band, size_of_grid, output_pix_size_arcsec, plot=False, write=False, remove_thput_file=True):
+    """Equate the WCS position information from a cross-correlation between a
+        g-band SAMI cube and a g-band SDSS image."""
+
+    # Return this dictionary.
+    WCS_pos = {'WCS_SRC': ('imaging', 'Cross-correlation with GAMA/SDSS/VST imaging.')}
+    
+    # Get SDSS g-band throughput curve
+    if not os.path.isfile("sdss_"+str(band)+".dat"):
+        urllib.urlretrieve("http://www.sdss.org/dr3/instruments/imager/filters/"+str(band)+".dat", "sdss_"+str(band)+".dat")
+    
+    # and convolve with the SDSS throughput
+    sdss_filter = ascii.read("sdss_"+str(band)+".dat", comment="#", names=["wave", "pt_secz=1.3", "ext_secz=1.3", "ext_secz=0.0", "extinction"])
+        
+    # re-grid g["wave"] -> wave
+    thru_regrid = griddata(sdss_filter["wave"], sdss_filter["ext_secz=1.3"], wave, method="cubic", fill_value=0.0)
+        
+    # initialise a 2D simulated g' band flux array.
+    len_axis = np.shape(object_flux_cube)[1]
+    Nwave = len(wave)
+    reconstruct = np.zeros((len_axis,len_axis))
+    tester = np.zeros((len_axis,len_axis))
+    data_bit = np.zeros((Nwave,len_axis,len_axis))
+        
+    # Sum convolved flux:
+    for i in range(Nwave):
+        data_bit[i] = object_flux_cube[i]*thru_regrid[i]
+        
+    reconstruct = np.nansum(data_bit,axis=0) # not absolute right now
+    reconstruct[np.isnan(reconstruct)] = 0. # replacing nan with 0.0
+    reconstruct[reconstruct < 0] = 0.       # replacing negative fluxes with 0.0
+        
+    cube_image = reconstruct
+    xcube = len(cube_image[0])
+    ycube = len(cube_image[1])
+        
+    # Check if the user supplied a red RSS file, throw exception.
+    if np.array_equal(cube_image, tester):
+        raise SystemExit("All values are zero: please provide the cube corresponding to the requested spectral band of the image!")
+    
+    cube_size = np.around((size_of_grid*output_pix_size_arcsec)/3600, decimals=6)
+
+    image_header = get_crosscorr_header(object_name, cube_image, output_pix_size_arcsec)
+        
+    warn_mess = ('This method is plain UGLY. Can be tolerated for DR2 but '
+        + ' should be updated asap making proper use of ``~astropy.wcs.WCS``')
+    warnings.warn(warn_mess, DeprecationWarning)
+
+    # Update dictionary of positional WCS
+    WCS_pos["CRVAL1"] = float(image_header['CRVAL1'])
+    WCS_pos["CRVAL2"] = float(image_header['CRVAL2'])
+    WCS_pos["CRPIX1"] = float(image_header['CRPIX1'])
+    WCS_pos["CRPIX2"] = float(image_header['CRPIX2'])
+    WCS_pos["CDELT1"] = float(image_header['CDELT1'])
+    WCS_pos["CDELT2"] = float(image_header['CDELT2'])
+    WCS_pos["PC1_1"]  = float(image_header.get('PC1_1', 1.))
+    WCS_pos["PC1_2"]  = float(image_header.get('PC1_2', 0.))
+    WCS_pos["PC2_1"]  = float(image_header.get('PC2_1', 0.))
+    WCS_pos["PC2_2"]  = float(image_header.get('PC2_2', 1.))
+    WCS_pos["CTYPE1"] = image_header.get('CTYPE1', "RA---TAN")
+    WCS_pos["CTYPE2"] = image_header.get('CTYPE2', "DEC--TAN")
+    WCS_pos["CUNIT1"] = image_header.get('CUNIT1', "deg")
+    WCS_pos["CUNIT2"] = image_header.get('CUNIT2', "deg")
+
+    """
+    if (xcube/2)==(xcube//2):
+        WCS_pos["CRPIX1"] = (xcube//2 + 0.5)
+        WCS_pos["CRPIX2"] = (ycube//2 + 0.5)
+    else:
+        WCS_pos["CRPIX1"] = (xcube/2)
+        WCS_pos["CRPIX2"] = (ycube/2)
+    """
+
+    # Remove temporary files
+    if remove_thput_file and os.path.exists("sdss_"+str(band)+".dat"):
+        os.remove("sdss_"+str(band)+".dat")
+    
+    return WCS_pos
+
+
+
+def __wcs_position_coords_old(object_RA, object_DEC, wave, object_flux_cube, object_name, band, size_of_grid, output_pix_size_arcsec, plot=False, write=False, nominal=False, remove_thput_file=True):
+    """Equate the WCS position information from a cross-correlation between a
+        g-band SAMI cube and a g-band SDSS image.
+
+    This method is not robust against the presence of neighbours/interlopers in
+    the image, and does not work for cluster galaxies.
+
+    """
+
+    warn_message = ('The method ``wcs_position_coords`` has been renamed '
+        + '``__wcs_position_coords_old`` and is deprecated. The new method '
+        + '``__wcs_position_coords_new`` can be used by setting '
+        + '``__WCS_XCORR__``=True in ~sami/general/wcs.')
+    warnings.warn(warn_message, DeprecationWarning)
     
     if nominal:
         img_crval1 = object_RA
@@ -92,7 +260,7 @@ def wcs_position_coords(object_RA, object_DEC, wave, object_flux_cube, object_na
         cube_image = reconstruct
         xcube = len(cube_image[0])
         ycube = len(cube_image[1])
-        cube_image_crop = cube_image[(len(cube_image[0])/2)-10:(len(cube_image[0])/2)+10,(len(cube_image[1])/2)-10:(len(cube_image[1])/2)+10]
+        cube_image_crop = cube_image[(len(cube_image[0])//2)-10:(len(cube_image[0])//2)+10,(len(cube_image[1])//2)-10:(len(cube_image[1])//2)+10]
         cube_image_crop = sp.ndimage.zoom(cube_image_crop, 5, order=3)
         cube_image_crop_norm = (cube_image_crop - np.min(cube_image_crop))/np.max(cube_image_crop - np.min(cube_image_crop))
         
@@ -123,7 +291,7 @@ def wcs_position_coords(object_RA, object_DEC, wave, object_flux_cube, object_na
         img_cdelt2 = float(image_header['CDELT2']) #Delta DEC
         
         SDSS_image = image_data
-        SDSS_image_crop = SDSS_image[(len(SDSS_image[0])/2)-10:(len(SDSS_image[0])/2)+10,(len(SDSS_image[1])/2)-10:(len(SDSS_image[1])/2)+10]
+        SDSS_image_crop = SDSS_image[(len(SDSS_image[0])//2)-10:(len(SDSS_image[0])//2)+10,(len(SDSS_image[1])//2)-10:(len(SDSS_image[1])//2)+10]
         SDSS_image_crop_norm = (SDSS_image_crop - np.min(SDSS_image_crop))/np.max(SDSS_image_crop - np.min(SDSS_image_crop))
     
     ##########
@@ -180,9 +348,9 @@ def wcs_position_coords(object_RA, object_DEC, wave, object_flux_cube, object_na
         x_offset_degree = 0.0
     
     # Create dictionary of positional WCS
-    if isinstance(xcube/2, int):
-        WCS_pos={"CRVAL1":(img_crval1 + x_offset_degree), "CRVAL2":(img_crval2 + y_offset_degree), "CRPIX1":(xcube/2 + 0.5),
-            "CRPIX2":(ycube/2 + 0.5), "CDELT1":(img_cdelt1), "CDELT2":(img_cdelt2), "CTYPE1":"RA---TAN", "CTYPE2":"DEC--TAN",
+    if (xcube/2)==(xcube//2):
+        WCS_pos={"CRVAL1":(img_crval1 + x_offset_degree), "CRVAL2":(img_crval2 + y_offset_degree), "CRPIX1":(xcube//2 + 0.5),
+            "CRPIX2":(ycube//2 + 0.5), "CDELT1":(img_cdelt1), "CDELT2":(img_cdelt2), "CTYPE1":"RA---TAN", "CTYPE2":"DEC--TAN",
             "CUNIT1": 'deg', "CUNIT2": 'deg'}
     else:
         WCS_pos={"CRVAL1":(img_crval1 + x_offset_degree), "CRVAL2":(img_crval2 + y_offset_degree), "CRPIX1":(xcube/2),
@@ -234,5 +402,36 @@ def update_wcs_coords(filename, nominal=False, remove_thput_file=True):
     hdulist.close()
 
     return
+
+
+
+def get_crosscorr_header(object_name, cube_image, output_pix_size_arcsec):
+
+    # Get the relevant image.
+    xcorr_wcs_img = imaging.sami_wcs_image.from_file(object_name)
+
+    # Note that the output pixel size ``output_pix_size_arcsec`` is in [arcsec],
+    # but ``~imaging.sami_wcs_image.resample`` requires units of [degree].
+
+    xcorr_wcs_img.resize(16., mode='arcsec')
+
+    if not xcorr_wcs_img.is_wcs_aligned():
+        print('Aligning WCS')
+        xcorr_wcs_img.align_wcs()
+
+    xcorr_wcs_img.resample(output_pix_size_arcsec/3600.)
+    xcorr_wcs_img.circular_mask(7.5, mode='arcsec', centre=None, fill_value=0.0)
+
+    cube_wcs_image = imaging.sami_wcs_image(object_name, cube_image)
+
+    new_wcs = cube_wcs_image.cross_correlate(xcorr_wcs_img)
+
+    if not xcorr_wcs_img.data.any():
+        raise ValueError('The image for galaxy {} is empty!'.format(object_name))
+
+    del cube_wcs_image, xcorr_wcs_img
+
+    # Get the WCS information from the ``imaging.sami_wcs_image`` instance.
+    return new_wcs.to_header()
 
 ############### END OF FILE ###############

@@ -1130,6 +1130,8 @@ def create_primary_header(ifu_list,name,files,WCS_pos,WCS_flag):
     wcs_new.wcs.cdelt = np.array([WCS_pos["CDELT1"], WCS_pos["CDELT2"], hdr['CDELT1']])
     wcs_new.wcs.crval = [WCS_pos["CRVAL1"], WCS_pos["CRVAL2"], hdr['CRVAL1']]
     wcs_new.wcs.ctype = [WCS_pos["CTYPE1"], WCS_pos["CTYPE2"], "AWAV"]
+    wcs_new.wcs.pc = np.array([[-1., 0.],
+                               [ 0., 1.]])
     wcs_new.wcs.equinox = 2000
     wcs_new.wcs.radesys = 'FK5'
             
