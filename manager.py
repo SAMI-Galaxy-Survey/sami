@@ -130,7 +130,7 @@ GRATLPMM = {'580V': 582.0,
             '1500V': 1500.0,
             '1000R': 1001.0}
 
-CATALOG_PATH = "./catalogs/"
+CATALOG_PATH = "./gama_catalogues/"
 
 # This list is used for identifying field numbers in the pilot data.
 PILOT_FIELD_LIST = [
@@ -2250,6 +2250,7 @@ class Manager:
     def bin_aperture_spectra(self, overwrite=False, min_exposure=599.0, name='main',
                   min_transmission=0.333, max_seeing=4.0, tag=None, **kwargs):
         """Create aperture spectra."""
+        print 'Producing aperture spectra'
         path_pair_list = []
         groups = self.group_files_by(
             'field_id', ccd='ccd_1', ndf_class='MFOBJECT', do_not_use=False,
@@ -4797,6 +4798,7 @@ def aperture_spectra_pair(path_pair):
     path_blue, path_red = path_pair
     global CATALOG_PATH
     try:
+        print 'Processing: '+path_blue+', '+path_red
         binning.aperture_spectra_pair(path_blue, path_red, CATALOG_PATH)
     except Exception as e:
         print("ERROR on pair %s, %s:\n %s" % (path_blue, path_red, e.message))
