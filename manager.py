@@ -2268,7 +2268,7 @@ class Manager:
                     for arm in ('blue', 'red')]
                 if path_pair[0] and path_pair[1]:
                     path_pair_list.append(path_pair)
-        self.map(aperture_spectra_pair, path_pair_list)
+        self.map(aperture_spectra_pair, path_pair_list, overwrite)
         return
 
     def record_dust(self, overwrite=False, min_exposure=599.0, name='main',
@@ -4793,13 +4793,13 @@ def bin_cubes_pair(path_pair):
     return
 
 @safe_for_multiprocessing
-def aperture_spectra_pair(path_pair):
+def aperture_spectra_pair(path_pair,overwrite=False):
     """Create aperture spectra for a pair of data cubes using default apertures."""
     path_blue, path_red = path_pair
     global CATALOG_PATH
     try:
         print 'Processing: '+path_blue+', '+path_red
-        binning.aperture_spectra_pair(path_blue, path_red, CATALOG_PATH)
+        binning.aperture_spectra_pair(path_blue, path_red, CATALOG_PATH, overwrite)
     except Exception as e:
         print("ERROR on pair %s, %s:\n %s" % (path_blue, path_red, e.message))
         traceback.print_exc()

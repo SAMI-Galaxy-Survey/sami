@@ -44,8 +44,6 @@ from scipy.ndimage.measurements import label
 from . import voronoi_2d_binning_wcovar
 from ..utils.other import hg_changeset
 
-import code
-
 def bin_cube_pair(path_blue, path_red, name=None, **kwargs):
     """Calculate bins, do binning and save results for a pair of cubes."""
     hdulist_blue = pf.open(path_blue, 'update')
@@ -124,7 +122,7 @@ class CatalogAccessor(object):
             # Cut down the catalog to only contain the row for this SAMI ID.
             return catalog[catalog['CATAID'] == cataid][column][0]
 
-def aperture_spectra_pair(path_blue, path_red, path_to_catalogs):
+def aperture_spectra_pair(path_blue, path_red, path_to_catalogs,overwrite=False):
     """Calculate binned spectra and save as new file for each pair of cubes."""
 
     if log.isEnabledFor(slogging.INFO):
@@ -135,15 +133,25 @@ def aperture_spectra_pair(path_blue, path_red, path_to_catalogs):
     catalogs_required = {
         'ApMatchedCat': ['THETA_J2000', 'THETA_IMAGE'],
         'SersicCatAll': [
-            'GAL_RE_R',
-            'GAL_PA_R',
-            'GAL_R90_R',
-            'GAL_ELLIP_R'],
+            'GALRE_r',
+            'GALPA_r',
+            'GALR90_r',
+            'GALELLIP_r'],
         # Note spelling of Distance(s)Frames different from that used by GAMA
         'DistanceFrames': ['Z_TONRY_2']
     }
 
     gama_catalogs = CatalogAccessor(path_to_catalogs, catalogs_required)
+
+    path = path_blue
+    out_dir = os.path.dirname(path)
+    if out_dir == "":
+        out_dir = '.'
+    out_file_base = os.path.basename(path).split(".")[0]
+    output_filename = out_dir + "/" + out_file_base + "_aperture_spec.fits"
+    
+    if (os.path.exists(output_filename)) & (overwrite == False):
+        return
 
     # Open the two cubes
     with pf.open(path_blue, memmap=True) as hdulist_blue, pf.open(path_red, memmap=True) as hdulist_red:
@@ -182,9 +190,9 @@ def aperture_spectra_pair(path_blue, path_red, path_to_catalogs):
 
 
         standard_apertures['re'] = {
-            'aperture_radius': gama_catalogs.retrieve('SersicCatAll', 'GAL_RE_R', sami_id)/pix_size,
-            'pa': gama_catalogs.retrieve('SersicCatAll', 'GAL_PA_R', sami_id) + pos_angle_adjust,
-            'ellipticity': gama_catalogs.retrieve('SersicCatAll', 'GAL_ELLIP_R', sami_id)
+            'aperture_radius': gama_catalogs.retrieve('SersicCatAll', 'GALRE_r', sami_id)/pix_size,
+            'pa': gama_catalogs.retrieve('SersicCatAll', 'GALPA_r', sami_id) + pos_angle_adjust,
+            'ellipticity': gama_catalogs.retrieve('SersicCatAll', 'GALELLIP_r', sami_id)
         }
 
 #        standard_apertures['r90'] = {
