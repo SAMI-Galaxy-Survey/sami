@@ -27,7 +27,7 @@ def correct_bad_fibres(path_list,debug=False):
     fflats = np.zeros((n_file,n_fibre,n_spec))
 
     # Read in fibre flats from fits files to array
-    for index in xrange(n_file):
+    for index in range(n_file):
         fflats[index,:,:] = pf.getdata(path_list[index],'PRIMARY')
 
     # Determine the average fibre flat, per-pixel residual images
@@ -74,7 +74,7 @@ def correct_bad_fibres(path_list,debug=False):
     # Write new fibre flat field values to file
 
     edited_files = np.unique(bad_fibres_index[:,0])
-    for index in xrange(len(edited_files)):
+    for index in range(len(edited_files)):
         hdulist = pf.open(path_list[index],mode='update')
         hdulist['PRIMARY'].data = fflats_fixed[index,:,:]
         hdulist.flush()
@@ -83,8 +83,8 @@ def correct_bad_fibres(path_list,debug=False):
     if debug:
         for val in edited_files:
             ww = np.where(bad_fibres_index[:,0] == val)
-            print path_list[val]
-            print np.array(bad_fibres_index)[ww,1]
-            print '--------'
+            print(path_list[val])
+            print(np.array(bad_fibres_index)[ww,1])
+            print('--------')
 
     return

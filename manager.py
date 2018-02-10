@@ -828,7 +828,7 @@ class Manager:
                 demo = False
 
         if use_twilight_tlm_blue:
-            print('Using twilight frames to derive TLM and profile map'
+            print('Using twilight frames to derive TLM and profile map')
         else:
             print('NOT using twilight frames to derive TLM and profile map')
             
@@ -1578,9 +1578,9 @@ class Manager:
     def copy_as(self, fits, ndf_class, overwrite=False):
         """Copy a fits file and change its class. Return a new FITSFile."""
         old_num = int(fits.filename[6:10])
-        new_num = old_num + 1000 * (9 - (old_num / 1000))
+        new_num = old_num + 1000 * (9 - (old_num // 1000))
         new_filename = (
-            fits.filename[:6] + '{:04d}'.format(new_num) + fits.filename[10:])
+            fits.filename[:6] + '{:04d}'.format(int(new_num)) + fits.filename[10:])
         new_path = os.path.join(fits.reduced_dir, new_filename)
         if os.path.exists(new_path) and overwrite:
             os.remove(new_path)
@@ -1621,9 +1621,9 @@ class Manager:
         directory = os.path.dirname(path)
         old_filename = os.path.basename(path)
         old_num = int(old_filename[6:10])
-        new_num = old_num + 1000 * (9 - (old_num / 1000))
+        new_num = old_num + 1000 * (9 - (old_num // 1000))
         new_filename = (
-            old_filename[:6] + '{:04d}'.format(new_num) + old_filename[10:])
+            old_filename[:6] + '{:04d}'.format(int(new_num)) + old_filename[10:])
         new_path = os.path.join(directory, new_filename)
         return new_path
 
@@ -3616,8 +3616,6 @@ class Manager:
                 self.verbose = False
                 print('verbose now set to False')
             else:
-                print('verbose now set to False')
-            else:
                 self.verbose = True
                 print('verbose now set to True')
 
@@ -4055,8 +4053,8 @@ class FITSFile:
         # as a MFFFF:
         elif self.ndf_class == 'MFSKY':
             old_num = int(self.filename_root[6:10])
-            new_num = old_num + 1000 * (9 - (old_num / 1000))
-            new_filename_root = (self.filename_root[:6] + '{:04d}'.format(new_num) + self.filename_root[10:])
+            new_num = old_num + 1000 * (9 - (old_num // 1000))
+            new_filename_root = (self.filename_root[:6] + '{:04d}'.format(int(new_num)) + self.filename_root[10:])
             self.tlm_filename = new_filename_root + 'tlm.fits'
             # If the file is a copy, then we'll also need to set the copy name as
             # the im_filename, as this is the one that will be looked for when
@@ -4073,8 +4071,8 @@ class FITSFile:
         This will be numbered 06mar19001red.fits rather than  06mar10001red.fits"""
         self.copy_reduced_filename = self.filename_root + 'red.fits'
         old_num = int(self.filename_root[6:10])
-        new_num = old_num + 1000 * (9 - (old_num / 1000))
-        new_filename_root = (self.filename_root[:6] + '{:04d}'.format(new_num) + self.filename_root[10:])
+        new_num = old_num + 1000 * (9 - (old_num // 1000))
+        new_filename_root = (self.filename_root[:6] + '{:04d}'.format(int(new_num)) + self.filename_root[10:])
         self.copy_reduced_filename = new_filename_root + 'red.fits'
 
         return
