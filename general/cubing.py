@@ -150,7 +150,7 @@ except ImportError:
         + 'To use the C implementation, please navigate to the folder where '
         + 'the sami pipeline is located, and run `Make` from the terminal. ')
     warnings.warn(warn_message, ImportWarning)
-    from covar import create_covar_matrix_original as create_covar_matrix
+    from .covar import create_covar_matrix_original as create_covar_matrix
 
 
 try:
@@ -201,7 +201,10 @@ from pdb import set_trace
 
 # This simple switch allows to test the alternative cubing methods. Do not change.
 if 1:
-    from ..utils.cCirc import resample_circle as compute_weights
+    try:
+        from ..utils.cCirc import resample_circle as compute_weights
+    except ImportError: # Assume no compiled version of the C++ library exists. Switch to python.
+        from ..utils.circ import resample_circle as compute_weights
     cubing_method = 'Tophat'
 else:
     warning_message = 'The Gaussian weighting scheme is not fully assessed.'
