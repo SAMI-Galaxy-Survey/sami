@@ -69,7 +69,7 @@ def wcs_position_coords(object_RA, object_DEC, wave, object_flux_cube, object_na
             urllib.urlretrieve("http://www.sdss.org/dr3/instruments/imager/filters/"+str(band)+".dat", "sdss_"+str(band)+".dat")
         
         # and convolve with the SDSS throughput
-        sdss_filter = ascii.read("SDSS_"+str(band)+".dat", comment="#", names=["wave", "pt_secz=1.3", "ext_secz=1.3", "ext_secz=0.0", "extinction"])
+        sdss_filter = ascii.read("sdss_"+str(band)+".dat", comment="#", names=["wave", "pt_secz=1.3", "ext_secz=1.3", "ext_secz=0.0", "extinction"])
         
         # re-grid g["wave"] -> wave
         thru_regrid = griddata(sdss_filter["wave"], sdss_filter["ext_secz=1.3"], wave, method="cubic", fill_value=0.0)
