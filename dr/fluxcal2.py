@@ -1,3 +1,4 @@
+from __future__ import division
 """
 Flux calibration code that looks at the red and blue data together.
 
@@ -59,6 +60,7 @@ from scipy.ndimage.filters import median_filter, gaussian_filter1d
 
 from astropy import coordinates as coord
 from astropy import units
+from astropy import table
 from astropy.io import fits as pf
 from astropy import __version__ as ASTROPY_VERSION
 
@@ -102,7 +104,7 @@ def generate_subgrid(fibre_radius, n_inner=6, n_rings=10):
     radius = []
     theta = []
     for i_ring, radius_ring in enumerate(radii):
-        n_points = np.round(n_inner * radius_ring)
+        n_points = np.int(np.round(n_inner * radius_ring))
         theta_ring = (np.linspace(0.0, 2.0*np.pi, n_points, endpoint=False) + 
                       rot_angle)
         radius = np.hstack((radius, np.ones(n_points) * radius_ring))
@@ -401,7 +403,7 @@ def parameters_vector_to_dict(parameters_vector, model_name):
     """Convert a parameters vector to a dictionary."""
     parameters_dict = {}
     if model_name == 'ref_centre_alpha_angle':
-        n_slice = (len(parameters_vector) - 8) / 2
+        n_slice = np.int((len(parameters_vector) - 8) // 2)
         parameters_dict['flux'] = parameters_vector[0:n_slice]
         parameters_dict['background'] = parameters_vector[n_slice:2*n_slice]
         parameters_dict['xcen_ref'] = parameters_vector[-8]
@@ -413,7 +415,7 @@ def parameters_vector_to_dict(parameters_vector, model_name):
         parameters_dict['beta'] = parameters_vector[-2]
         parameters_dict['rho'] = parameters_vector[-1]
     elif model_name == 'ref_centre_alpha_angle_circ':
-        n_slice = (len(parameters_vector) - 6) / 2
+        n_slice = np.int((len(parameters_vector) - 6) // 2)
         parameters_dict['flux'] = parameters_vector[0:n_slice]
         parameters_dict['background'] = parameters_vector[n_slice:2*n_slice]
         parameters_dict['xcen_ref'] = parameters_vector[-6]
@@ -424,7 +426,7 @@ def parameters_vector_to_dict(parameters_vector, model_name):
         parameters_dict['beta'] = parameters_vector[-1]
     elif (model_name == 'ref_centre_alpha_dist_circ' or
           model_name == 'ref_centre_alpha_dist_circ_hdratm'):
-        n_slice = (len(parameters_vector) - 5) / 2
+        n_slice = np.int((len(parameters_vector) - 5) // 2)
         parameters_dict['flux'] = parameters_vector[0:n_slice]
         parameters_dict['background'] = parameters_vector[n_slice:2*n_slice]
         parameters_dict['xcen_ref'] = parameters_vector[-5]
@@ -433,7 +435,7 @@ def parameters_vector_to_dict(parameters_vector, model_name):
         parameters_dict['alpha_ref'] = parameters_vector[-2]
         parameters_dict['beta'] = parameters_vector[-1]
     elif model_name == 'ref_centre_alpha_angle_circ_atm':
-        n_slice = (len(parameters_vector) - 9) / 2
+        n_slice = np.int((len(parameters_vector) - 9) // 2)
         parameters_dict['flux'] = parameters_vector[0:n_slice]
         parameters_dict['background'] = parameters_vector[n_slice:2*n_slice]
         parameters_dict['temperature'] = parameters_vector[-9]
@@ -446,7 +448,7 @@ def parameters_vector_to_dict(parameters_vector, model_name):
         parameters_dict['alpha_ref'] = parameters_vector[-2]
         parameters_dict['beta'] = parameters_vector[-1]
     elif model_name == 'ref_centre_alpha_circ_hdratm':
-        n_slice = (len(parameters_vector) - 4) / 2
+        n_slice = np.int((len(parameters_vector) - 4) // 2)
         parameters_dict['flux'] = parameters_vector[0:n_slice]
         parameters_dict['background'] = parameters_vector[n_slice:2*n_slice]
         parameters_dict['xcen_ref'] = parameters_vector[-4]
@@ -657,38 +659,22 @@ def match_star_coordinates(ra, dec, max_sep_arcsec=60.0,
                            catalogues=STANDARD_CATALOGUES):
     """Return details of the star nearest to the supplied coordinates."""
     for index_path in catalogues:
-        index = np.loadtxt(index_path, dtype='S')
+        #index = np.loadtxt(index_path, dtype='S')
+        index = table.Table.read(index_path, format='ascii.no_header')
         for star in index:
-            RAstring = '%sh%sm%ss' % (star[2], star[3], star[4])
-            Decstring = '%sd%sm%ss' % (star[5], star[6], star[7])
-            if ASTROPY_VERSION[:2] == (0, 2):
-                coords_star = coord.ICRSCoordinates(RAstring, Decstring)
-                ra_star = coords_star.ra.degrees
-                dec_star = coords_star.dec.degrees
-                ### BUG IN ASTROPY.COORDINATES ###
-                if ASTROPY_VERSION == (0, 2, 0):
-                    print 'Upgrade your version of astropy!!!!'
-                    print 'Version 0.2.0 has a major bug in coordinates!!!!'
-                    if star[5] == '-' and dec_star > 0:
-                        dec_star *= -1.0
-                sep = coord.angles.AngularSeparation(
-                    ra, dec, ra_star, dec_star, units.degree).arcsecs
-            elif (ASTROPY_VERSION[0]<=1) and (ASTROPY_VERSION[1]<=1):
-                coords_star = coord.ICRS(RAstring, Decstring)
-                coords = coord.ICRS(
-                    str(ra)+' degree',str(dec)+' degree')
-                sep = coords.separation(coords_star).arcsec
-            else: # Astropy version >= 1.2.x
-                ra_star = coord.Angle(RAstring, unit=units.hour) 
-                dec_star = coord.Angle(Decstring, unit=units.degree)
-                coords_star = coord.ICRS(ra_star, dec_star)
+            RAstring = '%sh%sm%ss' % (star['col3'], star['col4'], star['col5'])
+            Decstring = '%sd%sm%ss' % (star['col6'], star['col7'], star['col8'])
 
-                ra_tgt = coord.Angle(ra, unit=units.degree)
-                dec_tgt = coord.Angle(dec, unit=units.degree)
+            ra_star = coord.Angle(RAstring, unit=units.hour) 
+            dec_star = coord.Angle(Decstring, unit=units.degree)
+            coords_star = coord.ICRS(ra_star, dec_star)
 
-                coords = coord.ICRS(ra_tgt, dec_tgt)
+            ra_tgt = coord.Angle(ra, unit=units.degree)
+            dec_tgt = coord.Angle(dec, unit=units.degree)
 
-                sep = coords.separation(coords_star).arcsec
+            coords = coord.ICRS(ra_tgt, dec_tgt)
+
+            sep = coords.separation(coords_star).arcsec
 
             if sep < max_sep_arcsec:
                 star_match = {
@@ -1235,7 +1221,8 @@ def zd2am( zenithdistance ):
 
 def read_atmospheric_extinction(sso_extinction_table=SSO_EXTINCTION_TABLE):
     wl, ext = [], []
-    for entry in open( sso_extinction_table, 'r' ).xreadlines() :
+    #for entry in open( sso_extinction_table, 'r' ).xreadlines() :
+    for entry in open( sso_extinction_table, 'r' ):
         line = entry.rstrip( '\n' )
         if not line.count( '*' ) and not line.count( '=' ):
             values = line.split()

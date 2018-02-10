@@ -1,3 +1,4 @@
+from __future__ import division
 """
 Functions relating to quality control of flux calibration.
 
@@ -299,7 +300,7 @@ def get_sdss_stellar_mags(mngr, catalogue=None, automatic=False):
     name_list, coords_list = get_missing_stars(mngr, catalogue=catalogue)
     if not name_list:
         # Already had all the stars required
-        print 'All magnitudes already in the catalogue.'
+        print('All magnitudes already in the catalogue.')
         return False
 
     url = 'http://cas.sdss.org/dr7/en/tools/crossid/x_crossid.asp'
@@ -322,7 +323,7 @@ ORDER BY x.up_id"""
         try:
             import requests
         except ImportError:
-            print "Install the python 'requests' library to allow automatic downloading."
+            print("Install the python 'requests' library to allow automatic downloading.")
             automatic = False
     if automatic:
         post_data = {'searchType': "photo",
@@ -338,19 +339,19 @@ ORDER BY x.up_id"""
             raise IOError("Error connectiong to SDSS servers. Try with 'automatic=False'")
         return r.text
     else:
-        print 'Go to:'
-        print
-        print url
-        print
-        print 'Copy-paste the following into the upload list box:'
-        print
-        print query_list
-        print
-        print 'And the following into the SQL query box:'
-        print
-        print sql
-        print
-        print 'Change output format to CSV, then hit submit.'
+        print('Go to:')
+        print()
+        print(url)
+        print()
+        print('Copy-paste the following into the upload list box:')
+        print()
+        print(query_list)
+        print()
+        print('And the following into the SQL query box:')
+        print()
+        print(sql)
+        print()
+        print('Change output format to CSV, then hit submit.')
         return True
 
 def get_missing_stars(mngr, catalogue=None):
@@ -384,28 +385,28 @@ def get_sdss_galaxy_mags(galaxy_file_pair_list):
         if name not in name_list:
             name_list.append(name)
             coords_list.append((header['CATARA'], header['CATADEC']))
-    print 'Go to:'
-    print
-    print 'http://cas.sdss.org/dr7/en/tools/crossid/crossid.asp'
-    print
-    print 'Copy-paste the following into the upload list box:'
-    print
+    print('Go to:')
+    print()
+    print('http://cas.sdss.org/dr7/en/tools/crossid/crossid.asp')
+    print()
+    print('Copy-paste the following into the upload list box:')
+    print()
     for name, coords in zip(name_list, coords_list):
-        print name, coords[0], coords[1]
-    print
-    print 'And the following into the SQL query box:'
-    print
-    print """SELECT 
+        print(name, coords[0], coords[1])
+    print()
+    print('And the following into the SQL query box:')
+    print()
+    print("""SELECT 
    p.objID, p.ra, p.dec,
    dbo.fPhotoTypeN(p.type) as type,
    p.modelMag_u, p.modelMagErr_u, p.modelMag_g, p.modelMagErr_g, p.modelMag_r,
    p.modelMagErr_r, p.modelMag_i, p.modelMagErr_i, p.modelMag_z, p.modelMagErr_z 
 FROM #x x, #upload u, PhotoTag p
 WHERE u.up_id = x.up_id and x.objID=p.objID 
-ORDER BY x.up_id"""
-    print
-    print 'Change output format to CSV, then hit submit.'
-    print 'Put the result somewhere safe.'
+ORDER BY x.up_id""")
+    print()
+    print('Change output format to CSV, then hit submit.')
+    print('Put the result somewhere safe.')
     return
 
 def stellar_mags_cubes(file_pair_list, n_cpu=None, verbose=True):
@@ -419,7 +420,7 @@ def stellar_mags_cubes(file_pair_list, n_cpu=None, verbose=True):
         pool = multiprocessing.Pool(n_cpu)
         _map = pool.map
     if verbose:
-        print 'Measuring magnitudes for all files'
+        print('Measuring magnitudes for all files')
     mag_cube = _map(stellar_mags_cube_pair, file_pair_list)
     if n_cpu != 1:
         pool.close()
@@ -432,7 +433,7 @@ def read_stellar_mags_cubes(file_pair_list, verbose=True):
     mag_cube = []
     for file_pair in file_pair_list:
         if verbose:
-            print 'Reading magnitudes from', os.path.basename(file_pair[0])
+            print('Reading magnitudes from', os.path.basename(file_pair[0]))
         hdulist = pf.open(file_pair[0])
         magg = hdulist[0].header['MAGG']
         # Early versions wrote MAGR to the wrong header, so have to check both
@@ -454,7 +455,7 @@ def read_stellar_mags_frames(frame_pair_list_list, bands=('g', 'r'),
         mag_frame.append([])
         for frame_pair in frame_pair_list:
             if verbose:
-                print 'Reading magnitudes from', os.path.basename(frame_pair[0])
+                print('Reading magnitudes from', os.path.basename(frame_pair[0]))
             flux, noise, wavelength = read_stellar_spectrum(frame_pair)
             mags = measure_mags(flux, noise, wavelength)
             mag_frame[-1].append((mags[bands[0]], mags[bands[1]]))
@@ -605,7 +606,7 @@ def list_star_files(mngr, gzip=True, verbose=True):
                 blue_header = pf.getheader(blue_path)
                 if blue_header['NAME'] == blue_header['STDNAME']:
                     if verbose:
-                        print 'Found star file:', os.path.basename(blue_path)
+                        print('Found star file:', os.path.basename(blue_path))
                     result.append((blue_path, red_path))
                     i = 0
                     frame.append([])
@@ -654,7 +655,7 @@ def list_galaxy_files(mngr, gzip=True, verbose=True):
                 blue_header = pf.getheader(blue_path)
                 if blue_header['NAME'] != blue_header['STDNAME']:
                     if verbose:
-                        print 'Found galaxy file:', os.path.basename(blue_path)
+                        print('Found galaxy file:', os.path.basename(blue_path))
                     result.append((blue_path, red_path))
                     i = 0
                     frame.append([])
@@ -769,7 +770,7 @@ def extract_stellar_spectrum(file_pair, variable_psf=False, elliptical=False,
     if background:
         back = np.zeros(len(wavelength))
         noise_back = np.zeros(len(wavelength))
-    print 'Getting slice-by-slice flux from', os.path.basename(file_pair[0])
+    print('Getting slice-by-slice flux from', os.path.basename(file_pair[0]))
     for i_pix, (image_slice, noise_slice, wavelength_slice) in enumerate(zip(
             flux_cube, noise_cube, wavelength)):
         if variable_psf:
@@ -964,7 +965,7 @@ def interpolate_arms(flux, noise, wavelength, good=None, n_pix_fit=300):
     n_pix = len(wavelength)
     if good is None:
         good = np.arange(n_pix)
-    middle = n_pix / 2
+    middle = np.int(n_pix // 2)
     good_blue = good & (np.arange(n_pix) < middle)
     good_red = good & (np.arange(n_pix) >= middle)
     wavelength_middle = 0.5 * (wavelength[middle-1] + wavelength[middle])
@@ -1018,7 +1019,7 @@ def collapse_cube(flux, noise, wavelength, good=None, n_band=1):
     flux_out = np.zeros((n_band, flux.shape[1], flux.shape[2]))
     noise_out = np.zeros((n_band, flux.shape[1], flux.shape[2]))
     wavelength_out = np.zeros(n_band)
-    for i_band in xrange(n_band):
+    for i_band in range(n_band):
         start = i_band * n_pix / n_band
         finish = (i_band+1) * n_pix / n_band
         flux_out[i_band, :, :] = (

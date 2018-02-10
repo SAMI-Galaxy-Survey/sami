@@ -59,7 +59,7 @@ def speed_test():
     
     # First, we create a set of n_obs mock observations. 
     ifu_list = []
-    for i in xrange(n_obs):
+    for i in range(n_obs):
         ifu = dummy_ifu()
         
         ifu.data = standard_normal(size=( np.shape(ifu.data)[0], lambda_size)) + 100
@@ -106,7 +106,7 @@ def hot_pixel_clipping(n_obs=7, n_hot=10,verbose=False):
 
     # First, we create a set of n_obs mock observations. 
     ifu_list = []
-    for i in xrange(n_obs):
+    for i in range(n_obs):
         ifu = dummy_ifu()
         
         ifu.data = standard_normal(size=( np.shape(ifu.data)[0], lambda_size)) + 100
@@ -136,9 +136,9 @@ def hot_pixel_clipping(n_obs=7, n_hot=10,verbose=False):
     #
     #     Now we add in some hot pixels, and check that the expected number of
     #     pixels are masked from the output
-    for i in xrange(n_obs):
+    for i in range(n_obs):
 
-        for noise_i in xrange(n_hot):
+        for noise_i in range(n_hot):
             ifu_list[i].data[
                 randint(0,np.shape(ifu.data)[0] - 1), 
                 randint(0,np.shape(ifu.data)[1] - 1)] = 10000.0        
@@ -196,7 +196,7 @@ def dar_correction_test(verbose=False):
  
     n_obs = len(ifu_list)
  
-    for i in xrange(n_obs):
+    for i in range(n_obs):
         ifu_list[i].data = ifu_list[i].data[:,100:2000:lambda_step]
         ifu_list[i].var = ifu_list[i].var[:,100:2000:lambda_step]
         ifu_list[i].lambda_range = ifu_list[i].lambda_range[100:2000:lambda_step]
@@ -209,13 +209,13 @@ def dar_correction_test(verbose=False):
     
     tests_passed = True
     
-    for i_obs in xrange(n_obs):
+    for i_obs in range(n_obs):
     
         print("\nTesting frame {}".format(i_obs))
     
         # Compute the output centroid plane by plane:
         offsets = []
-        for i_slice in xrange(output_size[2]):
+        for i_slice in range(output_size[2]):
             
             # Convert fibre positions to arcseconds (approx)
             xpos = diagnostics.DAR.xfib[i_obs,:,i_slice] * 15.22/1000.0

@@ -141,7 +141,7 @@ def primary_standard_transfer_function(PS_spec_file):
     # extract PSS spectra and create a median spectrum that has be shape corrected
     PS_spec_list = []
     PS_noise_list = []
-    for i in xrange(len(PS_spec_data)):
+    for i in range(len(PS_spec_data)):
         if i == 0:
             pass
         else:

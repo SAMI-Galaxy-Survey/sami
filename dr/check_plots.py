@@ -68,7 +68,7 @@ than normal."""
 @ensure_interactive
 def check_combined(combined_path, message):
     """Plot a combined calibration frame of some sort."""
-    print message
+    print(message)
     # Read the data
     image = pf.getdata(combined_path)
     sorted_image = np.ravel(image)
@@ -79,10 +79,10 @@ def check_combined(combined_path, message):
     fig = plt.figure('Combined calibration', figsize=(6., 10.))
     plt.imshow(image, vmin=vmin, vmax=vmax, cmap='GnBu')
     plt.colorbar()
-    print 'To add comments to a specifc file, use commands like:'
-    print ">>> mngr.add_comment(['{}'])".format(combined_path)
+    print('To add comments to a specifc file, use commands like:')
+    print(">>> mngr.add_comment(['{}'])".format(combined_path))
 
-    print "When you're ready to move on..."
+    print("When you're ready to move on...")
     return
 
 @ensure_interactive
@@ -94,7 +94,7 @@ obvious artefacts, and the fitted ratio follows the observed
 ratio. For the combined plot, check that all the input ratios
 have the same approximate shape. Some variation in
 nomalisation is ok."""
-    print message
+    print(message)
     # Set up colors
     color_cycle = itertools.cycle(['r', 'g', 'b', 'c', 'm', 'y'])
     # First find a CCD 1 file and a CCD 2 file
@@ -173,7 +173,7 @@ nomalisation is ok."""
         plt.plot(standard_star['wavelength'], observed_ratio_masked_2, c='b')
         plt.plot(wavelength_2, 1.0 / hdu_2.data[-1, :], c='r')
         plt.legend(loc='best')
-    print "When you're ready to move on..."
+    print("When you're ready to move on...")
     return
 
 @ensure_interactive
@@ -181,7 +181,7 @@ def check_tel(fits_list):
     """Plot the results of telluric correction."""
     message = """Check that each plotted absorption spectrum has the correct
 shape for telluric absorption."""
-    print message
+    print(message)
     for fits in fits_list:
         plt.figure(fits.filename)
         header = pf.getheader(fits.fluxcal_path)
@@ -191,14 +191,14 @@ shape for telluric absorption."""
             1.0 / pf.getdata(fits.fluxcal_path, 'FLUX_CALIBRATION')[-2, :])
         plt.plot(wavelength, spectrum)
         plt.ylim((0, 1.1))
-    print "When you're ready to move on..."
+    print("When you're ready to move on...")
     return
 
 @ensure_interactive
 def check_ali(fits_list):
     """Plot the results of alignment."""
     message = """Check that any bad fits have been rejected."""
-    print message
+    print(message)
     data = []
     x_rms = []
     y_rms = []
@@ -272,14 +272,14 @@ def check_ali(fits_list):
                                   for rms in np.sqrt((x_rms**2 + y_rms**2)))
               + '\nSigma clip: ' + ', '.join('{:.2f}'.format(n) 
                                              for n in n_sigma))
-    print "When you're ready to move on..."
+    print("When you're ready to move on...")
 
 @ensure_interactive
 def check_cub(fits_list):
     """Plot the results of cubing."""
     message = """Check that the galaxies appear in the centre in each arm, that
 they look galaxy-like, and the spectra have no obvious artefacts."""
-    print message
+    print(message)
     # The positions of points to plot
     position_dict = {'Centre': (24.5, 24.5),
                      'North': (24.5, 31.5),
@@ -310,7 +310,7 @@ they look galaxy-like, and the spectra have no obvious artefacts."""
         else:
             red_available = False
         if not blue_available and not red_available:
-            print 'No data found for object', object_name
+            print('No data found for object', object_name)
         # Load the data
         if blue_available:
             hdulist_blue = pf.open(path_blue)
@@ -374,7 +374,7 @@ they look galaxy-like, and the spectra have no obvious artefacts."""
                     ymax = 2*np.median(flux_red)
             plt.legend()
         plt.ylim(0, ymax)
-    print "When you're ready to move on..."
+    print("When you're ready to move on...")
     return
 
 

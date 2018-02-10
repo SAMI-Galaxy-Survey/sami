@@ -25,8 +25,8 @@ try:
     import tkMessageBox
     from update_csv_frames import AllocationEntry
 except ImportError:
-    print ("Warning: Tkinter not available; "
-           "probe allocation cannot be done here.")
+    print("Warning: Tkinter not available; "
+          "probe allocation cannot be done here.")
     tkinter_available = False
 
 astropy_available = True
@@ -41,8 +41,8 @@ def allocate(infile, outfile, do_central=False, do_object=True, do_sky=True,
     """Main function for interactive allocations.
     Typically called from command line."""
     if not tkinter_available:
-        print "Tkinter isn't installed on this computer!"
-        print "You can't run the allocation script here!"
+        print("Tkinter isn't installed on this computer!")
+        print("You can't run the allocation script here!")
         return
     # Set up Tkinter
     root = Tkinter.Tk()
@@ -265,7 +265,7 @@ class CSV:
         ra_str = self.get_values('RA', target_type)
         if decimal:
             if not astropy_available:
-                print 'Error: astropy required to convert to decimal'
+                print('Error: astropy required to convert to decimal')
                 return None
             ra_decimal = []
             for hours in ra_str:
@@ -282,7 +282,7 @@ class CSV:
         dec_str = self.get_values('Dec', target_type)
         if decimal:
             if not astropy_available:
-                print 'Error: astropy required to convert to decimal'
+                print('Error: astropy required to convert to decimal')
                 return None
             dec_decimal = []
             for degrees in dec_str:
@@ -310,7 +310,7 @@ class CSV:
         f_out.write('\n'.join(output) + '\n')
         f_out.close()
         if set_readwrite:
-            os.chmod(file_out, 0666)
+            os.chmod(file_out, 0o666)
         return
 
     def target_type_to_list(self, target_type):

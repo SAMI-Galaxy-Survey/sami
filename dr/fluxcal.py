@@ -1316,7 +1316,7 @@ def fit_psf_constrained_size(datadict, verbose=False, constrain_positions=True):
     if constrain_positions:
         n_parameters = 2*n_chunks + 8
         parameters_guess = np.zeros(n_parameters)
-        for i_chunk in xrange(n_chunks):
+        for i_chunk in range(n_chunks):
             parameters_guess[i_chunk] = np.sum(chunked_data[:,i_chunk])
             parameters_guess[i_chunk + n_chunks] = 0.0
         weighted_data = np.sum(chunked_data / chunked_variance, axis=1)
@@ -1330,7 +1330,7 @@ def fit_psf_constrained_size(datadict, verbose=False, constrain_positions=True):
         n_parameters = 4*n_chunks + 4
         parameters_guess = np.zeros(n_parameters)
         # Guess for the coordinates
-        for i_chunk in xrange(n_chunks):
+        for i_chunk in range(n_chunks):
             weighted_data = chunked_data[:,i_chunk] / chunked_variance[:,i_chunk]
             weighted_data /= np.sum(weighted_data)
             parameters_guess[i_chunk] = np.sum(xfibre * weighted_data)
@@ -1363,7 +1363,7 @@ def flatten_coordinates(xfibre, yfibre, wavelength):
     n_fibre = np.size(xfibre)
     n_wl = np.size(wavelength)
     coordinates = np.zeros((3, n_wl*n_fibre))
-    for i_wl in xrange(n_wl):
+    for i_wl in range(n_wl):
         coordinates[0,n_fibre*i_wl:n_fibre*(i_wl+1)] = xfibre
         coordinates[1,n_fibre*i_wl:n_fibre*(i_wl+1)] = yfibre
         coordinates[2,n_fibre*i_wl:n_fibre*(i_wl+1)] = wavelength[i_wl]
@@ -1374,7 +1374,7 @@ def flatten_data(data):
     # This function is nowhere near optimal, but it does the job
     n_fibre, n_wl = np.shape(data)
     flat_data = np.zeros(n_wl*n_fibre)
-    for i_wl in xrange(n_wl):
+    for i_wl in range(n_wl):
         flat_data[n_fibre*i_wl:n_fibre*(i_wl+1)] = data[:,i_wl]
     return flat_data
 
@@ -1388,7 +1388,7 @@ def reshape_parameters(parameters_vector, wavelength, constrain_positions=True):
     formats = ['float64'] * len(parameter_names)
     parameters = np.zeros(n_chunks, dtype={'names':parameter_names, 
                                            'formats':formats})
-    for i_chunk in xrange(n_chunks):
+    for i_chunk in range(n_chunks):
         parameters[i_chunk] = (
             extract_parameters_for_chunk(parameters_vector, 
                                          i_chunk,

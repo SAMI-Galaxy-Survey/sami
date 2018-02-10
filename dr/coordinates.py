@@ -47,7 +47,7 @@ def rotate_all_hexas(fibre_table):
 
     See rotate_probe for further details.
     """
-    for probenum in xrange(1,14):
+    for probenum in range(1,14):
         # Have to do things as a slice to avoid copying the data back and forth
         this_probe = np.where((fibre_table['PROBENUM'] == probenum) &
                               (fibre_table['TYPE'] == 'P'))[0]
@@ -163,7 +163,7 @@ def copy_coords(hdulist):
     fibre_table_extension = hdulist[find_fibre_table(hdulist)]
     new_extension = fibre_table_extension.copy()
     # Name the extension so it can be found later
-    new_extension.update_ext_name('OLD_COORDS')
+    new_extension.name = 'OLD_COORDS'
     hdulist.append(new_extension)
     return
     
@@ -229,6 +229,6 @@ def correct_all_coordinates(root='.'):
     for dirname, subdir_list, filename_list in os.walk(root):
         for filename in filename_list:
             if filename.endswith('.fits'):
-                print filename
+                print(filename)
                 correct_coordinates(os.path.join(dirname, filename))
     return
