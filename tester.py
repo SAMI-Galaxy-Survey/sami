@@ -370,7 +370,7 @@ def _compare_files(file_a, file_b, rtol=1.e-07):
             warnings.warn('Skipping binary table(s): testing not implemented yet.')
             pass
         except AssertionError as ae:
-            warnings.warn(ae.message)
+            warnings.warn(ae.args[0])
             return False
 
     return True
