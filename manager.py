@@ -4591,9 +4591,9 @@ def telluric_correct_pair(inputs):
             path_pair, PS_spec_file=PS_spec_file, use_PS=use_PS, n_trim=n_trim,
             scale_PS_by_airmass=scale_PS_by_airmass, model_name=model_name)
     except ValueError as err:
-        if err.message.startswith('No star identified in file:'):
+        if err.args[0].startswith('No star identified in file:'):
             # No standard star found; probably a star field
-            print(err.message)
+            print(err.args[0])
             print('Skipping telluric correction for file:', fits_2.filename)
             return False
         else:
