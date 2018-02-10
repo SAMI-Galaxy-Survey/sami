@@ -13,7 +13,11 @@ import os
 import numpy as np
 from math import pi, sqrt, sin, cos
 from matplotlib import pyplot as plt
-import urllib2
+
+try:
+    import urllib.request as urllib2
+except ImportError:
+    import urllib2
 
 import astropy.io.fits as pf
 
@@ -22,9 +26,9 @@ try :
     HEALPY_AVAILABLE = True
 except ImportError:
     HEALPY_AVAILABLE = False
-    # print 'Requires healpy -- developed with py27-healpy @1.8.1_0'
-    # print 'If you use Macports to manage your python installation,'
-    # print 'type "sudo port install py27-healpy".'
+    # print('Requires healpy -- developed with py27-healpy @1.8.1_0')
+    # print('If you use Macports to manage your python installation,')
+    # print('type "sudo port install py27-healpy".')
 
 from astropy import coordinates as co
 from astropy import units as u
@@ -67,7 +71,7 @@ def download_map(name, overwrite=False):
     """Download a single dust map."""
     map_info = MAPS_FILES[name]
     if os.path.exists(map_info['filename']) and not overwrite:
-        print '{} map already downloaded; returning'
+        print('{} map already downloaded; returning')
         return
     dirname = os.path.dirname(map_info['filename'])
     if not os.path.exists(dirname):
@@ -83,42 +87,42 @@ def download_all_maps(overwrite=False):
 
 # planck_dust_map_filename = 'HFI_CompMap_ThermalDustModel_2048_R1.20.fits'
 # if not os.path.exists( planck_dust_map_filename ):
-#     print 'WARNING: Cannot find Planck dust map with file name:'
-#     print ' '*8, planck_dust_map_filename
-#     print
-#     print 'This can be downloaded via the Planck Explanatory Supplement wiki:'
-#     print ' '*8, 'http://wiki.cosmos.esa.int/planckpla'
-#     print '(Look under Mission Products > CMB and astrophysical component maps,'
-#     print 'and be sure to download the higher resolution Nside=2048 version.'
-#     print 'Note that this is a ~1.6 Gb download!)'
-#     print
+#     print('WARNING: Cannot find Planck dust map with file name:')
+#     print(' '*8, planck_dust_map_filename)
+#     print()
+#     print('This can be downloaded via the Planck Explanatory Supplement wiki:')
+#     print(' '*8, 'http://wiki.cosmos.esa.int/planckpla')
+#     print('(Look under Mission Products > CMB and astrophysical component maps,')
+#     print('and be sure to download the higher resolution Nside=2048 version.')
+#     print('Note that this is a ~1.6 Gb download!)')
+#     print()
 # else :
-#     print 'reading Planck dust map from file:'
-#     print ' '*8, planck_dust_map_filename
+#     print('reading Planck dust map from file:')
+#     print(' '*8, planck_dust_map_filename)
 #     planckDustMap = hp.read_map( planck_dust_map_filename, field=2 )
 #     hp.mollview( planckDustMap, min=0., max=1., fig=0,
 #                  title='Planck dust map: %s'
 #                  % planck_dust_map_filename.split('/')[-1] )
-# print ; print
+# print(); print()
     
 # schlegel_dust_map_filename = 'lambda_sfd_ebv.fits'
 # if not os.path.exists( schlegel_dust_map_filename ):
-#     print 'WARNING: Cannot find Schlegel et al. dust map with file name:'
-#     print ' '*8, schlegel_dust_map_filename
-#     print
-#     print "This can be downloaded via NASA-Goddard's LAMBDA data archive:"
-#     print ' '*8, 'http://lambda.gsfc.nasa.gov/product/foreground/f_products.cfm'
-#     print '(Look under data > foreground > products > Reddening (E(B-V)) Map,'
-#     print 'and be sure to download the healpix version.'
-#     print
+#     print('WARNING: Cannot find Schlegel et al. dust map with file name:')
+#     print(' '*8, schlegel_dust_map_filename)
+#     print()
+#     print("This can be downloaded via NASA-Goddard's LAMBDA data archive:")
+#     print(' '*8, 'http://lambda.gsfc.nasa.gov/product/foreground/f_products.cfm')
+#     print('(Look under data > foreground > products > Reddening (E(B-V)) Map,')
+#     print('and be sure to download the healpix version.')
+#     print()
 # else :
-#     print 'reading Schlegel et al. dust map from file:'
-#     print ' '*8, schlegel_dust_map_filename
+#     print('reading Schlegel et al. dust map from file:')
+#     print(' '*8, schlegel_dust_map_filename)
 #     schlegelDustMap = hp.read_map( schlegel_dust_map_filename, field=0 )
 #     hp.mollview( planckDustMap, min=0., max=1., fig=1,
 #                  title='Schlegel, Finkbinder & Davis (1998) dust map: %s'
 #                  % schlegel_dust_map_filename.split('/')[-1] )
-# print ; print
+# print(); print()
 
 
 
@@ -150,13 +154,13 @@ def EBV(name, theta, phi):
 
 
 # def foregroundCorrection( ra, dec, wavelength ):
-#     print 'Looking up MW dust redding at (RA, Dec) = (%10.6f, %+10.6f).'
+#     print('Looking up MW dust redding at (RA, Dec) = (%10.6f, %+10.6f).')
 #     theta, phi = healpixAngularCoords( ra, dec )
 
 #     EBV1 = Schlegel_EBV( theta, phi )
-#     print 'E(B-V) from Schlegel dust map is: %.4f' % EBV1
+#     print('E(B-V) from Schlegel dust map is: %.4f' % EBV1)
 #     EBV2 = Planck_EBV( theta, phi )
-#     print 'E(B-V) from Planck dust map is:   %.4f' % EBV2
+#     print('E(B-V) from Planck dust map is:   %.4f' % EBV2)
 
 #     correction = MilkyWayDustCorrection( wavelength, EBV2, dustlaw='CCM89' )
 #     # this is the multiplicative scaling to correct for foreground dust
@@ -167,7 +171,7 @@ def EBV(name, theta, phi):
 
 def dustCorrectSAMICube( path, overwrite=False ):
     if not HEALPY_AVAILABLE:
-        print 'healpy not installed; cannot process dust data.'
+        print('healpy not installed; cannot process dust data.')
         return
     hdulist = pf.open(path, 'update')
     try:
@@ -183,7 +187,7 @@ def dustCorrectSAMICube( path, overwrite=False ):
             # Don't overwrite; get out of here!
             hdulist.close()
             return
-    print 'Recording dust data for ' + os.path.basename(path)
+    print('Recording dust data for ' + os.path.basename(path))
     header = hdulist[0].header
     ra, dec = header[ 'CATARA' ], header[ 'CATADEC' ]
     wl = header[ 'CRVAL3' ] + ( header[ 'CDELT3' ] *
@@ -202,10 +206,10 @@ def dustCorrectSAMICube( path, overwrite=False ):
                 hdu.data = correction
         else:
             # We were not able to find the dust map
-            print 'Warning: {} dust map not available'.format(
-                map_info['comment_name'])
+            print('Warning: {} dust map not available'.format(
+                map_info['comment_name']))
             if name == 'planck':
-                print 'No dust curve recorded'
+                print('No dust curve recorded')
     hdulist.flush()
     hdulist.close()
     return 
@@ -254,11 +258,11 @@ def MilkyWayDustCorrection( wavelength, EBV, dustlaw='CCM89' ):
         bcoeffs = ( +3.347,-10.805, +5.491,+11.102,
                     -7.985, -3.989, +2.908, +1.952, 0. )
     else :
-        print 'Do not recognise the given dust law:', dustlaw
-        print 'Recognised options are:'
-        print '--- CCM89 (Cardelli, Clayton & Mathis, 1989, ApJ 345, 245)'
-        print "--- OD94  (O'Donnell, 1994, ApJ 422, 1580"
-        print 'No dust correction will be performed.'
+        print('Do not recognise the given dust law:', dustlaw)
+        print('Recognised options are:')
+        print('--- CCM89 (Cardelli, Clayton & Mathis, 1989, ApJ 345, 245)')
+        print("--- OD94  (O'Donnell, 1994, ApJ 422, 1580")
+        print('No dust correction will be performed.')
         return 1.
         
     a = np.where( optical, np.polyval( acoeffs, y ), a )
@@ -282,7 +286,7 @@ def MilkyWayDustCorrection( wavelength, EBV, dustlaw='CCM89' ):
 
 def gamaTest( ):
     import atpy
-    print 'requires InputCatA.fits; download from GAMA DR2 webpages.'
+    print('requires InputCatA.fits; download from GAMA DR2 webpages.')
     gama = atpy.Table( '/Users/ent/data/gama/dr2/InputCatA.fits' )
     ebv0 = gama.EXTINCTION_R / 2.751
     

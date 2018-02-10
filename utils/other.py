@@ -64,16 +64,16 @@ def offset_hexa(csvfile, guide=None, obj=None, linear=False,
         print('Move the telescope {0:,.2f} arcsec {1} and {2:,.2f} arcsec {3}'.format(
             abs(offset_x), offset_direction_x, 
             abs(offset_y), offset_direction_y))
-        print 'The star will move from the central hole'
-        print '    to', name
+        print('The star will move from the central hole')
+        print('    to {}'.format(name))
         if with_apoff:
-            print '    (alternately, set the APOFF to X:{0:0.1f}, Y:{1:0.1f})'.format(
+            print('    (alternately, set the APOFF to X:{0:0.1f}, Y:{1:0.1f})'.format(
                     -offset_y, -offset_x
-                )
+                ))
 
 
 
-    print '-' * 70
+    print('-' * 70)
 
     csv = update_csv.CSV(csvfile)
     guide_probe = np.array(csv.get_values('Probe', 'guide'))
@@ -95,7 +95,7 @@ def offset_hexa(csvfile, guide=None, obj=None, linear=False,
     if guide is None:
         if n_valid_guides == 0:
             # Asked to find a guide but there aren't any to find!
-            print 'No guide probes found! Skipping that step'
+            print('No guide probes found! Skipping that step')
             guide = 'skip'
         else:
             # Find the closest valid guide to the centre
@@ -138,7 +138,7 @@ def offset_hexa(csvfile, guide=None, obj=None, linear=False,
         valid_objects = np.where(object_probe != '')[0]
         invalid_objects = np.where(object_probe == '')[0]
         if valid_objects.size == 0:
-            print 'No allocated object probes found! Using closest hole.'
+            print('No allocated object probes found! Using closest hole.')
             valid_objects = np.arange(object_probe.size)
             invalid_objects = np.array([])
     n_valid_objects = valid_objects.size
@@ -170,7 +170,7 @@ def offset_hexa(csvfile, guide=None, obj=None, linear=False,
     
     print_offsets(offset_x, offset_y, object_name, with_apoff=False)
 
-    print '-' * 70
+    print('-' * 70)
 
     return None
     
@@ -279,16 +279,16 @@ def smooth(x ,window_len=11, window='hanning'):
     """
     
     if x.ndim != 1:
-        raise ValueError, "smooth only accepts 1 dimension arrays."
+        raise ValueError("smooth only accepts 1 dimension arrays.")
 
     if x.size < window_len:
-        raise ValueError, "Input vector needs to be bigger than window size."
+        raise ValueError("Input vector needs to be bigger than window size.")
 
     if window_len<3:
         return x
 
     if not window in ['flat', 'hanning', 'hamming', 'bartlett', 'blackman']:
-        raise ValueError, "Window is one of 'flat', 'hanning', 'hamming', 'bartlett', 'blackman'"
+        raise ValueError("Window is one of 'flat', 'hanning', 'hamming', 'bartlett', 'blackman'")
 
     s=np.r_[2*x[0]-x[window_len:1:-1],x,2*x[-1]-x[-1:-window_len:-1]]
 
@@ -352,8 +352,8 @@ def domewindscreenflat_pos(coords_string, *args):
         success = False
 
     if not success:
-        print 'domewindscreenflat_pos now takes a single string as input, e.g.:'
-        print "sami.utils.domewindscreenflat_pos('-00h23m00s +00d14m03s')"
+        print('domewindscreenflat_pos now takes a single string as input, e.g.:')
+        print("sami.utils.domewindscreenflat_pos('-00h23m00s +00d14m03s')")
         return
 
     DomeCoords=namedtuple('DomeCoords', ['azimuth', 'zd'])
@@ -367,12 +367,12 @@ def domewindscreenflat_pos(coords_string, *args):
         ha -= 360.0
     dec = coords.dec.value
 
-    print
-    print "---------------------------------------------------------------------------"
-    print "INPUT"
-    print "Hour Angle:", ha
-    print "Declination:", dec
-    print "---------------------------------------------------------------------------"
+    print()
+    print("---------------------------------------------------------------------------")
+    print("INPUT")
+    print("Hour Angle:", ha)
+    print("Declination:", dec)
+    print("---------------------------------------------------------------------------")
     
     # Convert to radians
     ha = ha * degree
@@ -420,11 +420,11 @@ def domewindscreenflat_pos(coords_string, *args):
 
     output=DomeCoords(a,z) # output is a named tuple
 
-    print
-    print "---------------------------------------------------------------------------"
-    print "OUTPUT"
-    print output
-    print "---------------------------------------------------------------------------"
+    print()
+    print("---------------------------------------------------------------------------")
+    print("OUTPUT")
+    print(output)
+    print("---------------------------------------------------------------------------")
 
 def decimal_to_degree(ha_h, ha_m, ha_s, dec_d, dec_m, dec_s):
 
@@ -451,19 +451,19 @@ def get_probes_objects(infile, ifus='all'):
     else:
         ifus=ifus
  
-    print "Probe   Object"
-    print "-----------------------------------"
+    print("Probe   Object")
+    print("-----------------------------------")
     for ifu in ifus:
 
         ifu_data=IFU(infile, ifu, flag_name=False)
-        print ifu,"\t", ifu_data.name
+        print(ifu,"\t", ifu_data.name)
 
 def hg_changeset(path=__file__):
     """Return the changeset ID for the current version of the code."""
     try:
         changeset = subprocess.check_output(['hg', '-q', 'id'],
                                             cwd=os.path.dirname(path))
-        changeset = changeset[:-1]
+        changeset = changeset.strip().decode('ascii')
     except (subprocess.CalledProcessError, OSError):
         changeset = ''
     return changeset

@@ -127,8 +127,6 @@ from .. import utils
 from ..observing import centroid
 from ..utils.mc_adr import DARCorrector
 
-
-import string
 import numpy as np
 import os
 import matplotlib.pyplot as plt
@@ -164,7 +162,7 @@ def find_dither(RSSname,reference,centroid=True,inter=False,plot=False,remove_fi
       ### N.B. The huge assumption here is that the coordinates in micron of each central fibers on the focal 
       ### plane will remain exactly the same in the various exposures!  
       
-      file_centralfib=string.join([string.strip(reference,'.fits'), "ref_centrFIB.txt"],'') 
+      file_centralfib=''.join([reference.strip('.fits'), "ref_centrFIB.txt"]) 
       f=open(file_centralfib,'w')
       
     
@@ -197,7 +195,7 @@ def find_dither(RSSname,reference,centroid=True,inter=False,plot=False,remove_fi
       ycent = np.array([data['ycent'] for data in central_data])
       
       
-      file_ref=string.join([string.strip(reference,'.fits'), "_centroid"],'')  # Name of the file containing the centroid coordinates for the RSS used as a reference
+      file_ref=''.join([reference.strip('.fits'), "_centroid"]) # Name of the file containing the centroid coordinates for the RSS used as a reference
       
       xref=np.zeros(n_ifu)   #x coordinates of centroid in each ifu of the reference RSS
       yref=np.zeros(n_ifu)   #y coordinates of centroid in each ifu of the reference RSS
@@ -232,7 +230,7 @@ def find_dither(RSSname,reference,centroid=True,inter=False,plot=False,remove_fi
       
       ## Check if IRAF output db already exist. If yes, delete it
       
-      file_geodb=string.join([string.strip(reference,'.fits'), "_dbsolution"],'') # File where the 2D solution of geomap is stored 
+      file_geodb=''.join([reference.strip('.fits'), "_dbsolution"]) # File where the 2D solution of geomap is stored 
       if os.path.isfile(file_geodb):
                 os.remove(file_geodb)
 
@@ -243,15 +241,15 @@ def find_dither(RSSname,reference,centroid=True,inter=False,plot=False,remove_fi
           # Some pyraf installations appear to require this line to load the images module
           iraf.images()
      
-      for i in xrange(len(RSSmatch)):
+      for i in range(len(RSSmatch)):
          
              ## Define names of all the files used in this part of the module 
              
-             name=string.strip(RSSmatch[i],'.fits')
-             file_centroid=string.join([name, "_centroid"],'') # File containing the centroid coordinates. Produce by get_centroid
-             file_geoin=string.join([name, "_mapin.txt"],'') # This is the input file of geomap. It includes 4 columns having the x,y coordinates of the centroid in the inupt RSS and the ones in the reference RSS
-             file_stats=string.join([name, "_fit"],'') # File containing the detailed statistics for each fit. The content of each file is shown on the terminal.
-             file_geoxy=string.join([name, "_xytrans"],'') # Output of geoxytrans containing the coordinates of each central fiber in the coordinate system of the reference frame. 
+             name=RSSmatch[i].strip('.fits')
+             file_centroid=''.join([name, "_centroid"]) # File containing the centroid coordinates. Produce by get_centroid
+             file_geoin=''.join([name, "_mapin.txt"]) # This is the input file of geomap. It includes 4 columns having the x,y coordinates of the centroid in the inupt RSS and the ones in the reference RSS
+             file_stats=''.join([name, "_fit"]) # File containing the detailed statistics for each fit. The content of each file is shown on the terminal.
+             file_geoxy=''.join([name, "_xytrans"]) # Output of geoxytrans containing the coordinates of each central fiber in the coordinate system of the reference frame. 
             
              
              ## Check if IRAF output files already exist. If yes, delete them otherwise IRAF will crash!!!
@@ -280,7 +278,7 @@ def find_dither(RSSname,reference,centroid=True,inter=False,plot=False,remove_fi
             
              f=open(file_geoin, 'w')
              good = []
-             for j in xrange(n_ifu):
+             for j in range(n_ifu):
                  # Immediately censor any point that's moved by more than max_shift
                  # (Default value is 350um, about 5")
                  if np.sqrt((xin[j] - xref[j])**2 + (yin[j] - yref[j])**2) > max_shift:
@@ -388,7 +386,7 @@ def find_dither(RSSname,reference,centroid=True,inter=False,plot=False,remove_fi
 
       if remove_files:
           # Remove more text files
-          for filename in [file_geodb, file_centralfib, string.join([string.strip(reference,'.fits'), "_centroid"],'')]:
+          for filename in [file_geodb, file_centralfib, ''.join([reference.strip('.fits'), "_centroid"])]:
               if os.path.exists(filename):
                 os.remove(filename)
 
@@ -412,14 +410,14 @@ def find_dither(RSSname,reference,centroid=True,inter=False,plot=False,remove_fi
                           'yrms': 0.0,
                           'sigma': 0.0,
                           'n_good': n_ifu,
-                          'good': [True for i in xrange(n_ifu)],
+                          'good': [True for i in range(n_ifu)],
                           'reference': reference,
                           'xref_median': results[0]['xref_median'],
                           'yref_median': results[0]['yref_median']}
       save_results(ref_results_dict)
       
       ## Save final dither solution
-      #file_results=string.join([string.strip(reference,'.fits'), "_dither_solution.txt"],'')    
+      #file_results=''.join([reference.strip('.fits'), "_dither_solution.txt"])
       #results=np.column_stack((RSScol,ifscol,galID,xshcol,yshcol))
       #np.savetxt(file_results, results, fmt='%15s')
 
@@ -437,7 +435,7 @@ def find_dither(RSSname,reference,centroid=True,inter=False,plot=False,remove_fi
           fov=plt.Circle((0,0),125000,fill=False,lw=0.5)
           plt.gca().add_patch(fov)
           
-          for i in xrange(len(ifus)):
+          for i in range(len(ifus)):
                     
                 
                 
@@ -527,7 +525,7 @@ def get_centroid(infile, do_dar_correct=True):
 
     ## Create name of the file where centroid coordinates are stored 
     
-    out_txt=string.join([string.strip(infile,'.fits'), "_centroid"],'')
+    out_txt=''.join([infile.strip('.fits'), "_centroid"])
 
     f=open(out_txt, 'w')
     
@@ -583,17 +581,25 @@ def save_results(results):
     yref_median_col = pf.Column(name='Y_REFMED', format='E', 
                                 array=results['yref_median'])
     good_col = pf.Column(name='GOOD', format='B', array=results['good'])
+    hdu = pf.BinTableHDU.from_columns(
+        [ifus_col, xin_col, yin_col, xref_col, 
+         yref_col, xshift_col, yshift_col, 
+         xref_median_col, yref_median_col,
+         good_col])
+    """
     hdu = pf.new_table(pf.ColDefs([ifus_col, xin_col, yin_col, xref_col, 
                                    yref_col, xshift_col, yshift_col, 
                                    xref_median_col, yref_median_col,
                                    good_col]))
+    """
     hdu.header['X_RMS'] = (results['xrms'], 'RMS of X_SHIFT')
     hdu.header['Y_RMS'] = (results['yrms'], 'RMS of Y_SHIFT')
     hdu.header['SIGMA'] = (results['sigma'], 'Sigma clipping used in the fit')
     hdu.header['N_GOOD'] = (results['n_good'], 'Number of galaxies used in fit')
     hdu.header['REF_FILE'] = (results['reference'], 'Reference filename')
     hdu.header['HGALIGN'] = (HG_CHANGESET, 'Hg changeset ID for alignment code')
-    hdu.update_ext_name('ALIGNMENT')
+    #hdu.update_ext_name('ALIGNMENT')
+    hdu.name = 'ALIGNMENT'
     # Open up the file for editing
     hdulist = pf.open(results['filename'], 'update')
     # Remove the existing HDU, if it's there
@@ -634,7 +640,7 @@ def recalculate_ref(results_list, central_data):
         yref[:, index] = results['yin'] + results['yshift']
     xref_median = np.median(xref, axis=1)
     yref_median = np.median(yref, axis=1)
-    for index in xrange(n_hexa):
+    for index in range(n_hexa):
         delta_x = xref_median[index] - central_data[index]['xcent']
         delta_y = yref_median[index] - central_data[index]['ycent']
         if np.sqrt(delta_x**2 + delta_y**2) > 490.0:

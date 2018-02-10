@@ -91,7 +91,7 @@ def derive_pixelsize(x, y, verbose=0) :
         pixelsize = np.minimum(mindist, pixelsize)
     pixelsize = np.sqrt(pixelsize)
     if verbose:
-        print "Pixelsize will be: ", pixelsize
+        print("Pixelsize will be: ", pixelsize)
     return pixelsize
 
 def sn_w_covariance(xin,yin,signal,noise,covar) :
@@ -155,7 +155,7 @@ def derive_unbinned_field(xnodes, ynodes, data, xunb=None, yunb=None) :
     xnodes_rav, ynodes_rav = xnodes.ravel(), ynodes.ravel()
     data_rav = data.ravel()
     unbinned_data = np.zeros_like(x_rav)
-    for i in xrange(len(x_rav)) :
+    for i in range(len(x_rav)) :
         indclosestBin = argmin(dist2(x_rav[i], y_rav[i], xnodes_rav, ynodes_rav))
         unbinned_data[i] = data_rav[indclosestBin]
 
@@ -198,14 +198,14 @@ class bin2D :
         """ 
         Warning message for 2D Binning class
         """
-        print "WARNING [2D Binning]: %s"%(text)
+        print("WARNING [2D Binning]: %s"%(text))
 
     def _error(self, text) :
         """ 
         Error message for 2D Binning class
         Exit after message
         """
-        print "ERROR [2D Binning]: %s"%(text)
+        print("ERROR [2D Binning]: %s"%(text))
         return
 
     def _check_input(self) :
@@ -290,7 +290,7 @@ class bin2D :
         for ind in range(1,self.npix+1) :  ## Running over the index of the Voronoi BIN
             ## Only one pixel at this stage
             currentSN = self.SN[currentBin]
-            if verbose : print "Bin %d"%(ind)
+            if verbose : print("Bin %d"%(ind))
 
             self.status[currentBin] = ind   # only one pixel at this stage
             ## Barycentric centroid for 1 pixel...
@@ -450,7 +450,7 @@ class bin2D :
             minind = argmin(dist2(self.xin[i], self.yin[i], self.xnode, self.ynode, scale=self.scale))
             self.status[i] = self.statusnode[minind]
             if verbose :
-                print "Pixel ",  self.status[i], self.xin[i], self.yin[i], self.xnode[minind], self.ynode[minind]
+                print("Pixel ",  self.status[i], self.xin[i], self.yin[i], self.xnode[minind], self.ynode[minind])
 
         ## reDerive the centroid
         self.bin2d_centroid()
@@ -498,12 +498,12 @@ class bin2D :
         if cvt is not None : self.cvt = cvt
         if wvt is not None : self.wvt = wvt
 
-        print "=================="
-        print "Accreting Bins... "
+        print("==================")
+        print("Accreting Bins... ")
         self.bin2d_accretion()
-        print "          ...Done"
-        print "===================="
-        print "Reassigning Bins... "
+        print("          ...Done")
+        print("====================")
+        print("Reassigning Bins... ")
     
         
         self.bin2d_centroid()
@@ -511,14 +511,14 @@ class bin2D :
         badpixels = np.where(self.status == 0)[0]
         
         self.bin2d_assign_bins(badpixels)
-        print "            ...Done"
-        print "===================="
+        print("            ...Done")
+        print("====================")
         if self.cvt :
-            print "==========================="
-            print "Modified Lloyd algorithm..."
+            print("===========================")
+            print("Modified Lloyd algorithm...")
             self.bin2d_cvt_equal_mass()
-            print "%d iterations Done."%(self.niter)
-            print "==========================="
+            print("%d iterations Done."%(self.niter))
+            print("===========================")
         else : self.scale = 1.0
         ## Final nodes weighted centroids after assigning to the final nodes
         self.bin2d_assign_bins()

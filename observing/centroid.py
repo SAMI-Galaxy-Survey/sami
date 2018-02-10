@@ -103,11 +103,11 @@ def centroid(infile, ifus='all', savefile=True, plot=True):
 
     # Number of IFUs to display
     n=len(ifus)
-    print
-    print "--------------------------------------------------------------------------"
-    print "I am running the centroid script on", n, "IFU(s) in file", infile 
-    print "--------------------------------------------------------------------------"
-    print
+    print()
+    print("--------------------------------------------------------------------------")
+    print("I am running the centroid script on", n, "IFU(s) in file", infile) 
+    print("--------------------------------------------------------------------------")
+    print()
 
     # Number of rows and columns needed in the final display box
     # This is a bit of a fudge...
@@ -148,7 +148,7 @@ def centroid(infile, ifus='all', savefile=True, plot=True):
         outfile=str.split(os.path.basename(infile), '.')[0]
         out_txt=string.join([outfile, ".txt"],'')
         
-        print "Output text file is:", out_txt
+        print("Output text file is:", out_txt)
         
         # Open the text file for writing. Note this will overwrite existing files.
         f=open(out_txt, 'w')
@@ -165,8 +165,8 @@ def centroid(infile, ifus='all', savefile=True, plot=True):
     y_off_arr=[]
 
     # Print the heading for the offsets
-    print "-------------------------------------------------"
-    print "Offsets RA Dec:"
+    print("-------------------------------------------------")
+    print("Offsets RA Dec:")
     
     for i, ifu in enumerate(ifus):
 
@@ -215,7 +215,7 @@ def centroid(infile, ifus='all', savefile=True, plot=True):
 
         #print "FWHM from four techniques:", fwhm, fwhm_corr, fwhm_conv, fwhm_conv_corr
 
-        print "Probe", ifu_data.ifu, x_off, y_off #,  x_off_conv, y_off_conv  #, xm_off, ym_off, x_off, y_off
+        print("Probe", ifu_data.ifu, x_off, y_off) #,  x_off_conv, y_off_conv  #, xm_off, ym_off, x_off, y_off
 
         # Add the offsets to the lists
         x_off_arr.append(x_off)
@@ -254,7 +254,7 @@ def centroid(infile, ifus='all', savefile=True, plot=True):
 
             # Iterate over the x, y positions (and data value) making a circle patch for each fibre, with the
             # appropriate color.
-            for xmval, ymval, dataval in itertools.izip(x_microns, y_microns, data_norm):
+            for xmval, ymval, dataval in zip(x_microns, y_microns, data_norm):
 
                 # Make and add the fibre patch to the axes.
                 fibre_microns=Circle(xy=(xmval,ymval), radius=52.5) # 52.5
@@ -274,7 +274,7 @@ def centroid(infile, ifus='all', savefile=True, plot=True):
             py.setp(ax0.get_yticklabels(), visible=False)
 
             # Needed in future for debugging...
-            #for xval, yval, dataval in itertools.izip(x_degrees, y_degrees, data_norm):
+            #for xval, yval, dataval in zip(x_degrees, y_degrees, data_norm):
 
                 # Make and add the fibre patch to the axes.
                 #fibre_sky=Circle(xy=(xval,yval), radius=2.22e-4) # 52.5
@@ -292,8 +292,8 @@ def centroid(infile, ifus='all', savefile=True, plot=True):
             s=str(ifu_data.ifu)+' '+str(x_off)+' '+str(y_off)+'\n' # the data to write to file
             f.write(s)
 
-    print
-    print "-------------------------------------------------"
+    print()
+    print("-------------------------------------------------")
 
     if plot:
         py.suptitle(infile)
@@ -303,7 +303,7 @@ def centroid(infile, ifus='all', savefile=True, plot=True):
         if savefile:
             # Save the figure
             out_fig=string.join([outfile, ".pdf"],'') # outfile has been defined above
-            print "Output pdf file is:", out_fig
+            print("Output pdf file is:", out_fig)
             
             py.savefig(out_fig, format='pdf')
     
@@ -314,11 +314,11 @@ def centroid(infile, ifus='all', savefile=True, plot=True):
     fwhm_arr=np.asanyarray(fwhm_arr)
     fwhm_conv_arr=np.asanyarray(fwhm_conv_arr)
     
-    print "-------------------------------------------------"
-    print
-    print "FWHM of fits (in \"):"
-    print fwhm_arr
-    print 
+    print("-------------------------------------------------")
+    print()
+    print("FWHM of fits (in \"):")
+    print(fwhm_arr)
+    print() 
     # Now print the average offsets
     x_off_arr=np.asarray(x_off_arr)
     y_off_arr=np.asarray(y_off_arr)
@@ -342,9 +342,9 @@ def centroid(infile, ifus='all', savefile=True, plot=True):
     else:
         Dec_flag='N'
 
-    print "To centre the objects in the bundles you should offset the telescope:"
-    print "RA", np.abs(RA_med), RA_flag
-    print "Dec", np.abs(Dec_med), Dec_flag
+    print("To centre the objects in the bundles you should offset the telescope:")
+    print("RA", np.abs(RA_med), RA_flag)
+    print("Dec", np.abs(Dec_med), Dec_flag)
 
     #print fwhm_conv_arr
 
@@ -366,17 +366,17 @@ def focus(inlist, ifu):
     
     if ifu in all:
 
-        print
-        print "--------------------------------------------------------------------------"
-        print "I am running the focus script on probe", ifu, "for", n, "files."
-        print "--------------------------------------------------------------------------"
-        print
+        print()
+        print("--------------------------------------------------------------------------")
+        print("I am running the focus script on probe", ifu, "for", n, "files.")
+        print("--------------------------------------------------------------------------")
+        print()
 
     else:
-        print
-        print "-----------------------------------------------------------------------"
-        print "You have not provided a vaild probe number. Must be between 1 and 13."
-        print "-----------------------------------------------------------------------"
+        print()
+        print("-----------------------------------------------------------------------")
+        print("You have not provided a vaild probe number. Must be between 1 and 13.")
+        print("-----------------------------------------------------------------------")
 
         # Exit the function
         return
@@ -469,7 +469,7 @@ def focus(inlist, ifu):
         
         # Iterate over the x, y positions (and data value) making a circle patch for each fibre, with the
         # appropriate color.
-        for xmval, ymval, dataval in itertools.izip(x_microns, y_microns, data_norm):
+        for xmval, ymval, dataval in zip(x_microns, y_microns, data_norm):
             
             # Make and add the fibre patch to the axes.
             fibre=Circle(xy=(xmval,ymval), radius=52.5) # 52.5
@@ -496,10 +496,10 @@ def focus(inlist, ifu):
 
     ax1.plot(focus_values, fwhm_values, 'bo') #, label=IFUlist[j])
 
-    print
-    print "Focus values are (in mm):", focus_values
-    print "FWHM values are (in \"):", fwhm_values
-    print
+    print()
+    print("Focus values are (in mm):", focus_values)
+    print("FWHM values are (in \"):", fwhm_values)
+    print()
 
     p=np.polyfit(focus_values, fwhm_values, 2)
     focus_lin=np.arange(np.min(focus_values), np.max(focus_values)+0.1, 0.1)
@@ -512,7 +512,7 @@ def focus(inlist, ifu):
 
     py.show()
 
-    print "Focus value at minimum of fitted parabola: ", focus_lin[np.where(fit==np.min(fit))][0]
+    print("Focus value at minimum of fitted parabola: ", focus_lin[np.where(fit==np.min(fit))][0])
 
 def seeing(infile, ifu):
     """
@@ -525,16 +525,16 @@ def seeing(infile, ifu):
     all=[1,2,3,4,5,6,7,8,9,10,11,12,13]
     
     if ifu in all:
-        print
-        print "------------------------------------------------------"
-        print "You have told me that the PSF star is in probe", ifu
-        print "------------------------------------------------------"
+        print()
+        print("------------------------------------------------------")
+        print("You have told me that the PSF star is in probe", ifu)
+        print("------------------------------------------------------")
 
     else:
-        print
-        print "-----------------------------------------------------------------------"
-        print "You have not provided a vaild probe number. Must be between 1 and 13."
-        print "-----------------------------------------------------------------------"
+        print()
+        print("-----------------------------------------------------------------------")
+        print("You have not provided a vaild probe number. Must be between 1 and 13.")
+        print("-----------------------------------------------------------------------")
 
         # Exit the function
         return
@@ -574,15 +574,15 @@ def seeing(infile, ifu):
     fwhmx_mic=xm_w*2.35
     fwhmy_mic=ym_w*2.35
 
-    print
-    print "FWHM X:", np.around(fwhmx_sky, 4)
-    print "FWHM Y:", np.around(fwhmy_sky, 4)
-    print
-    print "Seeing (average):", np.mean([fwhmx_sky, fwhmy_sky])
+    print()
+    print("FWHM X:", np.around(fwhmx_sky, 4))
+    print("FWHM Y:", np.around(fwhmy_sky, 4))
+    print()
+    print("Seeing (average):", np.mean([fwhmx_sky, fwhmy_sky]))
 
-    print 
-    print "FWHM X/FWHM Y:", np.around(fwhmx_sky, 4)/np.around(fwhmy_sky, 4)
-    print
+    print() 
+    print("FWHM X/FWHM Y:", np.around(fwhmx_sky, 4)/np.around(fwhmy_sky, 4))
+    print()
 
     # The limits for the axes (plotting in microns).
     xm_lower=np.min(x_microns)-100
@@ -602,7 +602,7 @@ def seeing(infile, ifu):
     
     # Iterate over the x, y positions (and data value) making a circle patch for each fibre, with the
     # appropriate color.
-    for xmval, ymval, dataval in itertools.izip(x_microns, y_microns, data_norm):
+    for xmval, ymval, dataval in zip(x_microns, y_microns, data_norm):
         
         # Make and add the fibre patch to the axes.
         fibre=Circle(xy=(xmval,ymval), radius=52.5) # 52.5
@@ -621,7 +621,7 @@ def centroid_fit(x,y,data,microns=True, circular=True):
 
     # Smooth the data spectrally to get rid of cosmics
     data_smooth=np.zeros_like(data)
-    for q in xrange(np.shape(data)[0]):
+    for q in range(np.shape(data)[0]):
         # data_smooth[q,:]=utils.smooth(data[q,:], 11) #default hanning smooth
         data_smooth[q,:]=median_filter(data[q,:], 15)
         
@@ -671,9 +671,9 @@ def centroid_fit(x,y,data,microns=True, circular=True):
     # Reconstruct the model
     model=np.zeros((len(xlin), len(ylin)))
     # Reconstructing the Gaussian over the proper grid.
-    for ii in xrange(len(xlin)):
+    for ii in range(len(xlin)):
         xval=xlin[ii]
-        for jj in xrange(len(ylin)):
+        for jj in range(len(ylin)):
             yval=ylin[jj]
             model[ii,jj]=gf.fitfunc(gf.p, xval, yval)
     
@@ -736,9 +736,9 @@ def guider_focus(values):
     py.xlabel("Telescope Focus Position (mm)")
     py.ylabel("FWHM (Guider Pixels)")
     
-    print "---> START"
-    print "--->"
-    print "---> The best focus position is: {0:.2f}".format(min_x)
-    print "--->"
-    print "---> END"
+    print("---> START")
+    print("--->")
+    print("---> The best focus position is: {0:.2f}".format(min_x))
+    print("--->")
+    print("---> END")
 

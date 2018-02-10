@@ -19,7 +19,7 @@ def compare_star_field(path_pair, output=None):
     n_hexa = 13
     n_pixel = pf.getval(path_pair[1], 'NAXIS1')
     result = np.zeros((n_hexa, 7, n_pixel))
-    for i_hexa in xrange(n_hexa):
+    for i_hexa in range(n_hexa):
         telluric.derive_transfer_function(path_pair, use_probe=i_hexa+1)
         result[i_hexa, :, :] = pf.getdata(path_pair[1], 'FLUX_CALIBRATION')
     if output is not None:
@@ -41,7 +41,7 @@ def snr_in_all_tellurics(mngr_list, verbose=True):
                                min_exposure=900.0, ccd='ccd_2', name='main',
                                do_not_use=False):
             if verbose:
-                print 'Measuring telluric SNR in', fits.filename
+                print('Measuring telluric SNR in', fits.filename)
             telluric_data = pf.getdata(fits.telluric_path, 'FLUX_CALIBRATION')
             corrected_data = pf.getdata(fits.telluric_path)
             corrected_noise = np.sqrt(
@@ -84,7 +84,7 @@ def process_star_field(path_pair_in, path_pair_out):
     """Measure telluric correction on each star in a field of 13."""
     for path_in, path_out in zip(path_pair_in, path_pair_out):
         shutil.copy2(path_in, path_out)
-    for i in xrange(1, 14):
+    for i in range(1, 14):
         hdu_name = 'FLUX_CALIBRATION_{:02d}'.format(i)
         telluric.derive_transfer_function(path_pair_out, use_probe=i,
                                           hdu_name=hdu_name)

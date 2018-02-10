@@ -217,7 +217,7 @@ def _get_probe_single(infile, object_name, verbose=True):
     ifu=ifu_array[0]
 
     if verbose==True:
-        print "Object", object_name, "was observed in IFU", ifu, "in file", infile
+        print("Object", object_name, "was observed in IFU", ifu, "in file", infile)
 
     hdulist.close()
 
@@ -277,10 +277,10 @@ def dar_correct(ifu_list, xfibre_all, yfibre_all, method='simple',update_rss=Fal
     wavelength_array = ifu_list[0].lambda_range
     
     # Iterate over wavelength slices
-    for l in xrange(n_slices):
+    for l in range(n_slices):
         
         # Iterate over observations
-        for i_obs in xrange(n_obs):
+        for i_obs in range(n_obs):
             # Determine differential atmospheric refraction correction for this slice
             dar_correctors[i_obs].update_for_wavelength(wavelength_array[l])
             
@@ -331,19 +331,19 @@ def dithered_cubes_from_rss_list(files, objects='all', **kwargs):
         object_names=get_object_names(files[0])
     else:
         object_names=objects
-    print "--------------------------------------------------------------"
-    print "The following objects will be cubed:"
-    print
+    print("--------------------------------------------------------------")
+    print("The following objects will be cubed:")
+    print()
     for name in object_names:
-        print name
-    print "--------------------------------------------------------------"
+        print(name)
+    print("--------------------------------------------------------------")
     for name in object_names:
-        print
-        print "--------------------------------------------------------------"
-        print "Cubing object:", name
-        print
+        print()
+        print("--------------------------------------------------------------")
+        print("Cubing object:", name)
+        print()
         dithered_cube_from_rss_wrapper(files, name, **kwargs)            
-    print("Time dithered_cubes_from_files wall time: {0}".format(datetime.datetime.now() - start_time))
+    print(("Time dithered_cubes_from_files wall time: {0}".format(datetime.datetime.now() - start_time)))
     return
 
 def dithered_cube_from_rss_wrapper(files, name, size_of_grid=50, 
@@ -367,10 +367,10 @@ def dithered_cube_from_rss_wrapper(files, name, size_of_grid=50,
         try:
             os.makedirs(directory)
         except OSError:
-            print "Directory Exists", directory
-            print "Writing files to the existing directory"
+            print("Directory Exists", directory)
+            print("Writing files to the existing directory")
         else:
-            print "Making directory", directory
+            print("Making directory", directory)
 
         # Filename to write to
         arm = ifu_list[0].spectrograph_arm            
@@ -382,9 +382,9 @@ def dithered_cube_from_rss_wrapper(files, name, size_of_grid=50,
             if overwrite:
                 os.remove(outfile_name_full)
             else:
-                print 'Output file already exists:'
-                print outfile_name_full
-                print 'Skipping this object'
+                print('Output file already exists:')
+                print(outfile_name_full)
+                print('Skipping this object')
                 return False
 
         if overwrite:
@@ -459,7 +459,7 @@ def dithered_cube_from_rss_wrapper(files, name, size_of_grid=50,
             hdu4.header['COVARMOD'] = (covar_mode, 'Covariance mode')
             if covar_mode == 'optimal':
                 hdu4.header['COVAR_N'] = (len(covar_locs), 'Number of covariance locations')
-                for i in xrange(len(covar_locs)):
+                for i in range(len(covar_locs)):
                     hdu4.header['HIERARCH COVARLOC_'+str(i+1)] = covar_locs[i]
             list_of_hdus.append(hdu4)
 
@@ -472,7 +472,7 @@ def dithered_cube_from_rss_wrapper(files, name, size_of_grid=50,
         hdulist = pf.HDUList(list_of_hdus)
 
         # Write the file
-        print "Writing", outfile_name_full
+        print("Writing", outfile_name_full)
         "--------------------------------------------------------------"
         hdulist.writeto(outfile_name_full)
 
@@ -525,14 +525,14 @@ def dithered_cube_from_rss(ifu_list, size_of_grid=50, output_pix_size_arcsec=0.5
     #      the same coordiante system.
     #
 
-    for j in xrange(n_obs):
+    for j in range(n_obs):
 
         # Get the data.
         galaxy_data=ifu_list[j]
         
         # Smooth the spectra and median.
         data_smoothed=np.zeros_like(galaxy_data.data)
-        for p in xrange(np.shape(galaxy_data.data)[0]):
+        for p in range(np.shape(galaxy_data.data)[0]):
             data_smoothed[p,:]=utils.smooth(galaxy_data.data[p,:], 10) #default hanning
 
         # Collapse the smoothed data over a large wavelength range to get continuum data
@@ -567,7 +567,7 @@ def dithered_cube_from_rss(ifu_list, size_of_grid=50, output_pix_size_arcsec=0.5
         # Check that we're not trying to use data that isn't there
         # Change the offsets method if necessary
         if offsets == 'file' and not hasattr(galaxy_data, 'x_refmed'):
-            print 'Offsets have not been pre-measured! Fitting them now.'
+            print('Offsets have not been pre-measured! Fitting them now.')
             offsets = 'fit'
 
         if (offsets == 'fit'):
@@ -687,7 +687,7 @@ def dithered_cube_from_rss(ifu_list, size_of_grid=50, output_pix_size_arcsec=0.5
     # spectra first allow us to flag devient pixels in a sensible way. See the
     # data reduction paper for a full description of this reasoning.
     data_norm=np.empty_like(data_all)
-    for ii in xrange(n_obs * n_fibres):
+    for ii in range(n_obs * n_fibres):
         data_norm[ii,:] = data_all[ii,:]/nanmedian( data_all[ii,:])
         
 
@@ -696,7 +696,7 @@ def dithered_cube_from_rss(ifu_list, size_of_grid=50, output_pix_size_arcsec=0.5
     var_cube=np.zeros((size_of_grid, size_of_grid, np.shape(data_all)[1]))
     weight_cube=np.empty((size_of_grid, size_of_grid, np.shape(data_all)[1]))
     
-    print("data_all.shape: ", np.shape(data_all))
+    print(("data_all.shape: ", np.shape(data_all)))
 
     if clip:
         # Set up some diagostics if you have the clip flag set.
@@ -725,7 +725,7 @@ def dithered_cube_from_rss(ifu_list, size_of_grid=50, output_pix_size_arcsec=0.5
     covariance_slice_locs = []
     
     # This loops over wavelength slices (e.g., 2048).
-    for l in xrange(n_slices):
+    for l in range(n_slices):
 
         # In this loop, we will map the RSS fluxes from individual fibres
         # onto the output grid.
@@ -745,8 +745,8 @@ def dithered_cube_from_rss(ifu_list, size_of_grid=50, output_pix_size_arcsec=0.5
         elif (l == 10):
             time_diff = datetime.datetime.now() - start_time
             print("Mapping slices onto output grid, wavelength slice by slice...")
-            print("Estimated time to complete all {0} slices: {1}".format(
-                n_slices, n_slices * time_diff / 9))
+            print(("Estimated time to complete all {0} slices: {1}".format(
+                n_slices, n_slices * time_diff / 9)))
             sys.stdout.flush()
             del start_time
             del time_diff
@@ -910,9 +910,9 @@ def dithered_cube_from_rss(ifu_list, size_of_grid=50, output_pix_size_arcsec=0.5
         var_cube[:, :, l] = var_grid_slice_final
         weight_cube[:, :, l] = weight_grid_slice_final
 
-    print("Total calls to drizzle: {}, recomputes: {}, ({}%)".format(
+    print(("Total calls to drizzle: {}, recomputes: {}, ({}%)".format(
                 overlap_maps.n_drizzle, overlap_maps.n_drizzle_recompute,
-                float(overlap_maps.n_drizzle_recompute)/overlap_maps.n_drizzle*100.))
+                float(overlap_maps.n_drizzle_recompute)/overlap_maps.n_drizzle*100.)))
 
     # Finally, divide by the weight cube to remove variations in exposure time
     # (and hence surface brightness sensitivity) from the output data cube.
@@ -1046,7 +1046,8 @@ class SAMIDrizzler:
         else:
             self.n_drizzle_recompute = self.n_drizzle_recompute + 1
         
-        for i_fibre, xfib, yfib in itertools.izip(itertools.count(), xfibre_all, yfibre_all):
+        #for i_fibre, xfib, yfib in itertools.izip(itertools.count(), xfibre_all, yfibre_all):
+        for i_fibre, xfib, yfib in zip(itertools.count(), xfibre_all, yfibre_all):
     
             # Feed the grid_coordinates_x and grid_coordinates_y fibre positions to the overlap_maps instance.
             drop_to_pixel_fibre = self.single_overlap_map(xfib, yfib)
@@ -1104,7 +1105,7 @@ def create_primary_header(ifu_list,name,files,WCS_pos,WCS_flag):
     # Need to implement a global version number for the database
     
     # Put the RSS files into the header
-    for num in xrange(len(files)):
+    for num in range(len(files)):
         rss_key='HIERARCH RSS_FILE '+str(num+1)
         rss_string='Input RSS file '+str(num+1)
         hdr_new[rss_key] = (os.path.basename(files[num]), rss_string)
@@ -1128,7 +1129,7 @@ def create_primary_header(ifu_list,name,files,WCS_pos,WCS_flag):
             if len(set(val)) == 1: 
                 hdr_new.append(hdr.cards[keyword])
             else:
-                print 'Non-unique value for keyword:',keyword
+                print('Non-unique value for keyword:',keyword)
 
     # Extract the couple of relevant keywords from the fibre table header and again
     # check for consistency of keyword values
@@ -1141,7 +1142,7 @@ def create_primary_header(ifu_list,name,files,WCS_pos,WCS_flag):
         if len(set(val)) == 1:
             hdr_new.append(ifu_list[0].fibre_table_header.cards[keyword])
         else:
-            print 'Non-unique value for keyword:', keyword
+            print('Non-unique value for keyword:', keyword)
 
     # Append HISTORY from the initial RSS file header, assuming HISTORY is
     # common for all RSS frames.
@@ -1163,7 +1164,7 @@ def create_primary_header(ifu_list,name,files,WCS_pos,WCS_flag):
         try:
             add_hdr_list = [pf.getheader(f, extname) for f in files]
         except KeyError:
-            print 'Extension not found:', extname
+            print('Extension not found:', extname)
             continue
         for key in key_list:
             val = []
@@ -1171,12 +1172,12 @@ def create_primary_header(ifu_list,name,files,WCS_pos,WCS_flag):
                 for add_hdr in add_hdr_list:
                     val.append(add_hdr[key])
             except KeyError:
-                print 'Keyword not found:', key, 'in extension', extname
+                print('Keyword not found:', key, 'in extension', extname)
                 continue
             if len(set(val)) == 1:
                 hdr_new.append(add_hdr.cards[key])
             else:
-                print 'Non-unique value for keyword:', key, 'in extension', extension
+                print('Non-unique value for keyword:', key, 'in extension', extension)
 
     return hdr_new
 
@@ -1196,15 +1197,15 @@ def create_metadata_table(ifu_list):
     primary_header_keywords = first_header.keys()
     
     # We must remove COMMENT and HISTORY keywords, as they must be treated separately.
-    for i in xrange(primary_header_keywords.count('HISTORY')):
+    for i in range(primary_header_keywords.count('HISTORY')):
         primary_header_keywords.remove('HISTORY')
-    for i in xrange(primary_header_keywords.count('COMMENT')):
+    for i in range(primary_header_keywords.count('COMMENT')):
         primary_header_keywords.remove('COMMENT')
-    for i in xrange(primary_header_keywords.count('SIMPLE')):
+    for i in range(primary_header_keywords.count('SIMPLE')):
         primary_header_keywords.remove('SIMPLE')
-    for i in xrange(primary_header_keywords.count('EXTEND')):
+    for i in range(primary_header_keywords.count('EXTEND')):
         primary_header_keywords.remove('EXTEND')
-    for i in xrange(primary_header_keywords.count('SCRUNCH')):
+    for i in range(primary_header_keywords.count('SCRUNCH')):
         primary_header_keywords.remove('SCRUNCH')
     
     # TODO: Test/check that all ifu's have the same keywords and error if not
@@ -1255,7 +1256,7 @@ def create_metadata_table(ifu_list):
     #columns.append(pf.Column(name='COMMENTS', format='80PA(100)')) # Up to 100 80-character lines
     #columns.append(pf.Column(name='HISTORY', format='80PA(100)')) # Up to 100 80-character lines
    
-    return pf.new_table(columns)
+    return pf.BinTableHDU.from_columns(columns)
 
 def create_covar_matrix(overlap_array,variances):
     """Create the covariance matrix for a single wavelength slice. 

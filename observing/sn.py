@@ -88,8 +88,8 @@ def sn_list(inlist, tablein, l1, l2, ifus='all'):
         
         files.append(np.str(cols[0]))
 
-    print "I have received", len(files), \
-        "files for which to calculate and combine S/N measurements."
+    print("I have received", len(files), \
+        "files for which to calculate and combine S/N measurements.")
 
     # Define the list of IFUs to display
     if ifus == 'all':
@@ -97,7 +97,7 @@ def sn_list(inlist, tablein, l1, l2, ifus='all'):
     else:
         IFUlist = [ifus]
 
-    print "I will calculate S/N for", len(IFUlist), "IFUs."
+    print("I will calculate S/N for", len(IFUlist), "IFUs.")
 
     SN_all_sq=np.empty((len(IFUlist), len(files)))
 
@@ -111,8 +111,8 @@ def sn_list(inlist, tablein, l1, l2, ifus='all'):
     # Add the squared SN values and square root them
     SN_tot=np.sqrt(np.sum(SN_all_sq, axis=1))
 
-    print IFUlist
-    print SN_tot
+    print(IFUlist)
+    print(SN_tot)
     
 def sn_re(insami, tablein, l1, l2, plot=False, ifus='all', 
        log=True, verbose=True, output=False, seek_centroid=True):
@@ -158,10 +158,10 @@ def sn_re(insami, tablein, l1, l2, plot=False, ifus='all',
         print('Running sami.observing.sn.sn_re.')
         print('--------------------------------')
         print('')
-        if n_IFU == 1: print 'Processing', n_IFU, 'IFU. Plotting is', 
-        if n_IFU > 1:  print 'Processing', n_IFU, 'IFUs. Plotting is', 
-        if not plot: print 'OFF.'
-        if plot:  print 'ON.'
+        if n_IFU == 1: print('Processing', n_IFU, 'IFU. Plotting is', end=' ') 
+        if n_IFU > 1:  print('Processing', n_IFU, 'IFUs. Plotting is', end=' ') 
+        if not plot: print('OFF.')
+        if plot:  print('ON.')
         print('')
 
     # --------------------
@@ -276,7 +276,7 @@ def sn_re(insami, tablein, l1, l2, plot=False, ifus='all',
             idx1 = l1
             idx2 = l2
 
-            print('-- IFU #' + str(ifu_num))
+            print(('-- IFU #' + str(ifu_num)))
             print("   This galaxy was not found in the Target Table. ")
 
         else: 
@@ -292,14 +292,14 @@ def sn_re(insami, tablein, l1, l2, plot=False, ifus='all',
             
             if verbose: 
                 print('-------------------------------------------------------')
-                print(' IFU #' + str(ifu_num))
+                print((' IFU #' + str(ifu_num)))
                 print('-------------------------------------------------------')
-                print('   Redshift:       ' + z_string)
-                print('   Spectral range: ' + 
-                      str(np.around([l_rest[idx1], l_rest[idx2]])))
+                print(('   Redshift:       ' + z_string))
+                print(('   Spectral range: ' + 
+                      str(np.around([l_rest[idx1], l_rest[idx2]]))))
                 
-                print('   Observed at:    ' + 
-                      str(np.around([l_range[idx1], l_range[idx2]])))
+                print(('   Observed at:    ' + 
+                      str(np.around([l_range[idx1], l_range[idx2]]))))
                 print('')
         
         # -------------------------
@@ -349,8 +349,8 @@ def sn_re(insami, tablein, l1, l2, plot=False, ifus='all',
                 centroid = np.abs(test_distance - 0).argmin()
                 
         if verbose: 
-            print '   S/N @Centroid =', np.round(sn[centroid]), '[/Angstrom]'
-            print ''
+            print('   S/N @Centroid =', np.round(sn[centroid]), '[/Angstrom]')
+            print('')
 
         # ---------------------------------------- 
         # (6) Identify cores at approximately Re
@@ -377,14 +377,14 @@ def sn_re(insami, tablein, l1, l2, plot=False, ifus='all',
                 if not 1 in good_core:
                     sn_str = str(np.round(np.nanmedian(sn)))
                     print("** Could not match Re")
-                    print('=> Median overall S/N = '+sn_str)
+                    print(('=> Median overall S/N = '+sn_str))
                     print('')
 
                 else:
-                    print '=> [Min, Max, Median] S/N @Re = [',
-                    print '%0.2f' % min(sn[good_core == True]), ',',
-                    print '%0.2f' % max(sn[good_core == True]), ',',
-                    print '%0.2f' % sn_Re, '] [/Angstrom]'
+                    print('=> [Min, Max, Median] S/N @Re = [', end=' ')
+                    print('%0.2f' % min(sn[good_core == True]), ',', end=' ')
+                    print('%0.2f' % max(sn[good_core == True]), ',', end=' ')
+                    print('%0.2f' % sn_Re, '] [/Angstrom]')
                     print('')
         
 
@@ -539,7 +539,7 @@ def sb(rssin, tablein, starin, ifus='all',
         if int(myIFU.name) in RowID:
             found_star = True
             star = ifu_num
-            print("Star found in Probe #"+str(star))
+            print(("Star found in Probe #"+str(star)))
 
             # ----------------
             # (2) Measure flux
@@ -584,7 +584,7 @@ def sb(rssin, tablein, starin, ifus='all',
             else: 
                 flux = np.nansum(conv_fib)
 
-            print("S(Flux) = "+str(np.round(flux))+" cts")
+            print(("S(Flux) = "+str(np.round(flux))+" cts"))
 
             """ 
             Finally, need to check if the user is looking for a flux inter/
@@ -608,7 +608,7 @@ def sb(rssin, tablein, starin, ifus='all',
                 mag = star_table['r'][this_star]
             else:
                 mag = star_table['g'][this_star]
-            print("[ID, brightness] = ", RowID[this_star], mag)
+            print(("[ID, brightness] = ", RowID[this_star], mag))
             
     # --------------------
     # (4) Deduce zeropoint
@@ -621,7 +621,7 @@ def sb(rssin, tablein, starin, ifus='all',
         # The SDSS r' band throughput between 5400 and 7230 A. 
     
         zmag = mag + 2.5 * np.log10(flux)
-        print("Calculated zeropoint as "+str(np.round(zmag,decimals=2))+" mag.")
+        print(("Calculated zeropoint as "+str(np.round(zmag,decimals=2))+" mag."))
             
     # -------------------------
     # (5) Map SB of all targets
@@ -740,6 +740,6 @@ def sb(rssin, tablein, starin, ifus='all',
     # Report if no star was identified in the supplied RSS file or probe. 
     if not found_star:
         if ifus=='all':
-            print("Did not find a secondary star in RSS file '"+rssin+"'")
+            print(("Did not find a secondary star in RSS file '"+rssin+"'"))
         else:
-            print("Did not find a secondary star in Probe #"+str(ifus)+".")
+            print(("Did not find a secondary star in Probe #"+str(ifus)+"."))

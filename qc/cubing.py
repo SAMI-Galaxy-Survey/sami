@@ -19,7 +19,7 @@ def measure_position_at_wavelength(cube, variance, wavelength_array,
     """Return x, y position in pixels for cube at given wavelength."""
     n_wave, n_x, n_y = cube.shape
     good = np.zeros(cube.shape)
-    for i_x, i_y in itertools.product(xrange(n_x), xrange(n_y)):
+    for i_x, i_y in itertools.product(range(n_x), range(n_y)):
         good[:, i_x, i_y] = clip_spectrum(
             cube[:, i_x, i_y], np.sqrt(variance[:, i_x, i_y]),
             wavelength_array)

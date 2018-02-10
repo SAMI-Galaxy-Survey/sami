@@ -40,8 +40,8 @@ COMMAND_REDUCE = 'aaorun'
 def call(command_line, debug=False, **kwargs):
     """Simply passes the command out to a subprocess, unless debug is True."""
     if debug:
-        print 'CWD: ' + os.getcwd()
-        print command_line
+        print('CWD: ' + os.getcwd())
+        print(command_line)
     else:
         subprocess.call(command_line, **kwargs)
 
@@ -77,7 +77,7 @@ def load_gui(dirname=None, idx_file=None, lockdir=LOCKDIR, **kwargs):
 
 def run_2dfdr_single(fits, idx_file, options=None, lockdir=LOCKDIR, **kwargs):
     """Run 2dfdr on a single FITS file."""
-    print 'Reducing file:', fits.filename
+    print('Reducing file:', fits.filename)
     if fits.ndf_class == 'BIAS':
         task = 'reduce_bias'
     elif fits.ndf_class == 'DARK':
