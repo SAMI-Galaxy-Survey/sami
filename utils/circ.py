@@ -1,30 +1,70 @@
-"""
-Functions to calculate the drizzle overlap between a square and a circle.
+from __future__ import print_function
 
-This calculation is the crucial step in drizzling, to know how much each
-input fibre (circle) overlaps with each output spaxel (square).
+"""
+Functions to calculate the:
+1) drizzle overlap between a square and a circle (function `resample_circle`
+   by Jon Nielsen 2012)
+2) Gaussian overlap between a circular Gaussian and a square grid (function
+   `inteGrauss2d` by Francesco D'Eugenio 2017)
+
+These calculations are the crucial step in drizzling, to know how much each
+input fibre (circle) contributes to each output spaxel (square).
 
 In general this code isn't actually used, as there is a C++ version that
 is significantly faster. The functions here are provided as a fall-back in
 case the C++ version hasn't been compiled.
+
+WARNING by Francesco D'Eugenio 16/02/2017
+The original drizzle overlap as it is implemented in Python has a
+severe bug, in that if the circle falls partially outside the grid, the
+weights are ``wrapped around`` and distributed to the opposide side of the
+grid, as illustrated below.
+
++---+---+---+---+---+---+---+
+|   |   | x | x | x |   |   |
++---+---+---+---+---+---+---+
+|   |   |   | x |   |   |   |
++---+---+---+---+---+---+---+
+|   |   |   |   |   |   |   |
++---+---+---+---+---+---+---+
+|   |   |   |   |   |   |   |
++---+---+---+---+---+---+---+
+|   |   |   | x |   |   |   |
++---+---+---+---+---+---+---+
+|   |   | x | x | x |   |   |
++---+---+---+---+---+---+---+
+|   | x | x | x | x | x |   |
++---+---+---+---+---+---+---+
+
+Because of this bug that I do not have time to address, every time you load
+the pipeline and use this implementation (as opposed to the C++ implementation)
+you will receive a horrible warning. You're welcome.
+
+
 """
 
-# ----------------------------------------------------------------------------------------
-# Written by Jon Nielsen 2012
-# A program to generate a weight map for the intersection of a circle with
-# a square grid.    Squares on the grid that are completely within the circle
-# receive a weight of 1.    Square that intersect the circle are given a weight
-# that is proportional to the area of the square inside the circle.
-#
-# Requires numpy and matplotlib.    Although if you don't care about plotting
-# then you can do without matplotlib.
-# ----------------------------------------------------------------------------------------
 
 import sys
 import math
 import itertools
+import warnings
 
 import numpy as np
+
+from scipy.special import erf
+
+warning_mess = (
+    'There is a bug in the python implementation of `circ`. We recommend that'
+  + ' you read the documentation of this module to assess whether this bug'
+  + ' will affect your science.')
+warnings.warn(warning_mess)
+
+
+SQRT2 = np.sqrt(2.)
+
+# +---+------------------------------------------------------------------------+
+# | 1.| Drizzling functions by Jon Nielsen.                                    |
+# +---+------------------------------------------------------------------------+
 
 def find_squares_in_circle(xc, yc, r):
     # Establish bounds in y
@@ -266,8 +306,9 @@ def area_contribution(p1, p2, xc, yc, r):
 
     return i, j, area
 
-def resample_circle(xpix, ypix, xc, yc, r):
+def resample_circle(xpix, ypix, xc, yc, r, *args):
     """Resample a circle/drop onto an output grid.
+    Written by Jon Nielsen 2012
     
     Parameters
     ----------
@@ -276,10 +317,21 @@ def resample_circle(xpix, ypix, xc, yc, r):
     xc: (float) x-position of the centre of the circle.
     yc: (float) y-position of the centre of the circle.
     r: (float) radius of the circle
+    args: any additional arguments. This is ignored in the context of this
+        function (its purpose is to gather additional arguments that may be
+        passed to equivalent functions with a different signature).
     
     Output
     ------
-    2D array of floats. Note that the zeroth axis is for the y-dimension and the
+    2D array of floats. A weight map for the intersection of a circle with
+    a square grid. Squares on the grid that are completely within the circle
+    receive a weight of 1. Square that intersect the circle are given a weight
+    that is proportional to the area of the square inside the circle.
+
+    Notes
+    -----
+
+    The zeroth axis of the output array is for the y-dimension and the
     first axis is for the x-dimension. i.e., out.shape -> (ypix, xpix)
     This can be VERY CONFUSING, particularly when one remembers that imshow's
     behaviour is to plot the zeroth axis as the vertical coordinate and the first

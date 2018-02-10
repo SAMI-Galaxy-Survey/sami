@@ -1,3 +1,5 @@
+from __future__ import print_function
+
 """
 This module covers functions required to create cubes from a dithered set
 of RSS frames. See Sharp et al (2015) for a detailed description of the
@@ -126,7 +128,43 @@ import itertools
 import os
 import sys
 import datetime
+import warnings
+warnings.simplefilter('always', DeprecationWarning)
+warnings.simplefilter('always', ImportWarning)
 from glob import glob
+
+# This switch selects wich implementation to use to compute the covariance
+# matrix. The two implementations differ only in their technical aspects, but
+# the results are the same (within the numerical precision). The C
+# implementation is the fastest.
+try:
+    from cCovar import create_covar_matrix
+except ImportError:
+    # Here we use the original implementation from James (or Nic?). The module
+    # contains a python, vectorised implementation that is significantly faster,
+    # but still slower than the C implementation. Should you prefer the python,
+    # vectorised implementation, please run:
+    # from covar import create_covar_matrix_vectorised as create_covar_matrix
+    warn_message = ('Failed to import the C version of covar using '
+        + ' the python implementation (this takes longer).\n'
+        + 'To use the C implementation, please navigate to the folder where '
+        + 'the sami pipeline is located, and run `Make` from the terminal. ')
+    warnings.warn(warn_message, ImportWarning)
+    from covar import create_covar_matrix_original as create_covar_matrix
+
+
+try:
+    from tqdm import tqdm # `tqdm` required to show progress meter bars.
+    use_old_progress_meter = False
+except ImportError:
+    warning_message = ('\n' + '*'*80 + '\n'
+        '* `tqdm` module is not available. No progress bars will be shown.\n'
+        + '* We currently recommend to install `tqdm`. This can be done e.g. by \n'
+        + '* `~# pip install tqdm`\n'
+        + '*'*80 + '\n')
+    warnings.warn(warning_message, DeprecationWarning, stacklevel=2)
+    use_old_progress_meter = True
+    tqdm = lambda x: x    # If `tqdm` is not available, overload it to identity.
 
 # Cross-correlation function from scipy.signal (slow)
 from scipy.signal import correlate
@@ -159,6 +197,18 @@ from ..qc.fluxcal import read_filter, get_coords
 
 import code
 
+from pdb import set_trace
+
+# This simple switch allows to test the alternative cubing methods. Do not change.
+if 1:
+    from ..utils.cCirc import resample_circle as compute_weights
+    cubing_method = 'Tophat'
+else:
+    warning_message = 'The Gaussian weighting scheme is not fully assessed.'
+    warnings.warn(warning_message, FutureWarning, stacklevel=2)
+    from ..utils.circ import inteGrauss2d as compute_weights
+    cubing_method = 'Gaussian'
+
 # Some global constants:
 HG_CHANGESET = utils.hg_changeset(__file__)
 
@@ -190,14 +240,16 @@ def _get_probe_all(files, name, verbose=True):
     probes = [_get_probe_single(fl, name, verbose=verbose) for fl in files]
     probes = np.unique(probes)
 
-    if len(probes)==1:
-        return probes[0]
-    else:
-        message = ('Object {} appears to have dithers from multiple IFU ' \
-            + 'probes.\n The input files are {}').format(name, files)
-        raise IOError(message)
+    #if len(probes)==1:
+    #    return probes[0]
+    #else:
+    #    message = ('Object {} appears to have dithers from multiple IFU ' \
+    #        + 'probes.\n The input files are {}').format(name, files)
+    #    raise IOError(message)
 
+    probes_string = np.array2string(probes,separator=',')[1:-1]
 
+    return probes_string
 
 def _get_probe_single(infile, object_name, verbose=True):
     """ This should read in the RSS files and return the probe number the object was observed in"""
@@ -332,18 +384,17 @@ def dithered_cubes_from_rss_list(files, objects='all', **kwargs):
     else:
         object_names=objects
     print("--------------------------------------------------------------")
-    print("The following objects will be cubed:")
-    print()
+    print("The following objects will be cubed:\n\n")
     for name in object_names:
-        print(name)
-    print("--------------------------------------------------------------")
-    for name in object_names:
+        print(name, end=' ')
+    print("\n--------------------------------------------------------------")
+    for name in tqdm(object_names):
         print()
         print("--------------------------------------------------------------")
         print("Cubing object:", name)
         print()
         dithered_cube_from_rss_wrapper(files, name, **kwargs)            
-    print(("Time dithered_cubes_from_files wall time: {0}".format(datetime.datetime.now() - start_time)))
+    print("Time dithered_cubes_from_files wall time: {0}".format(datetime.datetime.now() - start_time))
     return
 
 def dithered_cube_from_rss_wrapper(files, name, size_of_grid=50, 
@@ -439,8 +490,10 @@ def dithered_cube_from_rss_wrapper(files, name, size_of_grid=50,
         # Add the drop factor used to the datacube header
         hdr_new['DROPFACT'] = (drop_factor, 'Drizzle drop scaling')
 
+        hdr_new['CBINGMET'] = (cubing_method, 'Method adopted for cubing')
+
         hdr_new['IFUPROBE'] = (_get_probe_all(files, name, verbose=False),
-                               'Id number of the SAMI IFU probe')
+                               'Id number(s) of the SAMI IFU probe(s)')
 
         # Create HDUs for each cube.
         
@@ -473,7 +526,7 @@ def dithered_cube_from_rss_wrapper(files, name, size_of_grid=50,
 
         # Write the file
         print("Writing", outfile_name_full)
-        "--------------------------------------------------------------"
+        print("--------------------------------------------------------------")
         hdulist.writeto(outfile_name_full)
 
         # Close the open file
@@ -508,13 +561,12 @@ def dithered_cube_from_rss(ifu_list, size_of_grid=50, output_pix_size_arcsec=0.5
             size_of_grid, output_pix_size_arcsec, 1, n_obs * n_fibres,
             update_tol=update_tol)
                 
-    # Empty lists for positions and data. Could be arrays, might be faster? Should test...
-    xfibre_all=[]
-    yfibre_all=[]
-    data_all=[]
-    var_all=[]
-
-    ifus_all=[]
+    # Empty lists for positions and data.
+    xfibre_all = np.empty((n_obs, n_fibres))
+    yfibre_all = np.empty((n_obs, n_fibres))
+    data_all= np.empty((n_obs, n_fibres, n_slices))
+    var_all = np.empty((n_obs, n_fibres, n_slices))
+    ifus_all= np.empty(n_obs)
 
     # The following loop:
     #
@@ -610,28 +662,18 @@ def dithered_cube_from_rss(ifu_list, size_of_grid=50, output_pix_size_arcsec=0.5
             galaxy_data.data[bad_throughput, :] = np.nan
             galaxy_data.var[bad_throughput, :] = np.nan
     
-        xfibre_all.append(xm)
-        yfibre_all.append(ym)
+        xfibre_all[j, :] = xm
+        yfibre_all[j, :] = ym
 
-        data_all.append(galaxy_data.data)
-        var_all.append(galaxy_data.var)
+        data_all[j, :, :] = galaxy_data.data
+        var_all[j, :, :] = galaxy_data.var
 
-        ifus_all.append(galaxy_data.ifu)
-
-
-    xfibre_all=np.asanyarray(xfibre_all)
-    yfibre_all=np.asanyarray(yfibre_all)
+        ifus_all[j] = galaxy_data.ifu
 
     # Scale these up to have a wavelength axis as well
     xfibre_all = xfibre_all.reshape(n_obs, n_fibres, 1).repeat(n_slices,2)
     yfibre_all = yfibre_all.reshape(n_obs, n_fibres, 1).repeat(n_slices,2)
     
-    
-    data_all=np.asanyarray(data_all)
-    var_all=np.asanyarray(var_all)
-
-    ifus_all=np.asanyarray(ifus_all)
-
     # @TODO: Rescaling between observations.
     #
     #     This may be done here (_before_ the reshaping below). There also may
@@ -696,7 +738,7 @@ def dithered_cube_from_rss(ifu_list, size_of_grid=50, output_pix_size_arcsec=0.5
     var_cube=np.zeros((size_of_grid, size_of_grid, np.shape(data_all)[1]))
     weight_cube=np.empty((size_of_grid, size_of_grid, np.shape(data_all)[1]))
     
-    print(("data_all.shape: ", np.shape(data_all)))
+    print("data_all.shape: ", np.shape(data_all))
 
     if clip:
         # Set up some diagostics if you have the clip flag set.
@@ -725,7 +767,7 @@ def dithered_cube_from_rss(ifu_list, size_of_grid=50, output_pix_size_arcsec=0.5
     covariance_slice_locs = []
     
     # This loops over wavelength slices (e.g., 2048).
-    for l in range(n_slices):
+    for l in tqdm(range(n_slices)):
 
         # In this loop, we will map the RSS fluxes from individual fibres
         # onto the output grid.
@@ -739,17 +781,22 @@ def dithered_cube_from_rss(ifu_list, size_of_grid=50, output_pix_size_arcsec=0.5
         #     np.shape(data_grid_slice_fibres) -> (outsize, outsize, n_fibres * n_files)
         #     np.shape(data_rss_slice_final)   -> (outsize, outsize)
         
-        # Estimate time to loop completion, and display to user:
-        if (l == 1):
-            start_time = datetime.datetime.now()
-        elif (l == 10):
-            time_diff = datetime.datetime.now() - start_time
-            print("Mapping slices onto output grid, wavelength slice by slice...")
-            print(("Estimated time to complete all {0} slices: {1}".format(
-                n_slices, n_slices * time_diff / 9)))
-            sys.stdout.flush()
-            del start_time
-            del time_diff
+        """ Olden time estimate, we ditched it for `tqdm` which is A)rabic
+        B)etter and C)ool.
+        """
+        if use_old_progress_meter:
+            # Estimate time to loop completion, and display to user:
+            if (l == 1):
+                start_time = datetime.datetime.now()
+            elif (l == 10):
+                time_diff = datetime.datetime.now() - start_time
+                print("Mapping slices onto output grid, wavelength slice by slice...")
+                print("Estimated time to complete all {0} slices: {1}".format(
+                    n_slices, n_slices * time_diff / 9))
+                sys.stdout.flush()
+                del start_time
+                del time_diff
+
 
 
         # Create pointers to slices of the RSS data for convenience (these are
@@ -782,6 +829,8 @@ def dithered_cube_from_rss(ifu_list, size_of_grid=50, output_pix_size_arcsec=0.5
         if (l == 0) and (covar_mode != 'none'):
             covariance_array_slice = create_covar_matrix(overlap_array,var_rss_slice)
             s_covar_slice = np.shape(covariance_array_slice)
+            if np.nansum(covariance_array_slice == 0):
+                covariance_array_slice = np.ones(s_covar_slice)*np.nan
             covariance_array = covariance_array_slice.reshape(np.append(s_covar_slice,1))
             covariance_slice_locs = [0]
 
@@ -805,13 +854,13 @@ def dithered_cube_from_rss(ifu_list, size_of_grid=50, output_pix_size_arcsec=0.5
             recompute_tracker = overlap_maps.n_drizzle_recompute
             recompute_flag = 0
 
-        elif (((l%200 == 0) and (l != 0)) or (l == (n_slices-2)) or (l == (n_slices-1))) and (covar_mode != 'none'):
-            covariance_array_slice = create_covar_matrix(overlap_array,var_rss_slice)
-            covariance_array_slice = covariance_array_slice.reshape(np.append(s_covar_slice,1))
-            covariance_array = np.append(covariance_array,covariance_array_slice,axis=len(s_covar_slice))
-            covariance_slice_locs.append(l)
+        #elif (((l%200 == 0) and (l != 0)) or (l == (n_slices-2)) or (l == (n_slices-1))) and (covar_mode != 'none'):
+        #    covariance_array_slice = create_covar_matrix(overlap_array,var_rss_slice)
+        #    covariance_array_slice = covariance_array_slice.reshape(np.append(s_covar_slice,1))
+        #    covariance_array = np.append(covariance_array,covariance_array_slice,axis=len(s_covar_slice))
+        #    covariance_slice_locs.append(l)
 
-        elif (l == (n_slices-1)) and (covar_mode != 'none'):
+        elif ((l == (n_slices-2)) or (l == (n_slices-1))) and (covar_mode != 'none'):
             covariance_array_slice = create_covar_matrix(overlap_array,var_rss_slice)
             covariance_array_slice = covariance_array_slice.reshape(np.append(s_covar_slice,1))
             covariance_array = np.append(covariance_array,covariance_array_slice,axis=len(s_covar_slice))
@@ -824,6 +873,7 @@ def dithered_cube_from_rss(ifu_list, size_of_grid=50, output_pix_size_arcsec=0.5
         
         if recompute_tracker != overlap_maps.n_drizzle_recompute:
             recompute_flag = 1
+
         ##########################################
         
         # Map RSS slices onto gridded slices
@@ -910,9 +960,9 @@ def dithered_cube_from_rss(ifu_list, size_of_grid=50, output_pix_size_arcsec=0.5
         var_cube[:, :, l] = var_grid_slice_final
         weight_cube[:, :, l] = weight_grid_slice_final
 
-    print(("Total calls to drizzle: {}, recomputes: {}, ({}%)".format(
+    print("Total calls to drizzle: {}, recomputes: {}, ({}%)".format(
                 overlap_maps.n_drizzle, overlap_maps.n_drizzle_recompute,
-                float(overlap_maps.n_drizzle_recompute)/overlap_maps.n_drizzle*100.)))
+                float(overlap_maps.n_drizzle_recompute)/overlap_maps.n_drizzle*100.))
 
     # Finally, divide by the weight cube to remove variations in exposure time
     # (and hence surface brightness sensitivity) from the output data cube.
@@ -942,7 +992,7 @@ class SAMIDrizzler:
     DAR)"""  
 
     def __init__(self, size_of_grid, output_pix_size_arcsec, drop_factor,
-                 n_fibres, update_tol=0.02):
+                 n_fibres, n_sigma=5., update_tol=0.02):
         """Construct a new SAMIDrizzler isntance with the necessary information.
         
         Parameters
@@ -991,6 +1041,12 @@ class SAMIDrizzler:
         # Number of times drizzle has been recomputed in this instance
         self.n_drizzle_recompute = 0
 
+        # If using the Gaussian drizzling, `n_sigma` is the number of
+        # standard deviations inside which the Gaussian is integrated. Beyond
+        # a radius equal to `n_sigma` * `drop_diameter_pix` the Gaussian is set
+        # to zero.
+        self.n_sigma = n_sigma
+
     def single_overlap_map(self, fibre_position_x, fibre_position_y):
         """Compute the mapping from a single input drop to output pixel grid.
         
@@ -1026,10 +1082,10 @@ class SAMIDrizzler:
         # is in the first index, and y-coordinate (east positive) is in the
         # second index.
         weight_map = np.transpose(
-            utils.circ.resample_circle(
+            compute_weights(
                 self.output_dimension, self.output_dimension, 
                 xfib, yfib,
-                self.drop_diameter_pix / 2.0))
+                self.drop_diameter_pix / 2.0, self.n_sigma))
 
         return weight_map
 
@@ -1046,7 +1102,6 @@ class SAMIDrizzler:
         else:
             self.n_drizzle_recompute = self.n_drizzle_recompute + 1
         
-        #for i_fibre, xfib, yfib in itertools.izip(itertools.count(), xfibre_all, yfibre_all):
         for i_fibre, xfib, yfib in zip(itertools.count(), xfibre_all, yfibre_all):
     
             # Feed the grid_coordinates_x and grid_coordinates_y fibre positions to the overlap_maps instance.
@@ -1258,60 +1313,8 @@ def create_metadata_table(ifu_list):
    
     return pf.BinTableHDU.from_columns(columns)
 
-def create_covar_matrix(overlap_array,variances):
-    """Create the covariance matrix for a single wavelength slice. 
-        As input takes the output of the drizzle class, overlap_array, 
-        and the variances of the individual fibres"""
     
-    covarS = 2 # Radius of sub-region to record covariance information - probably
-               # shouldn't be hard coded, but scaled to drop size in some way
-    
-    s = np.shape(overlap_array)
-    if s[2] != len(variances):
-        raise Exception('Length of variance array must be equal to the number of fibre overlap maps supplied')
-    
-    #Set up the covariance array
-    covariance_array = np.zeros((s[0],s[1],(covarS*2)+1,(covarS*2)+1))
-    if len(np.where(np.isfinite(variances) == True)[0]) == 0:
-        return covariance_array
-    
-    #Set up coordinate arrays for the covariance sub-arrays
-    xB = np.zeros(((covarS*2+1)**2),dtype=np.int)
-    yB = np.zeros(((covarS*2+1)**2),dtype=np.int)
-    for i in range(covarS*2+1):
-        for j in range(covarS*2+1):
-            xB[j+i*(covarS*2+1)] = i
-            yB[j+i*(covarS*2+1)] = j
-    xB = xB - covarS
-    yB = yB - covarS
-    
-    #Pad overlap_array with covarS blank space in the spatial axis
-    
-    overlap_array_padded = np.zeros([s[0]+2*covarS,s[1]+2*covarS,s[2]])
-    overlap_array_padded[covarS:-covarS,covarS:-covarS,:] = overlap_array
-    overlap_array = overlap_array_padded
 
-    #Loop over output pixels
-    for xA in range(s[0]):
-        for yA in range(s[1]):
-            #Loop over each fibre
-            for f in range(len(variances)):
-                if np.isfinite(overlap_array[xA+covarS,yA+covarS,f]):
-                    xC = xA +covarS + xB
-                    yC = yA + covarS + yB
-                    a = overlap_array[xA+covarS,yA+covarS,f]*np.sqrt(variances[f])
-                    if np.isfinite(a) == False:
-                        a = 1.0
-                    #except:
-                    #    code.interact(local=locals())
-
-                    b = overlap_array[xC,yC,f]*np.sqrt(variances[f])
-                    b[np.where(np.isfinite(b) == False)] = 0.0
-                    covariance_array[xA,yA,:,:] = covariance_array[xA,yA,:,:] + (a*b).reshape(covarS*2+1,covarS*2+1)
-            covariance_array[xA,yA,:,:] = covariance_array[xA,yA,:,:]/covariance_array[xA,yA,covarS,covarS]
-    
-    return covariance_array
-    
 def scale_cube_pair(file_pair, scale, **kwargs):
     """Scale both blue and red cubes by a given value."""
     for path in file_pair:
@@ -1420,9 +1423,3 @@ def create_qc_hdu(file_list, name):
         columns.append(pf.Column(name=key, format='E', array=qc_data[key]))
     hdu = pf.BinTableHDU.from_columns(columns, name='QC')
     return hdu
-
-
-
-
-
-

@@ -582,24 +582,18 @@ def save_results(results):
                                 array=results['yref_median'])
     good_col = pf.Column(name='GOOD', format='B', array=results['good'])
     hdu = pf.BinTableHDU.from_columns(
-        [ifus_col, xin_col, yin_col, xref_col, 
-         yref_col, xshift_col, yshift_col, 
-         xref_median_col, yref_median_col,
-         good_col])
-    """
-    hdu = pf.new_table(pf.ColDefs([ifus_col, xin_col, yin_col, xref_col, 
-                                   yref_col, xshift_col, yshift_col, 
-                                   xref_median_col, yref_median_col,
-                                   good_col]))
-    """
+        pf.ColDefs([ifus_col, xin_col, yin_col, xref_col, 
+                    yref_col, xshift_col, yshift_col, 
+                    xref_median_col, yref_median_col,
+                    good_col]))
     hdu.header['X_RMS'] = (results['xrms'], 'RMS of X_SHIFT')
     hdu.header['Y_RMS'] = (results['yrms'], 'RMS of Y_SHIFT')
     hdu.header['SIGMA'] = (results['sigma'], 'Sigma clipping used in the fit')
     hdu.header['N_GOOD'] = (results['n_good'], 'Number of galaxies used in fit')
     hdu.header['REF_FILE'] = (results['reference'], 'Reference filename')
     hdu.header['HGALIGN'] = (HG_CHANGESET, 'Hg changeset ID for alignment code')
-    #hdu.update_ext_name('ALIGNMENT')
-    hdu.name = 'ALIGNMENT'
+
+    hdu.header['EXTNAME'] = 'ALIGNMENT'
     # Open up the file for editing
     hdulist = pf.open(results['filename'], 'update')
     # Remove the existing HDU, if it's there
