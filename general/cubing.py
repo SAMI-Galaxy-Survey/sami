@@ -138,14 +138,14 @@ from glob import glob
 # the results are the same (within the numerical precision). The C
 # implementation is the fastest.
 try:
-    from cCovar import create_covar_matrix
+    from .cCovar import create_covar_matrix
 except ImportError:
     # Here we use the original implementation from James (or Nic?). The module
     # contains a python, vectorised implementation that is significantly faster,
     # but still slower than the C implementation. Should you prefer the python,
     # vectorised implementation, please run:
     # from covar import create_covar_matrix_vectorised as create_covar_matrix
-    warn_message = ('Failed to import the C version of covar using '
+    warn_message = ('Failed to import the C version of covar: using '
         + ' the python implementation (this takes longer).\n'
         + 'To use the C implementation, please navigate to the folder where '
         + 'the sami pipeline is located, and run `Make` from the terminal. ')
@@ -204,12 +204,19 @@ if 1:
     try:
         from ..utils.cCirc import resample_circle as compute_weights
     except ImportError: # Assume no compiled version of the C++ library exists. Switch to python.
+        warn_message = ('Failed to import the C version of compute_weights: using'
+            + ' the python implementation (this takes longer).\n'
+            + 'To use the C implementation, please navigate to the folder where '
+            + 'the sami pipeline is located, and run `Make` from the terminal. ')
         from ..utils.circ import resample_circle as compute_weights
     cubing_method = 'Tophat'
 else:
     warning_message = 'The Gaussian weighting scheme is not fully assessed.'
     warnings.warn(warning_message, FutureWarning, stacklevel=2)
-    from ..utils.circ import inteGrauss2d as compute_weights
+    try:
+        from ..utils.cCirc import inteGrauss2d as compute_weights
+    except ImportError: # Assume no compiled version of the C++ library exists. Switch to python.
+        from ..utils.circ import inteGrauss2d as compute_weights
     cubing_method = 'Gaussian'
 
 # Some global constants:
