@@ -37,6 +37,18 @@ LOCKDIR = '2dfdrLockDir'
 COMMAND_GUI = 'drcontrol'
 COMMAND_REDUCE = 'aaorun'
 
+# Check that 2dfdr is available.
+try:
+    with open(os.devnull, 'w') as dump:
+        subprocess.call([COMMAND_REDUCE, 'help'], stdout=dump)
+except (OSError, FileNotFoundError):
+    error_message = (
+        'Cannot find the 2dfdr executable ``{}``\n'.format(COMMAND_REDUCE)
+        + 'Please ensure that 2dfdr is correctly installed.')
+    raise ImportError(error_message)
+
+
+
 def call(command_line, debug=False, **kwargs):
     """Simply passes the command out to a subprocess, unless debug is True."""
     if debug:
