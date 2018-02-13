@@ -67,6 +67,7 @@ from glob import glob
 from pydoc import pager
 import itertools
 import datetime
+import asyncio
 
 import astropy.coordinates as coord
 from astropy import units
@@ -863,14 +864,40 @@ class Manager:
             # this issue, but in one case it hung on aatmacb, so let's be
             # absolutely sure to avoid the issue
             return []
-        if self.n_cpu == 1:
-            result_list = list(map(function, input_list))
+        if asyncio.iscoroutinefunction(function):
+
+            result_list = []
+
+            # loop = asyncio.new_event_loop()
+            loop = asyncio.get_event_loop()
+            # Break up the overall job into chunks that are n_cpu in size:
+            for i in range(0, len(input_list), self.n_cpu):
+                print("Running jobs {} to {} in parallel".format(i, i+self.n_cpu))
+                # Create an awaitable object which can be used as a future.
+                # This is the job that will be run in parallel.
+                async def job():
+                    tasks = [function(item) for item in input_list[i:i+self.n_cpu]]
+                    # for completed in asyncio.as_completed(tasks):  # print in the order they finish
+                    #     await completed
+                    #     # print(completed.result())
+                    sub_results = await asyncio.gather(*tasks, loop=loop)
+                    result_list.extend(sub_results)
+
+                loop.run_until_complete(job())
+            # loop.close()
+
+            return np.array(result_list)
+
         else:
-            pool = multiprocessing.Pool(self.n_cpu)
-            result_list = pool.map(function, input_list, chunksize=1)
-            pool.close()
-            pool.join()
-        return result_list
+            # Fall back to using multiprocessing for non-coroutine functions
+            if self.n_cpu == 1:
+                result_list = list(map(function, input_list))
+            else:
+                pool = multiprocessing.Pool(self.n_cpu)
+                result_list = pool.map(function, input_list, chunksize=1)
+                pool.close()
+                pool.join()
+            return result_list
 
     def inspect_root(self, copy_files, move_files, trust_header=True):
         """Add details of existing files to internal lists."""
@@ -4690,13 +4717,13 @@ def best_path(fits):
         path = fits.reduced_path
     return path    
 
-@safe_for_multiprocessing
-def run_2dfdr_single_wrapper(group):
+# @safe_for_multiprocessing
+async def run_2dfdr_single_wrapper(group):
     """Run 2dfdr on a single file."""
     fits, idx_file, options, cwd, imp_scratch, scratch_dir, check, debug = \
         group
     try:
-        tdfdr.run_2dfdr_single(
+        await tdfdr.run_2dfdr_single(
             fits, idx_file, options=options, return_to=cwd, 
             unique_imp_scratch=True, restore_to=imp_scratch, 
             scratch_dir=scratch_dir, debug=debug)
