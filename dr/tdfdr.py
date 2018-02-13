@@ -31,6 +31,14 @@ import os
 import tempfile
 import shutil
 from contextlib import contextmanager
+import asyncio
+from asyncio.subprocess import DEVNULL
+
+# Set up logging
+from .. import slogging
+log = slogging.getLogger(__name__)
+log.setLevel(slogging.DEBUG)
+# log.enable_console_logging()
 
 LOCKDIR = '2dfdrLockDir'
 
@@ -49,15 +57,23 @@ except (OSError, FileNotFoundError):
 
 
 
-def call(command_line, debug=False, **kwargs):
+async def call(command_line, debug=False, **kwargs):
     """Simply passes the command out to a subprocess, unless debug is True."""
     if debug:
         print('CWD: ' + os.getcwd())
-        print(command_line)
+        log.debug("%%%%%%%%%% Starting async processs")
+        proc = await asyncio.create_subprocess_exec("echo", *command_line)
+        log.debug("%%%%%%%%%% Waiting for finish of async processs")
+        await proc.wait()
+        log.debug("%%%%%%%%%% Async processs finished")
     else:
-        subprocess.call(command_line, **kwargs)
+        log.debug("%%%%%%%%%% Starting async processs")
+        proc = await asyncio.create_subprocess_exec(*command_line, stdout=DEVNULL)
+        log.debug("%%%%%%%%%% Waiting for finish of async processs")
+        await proc.wait()
+        log.debug("%%%%%%%%%% Async processs finished")
 
-def run_2dfdr(dirname, options=None, return_to=None, unique_imp_scratch=False,
+async def run_2dfdr(dirname, options=None, return_to=None, unique_imp_scratch=False,
               lockdir=LOCKDIR, command=COMMAND_REDUCE, debug=False, **kwargs):
     """Run 2dfdr with a specified set of command-line options."""
     command_line = [command]
@@ -67,17 +83,13 @@ def run_2dfdr(dirname, options=None, return_to=None, unique_imp_scratch=False,
         with temp_imp_scratch(**kwargs):
             with visit_dir(dirname, return_to=return_to, 
                            cleanup_2dfdr=True, lockdir=lockdir):
-                with open(os.devnull, 'w') as dump:
-# outout 2dfdr options, useful for debugging.  Need to make this output
-# automatically if we are running in verbose mode, but not done for now.                    
-#                    print '2dFdr call options:',command_line
-                    call(command_line, stdout=dump, debug=debug)
+                await call(command_line)
+        return
     else:
         with visit_dir(dirname, return_to=return_to, 
                        cleanup_2dfdr=True, lockdir=lockdir):
-            with open(os.devnull, 'w') as dump:
-                call(command_line, stdout=dump, debug=debug)
-    return
+            await call(command_line)
+        return
 
 def load_gui(dirname=None, idx_file=None, lockdir=LOCKDIR, **kwargs):
     """Load the 2dfdr GUI in the specified directory."""
@@ -90,7 +102,7 @@ def load_gui(dirname=None, idx_file=None, lockdir=LOCKDIR, **kwargs):
     run_2dfdr(dirname, options, lockdir=lockdir, command=COMMAND_GUI, **kwargs)
     return
 
-def run_2dfdr_single(fits, idx_file, options=None, lockdir=LOCKDIR, **kwargs):
+async def run_2dfdr_single(fits, idx_file, options=None, lockdir=LOCKDIR, **kwargs):
     """Run 2dfdr on a single FITS file."""
     print('Reducing file:', fits.filename)
     if fits.ndf_class == 'BIAS':
@@ -117,8 +129,8 @@ def run_2dfdr_single(fits, idx_file, options=None, lockdir=LOCKDIR, **kwargs):
                    '-OUT_DIRNAME', out_dirname]
     if options is not None:
         options_all.extend(options)
-    run_2dfdr(fits.reduced_dir, options=options_all, lockdir=lockdir, **kwargs)
-    return
+    await run_2dfdr(fits.reduced_dir, options=options_all, lockdir=lockdir, **kwargs)
+    return '2dfdr Reduced file:' + fits.filename
 
 # def run_2dfdr_combine(input_path_list, output_path, return_to=None, 
 #                       lockdir=LOCKDIR, **kwargs):
@@ -170,7 +182,7 @@ def run_2dfdr_combine(input_path_list, output_path, idx_file, **kwargs):
                output_filename,
                '-idxfile',
                idx_file]
-    run_2dfdr(output_dir, options=options, **kwargs)
+    asyncio.get_event_loop().run_until_complete(run_2dfdr(output_dir, options=options, **kwargs))
 
 def cleanup():
     """Clean up 2dfdr crud."""
@@ -194,13 +206,25 @@ def visit_dir(dir_path, return_to=None, cleanup_2dfdr=False, lockdir=LOCKDIR):
             os.chdir(return_to)
             raise LockException(
                 'Directory locked by another process: ' + dir_path)
+        else:
+            assert os.path.exists(lockdir)
+            log.debug("Lock Directory '{}' created in '{}'".format(lockdir, os.getcwd()))
     try:
         yield
     finally:
+        # tmp_return_to = os.getcwd()
+
+        # Ensure we're in the directory for this context manager before
+        # finalizing (as other instances of this context manager may have
+        # changed the directory again).
+        os.chdir(dir_path)
+
         if cleanup_2dfdr:
             cleanup()
         if lockdir is not None:
+            log.debug("Will delete lock directory '{}' in '{}'".format(lockdir, os.getcwd()))
             os.rmdir(lockdir)
+            pass
         os.chdir(return_to)
 
 @contextmanager
@@ -223,7 +247,8 @@ def temp_imp_scratch(restore_to=None, scratch_dir=None, do_not_delete=False):
     if scratch_dir is not None and not os.path.exists(scratch_dir):
         os.makedirs(scratch_dir)
     # Make a temporary directory with a unique name
-    imp_scratch = tempfile.mkdtemp(dir=scratch_dir)
+    # imp_scratch = tempfile.mkdtemp(dir=scratch_dir)
+    imp_scratch = tempfile.mkdtemp()
     # Set the IMP_SCRATCH environment variable to that directory, so that
     # 2dfdr will use it
     os.environ['IMP_SCRATCH'] = imp_scratch
@@ -238,6 +263,7 @@ def temp_imp_scratch(restore_to=None, scratch_dir=None, do_not_delete=False):
                 del os.environ['IMP_SCRATCH']
         if not do_not_delete:
             # Remove the temporary directory and all its contents
+            assert os.path.exists(imp_scratch)
             shutil.rmtree(imp_scratch)
             # No longer remove parent directories, as it can screw things up
             # next time around
