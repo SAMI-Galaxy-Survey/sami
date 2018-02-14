@@ -872,7 +872,7 @@ class Manager:
             loop = asyncio.get_event_loop()
             # Break up the overall job into chunks that are n_cpu in size:
             for i in range(0, len(input_list), self.n_cpu):
-                print("Running jobs {} to {} in parallel".format(i, i+self.n_cpu))
+                print("{} jobs total, running {} to {} in parallel".format(len(input_list), i, min(i+self.n_cpu, len(input_list))))
                 # Create an awaitable object which can be used as a future.
                 # This is the job that will be run in parallel.
                 async def job():

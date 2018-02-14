@@ -66,7 +66,7 @@ console_handler = None
 # if there are any already present.
 complement_existing_loggers = False
 
-PACKAGE_LOGGER_NAME = 'fidia'
+PACKAGE_LOGGER_NAME = 'sami'
 
 # Copy some things from parent package
 DEBUG = logging.DEBUG
