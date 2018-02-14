@@ -30,9 +30,10 @@ import subprocess
 import os
 import tempfile
 import shutil
+import re
 from contextlib import contextmanager
 import asyncio
-from asyncio.subprocess import DEVNULL
+from asyncio.subprocess import DEVNULL, PIPE
 
 # Set up logging
 from .. import slogging
@@ -67,11 +68,21 @@ async def call(command_line, debug=False, **kwargs):
         await proc.wait()
         log.debug("%%%%%%%%%% Async processs finished")
     else:
-        log.debug("%%%%%%%%%% Starting async processs")
-        proc = await asyncio.create_subprocess_exec(*command_line, stdout=DEVNULL)
-        log.debug("%%%%%%%%%% Waiting for finish of async processs")
-        await proc.wait()
-        log.debug("%%%%%%%%%% Async processs finished")
+        log.debug("Starting async processs")
+        log.info("2dfdr call: {}".format(" ".join(command_line)))
+        proc = await asyncio.create_subprocess_exec(*command_line, stdout=PIPE)
+        log.debug("Waiting for finish of async processs")
+        tdfdr_stdout, tdfdr_stderr = await proc.communicate()
+        tdfdr_stdout = tdfdr_stdout.decode("utf-8")
+        # Note: stderr is not currently captured, so this will return None.
+        # tdfdr_stderr = tdfdr_stderr.decode("utf-8") if tdfdr_stderr else None
+
+        log.debug("Output from 2dfdr:------------------------------")
+        if log.isEnabledFor(slogging.DEBUG):
+            for line in tdfdr_stdout.splitlines():
+                log.debug("   " + line)
+        log.debug("Async processs finished")
+        return tdfdr_stdout
 
 async def run_2dfdr(dirname, options=None, return_to=None, unique_imp_scratch=False,
               lockdir=LOCKDIR, command=COMMAND_REDUCE, debug=False, **kwargs):
@@ -79,16 +90,27 @@ async def run_2dfdr(dirname, options=None, return_to=None, unique_imp_scratch=Fa
     command_line = [command]
     if options is not None:
         command_line.extend(options)
+    # TODO: Is there ever a reason not to run with a unique IMP_SCRATCH? This could be cleaned up.
     if unique_imp_scratch:
         with temp_imp_scratch(**kwargs):
             with visit_dir(dirname, return_to=return_to, 
-                           cleanup_2dfdr=True, lockdir=lockdir):
-                await call(command_line)
+                           cleanup_2dfdr=False, lockdir=lockdir):
+                tdfdr_stdout = await call(command_line, debug=debug)
+                confirm_line = tdfdr_stdout.splitlines()[-2]
+                if not re.match(r"Data Reduction command \S+ completed.", confirm_line):
+                    log.debug(confirm_line)
+                    message = "2dfdr did not run to completion for command: %s" % " ".join(command_line)
+                    raise TdfdrException(message)
         return
     else:
         with visit_dir(dirname, return_to=return_to, 
-                       cleanup_2dfdr=True, lockdir=lockdir):
-            await call(command_line)
+                       cleanup_2dfdr=False, lockdir=lockdir):
+            tdfdr_stdout = await call(command_line, debug=debug)
+            confirm_line = tdfdr_stdout.splitlines()[-2]
+            if not re.match(r"Data Reduction command \S+ completed."):
+                log.debug(confirm_line)
+                message = "2dfdr did not run to completion for command: %s" % " ".join(command_line)
+                raise TdfdrException(message)
         return
 
 def load_gui(dirname=None, idx_file=None, lockdir=LOCKDIR, **kwargs):
