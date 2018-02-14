@@ -4724,8 +4724,7 @@ async def run_2dfdr_single_wrapper(group):
         group
     try:
         await tdfdr.run_2dfdr_single(
-            fits, idx_file, options=options, return_to=cwd, 
-            unique_imp_scratch=True, restore_to=imp_scratch, 
+            fits, idx_file, options=options, return_to=cwd,
             scratch_dir=scratch_dir, debug=debug)
     except tdfdr.LockException:
         message = ('Postponing ' + fits.filename + 

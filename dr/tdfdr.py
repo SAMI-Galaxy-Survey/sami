@@ -58,7 +58,7 @@ except (OSError, FileNotFoundError):
 
 
 
-async def call(command_line, debug=False, **kwargs):
+async def async_call(command_line, debug=False, **kwargs):
     """Simply passes the command out to a subprocess, unless debug is True."""
     if debug:
         print('CWD: ' + os.getcwd())
@@ -84,30 +84,18 @@ async def call(command_line, debug=False, **kwargs):
         log.debug("Async processs finished")
         return tdfdr_stdout
 
-async def run_2dfdr(dirname, options=None, return_to=None, unique_imp_scratch=False,
+async def run_2dfdr(dirname, options=None, return_to=None,
               lockdir=LOCKDIR, command=COMMAND_REDUCE, debug=False, **kwargs):
     """Run 2dfdr with a specified set of command-line options."""
     command_line = [command]
     if options is not None:
         command_line.extend(options)
-    # TODO: Is there ever a reason not to run with a unique IMP_SCRATCH? This could be cleaned up.
-    if unique_imp_scratch:
-        with temp_imp_scratch(**kwargs):
-            with visit_dir(dirname, return_to=return_to, 
-                           cleanup_2dfdr=False, lockdir=lockdir):
-                tdfdr_stdout = await call(command_line, debug=debug)
-                confirm_line = tdfdr_stdout.splitlines()[-2]
-                if not re.match(r"Data Reduction command \S+ completed.", confirm_line):
-                    log.debug(confirm_line)
-                    message = "2dfdr did not run to completion for command: %s" % " ".join(command_line)
-                    raise TdfdrException(message)
-        return
-    else:
-        with visit_dir(dirname, return_to=return_to, 
-                       cleanup_2dfdr=False, lockdir=lockdir):
-            tdfdr_stdout = await call(command_line, debug=debug)
+
+    with temp_imp_scratch(**kwargs):
+        with visit_dir(dirname, return_to=return_to, lockdir=lockdir):
+            tdfdr_stdout = await async_call(command_line, debug=debug)
             confirm_line = tdfdr_stdout.splitlines()[-2]
-            if not re.match(r"Data Reduction command \S+ completed."):
+            if not re.match(r"Data Reduction command \S+ completed.", confirm_line):
                 log.debug(confirm_line)
                 message = "2dfdr did not run to completion for command: %s" % " ".join(command_line)
                 raise TdfdrException(message)
@@ -208,6 +196,7 @@ def run_2dfdr_combine(input_path_list, output_path, idx_file, **kwargs):
 
 def cleanup():
     """Clean up 2dfdr crud."""
+    log.warning("It is generally not safe to cleanup 2dfdr in any other way than interactively!")
     with open(os.devnull, 'w') as dump:
         subprocess.call(['cleanup'], stdout=dump)
 
