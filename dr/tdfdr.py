@@ -122,38 +122,6 @@ def call_2dfdr_reduce(dirname, options=None):
             shutil.rmtree(imp_scratch)
 
 
-def call_2dfdr_reduce_non_async(dirname, options=None):
-    """Call 2dfdr in pipeline reduction mode using `aaorun`"""
-    # Make a temporary directory with a unique name for use as IMP_SCRATCH
-    imp_scratch = tempfile.mkdtemp()
-
-    command_line = [COMMAND_REDUCE]
-    if options is not None:
-        command_line.extend(options)
-
-    # Set up the environment:
-    environment = dict(os.environ)
-    environment["IMP_SCRATCH"] = imp_scratch
-
-    try:
-        with directory_lock(dirname):
-            completed_process = subprocess.run(command_line, cwd=dirname, env=environment, stdout=subprocess.PIPE)
-
-            tdfdr_stdout = completed_process.stdout.decode("utf-8")
-
-        # Confirm that the above command ran to completion, otherwise raise an exception
-        try:
-            confirm_line = tdfdr_stdout.splitlines()[-2]
-            assert re.match(r"Data Reduction command \S+ completed.", confirm_line)
-        except (IndexError, AssertionError):
-            message = "2dfdr did not run to completion for command: %s" % " ".join(command_line)
-            raise TdfdrException(message)
-
-    finally:
-        # Remove the temporary IMP_SCRATCH directory and all its contents
-        if os.path.exists(imp_scratch):
-            shutil.rmtree(imp_scratch)
-
 def call_2dfdr_gui(dirname, options=None):
     """Call 2dfdr in GUI mode using `drcontrol`"""
     # Make a temporary directory with a unique name for use as IMP_SCRATCH
@@ -215,37 +183,6 @@ def run_2dfdr_single(fits, idx_file, options=None):
     if options is not None:
         options_all.extend(options)
     yield from call_2dfdr_reduce(fits.reduced_dir, options=options_all)
-    return '2dfdr Reduced file:' + fits.filename
-
-
-def run_2dfdr_single_non_async(fits, idx_file, options=None):
-    """Run 2dfdr on a single FITS file."""
-    print('Reducing file:', fits.filename)
-    if fits.ndf_class == 'BIAS':
-        task = 'reduce_bias'
-    elif fits.ndf_class == 'DARK':
-        task = 'reduce_dark'
-    elif fits.ndf_class == 'LFLAT':
-        task = 'reduce_lflat'
-    elif fits.ndf_class == 'MFFFF':
-        task = 'reduce_fflat'
-    elif fits.ndf_class == 'MFARC':
-        task = 'reduce_arc'
-    elif fits.ndf_class == 'MFSKY':
-        task = 'reduce_sky'
-    elif fits.ndf_class == 'MFOBJECT':
-        task = 'reduce_object'
-    else:
-        raise ValueError('Unrecognised NDF_CLASS')
-    out_dirname = fits.filename[:fits.filename.rindex('.')] + '_outdir'
-    out_dirname_full = os.path.join(fits.reduced_dir, out_dirname)
-    if not os.path.exists(out_dirname_full):
-        os.makedirs(out_dirname_full)
-    options_all = [task, fits.filename, '-idxfile', idx_file,
-                   '-OUT_DIRNAME', out_dirname]
-    if options is not None:
-        options_all.extend(options)
-    call_2dfdr_reduce_non_async(fits.reduced_dir, options=options_all)
     return '2dfdr Reduced file:' + fits.filename
 
 
