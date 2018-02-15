@@ -67,8 +67,10 @@ from glob import glob
 from pydoc import pager
 import itertools
 import datetime
+
 import asyncio
 
+import six
 from six.moves import input
 
 # Set up logging
@@ -892,7 +894,7 @@ class Manager:
             # this issue, but in one case it hung on aatmacb, so let's be
             # absolutely sure to avoid the issue
             return []
-        if asyncio.iscoroutinefunction(function):
+        if six.PY3 and asyncio.iscoroutinefunction(function):
 
             result_list = []
 
@@ -903,12 +905,13 @@ class Manager:
                 print("{} jobs total, running {} to {} in parallel".format(len(input_list), i, min(i+self.n_cpu, len(input_list))))
                 # Create an awaitable object which can be used as a future.
                 # This is the job that will be run in parallel.
-                async def job():
+                @asyncio.coroutine
+                def job():
                     tasks = [function(item) for item in input_list[i:i+self.n_cpu]]
                     # for completed in asyncio.as_completed(tasks):  # print in the order they finish
                     #     await completed
                     #     # print(completed.result())
-                    sub_results = await asyncio.gather(*tasks, loop=loop)
+                    sub_results = yield from asyncio.gather(*tasks, loop=loop)
                     result_list.extend(sub_results)
 
                 loop.run_until_complete(job())
@@ -3182,26 +3185,6 @@ class Manager:
                     return None
         return path
 
-    @contextmanager
-    def visit_dir(self, dir_path, cleanup_2dfdr=False):
-        """Context manager to temporarily visit a directory."""
-        if not os.path.exists(dir_path):
-            os.makedirs(dir_path)
-        os.chdir(dir_path)
-        try:
-            yield
-        finally:
-            os.chdir(self.cwd)
-            if cleanup_2dfdr:
-                self.cleanup()
-
-    def cleanup(self):
-        """Clean up 2dfdr rubbish."""
-        with open(os.devnull, 'w') as f:
-            subprocess.call(['cleanup'], stdout=f)
-        os.chdir(self.cwd)
-        return
-
     def matchmaker(self, fits, match_class):
         """Return the file that should be used to help reduce the FITS file.
 
@@ -4717,13 +4700,14 @@ def best_path(fits):
         path = fits.reduced_path
     return path    
 
-# @safe_for_multiprocessing
-async def run_2dfdr_single_wrapper(group):
+
+@asyncio.coroutine
+def run_2dfdr_single_wrapper(group):
     """Run 2dfdr on a single file."""
     fits, idx_file, options, cwd, imp_scratch, scratch_dir, check, debug = \
         group
     try:
-        await tdfdr.run_2dfdr_single(fits, idx_file, options=options)
+        yield from tdfdr.run_2dfdr_single(fits, idx_file, options=options)
     except tdfdr.LockException:
         message = ('Postponing ' + fits.filename + 
                    ' while other process has directory lock.')
@@ -4732,6 +4716,24 @@ async def run_2dfdr_single_wrapper(group):
     if check:
         update_checks(check, [fits], False)
     return True
+
+
+@safe_for_multiprocessing
+def run_2dfdr_single_wrapper_multiprocessing(group):
+    """Run 2dfdr on a single file."""
+    fits, idx_file, options, cwd, imp_scratch, scratch_dir, check, debug = \
+        group
+    try:
+        tdfdr.run_2dfdr_single_non_async(fits, idx_file, options=options)
+    except tdfdr.LockException:
+        message = ('Postponing ' + fits.filename +
+                   ' while other process has directory lock.')
+        print(message)
+        return False
+    if check:
+        update_checks(check, [fits], False)
+    return True
+
 
 @safe_for_multiprocessing
 def scale_cubes_field(group):
