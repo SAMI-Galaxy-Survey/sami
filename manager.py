@@ -71,6 +71,12 @@ import asyncio
 
 from six.moves import input
 
+# Set up logging
+from . import slogging
+log = slogging.getLogger(__name__)
+log.setLevel(slogging.DEBUG)
+# log.enable_console_logging()
+
 import astropy.coordinates as coord
 from astropy import units
 import astropy.io.fits as pf
@@ -121,6 +127,9 @@ elif ASTROPY_VERSION[:2] == (0, 3):
 else:
     def ICRS(*args, **kwargs):
         return coord.SkyCoord(*args, frame='icrs', **kwargs)
+
+
+
 
 IDX_FILES_SLOW = {'580V': 'sami580V_v1_5.idx',
                   '1500V': 'sami1500V_v1_5.idx',
@@ -842,7 +851,24 @@ class Manager:
             
         self.demo = demo
         self.demo_data_source = demo_data_source
-        self.debug = False
+        self._debug = False
+
+    @property
+    def debug(self):
+        return self._debug
+
+    @debug.setter
+    def debug(self, value):
+        if not isinstance(value, bool):
+            raise ValueError("debug must be set to a boolean value.")
+        if not value == self._debug:
+            if value:
+                log.setLevel(slogging.DEBUG)
+                tdfdr.log.setLevel(slogging.DEBUG)
+            else:
+                log.setLevel(slogging.WARNING)
+                tdfdr.log.setLevel(slogging.WARNING)
+            self._debug = value
 
     def next_step(self, step, print_message=False):
         task_name_list = list(map(lambda x: x[0], self.task_list))
