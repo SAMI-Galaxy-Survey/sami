@@ -25,6 +25,7 @@ from scipy.optimize import leastsq
 import os
 from glob import glob
 import multiprocessing
+import warnings
 
 BANDS = 'ugriz'
 
@@ -303,7 +304,7 @@ def get_sdss_stellar_mags(mngr, catalogue=None, automatic=False):
         print('All magnitudes already in the catalogue.')
         return False
 
-    url = 'https://skyserver.sdss.org/dr10/en/tools/crossid/crossid.asp'
+    url = 'https://skyserver.sdss.org/dr10/en/tools/crossid/crossid.aspx'
 
     query_list = ""
     query_list += "name ra dec\n"
@@ -940,8 +941,11 @@ def measure_band(band, flux, wavelength, sdss_dir='./sdss/'):
         wl_m[1] - wl_m[0],
         0.5 * (wl_m[2:] - wl_m[:-2]),
         wl_m[-1] - wl_m[-2]))
-    flux_band = (np.sum(delta_wl * wl_m * filter_interpolated * flux_wm3) / 
-                 np.sum(delta_wl * wl_m * filter_interpolated * flux_zero))
+    with warnings.catch_warnings():
+        # We get lots of invalid value warnings arising because of divide by zero errors.
+        warnings.filterwarnings('ignore', r'invalid value', RuntimeWarning)
+        flux_band = (np.sum(delta_wl * wl_m * filter_interpolated * flux_wm3) /
+                     np.sum(delta_wl * wl_m * filter_interpolated * flux_zero))
     return -2.5 * np.log10(flux_band)
 
 def measure_mags(flux, noise, wavelength):

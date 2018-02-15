@@ -13,6 +13,7 @@ from astropy import coordinates
 import os
 import subprocess
 import gzip as gz
+import warnings
 
 from collections import namedtuple
 
@@ -607,10 +608,13 @@ def clip_spectrum(flux, noise, wavelength, limit_noise=0.35, limit_flux=10.0,
     # This is mostly to get rid of very bad pixels at edges of good regions
     # The presence of NaNs is screwing up the median filter in theses places
     median_noise = np.nanmedian(noise)
-    good = (np.isfinite(flux) &
-            np.isfinite(noise) &
-            (noise_ratio < limit_noise) &
-            (flux_ratio < limit_flux) &
-            (noise < (limit_noise_abs * median_noise)))
+    with warnings.catch_warnings():
+        # We get lots of invalid value warnings arising because of divide by zero errors.
+        warnings.filterwarnings('ignore', r'invalid value', RuntimeWarning)
+        good = (np.isfinite(flux) &
+                np.isfinite(noise) &
+                (noise_ratio < limit_noise) &
+                (flux_ratio < limit_flux) &
+                (noise < (limit_noise_abs * median_noise)))
     return good
 

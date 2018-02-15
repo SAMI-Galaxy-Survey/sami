@@ -961,13 +961,16 @@ def rebin_flux_noise(target_wavelength, source_wavelength, source_flux,
     good = np.isfinite(source_flux) & np.isfinite(source_noise)
     if clip:
         # Clip points that are a long way from a narrow median filter
-        good = good & ((np.abs(source_flux - median_filter(source_flux, 7)) /
-                        source_noise) < 10.0)
-        # Also clip points where the noise value spikes (changes by more than
-        # 35% relative to the baseline)
-        filtered_noise = median_filter(source_noise, 21)
-        good = good & ((np.abs(source_noise - filtered_noise) / 
-                        filtered_noise) < 0.35)
+        with warnings.catch_warnings():
+            # We get lots of invalid value warnings arising because of divide by zero errors.
+            warnings.filterwarnings('ignore', r'invalid value', RuntimeWarning)
+            good = good & ((np.abs(source_flux - median_filter(source_flux, 7)) /
+                            source_noise) < 10.0)
+            # Also clip points where the noise value spikes (changes by more than
+            # 35% relative to the baseline)
+            filtered_noise = median_filter(source_noise, 21)
+            good = good & ((np.abs(source_noise - filtered_noise) /
+                            filtered_noise) < 0.35)
     interp_flux, interp_noise = interpolate_flux_noise(
         source_flux, source_noise, good)
     interp_good = np.isfinite(interp_flux)
@@ -1065,12 +1068,15 @@ def rebin_flux_noise(target_wavelength, source_wavelength, source_flux,
         end_pix[incomplete],
         weights=(1 - frac_low[incomplete]),
         bins=bins)[0]
-    flux_out /= count_out
-    variance_out /= count_out ** 2
-    zero_input = (count_out == 0)
-    flux_out[zero_input] = np.nan
-    variance_out[zero_input] = np.nan
-    noise_out = np.sqrt(variance_out)
+    with warnings.catch_warnings():
+        # We get lots of invalid value warnings arising because of divide by zero errors.
+        warnings.filterwarnings('ignore', r'invalid value', RuntimeWarning)
+        flux_out /= count_out
+        variance_out /= count_out ** 2
+        zero_input = (count_out == 0)
+        flux_out[zero_input] = np.nan
+        variance_out[zero_input] = np.nan
+        noise_out = np.sqrt(variance_out)
     return flux_out, noise_out, count_out
 
 def interpolate_flux_noise(flux, noise, good):

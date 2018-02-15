@@ -38,7 +38,7 @@ from asyncio.subprocess import PIPE
 # Set up logging
 from .. import slogging
 log = slogging.getLogger(__name__)
-log.setLevel(slogging.DEBUG)
+log.setLevel(slogging.WARNING)
 # log.enable_console_logging()
 
 LOCKDIR = '2dfdrLockDir'
@@ -278,7 +278,6 @@ def directory_lock(working_directory):
 
     if not os.path.exists(working_directory):
         os.makedirs(working_directory)
-    os.chdir(working_directory)
     # Attempt to obtain a directory lock in this directory
     try:
         os.mkdir(lockdir)
