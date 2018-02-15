@@ -76,7 +76,7 @@ from six.moves import input
 # Set up logging
 from . import slogging
 log = slogging.getLogger(__name__)
-log.setLevel(slogging.DEBUG)
+log.setLevel(slogging.WARNING)
 # log.enable_console_logging()
 
 import astropy.coordinates as coord
@@ -4010,10 +4010,10 @@ class FITSFile:
         # twilight frames have sufficient flux:
         if self.ndf_class == 'MFSKY':
             flux = self.hdulist[0].data
-            p05 = np.nanpercentile(flux,5.0)
-            p95 = np.nanpercentile(flux,95.0)
+            p05 = np.nanpercentile(flux, 5.0)
+            p95 = np.nanpercentile(flux, 95.0)
             self.fluxlev = p95-p05
-            print(self.filename,': 5th,95th flux percentile:',p05,p95,', range:',self.fluxlev)
+            log.debug('%s: 5th,95th flux percentile: %s, %s, range:%s', self.filename, p05, p95, self.fluxlev)
             
         self.set_lamp()
         self.set_central_wavelength()
