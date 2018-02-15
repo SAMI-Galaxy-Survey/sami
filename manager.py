@@ -56,6 +56,7 @@ import os
 import re
 import subprocess
 import multiprocessing
+
 import signal
 import warnings
 from functools import wraps
@@ -932,14 +933,26 @@ class Manager:
 
     def inspect_root(self, copy_files, move_files, trust_header=True):
         """Add details of existing files to internal lists."""
+        files_to_add = []
         for dirname, subdirname_list, filename_list in os.walk(self.abs_root):
             for filename in filename_list:
                 if self.file_filter(filename):
-                    self.import_file(dirname, filename,
-                                     trust_header=trust_header,
-                                     copy_files=copy_files,
-                                     move_files=move_files)
-        return
+                    files_to_add.append(os.path.join(dirname, filename))
+
+        if self.n_cpu == 1:
+            fits_list = list(map(FITSFile, files_to_add))
+        else:
+            pool = multiprocessing.Pool(self.n_cpu)
+            fits_list = pool.map(FITSFile, files_to_add, chunksize=20)
+            pool.close()
+            pool.join()
+
+        for fits in fits_list:
+            self.import_file(fits,
+                             trust_header=trust_header,
+                             copy_files=copy_files,
+                             move_files=move_files)
+
 
     def file_filter(self, filename):
         """Return True if the file should be added."""
@@ -950,12 +963,17 @@ class Manager:
                          filename)
                 and (self.fits_file(filename) is None))
 
-    def import_file(self, dirname, filename,
+    def import_file(self, source,
                     trust_header=True, copy_files=True, move_files=False):
         """Add details of a file to the manager"""
-        source_path = os.path.join(dirname, filename)
-        # Initialize an instance of the FITSFile:
-        fits = FITSFile(source_path)
+        if not isinstance(source, FITSFile):
+            # source_path = os.path.join(dirname, filename)
+            # Initialize an instance of the FITSFile:
+            filename = os.path.basename(source)
+            fits = FITSFile(source)
+        else:
+            filename = source.filename
+            fits = source
         if fits.copy:
             #print 'this is a copy, do not import:',dirname,filename
             # This is a copy of a file, don't add it to the list
