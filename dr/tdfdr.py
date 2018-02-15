@@ -94,17 +94,16 @@ def async_call(command_line, **kwargs):
 def call_2dfdr_reduce(dirname, options=None):
     """Call 2dfdr in pipeline reduction mode using `aaorun`"""
     # Make a temporary directory with a unique name for use as IMP_SCRATCH
-    imp_scratch = tempfile.mkdtemp()
+    with tempfile.TemporaryDirectory() as imp_scratch:
 
-    command_line = [COMMAND_REDUCE]
-    if options is not None:
-        command_line.extend(options)
+        command_line = [COMMAND_REDUCE]
+        if options is not None:
+            command_line.extend(options)
 
-    # Set up the environment:
-    environment = dict(os.environ)
-    environment["IMP_SCRATCH"] = imp_scratch
+        # Set up the environment:
+        environment = dict(os.environ)
+        environment["IMP_SCRATCH"] = imp_scratch
 
-    try:
         with directory_lock(dirname):
             tdfdr_stdout = yield from async_call(command_line, cwd=dirname, env=environment)
 
@@ -116,32 +115,22 @@ def call_2dfdr_reduce(dirname, options=None):
             message = "2dfdr did not run to completion for command: %s" % " ".join(command_line)
             raise TdfdrException(message)
 
-    finally:
-        # Remove the temporary IMP_SCRATCH directory and all its contents
-        if os.path.exists(imp_scratch):
-            shutil.rmtree(imp_scratch)
-
 
 def call_2dfdr_gui(dirname, options=None):
     """Call 2dfdr in GUI mode using `drcontrol`"""
     # Make a temporary directory with a unique name for use as IMP_SCRATCH
-    imp_scratch = tempfile.mkdtemp()
+    with tempfile.TemporaryDirectory() as imp_scratch:
 
-    command_line = [COMMAND_GUI]
-    if options is not None:
-        command_line.extend(options)
+        command_line = [COMMAND_GUI]
+        if options is not None:
+            command_line.extend(options)
 
-    # Set up the environment:
-    environment = dict(os.environ)
-    environment["IMP_SCRATCH"] = imp_scratch
+        # Set up the environment:
+        environment = dict(os.environ)
+        environment["IMP_SCRATCH"] = imp_scratch
 
-    try:
         with directory_lock(dirname):
             subprocess.run(command_line, cwd=dirname, check=True, env=environment)
-    finally:
-        # Remove the temporary directory and all its contents
-        if os.path.exists(imp_scratch):
-            shutil.rmtree(imp_scratch)
 
 
 def load_gui(dirname, idx_file=None):
