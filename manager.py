@@ -894,7 +894,7 @@ class Manager:
             # this issue, but in one case it hung on aatmacb, so let's be
             # absolutely sure to avoid the issue
             return []
-        if six.PY3 and asyncio.iscoroutinefunction(function):
+        if asyncio.iscoroutinefunction(function):
 
             result_list = []
 
@@ -1707,7 +1707,7 @@ class Manager:
             self.reduce_file_iterable(
                 fits_list, throughput_method='skylines',
                 overwrite=True, check='OBJ')
-            bad_fields = np.unique([fits.field_id for fits in fits_list])
+            bad_fields = set([fits.field_id for fits in fits_list])
         else:
             bad_fields = []
         if recalculate_throughput:
@@ -4710,23 +4710,6 @@ def run_2dfdr_single_wrapper(group):
         yield from tdfdr.run_2dfdr_single(fits, idx_file, options=options)
     except tdfdr.LockException:
         message = ('Postponing ' + fits.filename + 
-                   ' while other process has directory lock.')
-        print(message)
-        return False
-    if check:
-        update_checks(check, [fits], False)
-    return True
-
-
-@safe_for_multiprocessing
-def run_2dfdr_single_wrapper_multiprocessing(group):
-    """Run 2dfdr on a single file."""
-    fits, idx_file, options, cwd, imp_scratch, scratch_dir, check, debug = \
-        group
-    try:
-        tdfdr.run_2dfdr_single_non_async(fits, idx_file, options=options)
-    except tdfdr.LockException:
-        message = ('Postponing ' + fits.filename +
                    ' while other process has directory lock.')
         print(message)
         return False
