@@ -8,6 +8,9 @@ are not covered here, but are done by loading the 2dfdr GUI directly in
 manager.py
 """
 
+from __future__ import absolute_import, division, print_function, unicode_literals
+
+
 from . import fluxcal2
 from ..utils import IFU
 
@@ -26,7 +29,7 @@ try:
     from bottleneck import nansum
 except ImportError:
     from numpy import nansum
-    warnings.warn("Not Using bottleneck: Speed will be improved if you install bott    leneck")
+    warnings.warn("Not Using bottleneck: Speed will be improved if you install bottleneck")
 
 
 def ensure_interactive(function):
@@ -73,7 +76,7 @@ def check_combined(combined_path, message):
     image = pf.getdata(combined_path)
     sorted_image = np.ravel(image)
     sorted_image = np.sort(sorted_image[np.isfinite(sorted_image)])
-    one_per_cent = len(sorted_image) / 100
+    one_per_cent = len(sorted_image) // 100
     vmin = sorted_image[one_per_cent]
     vmax = sorted_image[-one_per_cent]
     fig = plt.figure('Combined calibration', figsize=(6., 10.))
