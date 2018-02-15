@@ -69,6 +69,8 @@ import itertools
 import datetime
 import asyncio
 
+from six.moves import input
+
 import astropy.coordinates as coord
 from astropy import units
 import astropy.io.fits as pf
@@ -1074,7 +1076,7 @@ class Manager:
             best_name = None
             while best_name is None:
                 try:
-                    best_name = raw_input('Enter object name for file ' +
+                    best_name = input('Enter object name for file ' +
                                           fits.filename + '\n > ')
                 except ValueError as error:
                     print(error)
@@ -1091,7 +1093,7 @@ class Manager:
             fits.update_spectrophotometric(spectrophotometric_extra)
         else:
             # Ask the user whether this is a spectrophotometric standard
-            yn = raw_input('Is ' + fits.name + ' in file ' + fits.filename +
+            yn = input('Is ' + fits.name + ' in file ' + fits.filename +
                            ' a spectrophotometric standard? (y/n)\n > ')
             spectrophotometric_input = (yn.lower()[0] == 'y')
             fits.update_spectrophotometric(spectrophotometric_input)
@@ -2024,7 +2026,7 @@ class Manager:
                 'standards/secondary/sdss_stellar_mags_{}.csv'.format(idx))
         if isinstance(new, bool) and new:
             # get_sdss_stellar_mags could not do an automatic retrieval.
-            path_in = raw_input('Enter the path to the downloaded file:\n')
+            path_in = input('Enter the path to the downloaded file:\n')
             shutil.move(path_in, path_out)
         else:
             with open(path_out, 'w') as f:
@@ -2574,28 +2576,6 @@ class Manager:
         pager(text)
         return
 
-    def reduce_file(self, fits, overwrite=False, tlm=False,
-                    leave_reduced=False):
-        """Select appropriate options and reduce the given file.
-
-        For MFFFF files, if tlm is True then a tramline map is produced; if it
-        is false then a full reduction is done. If tlm is True and leave_reduced
-        is false, then any reduced MFFFF produced as a side-effect will be
-        removed.
-
-        Returns True if the file was reduced; False otherwise."""
-        target = self.target_path(fits, tlm=tlm)
-        if os.path.exists(target) and not overwrite:
-            # File to be created already exists, abandon this.
-            return False
-        options = self.tdfdr_options(fits, tlm=tlm)
-        # All options have been set, so run 2dfdr
-        tdfdr.run_2dfdr_single(fits, self.idx_files[fits.grating], 
-                               options=options, cwd=self.cwd, debug=self.debug)
-        if (fits.ndf_class == 'MFFFF' and tlm and not leave_reduced and
-            os.path.exists(fits.reduced_path)):
-            os.remove(fits.reduced_path)
-        return True
 
     def tdfdr_options(self, fits, throughput_method='default', tlm=False):
         """Set the 2dfdr reduction options for this file."""
@@ -2969,10 +2949,7 @@ class Manager:
         grating = next(file_iterable_copy).grating
         idx_file = self.idx_files[grating]
         print('Combining files to create', output_path)
-        tdfdr.run_2dfdr_combine(
-            input_path_list, output_path, idx_file, unique_imp_scratch=True, 
-            return_to=self.cwd, restore_to=self.imp_scratch, 
-            scratch_dir=self.scratch_dir, debug=self.debug)
+        tdfdr.run_2dfdr_combine(input_path_list, output_path, idx_file)
         return
 
     def files(self, ndf_class=None, date=None, plate_id=None,
@@ -3658,7 +3635,7 @@ class Manager:
             print("You must install the pysftp package to do that!")
         if username is None:
             if self.aat_username is None:
-                username = raw_input('Enter AAT username: ')
+                username = input('Enter AAT username: ')
                 self.aat_username = username
             else:
                 username = self.aat_username
@@ -3694,10 +3671,7 @@ class Manager:
             # TODO: Look in the directory for a suitable fits file to work out
             # the idx file
             idx_file = None
-        tdfdr.load_gui(dirname=dirname, idx_file=idx_file, 
-                       unique_imp_scratch=True, return_to=self.cwd, 
-                       restore_to=self.imp_scratch, 
-                       scratch_dir=self.scratch_dir, debug=self.debug)
+        tdfdr.load_gui(dirname, idx_file=idx_file)
         return
 
     def find_directory_locks(self, lock_name='2dfdrLockDir'):
@@ -3788,7 +3762,7 @@ class Manager:
         check_method(fits_list)
         print('Have you finished checking all the files? (y/n)')
         print('If yes, the check will be removed from the list.')
-        y_n = raw_input(' > ') + "n"
+        y_n = input(' > ') + "n"
         finished = (y_n.lower()[0] == 'y')
         if finished:
             print('Removing this test from the list.')
@@ -3917,7 +3891,7 @@ class Manager:
         # Run one thing on vanilla names
         # Run the other thing on file names.
 
-        user_comment = raw_input('Please enter a comment (type n to abort):\n')
+        user_comment = input('Please enter a comment (type n to abort):\n')
 
         # If ``user_comment`` is equal to ``'n'``, skip updating the FITS
         # headers and jump to the ``return`` statement.
@@ -4059,7 +4033,7 @@ class FITSFile:
                     print('NDF_CLASS of SFLAT (OFFSET FLAT) found for ' + 
                            self.filename)
                     print('Change to MFSKY (OFFSET SKY)? (y/n)')
-                    y_n = raw_input(' > ')
+                    y_n = input(' > ')
                     if y_n.lower()[0] == 'y':
                         self.overwrite_ndf_class('MFSKY')
                 break
@@ -4723,9 +4697,7 @@ async def run_2dfdr_single_wrapper(group):
     fits, idx_file, options, cwd, imp_scratch, scratch_dir, check, debug = \
         group
     try:
-        await tdfdr.run_2dfdr_single(
-            fits, idx_file, options=options, return_to=cwd,
-            scratch_dir=scratch_dir, debug=debug)
+        await tdfdr.run_2dfdr_single(fits, idx_file, options=options)
     except tdfdr.LockException:
         message = ('Postponing ' + fits.filename + 
                    ' while other process has directory lock.')
