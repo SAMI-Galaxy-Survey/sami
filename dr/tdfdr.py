@@ -33,7 +33,7 @@ import shutil
 import re
 from contextlib import contextmanager
 import asyncio
-from asyncio.subprocess import DEVNULL, PIPE
+from asyncio.subprocess import PIPE
 
 # Set up logging
 from .. import slogging
@@ -55,64 +55,105 @@ except (OSError, FileNotFoundError):
         'Cannot find the 2dfdr executable ``{}``\n'.format(COMMAND_REDUCE)
         + 'Please ensure that 2dfdr is correctly installed.')
     raise ImportError(error_message)
+try:
+    assert len(os.environ["DISPLAY"]) > 0
+except (AssertionError, TypeError):
+    raise ImportError("2dfdr requires a working DISPLAY. If you are running remotely, try enabling X-forwarding.")
 
 
 
-async def async_call(command_line, debug=False, **kwargs):
-    """Simply passes the command out to a subprocess, unless debug is True."""
-    if debug:
-        print('CWD: ' + os.getcwd())
-        log.debug("%%%%%%%%%% Starting async processs")
-        proc = await asyncio.create_subprocess_exec("echo", *command_line)
-        log.debug("%%%%%%%%%% Waiting for finish of async processs")
-        await proc.wait()
-        log.debug("%%%%%%%%%% Async processs finished")
-    else:
-        log.debug("Starting async processs")
-        log.info("2dfdr call: {}".format(" ".join(command_line)))
-        proc = await asyncio.create_subprocess_exec(*command_line, stdout=PIPE)
-        log.debug("Waiting for finish of async processs")
-        tdfdr_stdout, tdfdr_stderr = await proc.communicate()
-        tdfdr_stdout = tdfdr_stdout.decode("utf-8")
-        # Note: stderr is not currently captured, so this will return None.
-        # tdfdr_stderr = tdfdr_stderr.decode("utf-8") if tdfdr_stderr else None
 
-        log.debug("Output from 2dfdr:------------------------------")
-        if log.isEnabledFor(slogging.DEBUG):
-            for line in tdfdr_stdout.splitlines():
-                log.debug("   " + line)
-        log.debug("Async processs finished")
-        return tdfdr_stdout
+async def async_call(command_line, **kwargs):
+    """Generic function to run a command in an asynchronous way, capturing STDOUT and returning it."""
+    formatted_command = " ".join(command_line)
+    log.info("async call: {}".format(formatted_command))
+    log.debug("Starting async processs: %s", formatted_command)
 
-async def run_2dfdr(dirname, options=None, return_to=None,
-              lockdir=LOCKDIR, command=COMMAND_REDUCE, debug=False, **kwargs):
-    """Run 2dfdr with a specified set of command-line options."""
-    command_line = [command]
+    # Create subprocess
+    proc = await asyncio.create_subprocess_exec(*command_line, stdout=PIPE, stderr=PIPE, **kwargs)
+
+    log.debug("Waiting for finish of async processs: %s", formatted_command)
+
+    # Wait (asyncronously) for process to complete and capture stdout (stderr is none unless it is also piped above).
+    stdout, stderr = await proc.communicate()
+    log.debug("Async process finished: %s", formatted_command)
+
+    stdout = stdout.decode("utf-8")
+    # Note: stderr is not currently captured, so this will return None.
+    stderr = stderr.decode("utf-8") if stderr else None
+
+    log.debug("Output from command '%s'", formatted_command)
+    if log.isEnabledFor(slogging.DEBUG):
+        for line in stdout.splitlines():
+            log.debug("   " + line)
+
+    return stdout
+
+
+async def call_2dfdr_reduce(dirname, options=None):
+    """Call 2dfdr in pipeline reduction mode using `aaorun`"""
+    # Make a temporary directory with a unique name for use as IMP_SCRATCH
+    imp_scratch = tempfile.mkdtemp()
+
+    command_line = [COMMAND_REDUCE]
     if options is not None:
         command_line.extend(options)
 
-    with temp_imp_scratch(**kwargs):
-        with visit_dir(dirname, return_to=return_to, lockdir=lockdir):
-            tdfdr_stdout = await async_call(command_line, debug=debug)
-            confirm_line = tdfdr_stdout.splitlines()[-2]
-            if not re.match(r"Data Reduction command \S+ completed.", confirm_line):
-                log.debug(confirm_line)
-                message = "2dfdr did not run to completion for command: %s" % " ".join(command_line)
-                raise TdfdrException(message)
-        return
+    # Set up the environment:
+    environment = dict(os.environ)
+    environment["IMP_SCRATCH"] = imp_scratch
 
-def load_gui(dirname=None, idx_file=None, lockdir=LOCKDIR, **kwargs):
+    try:
+        with directory_lock(dirname):
+            tdfdr_stdout = await async_call(command_line, cwd=dirname, env=environment)
+
+        # Confirm that the above command ran to completion, otherwise raise an exception
+        try:
+            confirm_line = tdfdr_stdout.splitlines()[-2]
+            assert re.match(r"Data Reduction command \S+ completed.", confirm_line)
+        except (IndexError, AssertionError):
+            message = "2dfdr did not run to completion for command: %s" % " ".join(command_line)
+            raise TdfdrException(message)
+
+    finally:
+        # Remove the temporary IMP_SCRATCH directory and all its contents
+        if os.path.exists(imp_scratch):
+            shutil.rmtree(imp_scratch)
+
+
+def call_2dfdr_gui(dirname, options=None):
+    """Call 2dfdr in GUI mode using `drcontrol`"""
+    # Make a temporary directory with a unique name for use as IMP_SCRATCH
+    imp_scratch = tempfile.mkdtemp()
+
+    command_line = [COMMAND_GUI]
+    if options is not None:
+        command_line.extend(options)
+
+    # Set up the environment:
+    environment = dict(os.environ)
+    environment["IMP_SCRATCH"] = imp_scratch
+
+    try:
+        with directory_lock(dirname):
+            subprocess.run(command_line, cwd=dirname, check=True, env=environment)
+    finally:
+        # Remove the temporary directory and all its contents
+        if os.path.exists(imp_scratch):
+            shutil.rmtree(imp_scratch)
+
+
+def load_gui(dirname, idx_file=None):
     """Load the 2dfdr GUI in the specified directory."""
-    if dirname is None:
-        dirname = os.getcwd()
     if idx_file is not None:
         options = [idx_file]
     else:
         options = None
-    run_2dfdr(dirname, options, lockdir=lockdir, command=COMMAND_GUI, **kwargs)
+    call_2dfdr_gui(dirname, options)
     return
 
-async def run_2dfdr_single(fits, idx_file, options=None, lockdir=LOCKDIR, **kwargs):
+
+async def run_2dfdr_single(fits, idx_file, options=None):
     """Run 2dfdr on a single FITS file."""
     print('Reducing file:', fits.filename)
     if fits.ndf_class == 'BIAS':
@@ -139,48 +180,11 @@ async def run_2dfdr_single(fits, idx_file, options=None, lockdir=LOCKDIR, **kwar
                    '-OUT_DIRNAME', out_dirname]
     if options is not None:
         options_all.extend(options)
-    await run_2dfdr(fits.reduced_dir, options=options_all, lockdir=lockdir, **kwargs)
+    await call_2dfdr_reduce(fits.reduced_dir, options=options_all)
     return '2dfdr Reduced file:' + fits.filename
 
-# def run_2dfdr_combine(input_path_list, output_path, return_to=None, 
-#                       lockdir=LOCKDIR, **kwargs):
-#     """Run 2dfdr to combine the specified FITS files."""
-#     if len(input_path_list) < 2:
-#         raise ValueError('Need at least 2 files to combine!')
-#     output_dir, output_filename = os.path.split(output_path)
-#     # Need to extend the default timeout value; set to 5 hours here
-#     timeout = '300'
-#     # Write the 2dfdr AutoScript
-#     script = []
-#     for input_path in input_path_list:
-#         script.append('lappend glist ' +
-#                       os.path.relpath(input_path, output_dir))
-#     script.extend(['proc Quit {status} {',
-#                    '    global Auto',
-#                    '    set Auto(state) 0',
-#                    '}',
-#                    'set task DREXEC1',
-#                    'global Auto',
-#                    'set Auto(state) 1',
-#                    ('ExecCombine $task $glist ' + output_filename +
-#                     ' -success Quit')])
-#     script_filename = '2dfdr_script.tcl'
-#     with visit_dir(output_dir, return_to=return_to, lockdir=lockdir):
-#         # Print the script to file
-#         with open(script_filename, 'w') as f_script:
-#             f_script.write('\n'.join(script))
-#         # Run 2dfdr
-#         options = ['-AutoScript',
-#                    '-ScriptName',
-#                    script_filename,
-#                    '-Timeout',
-#                    timeout]
-#         run_2dfdr(output_dir, options, lockdir=None, **kwargs)
-#         # Clean up the script file
-#         os.remove(script_filename)
-#     return
 
-def run_2dfdr_combine(input_path_list, output_path, idx_file, **kwargs):
+def run_2dfdr_combine(input_path_list, output_path, idx_file):
     """Run 2dfdr to combine the specified FITS files."""
     if len(input_path_list) < 2:
         raise ValueError('Need at least 2 files to combine!')
@@ -192,105 +196,47 @@ def run_2dfdr_combine(input_path_list, output_path, idx_file, **kwargs):
                output_filename,
                '-idxfile',
                idx_file]
-    asyncio.get_event_loop().run_until_complete(run_2dfdr(output_dir, options=options, **kwargs))
+    asyncio.get_event_loop().run_until_complete(call_2dfdr_reduce(output_dir, options=options))
+
 
 def cleanup():
     """Clean up 2dfdr crud."""
     log.warning("It is generally not safe to cleanup 2dfdr in any other way than interactively!")
-    with open(os.devnull, 'w') as dump:
-        subprocess.call(['cleanup'], stdout=dump)
+    subprocess.call(['cleanup'], stdout=subprocess.DEVNULL)
+
 
 @contextmanager
-def visit_dir(dir_path, return_to=None, cleanup_2dfdr=False, lockdir=LOCKDIR):
-    """Context manager to temporarily visit a directory."""
-    if return_to is None:
-        return_to = os.getcwd()
-    if not os.path.exists(dir_path):
-        os.makedirs(dir_path)
-    os.chdir(dir_path)
-    if lockdir is not None:
-        try:
-            os.mkdir(lockdir)
-        except OSError:
-            # Lock directory already exists, i.e. another task is working here
-            # Run away!
-            os.chdir(return_to)
-            raise LockException(
-                'Directory locked by another process: ' + dir_path)
-        else:
-            assert os.path.exists(lockdir)
-            log.debug("Lock Directory '{}' created in '{}'".format(lockdir, os.getcwd()))
+def directory_lock(working_directory):
+    """Create a context where 2dfdr can be run that is isolated from any other instance of 2dfdr."""
+
+    lockdir = os.path.join(working_directory, LOCKDIR)
+
+    if not os.path.exists(working_directory):
+        os.makedirs(working_directory)
+    os.chdir(working_directory)
+    # Attempt to obtain a directory lock in this directory
+    try:
+        os.mkdir(lockdir)
+    except OSError:
+        # Lock directory already exists, i.e. another task is working here
+        # Run away!
+        raise LockException(
+            'Directory locked by another process: ' + working_directory)
+    else:
+        assert os.path.exists(lockdir)
+        log.debug("Lock Directory '{}' created".format(lockdir))
     try:
         yield
     finally:
-        # tmp_return_to = os.getcwd()
+        log.debug("Will delete lock directory '{}'".format(lockdir))
+        os.rmdir(lockdir)
 
-        # Ensure we're in the directory for this context manager before
-        # finalizing (as other instances of this context manager may have
-        # changed the directory again).
-        os.chdir(dir_path)
-
-        if cleanup_2dfdr:
-            cleanup()
-        if lockdir is not None:
-            log.debug("Will delete lock directory '{}' in '{}'".format(lockdir, os.getcwd()))
-            os.rmdir(lockdir)
-            pass
-        os.chdir(return_to)
-
-@contextmanager
-def temp_imp_scratch(restore_to=None, scratch_dir=None, do_not_delete=False):
-    """
-    Create a temporary directory for 2dfdr IMP_SCRATCH,
-    allowing multiple instances of 2dfdr to be run simultaneously.
-    """
-    try:
-        old_imp_scratch = os.environ['IMP_SCRATCH']
-    except KeyError:
-        old_imp_scratch = None
-    # Use current value for restore_to if not provided
-    if restore_to is None:
-        restore_to = old_imp_scratch
-    # Make the parent directory, if specified
-    # If not specified, tempfile.mkdtemp will choose a suitable location
-    if scratch_dir is None and old_imp_scratch is not None:
-        scratch_dir = old_imp_scratch
-    if scratch_dir is not None and not os.path.exists(scratch_dir):
-        os.makedirs(scratch_dir)
-    # Make a temporary directory with a unique name
-    # imp_scratch = tempfile.mkdtemp(dir=scratch_dir)
-    imp_scratch = tempfile.mkdtemp()
-    # Set the IMP_SCRATCH environment variable to that directory, so that
-    # 2dfdr will use it
-    os.environ['IMP_SCRATCH'] = imp_scratch
-    try:
-        yield
-    finally:
-        # Change the IMP_SCRATCH environment variable back to what it was
-        if restore_to is not False:
-            if restore_to is not None:
-                os.environ['IMP_SCRATCH'] = restore_to
-            else:
-                del os.environ['IMP_SCRATCH']
-        if not do_not_delete:
-            # Remove the temporary directory and all its contents
-            assert os.path.exists(imp_scratch)
-            shutil.rmtree(imp_scratch)
-            # No longer remove parent directories, as it can screw things up
-            # next time around
-            # # Remove any parent directories that are empty
-            # try:
-            #     os.removedirs(os.path.dirname(imp_scratch))
-            # except OSError:
-            #     # It wasn't empty; never mind
-            #     pass
-    return
 
 class TdfdrException(Exception):
     """Base 2dfdr exception."""
     pass
 
+
 class LockException(Exception):
     """Exception raised when attempting to work in a locked directory."""
     pass
-
