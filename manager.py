@@ -1230,9 +1230,10 @@ class Manager:
                     tmp_path = os.path.join(self.tmp_dir, filename)
                     self.update_copy(os.path.join(dirname, filename),
                                      tmp_path)
-                    self.import_file(self.tmp_dir, filename,
-                                     trust_header=trust_header,
-                                     copy_files=False, move_files=True)
+                    self.import_file(
+                        os.path.join(self.tmp_dir, filename),
+                        trust_header=trust_header,
+                        copy_files=False, move_files=True)
                     if os.path.exists(tmp_path):
                         # The import was abandoned; delete the temporary copy
                         os.remove(tmp_path)
@@ -1272,9 +1273,10 @@ class Manager:
                     if self.file_filter(filename):
                         srv.get(os.path.join(dirname, filename), 
                                 localpath=os.path.join(self.tmp_dir, filename))
-                        self.import_file(self.tmp_dir, filename,
-                                         trust_header=False, copy_files=False,
-                                         move_files=True)
+                        self.import_file(
+                            os.path.join(self.tmp_dir, filename),
+                            trust_header=False, copy_files=False,
+                            move_files=True)
         if os.path.exists(self.tmp_dir) and len(os.listdir(self.tmp_dir)) == 0:
             os.rmdir(self.tmp_dir)
         return
