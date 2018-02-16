@@ -16,15 +16,13 @@ This module contains a testing function. At the moment it requires that the libr
 
 import ctypes as C
 import numpy as np
-import os.path
+import os
+from glob import glob
 
 # Load the shared library
-try:
-    libcm = C.CDLL(os.path.join(os.path.dirname(__file__), "libcCirc.so"))
-except:
-    raise ImportError
-    pass
-    #libcm = C.CDLL(os.path.join('/home/franz/software/dev/sami-software-dev/dr0.10/utils', 'libcCirc.so'))
+__path_to_lib__ = os.path.join(os.getcwd(), os.path.dirname(__file__))
+__library_file__ = glob(os.path.join(__path_to_lib__, 'circ/weight_map*.so'))
+libcm = C.CDLL(__library_file__[0])
 
 # Specify the arguments our function takes:
 #  First argument is a 1D array of doubles.  It must be contiguous in memory.

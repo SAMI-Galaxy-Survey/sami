@@ -8,3 +8,5 @@ utils/libcCirc\.so
 utils/cCirc\.o
 general/libcCovar\.so
 general/cCovar\.o
+sami.egg-info/*
+dist/*

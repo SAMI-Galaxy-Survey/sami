@@ -21,18 +21,13 @@ This module contains a testing function. At the moment it requires that the libr
 
 import ctypes as C
 import numpy as np
-import os.path
+import os
+from glob import glob
 
 # Load the shared library
-try:
-    libccovar = C.CDLL(os.path.join(os.path.dirname(__file__), "libcCovar.so"))
-except:
-    message = ('Failed to import the C version of covar using '
-        + ' the python implementation (this takes longer).\n'
-        + 'To use the C implementation, please navigate to the folder where '
-        + 'the sami pipeline is located, and run `Make` from the terminal. ')
-    raise ImportError(message)
-
+__path_to_lib__ = os.path.join(os.getcwd(), os.path.dirname(__file__))
+__library_file__ = glob(os.path.join(__path_to_lib__, 'covar/create_covar_matrix*.so'))
+libccovar = C.CDLL(__library_file__[0])
 
 # Specify the arguments our function takes:
 #  First argument is a regular C long.
