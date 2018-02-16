@@ -25,10 +25,18 @@ except:
     from numpy import nanmedian
     print("Not Using bottleneck: Speed will be improved if you install bottleneck")
 
-from sami import update_csv
+from .. import update_csv
 
 # import constants defined in the config file.
-from sami.config import *
+from ..config import *
+
+
+# Set up logging
+from .. import slogging
+log = slogging.getLogger(__name__)
+log.setLevel(slogging.INFO)
+# log.enable_console_logging()
+
 
 """
 This file is the utilities script for SAMI data. See below for description of functions.
@@ -77,10 +85,18 @@ def offset_hexa(csvfile, guide=None, obj=None, linear=False,
     print('-' * 70)
 
     csv = update_csv.CSV(csvfile)
-    guide_probe = np.array(csv.get_values('Probe', 'guide'))
+
+    # guide probe can be converted to integer if there are no missing probes,
+    # but if not, it will be a string. So we force it to be a string for
+    # consistency.
+    guide_probe = np.array(list(map(str, csv.get_values('Probe', 'guide'))))
+
     guide_x = np.array(csv.get_values('Probe X', 'guide'))
     guide_y = np.array(csv.get_values('Probe Y', 'guide'))
-    object_probe = np.array(csv.get_values('Probe', 'object'))
+
+    # same as for guide_probe above.
+    object_probe = np.array(list(map(str, csv.get_values('Probe', 'object'))))
+
     object_x = np.array(csv.get_values('Probe X', 'object'))
     object_y = np.array(csv.get_values('Probe Y', 'object'))
 
@@ -88,10 +104,11 @@ def offset_hexa(csvfile, guide=None, obj=None, linear=False,
         valid_guides = np.arange(guide_probe.size)
         invalid_guides = np.array([])
     else:
-        valid_guides = np.where(guide_probe != '')[0]
-        invalid_guides = np.where(guide_probe == '')[0]
-    n_valid_guides = valid_guides.size
-    n_invalid_guides = invalid_guides.size
+        valid_guides = guide_probe != ''
+        invalid_guides = guide_probe == np.array([''])
+
+    n_valid_guides = valid_guides.sum()
+    n_invalid_guides = invalid_guides.sum()
         
     if guide is None:
         if n_valid_guides == 0:
@@ -136,14 +153,14 @@ def offset_hexa(csvfile, guide=None, obj=None, linear=False,
         valid_objects = np.arange(object_probe.size)
         invalid_objects = np.array([])
     else:
-        valid_objects = np.where(object_probe != '')[0]
-        invalid_objects = np.where(object_probe == '')[0]
-        if valid_objects.size == 0:
+        valid_objects = object_probe != ''
+        invalid_objects = object_probe == ''
+        if valid_objects.sum() == 0:
             print('No allocated object probes found! Using closest hole.')
-            valid_objects = np.arange(object_probe.size)
+            valid_objects = np.arange(object_probe.sum())
             invalid_objects = np.array([])
-    n_valid_objects = valid_objects.size
-    n_invalid_objects = invalid_objects.size
+    n_valid_objects = valid_objects.sum()
+    n_invalid_objects = invalid_objects.sum()
         
     if obj is None:
         # Find the closest valid object to the guide
