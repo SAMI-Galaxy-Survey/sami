@@ -51,6 +51,8 @@ directories. This is useful for demonstrating how to use the Manager without
 waiting for the actual data reduction to happen.
 """
 
+from typing import List
+
 import shutil
 import os
 import re
@@ -934,10 +936,12 @@ class Manager:
     def inspect_root(self, copy_files, move_files, trust_header=True):
         """Add details of existing files to internal lists."""
         files_to_add = []
-        for dirname, subdirname_list, filename_list in os.walk(self.abs_root):
+        for dirname, subdirname_list, filename_list in os.walk(os.path.join(self.abs_root, "raw")):
             for filename in filename_list:
                 if self.file_filter(filename):
                     files_to_add.append(os.path.join(dirname, filename))
+
+        assert len(set(files_to_add)) != len(files_to_add), "Some files would be duplicated on manager startup."
 
         if self.n_cpu == 1:
             fits_list = list(map(FITSFile, files_to_add))
@@ -1906,6 +1910,7 @@ class Manager:
                     continue
             fits_2 = self.other_arm(fits)
             path_pair = (fits.reduced_path, fits_2.reduced_path)
+            log.info(path_pair)
             if fits.epoch < 2013.0:
                 # SAMI v1 had awful throughput at blue end of blue, need to
                 # trim that data
@@ -3017,7 +3022,7 @@ class Manager:
                 self.file_list,
                 *[mngr.file_list for mngr in self.linked_managers])
         else:
-            file_list = self.file_list
+            file_list = self.file_list  # type: List[FITSFile]
         for fits in file_list:
             if fits.ndf_class is None:
                 continue
