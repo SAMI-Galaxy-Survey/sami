@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 
-from distutils.core import setup, Extension
+from setuptools import setup, Extension
 
 setup(name='sami',
       version='1.0',
@@ -10,8 +10,21 @@ setup(name='sami',
       maintainer="Francesco D'Eugenio",
       maintainer_email='francesco.deugenio@anu.edu.au',
       url='https://bitbucket.org/james_t_allen/sami-package',
-      py_modules=['manager', 'samifitting', 'update_csv'],
-      packages=['utils', 'dr', 'qc'],
-      ext_modules=[Extension('utils.circ', ['utils/cCirc.cc']),
-                   Extension('general.covar', ['general/cCovar.cc'])]
+      packages=['sami', 'sami.dr', 'sami.general', 'sami.utils',
+                'sami.observing', 'sami.qc', 'sami.sdss'],
+      package_dir={'sami': '.',
+                   'sami.dr': 'dr',
+                   'sami.general': 'general',
+                   'sami.utils': 'utils',
+                   'sami.observing': 'observing',
+                   'sami.qc': 'qc',
+                   'sami.sdss': 'sdss'},
+      py_modules=['sami.manager', 'sami.samifitting', 'sami.update_csv',
+                  'sami.config', 'sami.diagnostics', 'sami.update_csv_frames',
+                  'sami.tester', 'sami.log', 'sami.slogging', 'sami.reduction_utils'],
+      ext_modules=[Extension('sami.utils.circ.weight_map', sources=['utils/cCirc.cc'],
+                             extra_compile_args=['-O3', '-fPIC']),
+                   Extension('sami.general.covar.create_covar_matrix', ['general/cCovar.cc'],
+                             extra_compile_args=['-O3', '-fPIC'])],
+      package_data={'sami': ['.hg/*']},
      )
