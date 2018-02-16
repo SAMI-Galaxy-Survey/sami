@@ -33,7 +33,7 @@ from numpy import nanmean
 from astropy import coordinates as coord
 from astropy import units
 from astropy.io import fits as pf
-import os, sys, time, urllib, urllib2
+import os, sys, time, urllib.request, urllib.parse, urllib.error, urllib.request, urllib.error, urllib.parse
 
 from .. import utils
 
@@ -110,13 +110,13 @@ def apply_flux_calibration( path_to_data, transfer_fn, transfer_var,
         return
 
     if verbose > 0 :
-        print '_' * 78
-        print '\nApplying flux calibration to data in path:'
-        print path_to_data ; print
+        print('_' * 78)
+        print('\nApplying flux calibration to data in path:')
+        print(path_to_data) ; print()
 
     if verbose > 0 :
-        print
-        print 'Found %i data frames.  Starting work now.' % len( datafiles )
+        print()
+        print('Found %i data frames.  Starting work now.' % len( datafiles ))
 
     plt.figure( 12, figsize=[14,4] ) ; plt.clf()
 
@@ -140,12 +140,12 @@ def primary_flux_calibrate(path_in, path_out, transfer_fn, transfer_var):
     """Apply primary flux calibration to a single file."""
     filename_in = os.path.basename(path_in)
     filename_out = os.path.basename(path_out)
-    print '\nApplying primary calibration:'
-    print '%s   --->   %s ' % ( filename_in, filename_out ),
+    print('\nApplying primary calibration:')
+    print('%s   --->   %s ' % ( filename_in, filename_out ), end=' ')
     if os.path.exists( path_out ):
-        print '(overwriting existing file)',
+        print('(overwriting existing file)', end=' ')
         os.remove( path_out )
-    print '...',
+    print('...', end=' ')
     sys.stdout.flush()
 
     fitsfile = pf.open( path_in )
@@ -168,7 +168,7 @@ def primary_flux_calibrate(path_in, path_out, transfer_fn, transfer_var):
     fitsfile.writeto( path_out )
     fitsfile.close()
 
-    print 'done.' 
+    print('done.') 
 
     return
                 
@@ -182,10 +182,10 @@ def get_transfer_function( path_to_standards,
                            save=True ):
 
     if verbose > 0 :
-        print '_' * 78
-        print '_' * 78
-        print '\nDetermining flux calibration using standard star data in path:'
-        print path_to_standards ; print
+        print('_' * 78)
+        print('_' * 78)
+        print('\nDetermining flux calibration using standard star data in path:')
+        print(path_to_standards) ; print()
 
     standards_list = find_standard_star_dataframes( path_to_standards, 
         path_to_ESO_standards=path_to_ESO_standards, verbose=verbose )
@@ -233,8 +233,8 @@ def get_transfer_function( path_to_standards,
         weighting = np.zeros( transfer_fn.shape )
 
         if verbose > 0 :
-            print '_' * 78
-            print '\nCombining results from %i standard stars to get final flux calibration.' % nmeasures
+            print('_' * 78)
+            print('\nCombining results from %i standard stars to get final flux calibration.' % nmeasures)
 
 
 #        final_transfer_fn = ( np.nansum( transfer_fn/transfer_fn_var, axis=0 )
@@ -244,7 +244,7 @@ def get_transfer_function( path_to_standards,
 #
 #        final_transfer_var += np.std( transfer_fn, axis=0 )**2.
 
-        print transfer_fn.shape
+        print(transfer_fn.shape)
         for tfi in range( nmeasures ):
             comp    =  transfer_fn[  tfi, :  ]  -   transfer_fn
             compvar = transfer_fn_var[tfi, : ] + transfer_fn_var
@@ -264,7 +264,7 @@ def get_transfer_function( path_to_standards,
                         origin='lower', aspect='auto', 
                         extent=(standardwl.min(), standardwl.max(), 
                                 1., nmeasures+1 ) )
-            plt.yticks( np.arange( nmeasures )+1.5, range( nmeasures ) )
+            plt.yticks( np.arange( nmeasures )+1.5, list(range( nmeasures)) )
             plt.xlim( plotlims[0], plotlims[1] ) ; 
             plt.title( 'relative weights given to each frame in the final calibration' )
             plt.ylabel( 'frame', fontsize='xx-large' )
@@ -293,7 +293,7 @@ def get_transfer_function( path_to_standards,
         percenterr = np.sqrt(final_transfer_var) /final_transfer_fn*100.
         percenterr = percenterr[ np.isfinite( percenterr ) ]
         if verbose > 0 :
-            print '\nMedian uncertainty in the final flux cal across the specrum is %.2f%% .' % ( np.median( percenterr ) )
+            print('\nMedian uncertainty in the final flux cal across the specrum is %.2f%% .' % ( np.median( percenterr ) ))
                 
                
 
@@ -304,7 +304,7 @@ def get_transfer_function( path_to_standards,
         percenterr = np.sqrt(final_transfer_var) /final_transfer_fn*100.
         percenterr = percenterr[ np.isfinite( percenterr ) ]
 
-        print "\nOnly the one spectrophotometric standard observation, so i'm all done here."
+        print("\nOnly the one spectrophotometric standard observation, so i'm all done here.")
 
     if make_diagnostic_plots or 1 :
         plt.figure( 4 ) 
@@ -333,7 +333,7 @@ def get_transfer_function( path_to_standards,
         plt.draw()
 
         plt.savefig( '%s/fluxcal_%s.png' % ( path_to_standards, standardname ) )
-        print '  Look at %s/fluxcal_%s.png' % ( path_to_standards, standardname ) 
+        print('  Look at %s/fluxcal_%s.png' % ( path_to_standards, standardname )) 
 
     final_transfer_fn   = np.interp( datadict['wl'], standardwl, 
                                      final_transfer_fn )
@@ -354,7 +354,7 @@ def get_transfer_function( path_to_standards,
             )
 
     if verbose > 0 :
-        print '_' * 78
+        print('_' * 78)
 
     return final_transfer_fn, final_transfer_var
 
@@ -363,12 +363,12 @@ def get_transfer_function_single(si, fitsfilename, probename,
         standardfile, standardname, standardoffset, color='k', 
         verbose=True, save=True):
     if verbose > 0 :
-        print '_' * 78
-        print "\nLooking at %s; probe %s in %s (dataframe %i)." % ( standardname, probename, fitsfilename.split('/')[-1], 
-    si+1)
+        print('_' * 78)
+        print("\nLooking at %s; probe %s in %s (dataframe %i)." % ( standardname, probename, fitsfilename.split('/')[-1], 
+    si+1))
 
     chunkfigurefile = fitsfilename.rstrip( '.fits' ) + '.chunk.png' 
-    print chunkfigurefile
+    print(chunkfigurefile)
     
     startTime = time.time()
     
@@ -401,11 +401,11 @@ def get_transfer_function_single(si, fitsfilename, probename,
         add_date_stamp( figfilename, top=True )
         plt.draw()
         plt.figure( 2 )
-        print 'Making diagnostic plot ...', ; sys.stdout.flush()
+        print('Making diagnostic plot ...', end=' ') ; sys.stdout.flush()
         plt.savefig( figfilename )
-        print 'done.'
-        print '  Look at', figfilename
-        print
+        print('done.')
+        print('  Look at', figfilename)
+        print()
 
     # get Gaussian amplitudes from the IFS data as a fn of wavelength
 #        amplitude, uncertainty = extract_total_flux( 
@@ -424,8 +424,8 @@ def get_transfer_function_single(si, fitsfilename, probename,
                / np.sqrt( unc_smoothed**2. + smoothed_scatter**2. ) ) > 5.
     uncensored = np.copy( amplitude )
     amplitude = np.where( censor, np.nan, uncensored )
-    print 'Censoring %i wavelengths (%.1f%%)' % (
-        censor.sum(), float(censor.sum())/datadict['wl'].shape[0]*100.)
+    print('Censoring %i wavelengths (%.1f%%)' % (
+        censor.sum(), float(censor.sum())/datadict['wl'].shape[0]*100.))
 
     # rebin the Gaussian-fit amplitudes onto the wl grid of the standard
     amp_rebinned, unc_rebinned = rebin_spectrum( 
@@ -565,12 +565,12 @@ dotted line shows RMS variation between multiple measurements in the same way"""
     percenterr = percenterr[ np.isfinite( percenterr ) ]
 
     if verbose > 0 :
-        print 'Median uncertainty in the transfer function across the specrum is %.2f%% .' % ( 
-            np.median( percenterr ) )
+        print('Median uncertainty in the transfer function across the specrum is %.2f%% .' % ( 
+            np.median( percenterr ) ))
         if make_diagnostic_plots :
-            print '  Look at %s' % figfilename
-        print '\n Finished with that data frame. (Took %.1f sec.)' % (
-            time.time()-startTime)
+            print('  Look at %s' % figfilename)
+        print('\n Finished with that data frame. (Took %.1f sec.)' % (
+            time.time()-startTime))
 
     return transfer_fn, transfer_fn_var, sensitivity, datadict, standardwl
 
@@ -664,8 +664,8 @@ def censor_outliers(amplitude, uncertainty, n_sigma=5.0, verbose=True):
     # Should we censor the uncertainty too?
     censored_amplitude = np.where( censor, np.nan, uncensored )
     if verbose:
-        print 'Censoring %i wavelengths (%.1f%%)' % (
-            censor.sum(), float(censor.sum())/amplitude.shape[0]*100.)
+        print('Censoring %i wavelengths (%.1f%%)' % (
+            censor.sum(), float(censor.sum())/amplitude.shape[0]*100.))
     return censored_amplitude
 
 
@@ -808,10 +808,10 @@ def perform_telluric_correction( samifitsfilename=None, verbose=1 ):
         add_date_stamp( figfilename, top=True )
         plt.draw()
         plt.figure( 2 )
-        print 'Making diagnostic plot ...', ; sys.stdout.flush()
+        print('Making diagnostic plot ...', end=' ') ; sys.stdout.flush()
         plt.savefig( figfilename )
-        print 'done.'
-        print '  Look at', figfilename
+        print('done.')
+        print('  Look at', figfilename)
 
     # ... and use that to solve for the total flux of the standard.
     amplitude, uncertainty = extract_total_flux_new( 
@@ -826,8 +826,8 @@ def perform_telluric_correction( samifitsfilename=None, verbose=1 ):
     censor = ( np.abs( amplitude-amp_smoothed ) 
                / np.sqrt( unc_smoothed**2. + smoothed_scatter ) ) > 5.
     amplitude = np.where( censor, np.nan, amplitude )
-    print 'Censoring %i wavelengths (%.1f%%)' % (
-        censor.sum(), float(censor.sum())/datadict['wl'].shape[0]*100.)
+    print('Censoring %i wavelengths (%.1f%%)' % (
+        censor.sum(), float(censor.sum())/datadict['wl'].shape[0]*100.))
 
     # isolate those parts of the model spectra in the right wavelength range
     onlyneed = np.where( ( datadict['wl'].min() <= modelwl ) 
@@ -936,17 +936,17 @@ def perform_telluric_correction( samifitsfilename=None, verbose=1 ):
     plt.savefig( corrfigfilename )
             
     if not np.isfinite( bestchi2 ):
-        print 'WARNING from SAMI.perform_telluric_correction:'
-        print 'I have found no meaningful fit to secondary star data in frame:'
-        print '    ', samifitsfilename
-        print 'This probably means that the secondary is not centred in the bundle,'
-        print 'or that the primary calibration has failed badly.'
-        print
+        print('WARNING from SAMI.perform_telluric_correction:')
+        print('I have found no meaningful fit to secondary star data in frame:')
+        print('    ', samifitsfilename)
+        print('This probably means that the secondary is not centred in the bundle,')
+        print('or that the primary calibration has failed badly.')
+        print()
 
         return 1, 1
 
-    print '\nApplying secondary calibration now.'
-    print '    %s --> %s' % ( samifitsfilename, corrfigfilename ), 
+    print('\nApplying secondary calibration now.')
+    print('    %s --> %s' % ( samifitsfilename, corrfigfilename ), end=' ') 
 
     fitsfile = pf.open( samifitsfilename )
     hdr = fitsfile[0].header
@@ -962,7 +962,7 @@ def perform_telluric_correction( samifitsfilename=None, verbose=1 ):
     hdr['DARPOWER'] = (datadict[ 'DAR_FIT_PCOEFF' ],
                 'DAR fit: D R = DARNORM x (wl/DARLAM0)^DARPOWER')
 
-    print hdr
+    print(hdr)
 
     data = fitsfile[0].data 
     var  = fitsfile[1].data 
@@ -975,12 +975,12 @@ def perform_telluric_correction( samifitsfilename=None, verbose=1 ):
 
     if os.path.exists( fcalfitsfilename ) :
         os.remove( fcalfitsfilename )
-        print '(replacing existing file)', 
+        print('(replacing existing file)', end=' ') 
 
     fitsfile.writeto( fcalfitsfilename )
     fitsfile.close()
 
-    print 'done.' ; print ; print '_' * 78
+    print('done.') ; print() ; print('_' * 78)
 
     return correction, sig2noise
 
@@ -1022,7 +1022,7 @@ def amplitude_chi2( amplitude, model, data, var, sigclip=30., fitto=None ):
         plt.title( np.nansum( chi2 ) )
         plt.draw()
 
-        print amplitude, chi2[48:-48:100], np.nansum( chi2 )
+        print(amplitude, chi2[48:-48:100], np.nansum( chi2 ))
     return np.nansum( chi2 )
 
 # ____________________________________________________________________________
@@ -1080,9 +1080,9 @@ def fit_psf_afo_wavelength( datadict,
     xfibre, yfibre = relative_fibre_positions( datadict )
 
     if verbose > 0 :
-        print '_' * 78
-        print
-        print 'Making Moffat function fits to chunked data to get PSF shape.'
+        print('_' * 78)
+        print()
+        print('Making Moffat function fits to chunked data to get PSF shape.')
 
     if wavelengthout == None:
         wavelengthout = wavelength
@@ -1134,14 +1134,14 @@ def fit_psf_afo_wavelength( datadict,
                         datadict['filename'], chunki+1, chunked_wl[ chunki ]))
                 plt.draw()
             if fit_flux_frac < 0.5 or fit_flux_frac > 1. and verbose>(-1):
-                print ; print
-                print 'WARNING from SAMI_fluxcal.fit_psf_afo_wavelength:'
-                print 'PSF fit for chunk %i (wl ~ %iA) looks odd.' % (
-                    chunki, chunked_wl[chunki] )
-                print 'The fit implies the SAMI bundle is seeing {:.1%} of the star.'.format( fit_flux_frac )
-                print 'Check to see if the star is in the bundle?'
-                print 'If this happens a lot, flux calibration for this frame may be meaningless.'
-                print
+                print() ; print()
+                print('WARNING from SAMI_fluxcal.fit_psf_afo_wavelength:')
+                print('PSF fit for chunk %i (wl ~ %iA) looks odd.' % (
+                    chunki, chunked_wl[chunki] ))
+                print('The fit implies the SAMI bundle is seeing {:.1%} of the star.'.format( fit_flux_frac ))
+                print('Check to see if the star is in the bundle?')
+                print('If this happens a lot, flux calibration for this frame may be meaningless.')
+                print()
 
             for ki, value in enumerate( result ) :
     #                print ki, keys[ ki ], value
@@ -1175,7 +1175,7 @@ def fit_psf_afo_wavelength( datadict,
 
     
     if verbose > 0 :
-        print 'Making polynomial fits to chunk results to get PSF shape afo wavelength.'
+        print('Making polynomial fits to chunk results to get PSF shape afo wavelength.')
 
     if make_diagnostic_plots:
         plt.figure( 2, figsize=(7.5, 12) ) ; plt.clf()
@@ -1253,9 +1253,9 @@ def fit_psf_in_chunks(datadict, chunk_min=chunk_min, n_chunks=n_chunks,
     xfibre, yfibre = relative_fibre_positions(datadict)
 
     if verbose > 0 :
-        print '_' * 78
-        print
-        print 'Making Moffat function fits to chunked data to get PSF shape.'
+        print('_' * 78)
+        print()
+        print('Making Moffat function fits to chunked data to get PSF shape.')
 
     # Chunk the spectrum
     chunked_data, chunked_wl = chunk_spectrum(data, wavelength,
@@ -1273,16 +1273,16 @@ def fit_psf_in_chunks(datadict, chunk_min=chunk_min, n_chunks=n_chunks,
             parameters, fit_flux_frac = fit_covariant_moffat_noclip(
                 xfibre, yfibre, data_slice, guess=None, verbose=verbose)
             if fit_flux_frac < 0.5 or fit_flux_frac > 1. and verbose > (-1):
-                print
-                print 'WARNING from sami.dr.fluxcal.fit_psf_in_chunks:'
-                print 'PSF fit for chunk %i (wl ~ %iA) looks odd.' % (
-                    index, chunked_wl[index])
-                print ('The fit implies the SAMI bundle is seeing {:.1%}'
-                       ' of the star.'.format(fit_flux_frac))
-                print 'Check to see if the star is in the bundle?'
+                print()
+                print('WARNING from sami.dr.fluxcal.fit_psf_in_chunks:')
+                print('PSF fit for chunk %i (wl ~ %iA) looks odd.' % (
+                    index, chunked_wl[index]))
+                print(('The fit implies the SAMI bundle is seeing {:.1%}'
+                       ' of the star.'.format(fit_flux_frac)))
+                print('Check to see if the star is in the bundle?')
                 print ('If this happens a lot, flux calibration for this frame'
                        ' may be meaningless.')
-                print
+                print()
             chunked_psf[index] = parameters
 
     return chunked_psf, chunked_wl
@@ -1495,8 +1495,8 @@ def psf_diagnostic_plot( xfibre, yfibre, data,
                          vmin=thefit.min(), vmax=thefit.max(), lw=lw, 
                          cmap=ifucmap, linewidths=3, zorder=-10 )
             except :
-                print 'BADNESS!!!'
-                print 'unable to plot the fit!'
+                print('BADNESS!!!')
+                print('unable to plot the fit!')
 #                print thefit
 #                print thefit.min(), thefit.max()
 
@@ -1540,12 +1540,12 @@ def build_moffat_fibre_profiles( xfibre, yfibre, wavelengths, PSFfitpars,
                                  verbose = 1 ):
 
     if verbose > 0 :
-        print 'Constructing wavelength specific PSF models from Moffat fit results.'
+        print('Constructing wavelength specific PSF models from Moffat fit results.')
 
     PSFmodel = np.zeros( xfibre.shape + wavelengths.shape )
-    params = zip( PSFfitpars[ 'xcen' ], PSFfitpars[ 'ycen' ],
+    params = list(zip( PSFfitpars[ 'xcen' ], PSFfitpars[ 'ycen' ],
                   PSFfitpars[ 'alphax' ], PSFfitpars[ 'alphay' ],
-                  PSFfitpars[ 'beta' ], PSFfitpars[ 'rho' ] )
+                  PSFfitpars[ 'beta' ], PSFfitpars[ 'rho' ] ))
 
     for wli, parvec in enumerate( params ):
         PSFmodel[ :, wli ] = SAMI_PSF( parvec, xfibre, yfibre )
@@ -1563,7 +1563,7 @@ def extract_total_flux( datadict, gaussfit, verbose=True, sigclip=10. ):
     xfibre, yfibre = relative_fibre_positions( datadict )
 
     if verbose > 0 :
-        print 'Fitting for Gaussian amplitude at each wavelegth (knowing the PSF shape).'
+        print('Fitting for Gaussian amplitude at each wavelegth (knowing the PSF shape).')
     
     okaytouse = ( np.isfinite( thedata ) )  & ( np.isfinite( thedata ) )
                   
@@ -1677,7 +1677,7 @@ def extract_total_flux_new( datadict, gaussweight,
 
     if 0 :
         if verbose > 0 :
-            print 'Median filtering to get empirical variance estimates.'
+            print('Median filtering to get empirical variance estimates.')
 
             empvar = np.zeros( var.shape )
             for i in range( empvar.shape[0] ):
@@ -1691,7 +1691,7 @@ def extract_total_flux_new( datadict, gaussweight,
         empvar = var
 
     if verbose > 0 :
-        print 'Iterative-progressive fitting for total flux (knowing the PSF shape).'
+        print('Iterative-progressive fitting for total flux (knowing the PSF shape).')
 
     badness = np.zeros( data.shape )
     
@@ -1801,8 +1801,8 @@ def extract_total_flux_new( datadict, gaussweight,
         if verbose > 0 :
             pinwheel( count, maxcount, verbose=verbose+1 )
     if verbose > 0 :
-        print 'Done after  '
-    print 'Final total flux extraction based on {:8.3%} of available spexels'.format( float( use.sum() ) / float( data.shape[0]*data.shape[1] - dead.sum() ) )
+        print('Done after  ')
+    print('Final total flux extraction based on {:8.3%} of available spexels'.format( float( use.sum() ) / float( data.shape[0]*data.shape[1] - dead.sum() ) ))
 
     return np.clip( bestamp, 0., bestamp ), uncertainty
 # ____________________________________________________________________________
@@ -1953,7 +1953,7 @@ def covariant_moffat_chi2( parvec, xfibre, yfibre, data, var=None,
         plt.draw() 
         time.sleep( 1 )
 
-        print parvec, chi2
+        print(parvec, chi2)
 
     return chi2
 
@@ -2059,9 +2059,9 @@ def polyfit_sigclipped( xvals, yvals, polydeg=1,
         keep = ( np.abs(delta) < cliplimit ) & np.isfinite( yvals )
 
         if keep.sum() < 5 :
-            print '\n' * 5
-            print 'badness - not enough points left.  How does this happen?!'
-            print '\n' * 5
+            print('\n' * 5)
+            print('badness - not enough points left.  How does this happen?!')
+            print('\n' * 5)
             gogo = False
 
             coeffs = np.hstack( ( np.median(yvals), np.zeros( polydeg-1 ) ) )
@@ -2079,16 +2079,16 @@ def polyfit_sigclipped( xvals, yvals, polydeg=1,
         count += 1 
 
         if verbose > 1 :
-            print count, keep.sum(), coeffs, scatter
+            print(count, keep.sum(), coeffs, scatter)
 
         if np.max( np.abs( lastcoeffs / coeffs - 1. ) < 1e-4 ) :
             gogo = False
             return coeffs, scatter
             
         if count >= 100 :
-            print '\n' * 5
-            print 'badness - too many iterations. Oscillating solution?'
-            print '\n' * 5
+            print('\n' * 5)
+            print('badness - too many iterations. Oscillating solution?')
+            print('\n' * 5)
             gogo = False
             return ( coeffs + lastcoeffs ) / 2., scatter
 
@@ -2103,7 +2103,7 @@ def fit_for_DAR_corrections( psffitparams, paramkeys, wavelength, datadict,
                              verbose=1, make_diagnostic_plots=True ):
     
     if verbose > 0 :
-        print 'Making polynomial fits to get PSF shape afo wavelength.'
+        print('Making polynomial fits to get PSF shape afo wavelength.')
 
     xcen = np.array( psffitparams[ 'xcen' ] )
     ycen = np.array( psffitparams[ 'ycen' ] )
@@ -2327,12 +2327,12 @@ def find_standard_star_dataframes( directory,
     verbose=True ):
 
     if verbose >= 1 :
-        print 'Looking for SAMI spectrophotometric standard star observations.'
+        print('Looking for SAMI spectrophotometric standard star observations.')
     if not os.path.exists( directory ) :
         if verbose > 0 :
-            print '\n\n\nWARNING: path %s does not exist.' % directory
-            print 'Cannot look for standard stars in a non existent directory!'
-            print '\n\n\n'
+            print('\n\n\nWARNING: path %s does not exist.' % directory)
+            print('Cannot look for standard stars in a non existent directory!')
+            print('\n\n\n')
         return None
 
     standards = os.listdir( directory )
@@ -2347,15 +2347,15 @@ def find_standard_star_dataframes( directory,
                 fitsfilename, directory_list=path_to_ESO_standards, verbose=verbose )
         except IOError:
             if verbose >= 1:
-                print 'Nothing found in that file'
+                print('Nothing found in that file')
             continue
             
         if result != None :
             standards_list.append( result )
                         
     if verbose >= 1 :
-        print '\nFound %i spectrophotometric standards in %s.' % ( 
-            len( standards_list ), directory )
+        print('\nFound %i spectrophotometric standards in %s.' % ( 
+            len( standards_list ), directory ))
 
     return standards_list
 # ____________________________________________________________________________
@@ -2373,13 +2373,13 @@ Returns the SAMI data as well as the rebinned standard star spectrum.
 
 """
     if verbose > 1 :
-        print """\n
+        print("""\n
 Starting SAMI_fluxcal.find_standard_in_dataframe to get SAMI IFS data
 and reference spectrum for a standard star.
 
-Opening data fits file: %s\n""" % ( fitsfilename )
+Opening data fits file: %s\n""" % ( fitsfilename ))
     elif verbose > 0 :
-        print 'Searching for standard star in', fitsfilename.split('/')[-1]
+        print('Searching for standard star in', fitsfilename.split('/')[-1])
 
     fitsfile = pf.open( fitsfilename )
     hdr=fitsfile[0].header
@@ -2394,8 +2394,8 @@ Opening data fits file: %s\n""" % ( fitsfilename )
             DEC= np.mean( table.field( 'FIB_MDEC' )[ probe ] )        
             if RA != 0. or DEC != 0. :
                 if verbose > 1:
-                    print 'Looking around bundle %s (RA=%.6f, Dec=%.6f) ...' % (
-                        probename, RA, DEC ),   ;   sys.stdout.flush()
+                    print('Looking around bundle %s (RA=%.6f, Dec=%.6f) ...' % (
+                        probename, RA, DEC ), end=' ')   ;   sys.stdout.flush()
 
                 starfile, starname, offset=find_standard_spectrum( 
                     RA, DEC, max_sep_arcsec=max_sep_arcsec,
@@ -2406,36 +2406,36 @@ Opening data fits file: %s\n""" % ( fitsfilename )
                     standards_list= [ fitsfilename, probename, 
                                              starfile, starname, offset ]
                     if verbose > 1:
-                        print 'matches ', starname, '.'
+                        print('matches ', starname, '.')
                 elif verbose > 1 :
-                    print 'no match (closest at %.2f arcsec)' % offset
+                    print('no match (closest at %.2f arcsec)' % offset)
 
     if nfound > 1 and verbose >= 0 :
-        print '\n\n\nWARNING from SAMI_fluxcal.find_standard_in_dataframe:'
-        print 'Found %i possible standard stars in dataframe %s' % (
-                    nfound, fitsfilename )
-        print 'Some code revision is needed to accommodate this scenario.'
-        print 'Only returning the last match considered.\n\n\n'
+        print('\n\n\nWARNING from SAMI_fluxcal.find_standard_in_dataframe:')
+        print('Found %i possible standard stars in dataframe %s' % (
+                    nfound, fitsfilename ))
+        print('Some code revision is needed to accommodate this scenario.')
+        print('Only returning the last match considered.\n\n\n')
 
     if nfound < 1 : 
         if verbose >= 0 :    
-            print '\n\n\nWARNING from SAMI_fluxcal.find_standard_in_dataframe:'
-            print 'No standard stars found in dataframe:'
-            print '       '+fitsfilename
-            print 'Data frame header supplied MEANRA = %.6f, MEANDEC = %.6f.' % ( 
-                hdr[ 'MEANRA' ], hdr[ 'MEANDEC' ] )
-            print 'Nearest match is %.2f arcsec away (max radius is %2.f arcsec).' % ( offset, max_sep_arcsec )
-            print "Maybe you need me to (be able to) download more spectrophot'c standard spectra?"
-            print 'Not returning anything useful.\n\n\n'
+            print('\n\n\nWARNING from SAMI_fluxcal.find_standard_in_dataframe:')
+            print('No standard stars found in dataframe:')
+            print('       '+fitsfilename)
+            print('Data frame header supplied MEANRA = %.6f, MEANDEC = %.6f.' % ( 
+                hdr[ 'MEANRA' ], hdr[ 'MEANDEC' ] ))
+            print('Nearest match is %.2f arcsec away (max radius is %2.f arcsec).' % ( offset, max_sep_arcsec ))
+            print("Maybe you need me to (be able to) download more spectrophot'c standard spectra?")
+            print('Not returning anything useful.\n\n\n')
         return None
 
     if verbose > 0 :
-        print 'Found standard spectrum for star %s in probe %s.' % (
-            standards_list[2], standards_list[1] )
-        print 'Offset b/w bundle centre and known position is %.2f arcsec.' % (
-            standards_list[ 4 ] )
+        print('Found standard spectrum for star %s in probe %s.' % (
+            standards_list[2], standards_list[1] ))
+        print('Offset b/w bundle centre and known position is %.2f arcsec.' % (
+            standards_list[ 4 ] ))
     if verbose > 1 :
-        print "\nFinished SAMI_fluxcal.find_standard_in_dataframe.\n"
+        print("\nFinished SAMI_fluxcal.find_standard_in_dataframe.\n")
 
     return standards_list
 
@@ -2467,7 +2467,7 @@ find_standard_spectrum( RA, Dec, max_sep_arcsec=1
 """
     # Find the best match in RA and Dec
     if verbose > 0:
-        print 'Matching to observed coordinates RA =', ra, 'Dec =', dec
+        print('Matching to observed coordinates RA =', ra, 'Dec =', dec)
 
     min_sep = float('inf')
 
@@ -2476,21 +2476,21 @@ find_standard_spectrum( RA, Dec, max_sep_arcsec=1
 
         # Read the index file
         if verbose > 0:
-            print """
+            print("""
 Starting SAMI_fluxcal.find_standard_spectrum to get standard star spectrum.
  
 Looking for flux calibration data in %s .
 Reading coordinates of standard stars from %s .
 Maximum search radius is %.2f arcsec.
-""" % ( directory, standardcat, max_sep_arcsec )
+""" % ( directory, standardcat, max_sep_arcsec ))
 
         if not os.path.exists( standardcat ) :
-            print """\n\n\n\n\n
+            print("""\n\n\n\n\n
 Cannot find file %s containing standard star info.
 You may need to run SAMI_fluxcal.create_ESO_standards_table .
 You may also need to run SAMI_fluxcal.get_ESO_standard_spectra .
 
-Dying gracelessly in 3 seconds ...\n\n\n""" % standardcat 
+Dying gracelessly in 3 seconds ...\n\n\n""" % standardcat) 
             time.sleep( 3 )
         
         index = np.loadtxt( standardcat, dtype='S' )
@@ -2513,14 +2513,14 @@ Dying gracelessly in 3 seconds ...\n\n\n""" % standardcat
             if '-' in star[5] and dec_star > 0:
               dec_star *= -1
               if -1. <= dec and dec <= 0 :
-                print '    fixing negative Dec bug in astropy.coordinates.'
-                print '    astropy.coordinates treats Dec of -00 as +00'
-                print '    future astropy.coordinates may fix this problem.'
-                print '\n' * 2
-                print "    i'll give you 10 seconds to think about that."
-                print '\n' * 5
+                print('    fixing negative Dec bug in astropy.coordinates.')
+                print('    astropy.coordinates treats Dec of -00 as +00')
+                print('    future astropy.coordinates may fix this problem.')
+                print('\n' * 2)
+                print("    i'll give you 10 seconds to think about that.")
+                print('\n' * 5)
                 for i in range( 5 ):
-                    print '\a'
+                    print('\a')
                     time.sleep( 0.3 )
                 time.sleep( 8.5 )
 
@@ -2535,14 +2535,14 @@ Dying gracelessly in 3 seconds ...\n\n\n""" % standardcat
     # Check that the closest match is close enough
     if min_sep > max_sep_arcsec :
         if verbose > 0 :        
-            print 'WARNING from SAMI_fluxcal.find_standard_spectrum:'
-            print '    Closest standard star is too far away. (%.3f arcsec)' % (min_sep)
+            print('WARNING from SAMI_fluxcal.find_standard_spectrum:')
+            print('    Closest standard star is too far away. (%.3f arcsec)' % (min_sep))
         return None, None, min_sep
 
     if verbose > 1:
-        print 'Closest standard star found is', closest_star[1], \
-              'at separation %.3f arcsec.' % min_sep
-        print min_sep, max_sep_arcsec, min_sep > max_sep_arcsec
+        print('Closest standard star found is', closest_star[1], \
+              'at separation %.3f arcsec.' % min_sep)
+        print(min_sep, max_sep_arcsec, min_sep > max_sep_arcsec)
 
     return os.path.join(closest_dir, closest_star[0]), closest_star[1], min_sep
     
@@ -2555,15 +2555,15 @@ def get_standard_spectrum( standard_filename,
     # Read the flux and wavelength from the correct file
 
     if not os.path.exists( standard_filename ) and verbose >= 0 :
-        print """\n\n\n\n\n
+        print("""\n\n\n\n\n
 Cannot find file %s containing spectrum for standard star.
 You may need to run SAMI_fluxcal.get_ESO_standard_spectra .
 
-Dying gracelessly in 3 seconds ...\n\n\n""" % ( standard_filename )
+Dying gracelessly in 3 seconds ...\n\n\n""" % ( standard_filename ))
         time.sleep( 3 )
 
     if verbose > 1:
-        print 'Reading spectrum from', standard_filename
+        print('Reading spectrum from', standard_filename)
     
     skiprows = 0
     with open(standard_filename) as f_spec:
@@ -2583,9 +2583,9 @@ Dying gracelessly in 3 seconds ...\n\n\n""" % ( standard_filename )
     spectrum  = star_data[:,1]
 
     if verbose > 1 :
-        print 'Spectrum ranges from %.1f to %.1f Angstrom.' % (
-                    wavelength.min(), wavelength.max() )
-        print "\nFinished SAMI_fluxcal.find_standard_spectrum.\n" ; print
+        print('Spectrum ranges from %.1f to %.1f Angstrom.' % (
+                    wavelength.min(), wavelength.max() ))
+        print("\nFinished SAMI_fluxcal.find_standard_spectrum.\n") ; print()
 
     return spectrum, wavelength
 
@@ -2620,23 +2620,23 @@ by default, the standard star list is read from the following url:
 
     tablename = '%s/%s' % ( path_to_standard_spectra, standard_star_catalog )
     if verbose :
-        print """\n
+        print("""\n
 Starting SAMI_fluxcal.create_ESO_standards_table to get ESO standard stars.
-A catalogue of standard stars positions, etc., will be written to the file:"""
-        print tablename
-        print
+A catalogue of standard stars positions, etc., will be written to the file:""")
+        print(tablename)
+        print()
 
 
     if not os.path.exists( path_to_standard_spectra ) :
         if verbose > 0 :
-            print '\n\n\nWARNING: path %s does not exist.' % path_to_standard_spectra
-            print '\n\n\n' 
+            print('\n\n\nWARNING: path %s does not exist.' % path_to_standard_spectra)
+            print('\n\n\n') 
             verbose = -9
 
     if verbose > 0 :
-        print "Opening webpage:", url
+        print("Opening webpage:", url)
 
-    f = urllib2.urlopen(url)
+    f = urllib.request.urlopen(url)
     webpage = f.read()                       # Read the full standards webpage
     f.close()    
                                          # Find the start and end of the table
@@ -2673,13 +2673,13 @@ A catalogue of standard stars positions, etc., will be written to the file:"""
         else:
             mag = 'NaN'
             if verbose :
-                print 'magnitude not found for object', name
+                print('magnitude not found for object', name)
         if len(data) > 7:
             spec_type = data[7]
         else:   
             spec_type = 'unknown'
             if verbose :
-                print 'spec type not found for object', name
+                print('spec type not found for object', name)
 
                                            # Print the data to the output file
         tableline = \
@@ -2691,9 +2691,9 @@ A catalogue of standard stars positions, etc., will be written to the file:"""
         file_out.write( tableline )
 
         if verbose > 0 :
-            print 'Copied data for', name
+            print('Copied data for', name)
         if verbose > 1 :
-            print tableline,
+            print(tableline, end=' ')
 
         line_start += 1
 
@@ -2701,8 +2701,8 @@ A catalogue of standard stars positions, etc., will be written to the file:"""
     file_out.close()
 
     if verbose :
-        print 'Wrote file', tablename, '.'
-        print "\nFinished SAMI_fluxcal.create_ESO_standards_table.\n"
+        print('Wrote file', tablename, '.')
+        print("\nFinished SAMI_fluxcal.create_ESO_standards_table.\n")
 
     return
 # ____________________________________________________________________________
@@ -2735,17 +2735,17 @@ url_list =
 
 """
     if verbose :
-        print ; print """
+        print() ; print("""
 Starting SAMI_fluxcal.get_ESO_standard_spectra to download ESO standards.
-Spectra for standard stars will be placed in the following directory:"""
-        print directory
+Spectra for standard stars will be placed in the following directory:""")
+        print(directory)
 
     if not os.path.exists( directory ):
-        print '\n' * 5
-        print 'The path specified for path_to_ESO_standards does not exist!'
-        print '\n' * 3
-        print 'You have to make this directory for me!'
-        print '\n' * 5
+        print('\n' * 5)
+        print('The path specified for path_to_ESO_standards does not exist!')
+        print('\n' * 3)
+        print('You have to make this directory for me!')
+        print('\n' * 5)
 
     if url_list == None:
         # Define the default URLs in which to search
@@ -2758,8 +2758,8 @@ Spectra for standard stars will be placed in the following directory:"""
 
         # Get the list of filenames in this directory
         if verbose:
-            print "Searching for files in", url
-        f = urllib2.urlopen(url+'/')
+            print("Searching for files in", url)
+        f = urllib.request.urlopen(url+'/')
         contents = f.read()
         f.close()
 
@@ -2781,21 +2781,21 @@ Spectra for standard stars will be placed in the following directory:"""
             dotdat += 1
 
         if verbose:
-            print len(filename_list), "files found"
+            print(len(filename_list), "files found")
 
         # Save the files one by one
         for filename in filename_list:
             if os.path.exists( directory+'/'+filename ) and not update:
                 if verbose:
-                    print '%18s already exists; no new download.' % filename
+                    print('%18s already exists; no new download.' % filename)
                 pass
             else :                
                 if verbose:
-                    print 'Saving file:', filename, 'to directory', directory
-                urllib.urlretrieve(url+'/'+filename, directory+'/'+filename)
+                    print('Saving file:', filename, 'to directory', directory)
+                urllib.request.urlretrieve(url+'/'+filename, directory+'/'+filename)
 
     if verbose :
-        print "\nFinished SAMI_fluxcal.get_ESO_standard_spectra.\n" ; print
+        print("\nFinished SAMI_fluxcal.get_ESO_standard_spectra.\n") ; print()
 
     return
 
@@ -2805,9 +2805,9 @@ Spectra for standard stars will be placed in the following directory:"""
 def extract_secondary_standard( samifitsfilename, verbose=True ):
     """Identify and extract secondary standard star from SAMI data frame"""
     if verbose > 0 :
-        print '_' * 78
-        print '\nLooking to identify secondary standard star in dataframe:'
-        print ' '*8 + samifitsfilename
+        print('_' * 78)
+        print('\nLooking to identify secondary standard star in dataframe:')
+        print(' '*8 + samifitsfilename)
     
     fitsfile=pf.open(samifitsfilename)
     fulltable=fitsfile['FIBRES_IFU'].data 
@@ -2837,7 +2837,7 @@ def extract_secondary_standard( samifitsfilename, verbose=True ):
     fitsfile.close()
 
     if verbose > 0:
-        print 'Found star with ID %s in probe %s.' % ( secstandard, probename )
+        print('Found star with ID %s in probe %s.' % ( secstandard, probename ))
 
     datadict = IFU_pick( samifitsfilename, probename, 
                          extincorr=True, verbose=verbose )
@@ -2854,9 +2854,9 @@ def load_CK04_models( path_to_ck04_models='./ck04models/', verbose=True ):
     """Load Castelli & Kurucz (2004) model stellar spectra from standard file."""
 
     if verbose > 0 :
-        print '_' * 78
-        print '\nLoading Castelli & Kurucz (2004) model stellar spectra.'
-        print 'Looking for file %s/catalog.fits.' % path_to_ck04_models
+        print('_' * 78)
+        print('\nLoading Castelli & Kurucz (2004) model stellar spectra.')
+        print('Looking for file %s/catalog.fits.' % path_to_ck04_models)
 
     catalog = pf.getdata(os.path.join(path_to_ck04_models, 'catalog.fits'), 1)
     loaded = []
@@ -2897,7 +2897,7 @@ def load_CK04_models( path_to_ck04_models='./ck04models/', verbose=True ):
         hourglass( idi+1, len( catalog.FILENAME ) )
 
     if verbose > 0 :
-        print 78 * '_'
+        print(78 * '_')
         
 #    global modelwl, modelspec, modelnames
 #    modelwl, modelspec, modelnames = wavelength, allmodels, allnames
@@ -2987,7 +2987,7 @@ def IFU_pick( samifitsfilename, IFU=None,
         extcorr = 10**( -0.4 * airmass * atmext )
 
         if verbose > -1 :
-            print 'Appling extinction correction with airmass = %.3f.' % airmass        
+            print('Appling extinction correction with airmass = %.3f.' % airmass)        
 
 #        extcorr = 1.
 #        print '\n\n\nNOT APPLYING ATM EXT CORR!!!\n\n\n' * 3
@@ -3050,22 +3050,22 @@ def get_atm_extinction_curve(
     
     if not os.path.exists( atm_extinction_table ):
         
-        print ; print '_' * 78 ; print
-        print 'atmospheric extinction table not found.'
-        print "i will try to download this from Mike Bessell's webpage:"
-        print url
-        print
+        print() ; print('_' * 78) ; print()
+        print('atmospheric extinction table not found.')
+        print("i will try to download this from Mike Bessell's webpage:")
+        print(url)
+        print()
 
-        urllib.urlretrieve( 
+        urllib.request.urlretrieve( 
             '%s/%s' % ( url, os.path.basename(atm_extinction_table) ), 
             atm_extinction_table )
 
-        print 'done.'
-        print ; print '_' * 78 ; print
+        print('done.')
+        print() ; print('_' * 78) ; print()
 
     wl, ext = [], []
 
-    for entry in open( atm_extinction_table, 'r' ).xreadlines() :
+    for entry in open( atm_extinction_table, 'r' ) :
         line = entry.rstrip( '\n' )
         if not line.count( '*' ) and not line.count( '=' ):
             values = line.split()
@@ -3344,12 +3344,12 @@ def pinwheel( current, maximum, done=False, verbose=True ):
         return
     
     if done :
-        print '\n Done.'
+        print('\n Done.')
         return
 
     spinners = '/ - \ | / - \ |'.split()
-    spinners[ 1 ] = u"\u2013"
-    spinners[ 5 ] = u"\u2013"
+    spinners[ 1 ] = "\u2013"
+    spinners[ 5 ] = "\u2013"
 
     printstr = '  iteration %3i (%i max.)' % ( current, maximum )
     printstr += '       %s      %s  %s         %s      %s    %s' % (
@@ -3399,7 +3399,7 @@ default value for /path/to/ESOstandards/ is ./ESOstandards/ .
     args = sys.argv[ 1: ]
 
     if len( args ) == 0 or len( args ) > 3 :
-        print helpstring
+        print(helpstring)
 
 
     if len( args ) >= 1 :
@@ -3411,11 +3411,11 @@ default value for /path/to/ESOstandards/ is ./ESOstandards/ .
                 create_ESO_standards_table( args[1] )
                 get_ESO_standard_spectra( args[1] )
             else :
-                print helpstring
+                print(helpstring)
         elif len( args ) == 1 :
-            print helpstring
+            print(helpstring)
         else :
-            print """
+            print("""
 Running SAMI_fluxcal.fluxcal.
 
 I am assuming that the standard star data can be found here:
@@ -3427,27 +3427,27 @@ I am assuming that the data to be calibrated can be found here:
 (This needs to be something like /path/to/data/ccd_1/)
 
 %s 
-""" % ( args[0], args[1] )
+""" % ( args[0], args[1] ))
 
             if len( args ) == 2 :
-                print """
+                print("""
 I will look for ESO spectrophotometric standard data here:
-"""
-                print path_to_standard_spectra
+""")
+                print(path_to_standard_spectra)
 
                 fluxcal( args[0], args[1], verbose=verbose )
 
             else :
-                print """
+                print("""
 I will look for ESO spectrophotometric standard data here:
-"""
-                print args[2]
+""")
+                print(args[2])
 
                 fluxcal( args[0], args[1], 
                          path_to_ESO_standards=args[2], verbose=verbose )
 
         plt.close( 'all' )
-        print '\nAll done!\n\n'
+        print('\nAll done!\n\n')
 
 # ____________________________________________________________________________
 # ____________________________________________________________________________
