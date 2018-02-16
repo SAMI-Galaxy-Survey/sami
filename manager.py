@@ -939,9 +939,10 @@ class Manager:
         for dirname, subdirname_list, filename_list in os.walk(os.path.join(self.abs_root, "raw")):
             for filename in filename_list:
                 if self.file_filter(filename):
-                    files_to_add.append(os.path.join(dirname, filename))
+                    full_path = os.path.join(dirname, filename)
+                    files_to_add.append(full_path)
 
-        assert len(set(files_to_add)) != len(files_to_add), "Some files would be duplicated on manager startup."
+        assert len(set(files_to_add)) == len(files_to_add), "Some files would be duplicated on manager startup."
 
         if self.n_cpu == 1:
             fits_list = list(map(FITSFile, files_to_add))
@@ -2600,7 +2601,7 @@ class Manager:
             text += field_id+'\n'
             text += '-'*75+'\n'
             text += 'File        Exposure  FWHM (")  Transmission  Sky residual\n'
-            for fits in fits_list:
+            for fits in sorted(fits_list, key=lambda f: f.filename):
                 fwhm = '       -'
                 transmission = '           -'
                 sky_residual = '           -'
@@ -3005,6 +3006,7 @@ class Manager:
         print('Combining files to create', output_path)
         tdfdr.run_2dfdr_combine(input_path_list, output_path, idx_file)
         return
+
 
     def files(self, ndf_class=None, date=None, plate_id=None,
               plate_id_short=None, field_no=None, field_id=None,
@@ -4775,8 +4777,8 @@ def scale_cubes_field(group):
 @safe_for_multiprocessing
 def scale_frame_pair(path_pair):
     """Scale a pair of RSS frames to the correct magnitude."""
-    print('Scaling RSS files to give star correct magnitude:')
-    print(os.path.basename(path_pair[0]), os.path.basename(path_pair[1]))
+    print('Scaling RSS files to give star correct magnitude: %s' %
+          (os.path.basename(path_pair[0]), os.path.basename(path_pair[1])))
     stellar_mags_frame_pair(path_pair, save=True)
     star = pf.getval(path_pair[0], 'STDNAME', 'FLUX_CALIBRATION')
     # Previously tried reading the catalogue once and passing it, but for
