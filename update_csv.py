@@ -121,7 +121,7 @@ class CSV:
             data = dict(zip(self.columns, line.split(',')))
             data['line_no'] = line_no
             # Append the data dictionary to the relevant list of targets
-            if data.has_key('Type'):
+            if 'Type' in data:
                 if data['Type'] == 'F':
                     self.central.append(data)
                 elif data['Type'] == 'P':
