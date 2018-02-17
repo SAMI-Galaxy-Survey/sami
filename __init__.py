@@ -14,12 +14,17 @@ The other modules are normally not used directly, but are used by those listed
 above.
 """
 
+import warnings
+
+__all__ = ['utils', 'samifitting', 'update_csv', 'manager', 'dr', 'qc']
+
 # sami package init file
 # import the modules at package level
 from . import utils
 from . import samifitting
 from . import update_csv
 from . import manager
+from .manager import Manager
 from . import dr
 from . import qc
 
@@ -32,3 +37,8 @@ from . import config
 from .general import *
 from .observing import *
 from .sdss import *
+
+
+# Disable some numerical warnings:
+# We get lots of invalid value warnings arising because of divide by zero errors.
+warnings.filterwarnings('ignore', r'invalid value', RuntimeWarning)
