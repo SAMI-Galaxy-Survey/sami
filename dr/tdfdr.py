@@ -32,11 +32,13 @@ import os
 import tempfile
 import re
 from contextlib import contextmanager
+import six
+import shutil
 
 # Set up logging
 from .. import slogging
 log = slogging.getLogger(__name__)
-log.setLevel(slogging.WARNING)
+log.setLevel(slogging.DEBUG)
 # log.enable_console_logging()
 
 LOCKDIR = '2dfdrLockDir'
@@ -58,6 +60,15 @@ try:
 except (AssertionError, TypeError):
     raise ImportError("2dfdr requires a working DISPLAY. If you are running remotely, try enabling X-forwarding.")
 
+if six.PY2:
+    # Python 2 doesn't have TemporaryDirectory, so we backport it here:
+    @contextmanager
+    def TemporaryDirectory():
+        dir_name = tempfile.mkdtemp()
+        yield dir_name
+        shutil.rmtree(dir_name)
+else:
+    TemporaryDirectory = tempfile.TemporaryDirectory
 
 
 def subprocess_call(command_line, **kwargs):
@@ -67,7 +78,7 @@ def subprocess_call(command_line, **kwargs):
     log.debug("Starting async processs: %s", formatted_command)
 
     # Create subprocess
-    stdout = subprocess.check_output(*command_line, stderr=None, **kwargs)
+    stdout = subprocess.check_output(command_line, stderr=None, **kwargs)
     log.debug("Async process finished: %s", formatted_command)
 
     stdout = stdout.decode("utf-8")
@@ -85,7 +96,7 @@ def subprocess_call(command_line, **kwargs):
 def call_2dfdr_reduce(dirname, options=None):
     """Call 2dfdr in pipeline reduction mode using `aaorun`"""
     # Make a temporary directory with a unique name for use as IMP_SCRATCH
-    with tempfile.TemporaryDirectory() as imp_scratch:
+    with TemporaryDirectory() as imp_scratch:
 
         command_line = [COMMAND_REDUCE]
         if options is not None:
@@ -98,19 +109,22 @@ def call_2dfdr_reduce(dirname, options=None):
         with directory_lock(dirname):
             tdfdr_stdout = subprocess_call(command_line, cwd=dirname, env=environment)
 
+        # @TODO: Make this work with various versions of 2dfdr.
         # Confirm that the above command ran to completion, otherwise raise an exception
-        try:
-            confirm_line = tdfdr_stdout.splitlines()[-2]
-            assert re.match(r"Data Reduction command \S+ completed.", confirm_line)
-        except (IndexError, AssertionError):
-            message = "2dfdr did not run to completion for command: %s" % " ".join(command_line)
-            raise TdfdrException(message)
+        # try:
+        #     confirm_line = tdfdr_stdout.splitlines()[-2]
+        #     assert (
+        #         re.match(r"Data Reduction command \S+ completed.", confirm_line) or  # 2dfdr v6.14
+        #         re.match(r"Action \S+, Task \S+, completed.", tdfdr_stdout))         # 2dfdr v6.28
+        # except (IndexError, AssertionError):
+        #     message = "2dfdr did not run to completion for command: %s" % " ".join(command_line)
+        #     raise TdfdrException(message)
 
 
 def call_2dfdr_gui(dirname, options=None):
     """Call 2dfdr in GUI mode using `drcontrol`"""
     # Make a temporary directory with a unique name for use as IMP_SCRATCH
-    with tempfile.TemporaryDirectory() as imp_scratch:
+    with TemporaryDirectory() as imp_scratch:
 
         command_line = [COMMAND_GUI]
         if options is not None:
