@@ -51,7 +51,7 @@ directories. This is useful for demonstrating how to use the Manager without
 waiting for the actual data reduction to happen.
 """
 
-from typing import List
+from typing import List, Tuple, Dict, Sequence
 
 import shutil
 import os
@@ -1777,20 +1777,16 @@ class Manager:
         """Reduce all files in the iterable."""
         # First establish the 2dfdr options for all files that need reducing
         # Would be more memory-efficient to construct a generator
-        input_list = [(fits,
-                       self.idx_files[fits.grating],
-                       tuple(self.tdfdr_options(
-                           fits, throughput_method=throughput_method,
-                           tlm=tlm)),
-                       self.cwd,
-                       self.imp_scratch,
-                       self.scratch_dir,
-                       check,
-                       self.debug)
-                      for fits in file_iterable
-                      if (overwrite or
-                          not os.path.exists(self.target_path(fits, tlm=tlm)))]
+
+        input_list = []  # type: List[Tuple[FITSFile, str, Sequence]]
+        for fits in file_iterable:
+            if (overwrite or
+                    not os.path.exists(self.target_path(fits, tlm=tlm))):
+                tdfdr_options = tuple(self.tdfdr_options(fits, throughput_method=throughput_method, tlm=tlm))
+                input_list.append(
+                    (fits, self.idx_files[fits.grating], tdfdr_options))
         reduced_files = [item[0] for item in input_list]
+
         # Send the items out for reducing. Keep track of which ones were done.
         while input_list:
             print(len(input_list), 'files remaining.')
@@ -1798,12 +1794,19 @@ class Manager:
                     'sami.dr.tdfdr.run_2dfdr_single', fake_run_2dfdr_single):
                 finished = np.array(self.map(
                     run_2dfdr_single_wrapper, input_list))
-            input_list = [item for i, item in enumerate(input_list) 
+
+            # Mark finished files as requiring checks
+            if check:
+                for fin, reduction_tuple in zip(finished, input_list):
+                    fits = reduction_tuple[0]
+                    if fin:
+                        update_checks(check, [fits], False)
+
+            input_list = [item for i, item in enumerate(input_list)
                           if not finished[i]]
         # Delete unwanted reduced files
         for fits in reduced_files:
-            if (fits.ndf_class == 'MFFFF' and tlm and not leave_reduced and
-                os.path.exists(fits.reduced_path)):
+            if (fits.ndf_class == 'MFFFF' and tlm and not leave_reduced and os.path.exists(fits.reduced_path)):
                 os.remove(fits.reduced_path)
         # Return a list of fits objects that were reduced
         return reduced_files
@@ -2058,6 +2061,10 @@ class Manager:
                 'sami.dr.telluric.derive_transfer_function',
                 fake_derive_transfer_function):
             done_list = self.map(telluric_correct_pair, inputs_list)
+
+        # Mark files as needing visual checks:
+        update_checks('TEL', [fits_2], False)
+
         self.n_cpu = old_n_cpu
         for inputs in [inputs for inputs, done in
                        zip(inputs_list, done_list) if done]:
@@ -2170,9 +2177,14 @@ class Manager:
                     complete_groups.append(
                         (key, fits_list, copy_to_other_arm, 
                          fits_list_other_arm))
+
+                    # Also mark this group as requiring visual checks:
+                    update_checks('ALI', fits_list, False)
                     break
+
         with self.patch_if_demo('sami.manager.find_dither', fake_find_dither):
             self.map(measure_offsets_group, complete_groups)
+
         self.next_step('measure_offsets', print_message=True)
         return
 
@@ -2226,7 +2238,7 @@ class Manager:
             failed_fields = [field+'\n' for field in failed_fields]
             outfile.writelines(failed_fields)
         
-	# Send the cubing tasks off to multiple CPUs
+        # Send the cubing tasks off to multiple CPUs
         with self.patch_if_demo('sami.manager.dithered_cubes_from_rss_wrapper',
                                 fake_dithered_cube_from_rss_wrapper):
             cubed_list = self.map(cube_object, inputs_list)
@@ -2234,7 +2246,8 @@ class Manager:
         for inputs, cubed in zip(inputs_list, cubed_list):
             if cubed:
                 # Select the first fits file from this run (not linked runs)
-                for path in inputs[2]:
+                path_list = inputs[2]  # From inputs_list above.
+                for path in path_list:
                     fits = self.fits_file(os.path.basename(path)[:10])
                     if fits:
                         break
@@ -3779,10 +3792,12 @@ class Manager:
             else:
                 raise KeyError(
                     'recent_ever must be "both", "ever" or "recent"')
+
+            # Iterate over checks which have been explicitly been marked as `False`
             for key in [key for key, value in items if value is False]:
                 check_dict_key = []
-                for group_by_key in CHECK_DATA[key]['group_by']:
-                    check_dict_key.append(getattr(fits, group_by_key))
+                for attribute_to_group_by in CHECK_DATA[key]['group_by']:
+                    check_dict_key.append(getattr(fits, attribute_to_group_by))
                 check_dict_key = (key, tuple(check_dict_key), recent_ever)
                 check_dict[check_dict_key].append(fits)
         # Now change the dictionary into a sorted list
@@ -4156,7 +4171,7 @@ class FITSFile:
     def set_fibres_extno(self):
         """Save the extension number for the fibre table."""
         self.fibres_extno = find_fibre_table(self.hdulist)
-	
+
     def set_plate_id(self):
         """Save the plate ID."""
         try:
@@ -4671,7 +4686,6 @@ def telluric_correct_pair(inputs):
             os.remove(fits.telluric_path)
         telluric.apply_correction(fits.fluxcal_path, 
                                   fits.telluric_path)
-    update_checks('TEL', [fits_2], False)
     return True
 
 @safe_for_multiprocessing
@@ -4689,7 +4703,6 @@ def measure_offsets_group(group):
         return
     find_dither(path_list, path_list[0], centroid=True,
                 remove_files=True, do_dar_correct=True)
-    update_checks('ALI', fits_list, False)
     if copy_to_other_arm:
         for fits, fits_other_arm in zip(fits_list, fits_list_other_arm):
             hdulist_this_arm = pf.open(best_path(fits))
@@ -4760,7 +4773,7 @@ def best_path(fits):
 @asyncio.coroutine
 def run_2dfdr_single_wrapper(group):
     """Run 2dfdr on a single file."""
-    fits, idx_file, options, cwd, imp_scratch, scratch_dir, check, debug = \
+    fits, idx_file, options = \
         group
     try:
         yield from tdfdr.run_2dfdr_single(fits, idx_file, options=options)
@@ -4769,8 +4782,6 @@ def run_2dfdr_single_wrapper(group):
                    ' while other process has directory lock.')
         print(message)
         return False
-    if check:
-        update_checks(check, [fits], False)
     return True
 
 
