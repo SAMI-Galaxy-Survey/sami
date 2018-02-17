@@ -4778,7 +4778,7 @@ def scale_cubes_field(group):
 def scale_frame_pair(path_pair):
     """Scale a pair of RSS frames to the correct magnitude."""
     print('Scaling RSS files to give star correct magnitude: %s' %
-          (os.path.basename(path_pair[0]), os.path.basename(path_pair[1])))
+          str((os.path.basename(path_pair[0]), os.path.basename(path_pair[1]))))
     stellar_mags_frame_pair(path_pair, save=True)
     star = pf.getval(path_pair[0], 'STDNAME', 'FLUX_CALIBRATION')
     # Previously tried reading the catalogue once and passing it, but for
