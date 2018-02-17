@@ -1,4 +1,3 @@
-from __future__ import division
 """
 Flux calibration code that looks at the red and blue data together.
 

@@ -1,5 +1,3 @@
-from __future__ import print_function
-
 """
 This module covers functions required to create cubes from a dithered set
 of RSS frames. See Sharp et al (2015) for a detailed description of the
