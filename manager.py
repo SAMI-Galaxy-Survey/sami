@@ -107,7 +107,7 @@ from .general.align_micron import find_dither
 from .dr import fluxcal2, telluric, check_plots, tdfdr, dust, binning
 from .dr.throughput import make_clipped_thput_files
 from .qc.fluxcal import stellar_mags_cube_pair, stellar_mags_frame_pair
-from .qc.fluxcal import throughput, get_sdss_stellar_mags
+from .qc.fluxcal import throughput, get_sdss_stellar_mags, identify_secondary_standard
 from .qc.sky import sky_residuals
 from .qc.arc import bad_fibres
 from .dr.fflat import correct_bad_fibres
@@ -2061,13 +2061,36 @@ class Manager:
         self.next_step('telluric_correct', print_message=True)
         return
 
+    def get_missing_stars(self, catalogue=None):
+        """Return lists of observed stars missing from the catalogue."""
+        name_list = []
+        coords_list = []
+        for fits_list in self.group_files_by(
+                'field_id', ndf_class='MFOBJECT', reduced=True).values():
+            fits = fits_list[0]
+            path = fits.reduced_path
+            try:
+                star = identify_secondary_standard(path)
+            except ValueError:
+                # A frame didn't have a recognised star. Just skip it.
+                continue
+            if catalogue and star['name'] in catalogue:
+                continue
+            fibres = pf.getdata(path, 'FIBRES_IFU')
+            fibre = fibres[fibres['NAME'] == star['name']][0]
+            name_list.append(star['name'])
+            coords_list.append((fibre['GRP_MRA'], fibre['GRP_MDEC']))
+        return name_list, coords_list
+
     def get_stellar_photometry(self, refresh=False, automatic=True):
         """Get photometry of stars, with help from the user."""
         if refresh:
             catalogue = None
         else:
             catalogue = read_stellar_mags()
-        new = get_sdss_stellar_mags(self, catalogue=catalogue, automatic=automatic)
+
+        name_list, coords_list = self.get_missing_stars(catalogue=catalogue)
+        new = get_sdss_stellar_mags(name_list, coords_list, catalogue=catalogue, automatic=automatic)
         # Note: with automatic=True, get_sdss_stellar_mags will try to download
         # the data and return it as a string
         if isinstance(new, bool) and not new:
