@@ -12,6 +12,12 @@ to check what the relative throughput on a given night is. Observations
 from nights with very bad throughput (i.e. cloud) can then be rejected.
 """
 
+import os
+from glob import glob
+import multiprocessing
+import warnings
+import re
+
 from ..dr import fluxcal2
 from ..dr.telluric import identify_secondary_standard
 from ..utils import IFU
@@ -22,10 +28,6 @@ import numpy as np
 from scipy.ndimage.filters import median_filter
 from scipy.optimize import leastsq
 
-import os
-from glob import glob
-import multiprocessing
-import warnings
 
 BANDS = 'ugriz'
 
@@ -287,7 +289,7 @@ def stability(mngr):
 #     observed_colours = [measure_colour(model, model_catalogue['wavelength']) 
 #                         for model in model_list]
 #     return file_pair_list, observed_colours
-def get_sdss_stellar_mags(mngr, catalogue=None, automatic=False):
+def get_sdss_stellar_mags(name_list, coords_list, catalogue=None, automatic=False):
     """Get magnitudes for stars from SDSS, possibly with a little help from the user.
 
     If automatic=True, then it will try to download the data directly, and will
@@ -298,13 +300,14 @@ def get_sdss_stellar_mags(mngr, catalogue=None, automatic=False):
 
     If the stars are already in the catalogue, then it returns False.
     """
-    name_list, coords_list = get_missing_stars(mngr, catalogue=catalogue)
+
     if not name_list:
         # Already had all the stars required
         print('All magnitudes already in the catalogue.')
         return False
 
-    url = 'https://skyserver.sdss.org/dr10/en/tools/crossid/crossid.aspx'
+    form_url = "https://skyserver.sdss.org/dr10/en/tools/crossid/crossid.aspx"
+    post_url = "https://skyserver.sdss.org/dr10/en/tools/crossid/x_crossid.aspx"
 
     query_list = ""
     query_list += "name ra dec\n"
@@ -333,16 +336,21 @@ ORDER BY x.up_id"""
             'radius': "0.5",
             'firstcol': "1",
             'paste': query_list,
-		    'uquery': sql,
-	        'format': "csv" }
-        r = requests.post(url, data=post_data, files={'upload':("", "")})
+            'uquery': sql,
+            'format': "csv" }
+        r = requests.post(post_url, data=post_data, files={'upload':("", "")})
         if r.status_code != 200:
             raise IOError("Error connectiong to SDSS servers. Try with 'automatic=False'")
-        return r.text
+        csv_result = r.text
+        cleaned_result = []
+        for l in csv_result.splitlines():
+            if not l.startswith("#"):
+                cleaned_result.append(l)
+        return "\n".join(cleaned_result)
     else:
         print('Go to:')
         print()
-        print(url)
+        print(form_url)
         print()
         print('Copy-paste the following into the upload list box:')
         print()
@@ -355,26 +363,6 @@ ORDER BY x.up_id"""
         print('Change output format to CSV, then hit submit.')
         return True
 
-def get_missing_stars(mngr, catalogue=None):
-    """Return lists of observed stars missing from the catalogue."""
-    name_list = []
-    coords_list = []
-    for fits_list in mngr.group_files_by(
-            'field_id', ndf_class='MFOBJECT', reduced=True).values():
-        fits = fits_list[0]
-        path = fits.reduced_path
-        try:
-            star = identify_secondary_standard(path)
-        except ValueError:
-            # A frame didn't have a recognised star. Just skip it.
-            continue
-        if catalogue and star['name'] in catalogue:
-            continue
-        fibres = pf.getdata(path, 'FIBRES_IFU')
-        fibre = fibres[fibres['NAME'] == star['name']][0]
-        name_list.append(star['name'])
-        coords_list.append((fibre['GRP_MRA'], fibre['GRP_MDEC']))
-    return name_list, coords_list
 
 def get_sdss_galaxy_mags(galaxy_file_pair_list):
     """Get magnitudes for galaxies from SDSS, with a little help from the user."""
