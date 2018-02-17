@@ -111,14 +111,16 @@ def call_2dfdr_reduce(dirname, options=None):
 
         # @TODO: Make this work with various versions of 2dfdr.
         # Confirm that the above command ran to completion, otherwise raise an exception
-        # try:
-        #     confirm_line = tdfdr_stdout.splitlines()[-2]
-        #     assert (
-        #         re.match(r"Data Reduction command \S+ completed.", confirm_line) or  # 2dfdr v6.14
-        #         re.match(r"Action \S+, Task \S+, completed.", tdfdr_stdout))         # 2dfdr v6.28
-        # except (IndexError, AssertionError):
-        #     message = "2dfdr did not run to completion for command: %s" % " ".join(command_line)
-        #     raise TdfdrException(message)
+        try:
+            confirm_line = tdfdr_stdout.splitlines()[-2]
+            assert (
+                re.search(r"Action \"EXIT\", Task \S+, completed.*", tdfdr_stdout) is not None or  # 2dfdr v6.28
+                re.match(r"Data Reduction command \S+ completed.", confirm_line) is not None       # 2dfdr v6.14
+            )
+        except (IndexError, AssertionError):
+            log.debug(tdfdr_stdout)
+            message = "2dfdr did not run to completion for command: %s" % " ".join(command_line)
+            raise TdfdrException(message)
 
 
 def call_2dfdr_gui(dirname, options=None):
