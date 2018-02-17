@@ -5,6 +5,8 @@ Each plotting function is described in its docstring. This module has quite
 a lot of fudges and magic numbers that work fine for the SAMI Galaxy Survey
 but may not always work for other data sets.
 """
+from __future__ import absolute_import, division, print_function, unicode_literals
+
 import pylab as py
 import numpy as np
 import scipy as sp

@@ -12,6 +12,7 @@ affects a given file, and makes the necessary corrections.
 These functions will presumably never be needed again, but should be kept
 for reference.
 """
+from __future__ import absolute_import, division, print_function, unicode_literals
 
 import astropy.io.fits as pf
 import numpy as np

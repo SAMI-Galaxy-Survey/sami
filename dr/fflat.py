@@ -11,6 +11,7 @@ on a fibre-by-fibre basis (summing over the wavelength axis). Any fibres
 identified as 'bad' (i.e. differing by more than 3 sigma from the mean) are
 replaced with the average fibre profile.
 """
+from __future__ import absolute_import, division, print_function, unicode_literals
 
 import numpy as np
 import astropy.io.fits as pf

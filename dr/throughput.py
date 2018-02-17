@@ -8,6 +8,7 @@ lines: the S/N is increased by averaging, and frames with a bad throughput
 measurement (e.g. if the 5577A line has been hit by a cosmic ray or bad
 pixel) are clipped out.
 """
+from __future__ import absolute_import, division, print_function, unicode_literals
 
 import os
 

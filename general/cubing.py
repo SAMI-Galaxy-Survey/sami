@@ -114,6 +114,7 @@ dithered_cubes_from_rss_list.
 ############################################################################################
 
 """
+from __future__ import absolute_import, division, print_function, unicode_literals
 
 import pylab as py
 import numpy as np
@@ -1242,7 +1243,7 @@ def create_primary_header(ifu_list,name,files,WCS_pos,WCS_flag):
             if len(set(val)) == 1:
                 hdr_new.append(add_hdr.cards[key])
             else:
-                print('Non-unique value for keyword:', key, 'in extension', extension)
+                print('Non-unique value for keyword:', key, 'in extension', extname)
 
     return hdr_new
 

@@ -10,6 +10,7 @@ field, is used. As an alternative the primary (spectrophotometric)
 standard can be used - this is useful for the pilot data where the
 secondary standards were too faint to be much use.
 """
+from __future__ import absolute_import, division, print_function, unicode_literals
 
 import warnings
 

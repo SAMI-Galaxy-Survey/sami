@@ -25,6 +25,7 @@ branch is compatible with 2dfdr v6. The original plan had been to phase
 out support for 2dfdr v5 and merge aaorun into default, but it may be
 better to merge them in a way that retains the v5 functionality.
 """
+from __future__ import absolute_import, division, print_function, unicode_literals
 
 import subprocess
 import os

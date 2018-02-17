@@ -5,6 +5,7 @@ bad_fibres() looks for arc lines that appear in the wrong place. The
 results are saved to the FITS file, although currently no real use is
 made of them.
 """
+from __future__ import absolute_import, division, print_function, unicode_literals
 
 import astropy.io.fits as pf
 import numpy as np

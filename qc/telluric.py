@@ -6,6 +6,7 @@ used to quantify the accuracy of the telluric correction for the SAMI EDR
 paper, as well as to investigate how much noise is introduced by the
 telluric correction.
 """
+from __future__ import absolute_import, division, print_function, unicode_literals
 
 from ..dr import telluric
 

@@ -9,6 +9,7 @@ unknown reasons), so it was put to one side and never finished. Instead,
 the SAMI Galaxy Survey has been using the 'nominal' WCS, which assumes
 that the catalogued object is in the centre of the data.
 """
+from __future__ import absolute_import, division, print_function, unicode_literals
 
 import numpy as np
 import scipy as sp

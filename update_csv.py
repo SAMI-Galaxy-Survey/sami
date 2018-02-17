@@ -10,11 +10,7 @@ The definitions of the frames are kept separately, so that the sami package
 can be imported on systems that don't have Tkinter installed without error.
 Of course, this module cannot be used without Tkinter.
 """
-
-# THIS CODE NEEDS TO BE BACKWARDS COMPATIBLE WITH PYTHON 2.4 IN ORDER
-# TO RUN AT THE AAT. DO NOT USE with open(foo) as f.
-# Actually it still doesn't work because the AAT computers don't have
-# Tkinter installed :(
+from __future__ import absolute_import, division, print_function, unicode_literals
 
 import os
 import argparse

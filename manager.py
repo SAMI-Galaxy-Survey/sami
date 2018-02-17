@@ -1,6 +1,3 @@
-from __future__ import print_function
-from __future__ import division
-from __future__ import unicode_literals
 """
 Code for organising and reducing SAMI data.
 
@@ -50,6 +47,7 @@ is done. Instead, the pre-calculated results are simply copied into the output
 directories. This is useful for demonstrating how to use the Manager without
 waiting for the actual data reduction to happen.
 """
+from __future__ import absolute_import, division, print_function, unicode_literals
 
 from typing import List, Tuple, Dict, Sequence
 

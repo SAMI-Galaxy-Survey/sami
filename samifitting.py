@@ -51,6 +51,7 @@ that incorporates limits rather than the "return 1e99" method used below.
 
 TODO: Rename this module to fitting, rather than samifitting.
 """
+from __future__ import absolute_import, division, print_function, unicode_literals
 
 from scipy.optimize import leastsq
 import scipy as sp
