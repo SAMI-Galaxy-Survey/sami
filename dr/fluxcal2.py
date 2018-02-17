@@ -1088,11 +1088,14 @@ def interpolate_flux_noise(flux, noise, good):
         np.where(bad)[0], np.where(good)[0], flux[good])
     start_bad = np.where(good[:-1] & bad[1:])[0] + 1
     end_bad = np.where(bad[:-1] & good[1:])[0] + 1
-    for begin, finish in zip(start_bad, end_bad):
-        n_bad = finish - begin
-        interp_noise[begin:finish] = np.sqrt(
-            ((((1 + 0.5*n_bad)**2) - 1) / n_bad) * 
-            (noise[begin-1]**2 + noise[finish]**2))
+    with warnings.catch_warnings():
+        # We get lots of invalid value warnings arising because of divide by zero errors.
+        warnings.filterwarnings('ignore', r'invalid value', RuntimeWarning)
+        for begin, finish in zip(start_bad, end_bad):
+            n_bad = finish - begin
+            interp_noise[begin:finish] = np.sqrt(
+                ((((1 + 0.5*n_bad)**2) - 1) / n_bad) *
+                (noise[begin-1]**2 + noise[finish]**2))
     # Set any bad pixels at the start and end of the spectrum back to nan
     still_bad = ~np.isfinite(interp_noise)
     interp_flux[still_bad] = np.nan
