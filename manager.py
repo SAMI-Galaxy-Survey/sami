@@ -4548,16 +4548,16 @@ class FITSFile:
             path = self.source_path
         else:
             path = self.raw_path
-        old_header = pf.getheader(path)
+        # old_header = pf.getheader(path)
+        old_header = self.header
         # Only update if necessary
-        if (key not in old_header or
-            old_header[key] != value or
-            type(old_header[key]) != type(value) or
-            (comment is not None and old_header.comments[key] != comment)):
-            hdulist = pf.open(path, 'update',
-                              do_not_scale_image_data=True)
-            hdulist[0].header[key] = value_comment
-            hdulist.close()
+        if (key not in self.header or
+                self.header[key] != value or
+                type(self.header[key]) != type(value) or
+                (comment is not None and self.header.comments[key] != comment)):
+            with pf.open(path, 'update', do_not_scale_image_data=True) as hdulist:
+                hdulist[0].header[key] = value_comment
+                self.header = hdulist[0].header
         return
 
     def overwrite_ndf_class(self, new_ndf_class):
