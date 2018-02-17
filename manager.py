@@ -2056,7 +2056,8 @@ class Manager:
             done_list = self.map(telluric_correct_pair, inputs_list)
 
         # Mark files as needing visual checks:
-        update_checks('TEL', [fits_2], False)
+        for item in inputs_list:
+            update_checks('TEL', [item["fits_2"]], False)
 
         self.n_cpu = old_n_cpu
         for inputs in [inputs for inputs, done in
@@ -2067,7 +2068,7 @@ class Manager:
         self.next_step('telluric_correct', print_message=True)
         return
 
-    def get_missing_stars(self, catalogue=None):
+    def _get_missing_stars(self, catalogue=None):
         """Return lists of observed stars missing from the catalogue."""
         name_list = []
         coords_list = []
@@ -2095,7 +2096,7 @@ class Manager:
         else:
             catalogue = read_stellar_mags()
 
-        name_list, coords_list = self.get_missing_stars(catalogue=catalogue)
+        name_list, coords_list = self._get_missing_stars(catalogue=catalogue)
         new = get_sdss_stellar_mags(name_list, coords_list, catalogue=catalogue, automatic=automatic)
         # Note: with automatic=True, get_sdss_stellar_mags will try to download
         # the data and return it as a string
