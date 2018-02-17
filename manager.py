@@ -1929,13 +1929,15 @@ class Manager:
 
     def combine_transfer_function(self, overwrite=False, **kwargs):
         """Combine and save transfer functions from multiple files."""
-        # First sort the spectrophotometric files into date/field/CCD/name 
+
+        # First sort the spectrophotometric files into date/field/CCD/name
         # groups. Grouping by name is not strictly necessary and could be
         # removed, which would cause results from different stars to be
         # combined.
         groups = self.group_files_by(('date', 'field_id', 'ccd', 'name'),
             ndf_class='MFOBJECT', do_not_use=False,
             spectrophotometric=True, **kwargs)
+
         # Now combine the files within each group
         for fits_list in groups.values():
             path_list = [fits.reduced_path for fits in fits_list]
@@ -1946,17 +1948,21 @@ class Manager:
                 fluxcal2.combine_transfer_functions(path_list, path_out)
                 # Run the QC throughput measurement
                 self.qc_throughput_spectrum(path_out)
+
+                # Since we've now changed the transfer functions, mark these as needing checks.
+                update_checks('FLX', fits_list, False)
+
             # Copy the file into all required directories
-            done = [os.path.dirname(path_list[0])]
+            paths_with_copies = [os.path.dirname(path_list[0])]
             for path in path_list:
-                if os.path.dirname(path) not in done:
+                if os.path.dirname(path) not in paths_with_copies:
                     path_copy = os.path.join(os.path.dirname(path),
                                              'TRANSFERcombined.fits')
-                    done.append(os.path.dirname(path_copy))
                     if overwrite or not os.path.exists(path_copy):
                         print('Copying combined file to', path_copy)
                         shutil.copy2(path_out, path_copy)
-            update_checks('FLX', fits_list, False)
+
+                    paths_with_copies.append(os.path.dirname(path_copy))
         self.next_step('combine_transfer_function', print_message=True)
         return
 
