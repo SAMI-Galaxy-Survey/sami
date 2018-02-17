@@ -29,11 +29,8 @@ better to merge them in a way that retains the v5 functionality.
 import subprocess
 import os
 import tempfile
-import shutil
 import re
 from contextlib import contextmanager
-import asyncio
-from asyncio.subprocess import PIPE
 
 # Set up logging
 from .. import slogging
@@ -62,25 +59,19 @@ except (AssertionError, TypeError):
 
 
 
-@asyncio.coroutine
-def async_call(command_line, **kwargs):
+def subprocess_call(command_line, **kwargs):
     """Generic function to run a command in an asynchronous way, capturing STDOUT and returning it."""
     formatted_command = " ".join(command_line)
     log.info("async call: {}".format(formatted_command))
     log.debug("Starting async processs: %s", formatted_command)
 
     # Create subprocess
-    proc = yield from asyncio.create_subprocess_exec(*command_line, stdout=PIPE, stderr=PIPE, **kwargs)
-
-    log.debug("Waiting for finish of async processs: %s", formatted_command)
-
-    # Wait (asyncronously) for process to complete and capture stdout (stderr is none unless it is also piped above).
-    stdout, stderr = (yield from proc.communicate())
+    stdout = subprocess.check_output(*command_line, stderr=None, **kwargs)
     log.debug("Async process finished: %s", formatted_command)
 
     stdout = stdout.decode("utf-8")
     # Note: stderr is not currently captured, so this will return None.
-    stderr = stderr.decode("utf-8") if stderr else None
+    # stderr = stderr.decode("utf-8") if stderr else None
 
     log.debug("Output from command '%s'", formatted_command)
     if log.isEnabledFor(slogging.DEBUG):
@@ -90,7 +81,6 @@ def async_call(command_line, **kwargs):
     return stdout
 
 
-@asyncio.coroutine
 def call_2dfdr_reduce(dirname, options=None):
     """Call 2dfdr in pipeline reduction mode using `aaorun`"""
     # Make a temporary directory with a unique name for use as IMP_SCRATCH
@@ -105,7 +95,7 @@ def call_2dfdr_reduce(dirname, options=None):
         environment["IMP_SCRATCH"] = imp_scratch
 
         with directory_lock(dirname):
-            tdfdr_stdout = yield from async_call(command_line, cwd=dirname, env=environment)
+            tdfdr_stdout = subprocess_call(command_line, cwd=dirname, env=environment)
 
         # Confirm that the above command ran to completion, otherwise raise an exception
         try:
@@ -143,7 +133,6 @@ def load_gui(dirname, idx_file=None):
     return
 
 
-@asyncio.coroutine
 def run_2dfdr_single(fits, idx_file, options=None):
     """Run 2dfdr on a single FITS file."""
     print('Reducing file:', fits.filename)
@@ -171,7 +160,7 @@ def run_2dfdr_single(fits, idx_file, options=None):
                    '-OUT_DIRNAME', out_dirname]
     if options is not None:
         options_all.extend(options)
-    yield from call_2dfdr_reduce(fits.reduced_dir, options=options_all)
+    call_2dfdr_reduce(fits.reduced_dir, options=options_all)
     return '2dfdr Reduced file:' + fits.filename
 
 
@@ -187,7 +176,7 @@ def run_2dfdr_combine(input_path_list, output_path, idx_file):
                output_filename,
                '-idxfile',
                idx_file]
-    asyncio.get_event_loop().run_until_complete(call_2dfdr_reduce(output_dir, options=options))
+    call_2dfdr_reduce(output_dir, options=options)
 
 
 def cleanup():
