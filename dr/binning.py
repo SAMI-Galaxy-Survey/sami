@@ -3,6 +3,7 @@ Code for binning data in SAMI datacubes. Typically accessed via
 bin_cube_pair(), which will calculate and save bins for a pair of cubes.
 See sami.manager.bin_cubes_pair() for an example of calling this function.
 """
+from __future__ import absolute_import, division, print_function, unicode_literals
 
 # -----------------------------------------------------------------------------
 # NB Not all input keywords are fully implemented yet!!

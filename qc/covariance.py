@@ -8,6 +8,7 @@ extrapolate to a full covariance array, and do simple binning of the data
 compare_variance() calculates the binned variance with and without
 covariance, to see how strong its effect is.
 """
+from __future__ import absolute_import, division, print_function, unicode_literals
 
 import numpy as np
 import astropy.io.fits as pf

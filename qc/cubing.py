@@ -5,6 +5,7 @@ In particular, used to measure how well atmospheric refraction has been
 removed (measure_dar) and measure the final continuum S/N in the cubes
 (measure_sn_continuum).
 """
+from __future__ import absolute_import, division, print_function, unicode_literals
 
 from .fluxcal import fit_moffat_to_image, get_coords
 from ..utils.other import clip_spectrum

@@ -8,6 +8,7 @@ law it will calculate the transmission curve for the observation. The
 results are saved in the FITS file, but no correction is made to the data
 itself.
 """
+from __future__ import absolute_import, division, print_function, unicode_literals
 
 import os
 import numpy as np

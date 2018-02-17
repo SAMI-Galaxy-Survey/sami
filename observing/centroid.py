@@ -1,26 +1,3 @@
-import pylab as py
-import numpy as np
-import scipy as sp
-
-import os
-
-# astropy fits file io (replacement for pyfits)
-import astropy.io.fits as pf
-
-import string
-import itertools
-
-from scipy.ndimage.filters import median_filter
-
-# Circular patch.
-from matplotlib.patches import Circle
-
-from .. import utils
-from .. import samifitting as fitting
-
-# importing everything defined in the config file
-from ..config import *
-
 """
 This file contains some functions used during SAMI observing. These revolve around fitting stars in the RSS data.
 
@@ -90,6 +67,31 @@ Takes one ifu at a time so if you have many stars (i.e. a star field) then use t
 You shouldn't need to touch this one, it is called by the functions above (as well as by the align_micron module).
 
 """
+from __future__ import absolute_import, division, print_function, unicode_literals
+
+import pylab as py
+import numpy as np
+import scipy as sp
+
+import os
+
+# astropy fits file io (replacement for pyfits)
+import astropy.io.fits as pf
+
+import string
+import itertools
+
+from scipy.ndimage.filters import median_filter
+
+# Circular patch.
+from matplotlib.patches import Circle
+
+from .. import utils
+from .. import samifitting as fitting
+
+# importing everything defined in the config file
+from ..config import *
+
 
 def centroid(infile, ifus='all', savefile=True, plot=True):
     """Fits to positions of the stars in ifus for infile. Primary purpose is to produce the files needed as imput for

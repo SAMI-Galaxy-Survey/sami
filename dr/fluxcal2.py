@@ -49,6 +49,7 @@ Other than the functions for reading parameters in and out, the
 functionality for doing the actual fitting is the same for all models,
 so can be extended for further models quite straightforwardly.
 """
+from __future__ import absolute_import, division, print_function, unicode_literals
 
 import os
 import warnings

@@ -5,6 +5,8 @@ fitsio
 requests
 cached_property
 
+typing
+
 # Progress bars for the manager
 tqdm
 

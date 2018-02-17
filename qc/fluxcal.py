@@ -1,4 +1,3 @@
-from __future__ import division
 """
 Functions relating to quality control of flux calibration.
 
@@ -11,6 +10,7 @@ create a mean throughput file against which observations can be compared,
 to check what the relative throughput on a given night is. Observations
 from nights with very bad throughput (i.e. cloud) can then be rejected.
 """
+from __future__ import absolute_import, division, print_function, unicode_literals
 
 import os
 from glob import glob
