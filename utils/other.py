@@ -34,7 +34,7 @@ from ..config import *
 # Set up logging
 from .. import slogging
 log = slogging.getLogger(__name__)
-log.setLevel(slogging.INFO)
+log.setLevel(slogging.WARNING)
 # log.enable_console_logging()
 
 
@@ -70,7 +70,7 @@ def offset_hexa(csvfile, guide=None, obj=None, linear=False,
         else:
             offset_direction_y = 'S'
 
-        print('Move the telescope {0:,.2f} arcsec {1} and {2:,.2f} arcsec {3}'.format(
+        print('Move the telescope {0:,.1f} arcsec {1} and {2:,.1f} arcsec {3}'.format(
             abs(offset_x), offset_direction_x, 
             abs(offset_y), offset_direction_y))
         print('The star will move from the central hole')
@@ -132,22 +132,19 @@ def offset_hexa(csvfile, guide=None, obj=None, linear=False,
     else:
         # Make the 1-indexed guide number 0-indexed
         guide = guide - 1
-        guide_name = 'G' + str(guide+1) + ' on plate'
-        try:
-            guide_name = ('guider ' + str(int(guide_probe[guide])) +
-                          ' (' + guide_name + ')')
-        except ValueError:
-            # No guider was assigned to this hole
-            guide_name = guide_name + ' (no guide probe assigned!)'
+        if guide_probe[guide] != "":
+            guide_name = "guide bundle {bundle:.0f} (nG{hole} on plate)".format(
+                hole=guide + 1, bundle=float(guide_probe[guide]))
+        else:
+            guide_name = "hole nG{hole} on plate (no guide bundle assigned)".format(
+                hole=guide + 1)
         guide_x = guide_x[guide]
         guide_y = guide_y[guide]
 
         guide_offset_x, guide_offset_y = plate2sky(
             guide_x, guide_y, linear=linear)
 
-        print_offsets(guide_offset_x, guide_offset_y, guide_name, 
-            with_apoff=True)
-
+        print_offsets(guide_offset_x, guide_offset_y, guide_name, with_apoff=True)
 
     if ignore_allocations:
         valid_objects = np.arange(object_probe.size)
@@ -171,13 +168,13 @@ def offset_hexa(csvfile, guide=None, obj=None, linear=False,
         obj = dist2.argmin() + 1
 
     obj = obj - 1
-    object_name = 'P' + str(obj+1) + ' on plate'
-    try:
-        object_name = ('object probe ' + str(int(object_probe[obj])) +
-                      ' (' + object_name + ')')
-    except ValueError:
-        # No object was assigned to this hole
-        object_name = object_name + ' (no object probe assigned!)'
+    if object_probe[obj] != "":
+        object_name = "hexabundle {bundle:.0f} (nP{hole} on plate)".format(
+            hole=obj + 1, bundle=float(object_probe[obj]))
+    else:
+        object_name = "hole nP{hole} on plate (no hexabundle assigned)".format(
+            hole=obj + 1)
+
     object_x = object_x[obj]
     object_y = object_y[obj]
 
