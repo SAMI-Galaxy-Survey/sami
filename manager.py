@@ -2633,6 +2633,52 @@ class Manager:
         text += 'If one file in a pair is disabled it is marked with a +\n'
         text += 'If both are disabled it is marked with a *\n'
         text += '\n'
+
+        #
+        #  Summarize shared calibrations
+        #
+        text += "Summary of shared calibrations\n"
+        text += "-" * 75 + "\n"
+
+        # Get grouped lists and restructure to be a dict of dicts.
+        by_ndf_class = defaultdict(dict)
+        for k, v in self.group_files_by(["ndf_class", "date", "ccd"]).items():
+            if k[2] == ccd:
+                by_ndf_class[k[0]].update({k[1]: v})
+
+        # Print info about basic cals
+        for cal_type in ("BIAS", "DARK", "LFLAT"):
+            if cal_type in by_ndf_class:
+                text += "{} Frames:\n".format(cal_type)
+                total_cals = 0
+                for date in sorted(by_ndf_class[cal_type].keys()):
+                    n_cals = len(by_ndf_class[cal_type][date])
+                    text += "  {}: {} frames\n".format(date, n_cals)
+                    total_cals += n_cals
+                text += "  TOTAL {}s: {} frames\n".format(cal_type, total_cals)
+
+        # Gather info about flux standards
+        text += "Flux standards\n"
+        flux_standards = defaultdict(dict)
+        for k, v in self.group_files_by(["date", "name", "spectrophotometric", "ccd"]).items():
+            if k[3] == ccd and k[2]:
+                flux_standards[k[0]].update({k[1]: v})
+
+        # Print info about flux standards
+        total_all_stds = 0
+        for date in flux_standards:
+            text += "  {}:\n".format(date)
+            total_cals = 0
+            for std_name in sorted(flux_standards[date].keys()):
+                n_cals = len(flux_standards[date][std_name])
+                text += "    {}: {} frames\n".format(std_name, n_cals)
+                total_cals += n_cals
+            text += "    Total: {} frames\n".format(total_cals)
+            total_all_stds += total_cals
+        text += "  TOTAL Flux Standards: {} frames\n".format(total_all_stds)
+        text += "\n"
+
+        # Summarize field observations
         for (field_id,), fits_list in self.group_files_by(
                 'field_id', ndf_class='MFOBJECT', min_exposure=min_exposure,
                 ccd=ccd, **kwargs).items():
