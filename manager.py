@@ -56,8 +56,10 @@ from typing import List, Tuple, Dict, Sequence
 import shutil
 import os
 import re
+import subprocess
 import multiprocessing
 
+import signal
 import warnings
 from functools import wraps
 from contextlib import contextmanager
@@ -69,6 +71,9 @@ from pydoc import pager
 import itertools
 import datetime
 
+import asyncio
+
+import six
 from six.moves import input
 
 # Set up logging
@@ -892,41 +897,41 @@ class Manager:
             # this issue, but in one case it hung on aatmacb, so let's be
             # absolutely sure to avoid the issue
             return []
-        # if asyncio.iscoroutinefunction(function):
-        #
-        #     result_list = []
-        #
-        #     # loop = asyncio.new_event_loop()
-        #     loop = asyncio.get_event_loop()
-        #     # Break up the overall job into chunks that are n_cpu in size:
-        #     for i in range(0, len(input_list), self.n_cpu):
-        #         print("{} jobs total, running {} to {} in parallel".format(len(input_list), i, min(i+self.n_cpu, len(input_list))))
-        #         # Create an awaitable object which can be used as a future.
-        #         # This is the job that will be run in parallel.
-        #         @asyncio.coroutine
-        #         def job():
-        #             tasks = [function(item) for item in input_list[i:i+self.n_cpu]]
-        #             # for completed in asyncio.as_completed(tasks):  # print in the order they finish
-        #             #     await completed
-        #             #     # print(completed.result())
-        #             sub_results = yield from asyncio.gather(*tasks, loop=loop)
-        #             result_list.extend(sub_results)
-        #
-        #         loop.run_until_complete(job())
-        #     # loop.close()
-        #
-        #     return np.array(result_list)
-        #
-        # else:
-        # Fall back to using multiprocessing for non-coroutine functions
-        if self.n_cpu == 1:
-            result_list = list(map(function, input_list))
+        if asyncio.iscoroutinefunction(function):
+
+            result_list = []
+
+            # loop = asyncio.new_event_loop()
+            loop = asyncio.get_event_loop()
+            # Break up the overall job into chunks that are n_cpu in size:
+            for i in range(0, len(input_list), self.n_cpu):
+                print("{} jobs total, running {} to {} in parallel".format(len(input_list), i, min(i+self.n_cpu, len(input_list))))
+                # Create an awaitable object which can be used as a future.
+                # This is the job that will be run in parallel.
+                @asyncio.coroutine
+                def job():
+                    tasks = [function(item) for item in input_list[i:i+self.n_cpu]]
+                    # for completed in asyncio.as_completed(tasks):  # print in the order they finish
+                    #     await completed
+                    #     # print(completed.result())
+                    sub_results = yield from asyncio.gather(*tasks, loop=loop)
+                    result_list.extend(sub_results)
+
+                loop.run_until_complete(job())
+            # loop.close()
+
+            return np.array(result_list)
+
         else:
-            pool = multiprocessing.Pool(self.n_cpu)
-            result_list = pool.map(function, input_list, chunksize=1)
-            pool.close()
-            pool.join()
-        return result_list
+            # Fall back to using multiprocessing for non-coroutine functions
+            if self.n_cpu == 1:
+                result_list = list(map(function, input_list))
+            else:
+                pool = multiprocessing.Pool(self.n_cpu)
+                result_list = pool.map(function, input_list, chunksize=1)
+                pool.close()
+                pool.join()
+            return result_list
 
     def inspect_root(self, copy_files, move_files, trust_header=True):
         """Add details of existing files to internal lists."""
@@ -4765,13 +4770,13 @@ def best_path(fits):
     return path    
 
 
-@safe_for_multiprocessing
+@asyncio.coroutine
 def run_2dfdr_single_wrapper(group):
     """Run 2dfdr on a single file."""
     fits, idx_file, options = \
         group
     try:
-        tdfdr.run_2dfdr_single(fits, idx_file, options=options)
+        yield from tdfdr.run_2dfdr_single(fits, idx_file, options=options)
     except tdfdr.LockException:
         message = ('Postponing ' + fits.filename + 
                    ' while other process has directory lock.')
