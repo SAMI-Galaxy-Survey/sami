@@ -43,6 +43,7 @@ from scipy.ndimage.filters import median_filter
 from scipy.ndimage.measurements import label
 from . import voronoi_2d_binning_wcovar
 from ..utils.other import hg_changeset
+from astropy.table import Table
 
 def bin_cube_pair(path_blue, path_red, name=None, **kwargs):
     """Calculate bins, do binning and save results for a pair of cubes."""
@@ -264,6 +265,18 @@ def aperture_spectra_pair(path_blue, path_red, path_to_catalogs,overwrite=False)
             aperture_hdulist[0].header = hdulist[0].header
 
             aperture_hdulist[0].header['HGAPER'] = (hg_changeset(__file__), "Hg changeset ID for aperture code")
+
+            # Add header item to indicate if centre of aperture has been adjusted
+
+            centres_cat_file = '/import/opus1/nscott/SAMI_Survey/gama_catalogues/cube_centres_adjusted.dat'
+            centres_cat = Table.read(centres_cat_file,format='ascii')
+            id = np.int(hdulist[0].header['NAME'])
+            if id in centres_cat['CATID']:
+                ap_adjusted_flag = 'Y'
+            else:
+                ap_adjusted_flag = 'N'
+
+            aperture_hdulist[0].header['AP_ADJ'] = (ap_adjusted_flag, "Aperture position manually adjusted")
 
             # Calculate the aperture bins based on first file only.
             if bin_mask is None:
@@ -822,6 +835,18 @@ def aperture_bin_sami(hdu, aperture_radius=1, ellipticity=0, pa=0):
     # Use the centre of the cube...
     xmed = float(cube.shape[0] - 1)/2.0
     ymed = float(cube.shape[1] - 1)/2.0
+
+    # Check to see if the centre needs adjusting following Sree's catalogue.
+    # If so, update xmed and ymed accordingly.
+
+    centres_cat_file = '/import/opus1/nscott/SAMI_Survey/gama_catalogues/cube_centres_adjusted.dat'
+    centres_cat = Table.read(centres_cat_file,format='ascii')
+    id = np.int(hdu[0].header['NAME'])
+
+    if id in centres_cat['CATID']:
+        ww = np.where(id == centres_cat['CATID'])[0]
+        xmed = centres_cat['x_sree'][ww]-1.0
+        ymed = centres_cat['y_sree'][ww]-1.0
 
     pa_rad = np.radians(pa)
 
