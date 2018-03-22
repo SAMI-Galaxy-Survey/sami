@@ -2268,7 +2268,12 @@ class Manager:
                     for arm in ('blue', 'red')]
                 if path_pair[0] and path_pair[1]:
                     path_pair_list.append(path_pair)
-        self.map(aperture_spectra_pair, path_pair_list, overwrite)
+
+        inputs_list = []
+        for path_pair in path_pair_list:
+            inputs_list.append(overwrite)
+        self.map(aperture_spectra_pair, path_pair_list)
+
         return
 
     def record_dust(self, overwrite=False, min_exposure=599.0, name='main',
