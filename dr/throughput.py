@@ -8,6 +8,7 @@ lines: the S/N is increased by averaging, and frames with a bad throughput
 measurement (e.g. if the 5577A line has been hit by a cosmic ray or bad
 pixel) are clipped out.
 """
+from __future__ import absolute_import, division, print_function, unicode_literals
 
 import os
 
@@ -55,7 +56,7 @@ def make_clipped_thput_files(path_list, overwrite=True, edit_all=False,
     n_file = len(path_list)
     n_fibre = pf.getval(path_list[0], 'NAXIS1', 'THPUT')
     thput = np.zeros((n_file, n_fibre))
-    for index in xrange(n_file):
+    for index in range(n_file):
         thput[index, :] = pf.getdata(path_list[index], 'THPUT')
     new_thput = np.zeros((n_file, n_fibre))
     # 2dfdr Gauss extraction now replaces dodgy throughput values with 0
@@ -65,7 +66,7 @@ def make_clipped_thput_files(path_list, overwrite=True, edit_all=False,
         thput_nan[~good] = np.nan
         avg_thput = np.nanmedian(thput_nan, axis=0)
         # avg_thput = np.array([np.median(thput[good[:, i], i])
-        #                      for i in xrange(n_fibre)])
+        #                      for i in range(n_fibre)])
     else:
         avg_thput = np.sum(thput * good, 0) / np.sum(good, 0)
     avg_thput = np.outer(np.ones(n_file), avg_thput)
@@ -78,7 +79,7 @@ def make_clipped_thput_files(path_list, overwrite=True, edit_all=False,
         # Check which of the files have had their values edited
         edited = (np.sum(good, 1) != n_fibre)
     # Write new files where necessary
-    for index in xrange(n_file):
+    for index in range(n_file):
         if edited[index]:
             path_in = path_list[index]
             filename_out = 'thput_' + os.path.basename(path_in)

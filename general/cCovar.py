@@ -1,5 +1,3 @@
-from __future__ import print_function
-
 """
 Wrapper for the C++ function that calculates the covariance matrix.
 
@@ -18,6 +16,7 @@ Notes
 This module contains a testing function. At the moment it requires that the libraries path be hardcoded (FDE).
 
 """
+from __future__ import absolute_import, division, print_function, unicode_literals
 
 import ctypes as C
 import numpy as np

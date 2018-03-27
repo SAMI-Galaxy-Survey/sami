@@ -5,6 +5,7 @@ In particular, used to measure how well atmospheric refraction has been
 removed (measure_dar) and measure the final continuum S/N in the cubes
 (measure_sn_continuum).
 """
+from __future__ import absolute_import, division, print_function, unicode_literals
 
 from .fluxcal import fit_moffat_to_image, get_coords
 from ..utils.other import clip_spectrum
@@ -19,7 +20,7 @@ def measure_position_at_wavelength(cube, variance, wavelength_array,
     """Return x, y position in pixels for cube at given wavelength."""
     n_wave, n_x, n_y = cube.shape
     good = np.zeros(cube.shape)
-    for i_x, i_y in itertools.product(xrange(n_x), xrange(n_y)):
+    for i_x, i_y in itertools.product(range(n_x), range(n_y)):
         good[:, i_x, i_y] = clip_spectrum(
             cube[:, i_x, i_y], np.sqrt(variance[:, i_x, i_y]),
             wavelength_array)

@@ -9,6 +9,7 @@ unknown reasons), so it was put to one side and never finished. Instead,
 the SAMI Galaxy Survey has been using the 'nominal' WCS, which assumes
 that the catalogued object is in the centre of the data.
 """
+from __future__ import absolute_import, division, print_function, unicode_literals
 
 import numpy as np
 import scipy as sp
@@ -138,8 +139,8 @@ def wcs_position_coords(object_RA, object_DEC, wave, object_flux_cube, object_na
         #use for loops to recover indicies in x and y positions of flux values
         x_pos = []
         y_pos = []
-        for i in xrange(np.shape(crosscorr_image)[0]):
-            for j in xrange(np.shape(crosscorr_image)[1]):
+        for i in range(np.shape(crosscorr_image)[0]):
+            for j in range(np.shape(crosscorr_image)[1]):
                 x_pos.append(i)
                 y_pos.append(j)
         x_pos=np.array(x_pos)

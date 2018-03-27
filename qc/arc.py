@@ -5,6 +5,7 @@ bad_fibres() looks for arc lines that appear in the wrong place. The
 results are saved to the FITS file, although currently no real use is
 made of them.
 """
+from __future__ import absolute_import, division, print_function, unicode_literals
 
 import astropy.io.fits as pf
 import numpy as np
@@ -118,7 +119,7 @@ def bad_fibres(path, n_sigma_centre=5.0, ratio_flux=2.0, save=False):
     )
     # # These fibres have discrepant fluxes
     # bad_flux = np.zeros(n_fibre, bool)
-    # for i_line in xrange(n_line):
+    # for i_line in range(n_line):
     #     positive_flux = (flux[:, i_line] > 0.0)
     #     bad_flux[~positive_flux] = True
     #     median_flux = np.median(flux[positive_flux, i_line])
