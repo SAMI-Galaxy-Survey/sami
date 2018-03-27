@@ -9,6 +9,7 @@ import os
 from six import PY2
 from six.moves import urllib
 import shutil
+import subprocess
 
 import pytest
 
@@ -26,15 +27,19 @@ def pytest_runtest_setup(item):
         if previousfailed is not None:
             pytest.xfail("previous test failed (%s)" %previousfailed.name)
 
-@pytest.fixture(scope='session', autouse=True)
-def sami_raw_test_data():
-    if not os.path.exists(os.path.join(TEST_DIR, "raw_data")):
+@pytest.fixture(scope='session')
+def raw_test_data():
+    if not os.path.exists(TEST_DIR):
+        os.mkdir(TEST_DIR)
+    if not os.path.exists(os.path.join(TEST_DIR, "sami_raw_test_data")):
         data_uri = "http://db.sami-survey.org/sami_raw_test_data.tar.gz"
         filename = os.path.join(TEST_DIR, "sami_raw_test_data.tar.gz")
         urllib.request.urlretrieve(data_uri, filename)
         if PY2:
-            pass
+            subprocess.check_output(["tar", "-xzvf", "sami_raw_test_data.tar.gz"], cwd=TEST_DIR)
         else:
             shutil.unpack_archive(filename, TEST_DIR)
     else:
         pass
+
+    return os.path.join(TEST_DIR, "sami_raw_test_data")
