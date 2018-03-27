@@ -3,6 +3,7 @@ Code for binning data in SAMI datacubes. Typically accessed via
 bin_cube_pair(), which will calculate and save bins for a pair of cubes.
 See sami.manager.bin_cubes_pair() for an example of calling this function.
 """
+from __future__ import absolute_import, division, print_function, unicode_literals
 
 # -----------------------------------------------------------------------------
 # NB Not all input keywords are fully implemented yet!!
@@ -694,12 +695,12 @@ def find_galaxy(image,nblob=1,fraction=0.1,quiet=True):
     maj,eps,pa,xpeak,ypeak,xmed,ymed = second_moments(image,ind)
     
     if quiet != True:
-        print 'Pixels used: %i' % len(ind[0])
-        print 'Peak (x,y): %i %i' % (xpeak,ypeak)
-        print 'Mean (x,y): %f %f' % (xmed,ymed)
-        print 'Theta (deg): %f' % pa
-        print 'Eps: %f' % eps
-        print 'Sigma along major axis (pixels): %f' % maj
+        print('Pixels used: %i' % len(ind[0]))
+        print('Peak (x,y): %i %i' % (xpeak,ypeak))
+        print('Mean (x,y): %f %f' % (xmed,ymed))
+        print('Theta (deg): %f' % pa)
+        print('Eps: %f' % eps)
+        print('Sigma along major axis (pixels): %f' % maj)
 
     n_blobs = np.max(a)
     

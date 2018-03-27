@@ -5,6 +5,8 @@ Each plotting function is described in its docstring. This module has quite
 a lot of fudges and magic numbers that work fine for the SAMI Galaxy Survey
 but may not always work for other data sets.
 """
+from __future__ import absolute_import, division, print_function, unicode_literals
+
 import pylab as py
 import numpy as np
 import scipy as sp
@@ -36,7 +38,7 @@ def display(infile, ifus='all', log=True):
 
     # Number of IFUs to display
     n=len(ifus)
-    print "I have received", len(ifus), 'IFU(s) to display.'
+    print(("I have received", len(ifus), 'IFU(s) to display.'))
 
     # Number of rows and columns needed in the final display box
     # This is a bit of a fudge...
@@ -105,7 +107,7 @@ def display(infile, ifus='all', log=True):
 
         fibres=[]
         # Iterate over the x, y positions making a circle patch for each fibre, with the appropriate color.
-        for xval, yval, dataval in itertools.izip(x_m, y_m, data_norm):
+        for xval, yval, dataval in zip(x_m, y_m, data_norm):
             #Add the fibre patch.
             fibre=Circle(xy=(xval,yval), radius=52.5)
             fibres.append(fibre)
@@ -148,7 +150,7 @@ def display_list(inlist, ifu, log=True):
     # Number of files 
     n=len(files)
 
-    print "I have received", n, "files to plot."
+    print(("I have received", n, "files to plot."))
 
     # Number of rows and columns needed in the final display box
     # This is a bit of a fudge...
@@ -213,7 +215,7 @@ def display_list(inlist, ifu, log=True):
         mycolormap=py.get_cmap('YlGnBu_r')
 
         # Iterate over the x, y positions making a circle patch for each fibre, with the appropriate color.
-        for xval, yval, dataval in itertools.izip(x_m, y_m, data_norm):
+        for xval, yval, dataval in zip(x_m, y_m, data_norm):
             #Add the fibre patch.
             fibre=Circle(xy=(xval,yval), radius=52.5)
             ax.add_artist(fibre)
@@ -246,7 +248,7 @@ def summed_spectrum(infile, ifu, overplot=False):
         py.close('all')
 
     if overplot==True:
-        print "Overplotting..."
+        print("Overplotting...")
 
     # Get the data.
     ifu_data=utils.IFU(infile, ifu, flag_name=False)
@@ -304,8 +306,8 @@ def field(infile, ifus='all', log=True):
         x_m_new=x_m0+x_m_delta
         y_m_new=y_m0+y_m_delta
         
-        print x_m_delta
-        print y_m_delta
+        print(x_m_delta)
+        print(y_m_delta)
 
         #x_lower=np.min(x_m)-100
         #x_upper=np.max(x_m)+100
@@ -332,7 +334,7 @@ def field(infile, ifus='all', log=True):
 
         fibres=[]
         # Iterate over the x, y positions making a circle patch for each fibre, with the appropriate color.
-        for xval, yval, dataval in itertools.izip(x_m_new, y_m_new, data_norm):
+        for xval, yval, dataval in zip(x_m_new, y_m_new, data_norm):
             #Add the fibre patch.
             fibre=Circle(xy=(xval,yval), radius=1500)
             fibres.append(fibre)
@@ -409,10 +411,10 @@ def raw(flat_file, object_file, IFU="unknown", sigma_clip=False, log=True,
     #
     """
     
-    print "---> START"
-    print "--->"
-    print "---> Object frame: "+str(object_file)
-    print "--->"
+    print("---> START")
+    print("--->")
+    print(("---> Object frame: "+str(object_file)))
+    print("--->")
     
     # Import flat field frame
     flat = pf.open(flat_file)
@@ -425,7 +427,7 @@ def raw(flat_file, object_file, IFU="unknown", sigma_clip=False, log=True,
     else:
         cut_locs = np.linspace(0.25,0.75,201)
     
-    print "---> Finding suitable cut along spatial dimension..."
+    print("---> Finding suitable cut along spatial dimension...")
     # Check each spatial slice until 819 fibres (peaks) have been found
     for cut_loc in cut_locs:
         # perform cut along spatial direction
@@ -440,16 +442,16 @@ def raw(flat_file, object_file, IFU="unknown", sigma_clip=False, log=True,
         else:
             continue
     
-    print "--->"
+    print("--->")
     
     # If 819 fibres can't be found then exit script. At the moment this script can't cope with broken or missing fibres.
     if Npeaks != 819:
         raise ValueError("---> Can't find 819 fibres. Check [1] Flat Field is correct [2] Flat Field is supplied as the first variable in the function. If 1+2 are ok then use the 'pix_start' variable and set it at least 10 pix beyond the previous value (see terminal for value)")
     
-    print "---> Spatial cut at pixel number: ",int(cut_loc*2048)
-    print "---> Number of waveband pixels: ",pix_waveband
-    print "---> Number of fibres found: ",np.shape(peaks[0])[0]
-    print "--->"
+    print(("---> Spatial cut at pixel number: ",int(cut_loc*2048)))
+    print(("---> Number of waveband pixels: ",pix_waveband))
+    print(("---> Number of fibres found: ",np.shape(peaks[0])[0]))
+    print("--->")
     
     # Location of fibre peaks for linear tramline
     tram_loc=[]
@@ -468,14 +470,14 @@ def raw(flat_file, object_file, IFU="unknown", sigma_clip=False, log=True,
     
     # "Sigma clip" to get set bad pixels as row median value
     if sigma_clip == True:
-        print "---> Performing 'Sigma-clip'... (~20s)"
+        print("---> Performing 'Sigma-clip'... (~20s)")
         for i in np.arange(np.shape(object_cut)[0]):
             for j in np.arange(np.shape(object_cut)[1]):
                 med = np.median(object_cut[i,:])
                 err = np.absolute((object_cut[i,j]-med)/med)
                 if err > 0.25:
                     object_cut[i,j] = med
-        print "--->"
+        print("--->")
     
     # Collapse spectral dimension
     object_cut_sum = np.nansum(object_cut,axis=1)
@@ -486,8 +488,8 @@ def raw(flat_file, object_file, IFU="unknown", sigma_clip=False, log=True,
     Probe_list = [1,2,3,4,5,6,7,8,9,10,11,12,13]
     
     # Plot the data
-    print "---> Plotting..."
-    print "--->"
+    print("---> Plotting...")
+    print("--->")
 
     if old_plot_style:
         fig = py.figure()
@@ -595,7 +597,7 @@ def raw(flat_file, object_file, IFU="unknown", sigma_clip=False, log=True,
         py.tight_layout()
         fig.show()
 
-    print "---> END"
+    print("---> END")
 
 #########################################################################################
 
@@ -656,9 +658,9 @@ def peakdetect(y_axis, x_axis = None, lookahead = 300, delta=0):
     
     #perform some checks
     if lookahead < 1:
-        raise ValueError, "Lookahead must be '1' or above in value"
+        raise ValueError("Lookahead must be '1' or above in value")
     if not (np.isscalar(delta) and delta >= 0):
-        raise ValueError, "delta must be a positive number"
+        raise ValueError("delta must be a positive number")
     
     #maxima and minima candidates are temporarily stored in
     #mx and mn respectively
@@ -721,9 +723,8 @@ def _datacheck_peakdetect(x_axis, y_axis):
         x_axis = range(len(y_axis))
     
     if len(y_axis) != len(x_axis):
-        raise (ValueError,
-               "Input vectors y_axis and x_axis must have same length")
-    
+        raise ValueError("Input vectors y_axis and x_axis must have same length")
+
     #needs to be a numpy array
     y_axis = np.array(y_axis)
     x_axis = np.array(x_axis)

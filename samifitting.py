@@ -51,6 +51,7 @@ that incorporates limits rather than the "return 1e99" method used below.
 
 TODO: Rename this module to fitting, rather than samifitting.
 """
+from __future__ import absolute_import, division, print_function, unicode_literals
 
 from scipy.optimize import leastsq
 import scipy as sp
@@ -122,7 +123,7 @@ class GaussFitter:
             self.perr = sp.sqrt(self.cov_x.diagonal())*self.var_fit
 
         if not self.success in [1,2,3,4]:
-            print "Fit Failed" 
+            print("Fit Failed")
             #raise FittingException("Fit failed") # This does nothing.
             
         self.linestr=self.p[0]*self.p[2]*sp.sqrt(2*sp.pi)
@@ -204,7 +205,7 @@ class GaussHermiteFitter:
         self.line_err=S.sqrt(gamma_err**2*(1+S.sqrt(6)*self.p[4]/4)**2+self.perr[4]**2*(S.sqrt(6)*gamma_err/4)**2)
 
         if not self.success in [1,2,3,4]:
-            print "Fit Failed..."
+            print("Fit Failed...")
             #raise FittingException("Fit failed")
 
     def __call__(self, x):
@@ -293,7 +294,7 @@ class TwoDGaussFitter:
 
     def fit(self):
 
-        #print np.shape(self.x), np.shape(self.y), np.shape(self.z)
+        #print(np.shape(self.x), np.shape(self.y), np.shape(self.z))
 
         self.p, self.cov_x, self.infodict, self.mesg, self.success = \
         leastsq(self.errfunc, self.p, \
@@ -308,7 +309,7 @@ class TwoDGaussFitter:
             self.perr = sp.sqrt(self.cov_x.diagonal())*self.var_fit
 
         if not self.success in [1,2,3,4]:
-            print "Fit Failed..." 
+            print("Fit Failed...")
             #raise ExpFittingException("Fit failed")
 
     def __call__(self, x, y):

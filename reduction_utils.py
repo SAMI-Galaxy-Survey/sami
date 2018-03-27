@@ -5,6 +5,7 @@ Created on 22nd May, 2017
 
 Helper functions for use when reducing sami data in bulk
 '''
+from __future__ import absolute_import, division, print_function, unicode_literals
 
 import os,glob,shutil,re
 import numpy as np
@@ -39,7 +40,7 @@ def remove_outdirs():
             shutil.rmtree(dir)
             counter = counter+1
 
-    print 'Number of outdir folders deleted: '+str(counter)
+    print('Number of outdir folders deleted: '+str(counter))
 
 def locate_cross_fields():
     # Locate fields observed across multiple runs and return

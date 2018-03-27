@@ -6,6 +6,7 @@ The following code was originally written by Eric Emsellem, following an
 IDL version by Michele Cappellari, and was extended to include covariance
 information (needed for SAMI data) by Nic Scott.
 """
+from __future__ import absolute_import, division, print_function, unicode_literals
 
 #
 ########################################################################
@@ -48,7 +49,7 @@ from numpy import sum, sqrt, min, max, any
 from numpy import argmax, argmin, mean, abs
 from numpy import int32 as Nint
 from numpy import float32 as Nfloat
-import copy
+import copy,code
 
 class Error(Exception):
     """Base class for exceptions in this module."""
@@ -91,7 +92,7 @@ def derive_pixelsize(x, y, verbose=0) :
         pixelsize = np.minimum(mindist, pixelsize)
     pixelsize = np.sqrt(pixelsize)
     if verbose:
-        print "Pixelsize will be: ", pixelsize
+        print("Pixelsize will be: ", pixelsize)
     return pixelsize
 
 def sn_w_covariance(xin,yin,signal,noise,covar) :
@@ -108,15 +109,15 @@ def sn_w_covariance(xin,yin,signal,noise,covar) :
     scaled_var = np.zeros((len(xin)))
     scaled_var[0] = noise[0]**2
     covar_flat = np.reshape(covar,(len(xin),n_grid**2))
-    for i in range(1,len(scaled_var)):
+    for i in range(len(scaled_var)):
         #w = np.where((abs(xin - xin[i]) < 2) & (abs(yin-yin[i]) < 2))
-        xoverlap = xin2[:i,:] - (ximprint + xin[i])
-        yoverlap = yin2[:i,:] - (yimprint + yin[i])
+        xoverlap = xin2 - (ximprint + xin[i])
+        yoverlap = yin2 - (yimprint + yin[i])
         w = np.where((xoverlap == 0) & (yoverlap == 0))[1]
-        scaled_var[i] = noise[i]**2*(sum(covar_flat[i,w])+1.)
+        scaled_var[i] = noise[i]**2*sum(covar_flat[i,w])
 
     newSN = sum(signal)/sqrt(sum(scaled_var))
-    
+
     return newSN
 
 def guess_regular_grid(xnodes, ynodes, pixelsize=None) :
@@ -156,7 +157,7 @@ def derive_unbinned_field(xnodes, ynodes, data, xunb=None, yunb=None) :
     xnodes_rav, ynodes_rav = xnodes.ravel(), ynodes.ravel()
     data_rav = data.ravel()
     unbinned_data = np.zeros_like(x_rav)
-    for i in xrange(len(x_rav)) :
+    for i in range(len(x_rav)) :
         indclosestBin = argmin(dist2(x_rav[i], y_rav[i], xnodes_rav, ynodes_rav))
         unbinned_data[i] = data_rav[indclosestBin]
 
@@ -199,14 +200,14 @@ class bin2D :
         """ 
         Warning message for 2D Binning class
         """
-        print "WARNING [2D Binning]: %s"%(text)
+        print("WARNING [2D Binning]: %s"%(text))
 
     def _error(self, text) :
         """ 
         Error message for 2D Binning class
         Exit after message
         """
-        print "ERROR [2D Binning]: %s"%(text)
+        print("ERROR [2D Binning]: %s"%(text))
         return
 
     def _check_input(self) :
@@ -291,7 +292,7 @@ class bin2D :
         for ind in range(1,self.npix+1) :  ## Running over the index of the Voronoi BIN
             ## Only one pixel at this stage
             currentSN = self.SN[currentBin]
-            if verbose : print "Bin %d, x: %d, y: %d"%(ind,self.xin[currentBin],self.yin[currentBin])
+            if verbose : print("Bin %d, x: %d, y: %d"%(ind,self.xin[currentBin],self.yin[currentBin]))
 
             self.status[currentBin] = ind   # only one pixel at this stage
             ## Barycentric centroid for 1 pixel...
@@ -451,7 +452,7 @@ class bin2D :
             minind = argmin(dist2(self.xin[i], self.yin[i], self.xnode, self.ynode, scale=self.scale))
             self.status[i] = self.statusnode[minind]
             if verbose :
-                print "Pixel ",  self.status[i], self.xin[i], self.yin[i], self.xnode[minind], self.ynode[minind]
+                print("Pixel ",  self.status[i], self.xin[i], self.yin[i], self.xnode[minind], self.ynode[minind])
 
         ## reDerive the centroid
         self.bin2d_centroid()
@@ -499,12 +500,12 @@ class bin2D :
         if cvt is not None : self.cvt = cvt
         if wvt is not None : self.wvt = wvt
 
-        print "=================="
-        print "Accreting Bins... "
+        print("==================")
+        print("Accreting Bins... ")
         self.bin2d_accretion()
-        print "          ...Done"
-        print "===================="
-        print "Reassigning Bins... "
+        print("          ...Done")
+        print("====================")
+        print("Reassigning Bins... ")
     
         
         self.bin2d_centroid()
@@ -512,14 +513,14 @@ class bin2D :
         badpixels = np.where(self.status == 0)[0]
         
         self.bin2d_assign_bins(badpixels)
-        print "            ...Done"
-        print "===================="
+        print("            ...Done")
+        print("====================")
         if self.cvt :
-            print "==========================="
-            print "Modified Lloyd algorithm..."
+            print("===========================")
+            print("Modified Lloyd algorithm...")
             self.bin2d_cvt_equal_mass()
-            print "%d iterations Done."%(self.niter)
-            print "==========================="
+            print("%d iterations Done."%(self.niter))
+            print("===========================")
         else : self.scale = 1.0
         ## Final nodes weighted centroids after assigning to the final nodes
         self.bin2d_assign_bins()

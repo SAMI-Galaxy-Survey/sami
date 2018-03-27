@@ -22,6 +22,7 @@ import os.path
 try:
     libcm = C.CDLL(os.path.join(os.path.dirname(__file__), "libcCirc.so"))
 except:
+    raise ImportError
     pass
     #libcm = C.CDLL(os.path.join('/home/franz/software/dev/sami-software-dev/dr0.10/utils', 'libcCirc.so'))
 

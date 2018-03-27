@@ -1,5 +1,3 @@
-from __future__ import print_function
-
 """
 This module covers functions required to create cubes from a dithered set
 of RSS frames. See Sharp et al (2015) for a detailed description of the
@@ -114,6 +112,7 @@ dithered_cubes_from_rss_list.
 ############################################################################################
 
 """
+from __future__ import absolute_import, division, print_function, unicode_literals
 
 import pylab as py
 import numpy as np
@@ -138,19 +137,19 @@ from glob import glob
 # the results are the same (within the numerical precision). The C
 # implementation is the fastest.
 try:
-    from cCovar import create_covar_matrix
+    from .cCovar import create_covar_matrix
 except ImportError:
     # Here we use the original implementation from James (or Nic?). The module
     # contains a python, vectorised implementation that is significantly faster,
     # but still slower than the C implementation. Should you prefer the python,
     # vectorised implementation, please run:
     # from covar import create_covar_matrix_vectorised as create_covar_matrix
-    warn_message = ('Failed to import the C version of covar using '
+    warn_message = ('Failed to import the C version of covar: using '
         + ' the python implementation (this takes longer).\n'
         + 'To use the C implementation, please navigate to the folder where '
         + 'the sami pipeline is located, and run `Make` from the terminal. ')
     warnings.warn(warn_message, ImportWarning)
-    from covar import create_covar_matrix_original as create_covar_matrix
+    from .covar import create_covar_matrix_original as create_covar_matrix
 
 
 try:
@@ -201,12 +200,22 @@ from pdb import set_trace
 
 # This simple switch allows to test the alternative cubing methods. Do not change.
 if 1:
-    from ..utils.cCirc import resample_circle as compute_weights
+    try:
+        from ..utils.cCirc import resample_circle as compute_weights
+    except ImportError: # Assume no compiled version of the C++ library exists. Switch to python.
+        warn_message = ('Failed to import the C version of compute_weights: using'
+            + ' the python implementation (this takes longer).\n'
+            + 'To use the C implementation, please navigate to the folder where '
+            + 'the sami pipeline is located, and run `Make` from the terminal. ')
+        from ..utils.circ import resample_circle as compute_weights
     cubing_method = 'Tophat'
 else:
     warning_message = 'The Gaussian weighting scheme is not fully assessed.'
     warnings.warn(warning_message, FutureWarning, stacklevel=2)
-    from ..utils.circ import inteGrauss2d as compute_weights
+    try:
+        from ..utils.cCirc import inteGrauss2d as compute_weights
+    except ImportError: # Assume no compiled version of the C++ library exists. Switch to python.
+        from ..utils.circ import inteGrauss2d as compute_weights
     cubing_method = 'Gaussian'
 
 # Some global constants:
@@ -329,10 +338,10 @@ def dar_correct(ifu_list, xfibre_all, yfibre_all, method='simple',update_rss=Fal
     wavelength_array = ifu_list[0].lambda_range
     
     # Iterate over wavelength slices
-    for l in xrange(n_slices):
+    for l in range(n_slices):
         
         # Iterate over observations
-        for i_obs in xrange(n_obs):
+        for i_obs in range(n_obs):
             # Determine differential atmospheric refraction correction for this slice
             dar_correctors[i_obs].update_for_wavelength(wavelength_array[l])
             
@@ -512,7 +521,7 @@ def dithered_cube_from_rss_wrapper(files, name, size_of_grid=50,
             hdu4.header['COVARMOD'] = (covar_mode, 'Covariance mode')
             if covar_mode == 'optimal':
                 hdu4.header['COVAR_N'] = (len(covar_locs), 'Number of covariance locations')
-                for i in xrange(len(covar_locs)):
+                for i in range(len(covar_locs)):
                     hdu4.header['HIERARCH COVARLOC_'+str(i+1)] = covar_locs[i]
             list_of_hdus.append(hdu4)
 
@@ -577,14 +586,14 @@ def dithered_cube_from_rss(ifu_list, size_of_grid=50, output_pix_size_arcsec=0.5
     #      the same coordiante system.
     #
 
-    for j in xrange(n_obs):
+    for j in range(n_obs):
 
         # Get the data.
         galaxy_data=ifu_list[j]
         
         # Smooth the spectra and median.
         data_smoothed=np.zeros_like(galaxy_data.data)
-        for p in xrange(np.shape(galaxy_data.data)[0]):
+        for p in range(np.shape(galaxy_data.data)[0]):
             data_smoothed[p,:]=utils.smooth(galaxy_data.data[p,:], 10) #default hanning
 
         # Collapse the smoothed data over a large wavelength range to get continuum data
@@ -729,7 +738,7 @@ def dithered_cube_from_rss(ifu_list, size_of_grid=50, output_pix_size_arcsec=0.5
     # spectra first allow us to flag devient pixels in a sensible way. See the
     # data reduction paper for a full description of this reasoning.
     data_norm=np.empty_like(data_all)
-    for ii in xrange(n_obs * n_fibres):
+    for ii in range(n_obs * n_fibres):
         data_norm[ii,:] = data_all[ii,:]/nanmedian( data_all[ii,:])
         
 
@@ -767,7 +776,7 @@ def dithered_cube_from_rss(ifu_list, size_of_grid=50, output_pix_size_arcsec=0.5
     covariance_slice_locs = []
     
     # This loops over wavelength slices (e.g., 2048).
-    for l in tqdm(xrange(n_slices)):
+    for l in tqdm(range(n_slices)):
 
         # In this loop, we will map the RSS fluxes from individual fibres
         # onto the output grid.
@@ -1102,7 +1111,7 @@ class SAMIDrizzler:
         else:
             self.n_drizzle_recompute = self.n_drizzle_recompute + 1
         
-        for i_fibre, xfib, yfib in itertools.izip(itertools.count(), xfibre_all, yfibre_all):
+        for i_fibre, xfib, yfib in zip(itertools.count(), xfibre_all, yfibre_all):
     
             # Feed the grid_coordinates_x and grid_coordinates_y fibre positions to the overlap_maps instance.
             drop_to_pixel_fibre = self.single_overlap_map(xfib, yfib)
@@ -1160,7 +1169,7 @@ def create_primary_header(ifu_list,name,files,WCS_pos,WCS_flag):
     # Need to implement a global version number for the database
     
     # Put the RSS files into the header
-    for num in xrange(len(files)):
+    for num in range(len(files)):
         rss_key='HIERARCH RSS_FILE '+str(num+1)
         rss_string='Input RSS file '+str(num+1)
         hdr_new[rss_key] = (os.path.basename(files[num]), rss_string)
@@ -1232,7 +1241,7 @@ def create_primary_header(ifu_list,name,files,WCS_pos,WCS_flag):
             if len(set(val)) == 1:
                 hdr_new.append(add_hdr.cards[key])
             else:
-                print('Non-unique value for keyword:', key, 'in extension', extension)
+                print('Non-unique value for keyword:', key, 'in extension', extname)
 
     return hdr_new
 
@@ -1252,15 +1261,15 @@ def create_metadata_table(ifu_list):
     primary_header_keywords = first_header.keys()
     
     # We must remove COMMENT and HISTORY keywords, as they must be treated separately.
-    for i in xrange(primary_header_keywords.count('HISTORY')):
+    for i in range(primary_header_keywords.count('HISTORY')):
         primary_header_keywords.remove('HISTORY')
-    for i in xrange(primary_header_keywords.count('COMMENT')):
+    for i in range(primary_header_keywords.count('COMMENT')):
         primary_header_keywords.remove('COMMENT')
-    for i in xrange(primary_header_keywords.count('SIMPLE')):
+    for i in range(primary_header_keywords.count('SIMPLE')):
         primary_header_keywords.remove('SIMPLE')
-    for i in xrange(primary_header_keywords.count('EXTEND')):
+    for i in range(primary_header_keywords.count('EXTEND')):
         primary_header_keywords.remove('EXTEND')
-    for i in xrange(primary_header_keywords.count('SCRUNCH')):
+    for i in range(primary_header_keywords.count('SCRUNCH')):
         primary_header_keywords.remove('SCRUNCH')
     
     # TODO: Test/check that all ifu's have the same keywords and error if not
@@ -1423,9 +1432,3 @@ def create_qc_hdu(file_list, name):
         columns.append(pf.Column(name=key, format='E', array=qc_data[key]))
     hdu = pf.BinTableHDU.from_columns(columns, name='QC')
     return hdu
-
-
-
-
-
-

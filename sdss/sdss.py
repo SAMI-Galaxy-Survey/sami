@@ -112,9 +112,9 @@ def getSDSSimage(object_name="unknown", RA=0, DEC=0, band="g", size=0.006944,
     urllib.urlretrieve(str(URL), str(object_name)+"_SDSS_"+str(band)+".fits")
                                                                      
     if url_show=="True":
-        print ("SDSS "+str(band)+"-band image of object "+str(object_name)+" has finished downloading to the working directory with the file name: "+str(object_name)+"_SDSS_"+str(band)+".fits")
+        print(("SDSS "+str(band)+"-band image of object "+str(object_name)+" has finished downloading to the working directory with the file name: "+str(object_name)+"_SDSS_"+str(band)+".fits"))
                                                                                 
-        print "The URL for this object is: ", URL
+        print("The URL for this object is: ", URL)
 
 
 
@@ -197,8 +197,8 @@ def sb(image, scale=1.0, contour=True, vmin=None, vmax=None, sky=None, levels=No
     if (vmin==None) & (vmax==None):
         vmin = np.round(np.nanmin(sb) + 2.0, 1)
         vmax = np.round(np.nanmax(sb) - 2.0, 1)
-        print("Setting range to ["+str(vmin).zfill(4)+", "+
-              str(vmax).zfill(4)+"] mag /"+str(scale)+" sq.asec")
+        print(("Setting range to ["+str(vmin).zfill(4)+", "+
+              str(vmax).zfill(4)+"] mag /"+str(scale)+" sq.asec"))
     im = plt.imshow(sb, cmap='gray', interpolation='nearest', 
                origin='lower left', vmin=vmin, vmax=vmax)
     cb1 = plt.colorbar(im, shrink=0.8)

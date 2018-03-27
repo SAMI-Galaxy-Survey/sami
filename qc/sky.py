@@ -2,6 +2,7 @@
 Functionality to measure the residuals in reduced sky fibres (which should
 have no flux), to see how good the sky subtraction is.
 """
+from __future__ import absolute_import, division, print_function, unicode_literals
 
 import matplotlib
 import pylab as py
@@ -45,7 +46,7 @@ def sky_residuals(infile, fibstart=1, fibend=2000, allfib=False, verbose=False,
     obstype=primary_header['OBSTYPE']
     # raise exception if not an object frame:
     if (obstype != 'OBJECT'):
-        print 'OBSTYPE keyword = ',obstype
+        print('OBSTYPE keyword = ',obstype)
         raise IOError('Input file was not an OBJECT frame')
     
     # get data and variance
@@ -98,9 +99,9 @@ def sky_residuals(infile, fibstart=1, fibend=2000, allfib=False, verbose=False,
     line_fracs=np.zeros(ys)
     line_skyflux=np.zeros(ys)
     if (verbose):
-        print '   |      Cont flux     |      Line flux        '
-        print 'fib|f(sky)  f(res)  frac| f(sky)   f(res)  frac ' 
-    for i in xrange(ys):
+        print('   |      Cont flux     |      Line flux        ')
+        print('fib|f(sky)  f(res)  frac| f(sky)   f(res)  frac ') 
+    for i in range(ys):
         if ((types[i] == 'S' or allfib) and (i >= fibstart-1 and i<= fibend-1)):
             spec_test = im[i,:]
             spec_test = spec_test[~np.isnan(spec_test)]
@@ -129,7 +130,7 @@ def sky_residuals(infile, fibstart=1, fibend=2000, allfib=False, verbose=False,
                 # only use lines in range:
                 if (line > lam[0] and line < lam[xs-1]):
 
-                    #print 'testing...',line,lam[0],lam[xs-1]
+                    #print('testing...',line,lam[0],lam[xs-1])
                     ll = lam
                     ff = im
                     ss = im_sky
@@ -163,7 +164,7 @@ def sky_residuals(infile, fibstart=1, fibend=2000, allfib=False, verbose=False,
                         line_flux_s = line_flux_s + line_flux
 
 
-                        #print 'test:',line_res_s,line_flux_s,ibad
+                        #print('test:',line_res_s,line_flux_s,ibad)
             if (line_flux_s > 0):
                 line_fracs[ns] = line_res_s/line_flux_s
                 line_skyflux[ns]=line_flux_s
@@ -172,11 +173,11 @@ def sky_residuals(infile, fibstart=1, fibend=2000, allfib=False, verbose=False,
                 line_skyflux[ns] = 0.0
                 
             if (verbose):
-                print '{0:3d} {1:6.2f} {2:6.2f} {3:6.3f} {4:8.2f} {5:7.2f} {6:6.3f}'.format(i+1,sky_med,sub_med,frac,line_flux_s,line_res_s,line_fracs[ns])
-            #print i+1,sky_med_r,sub_med_r,frac_r,line_flux_r,line_res_r,line_fracs_r[ns]
+                print('{0:3d} {1:6.2f} {2:6.2f} {3:6.3f} {4:8.2f} {5:7.2f} {6:6.3f}'.format(i+1,sky_med,sub_med,frac,line_flux_s,line_res_s,line_fracs[ns]))
+            #print(i+1,sky_med_r,sub_med_r,frac_r,line_flux_r,line_res_r,line_fracs_r[ns])
 
             ns=ns+1
-            #            print 'number of lines used:',nlines_used
+            #            print('number of lines used:',nlines_used)
 
     if summarise:
 
@@ -193,16 +194,16 @@ def sky_residuals(infile, fibstart=1, fibend=2000, allfib=False, verbose=False,
         meanskyflux_line = np.mean(abs(line_skyflux[0:ns]))
         
         if (verbose):
-            print 'median absolute continuum residuals:',medsky_cont
-            print 'median absolute line residuals:',medsky_line
-            print 'mean absolute continuum residuals:',meansky_cont
-            print 'mean absolute line residuals:',meansky_line
+            print('median absolute continuum residuals:',medsky_cont)
+            print('median absolute line residuals:',medsky_line)
+            print('mean absolute continuum residuals:',meansky_cont)
+            print('mean absolute line residuals:',meansky_line)
 
         if (plot):
             py.figure(1)            
             lab = infile+' cont residual'
             py.plot(fibs[0:ns],fracs[0:ns],'-',color='r',label=lab)
-            for i in xrange(ys):
+            for i in range(ys):
                 if (types[i] == 'S'):
                     py.plot(fibs[i],fracs[i],'x',color='g')
                 else:
@@ -211,7 +212,7 @@ def sky_residuals(infile, fibstart=1, fibend=2000, allfib=False, verbose=False,
                     
             lab = infile+' line residual'
             py.plot(fibs[0:ns],line_fracs[0:ns],'-',color='b',label=lab)
-            for i in xrange(ys):
+            for i in range(ys):
                 if (types[i] == 'S'):
                     py.plot(fibs[i],line_fracs[i],'x',color='m')
                 else:
