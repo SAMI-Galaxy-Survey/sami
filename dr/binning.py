@@ -60,7 +60,7 @@ def is_id_in_catalogs(sami_id, catalogs):
     sami_id = int(sami_id)
     for cat in catalogs:
         if sami_id not in catalogs[cat]['CATAID']:
-            print "SAMI ID %s not in GAMA catalog %s" % (sami_id, cat)
+            print("SAMI ID %s not in GAMA catalog %s" % (sami_id, cat))
             return False
     # Found in all catalogs
     return True
@@ -108,7 +108,7 @@ class CatalogAccessor(object):
         sami_id = int(sami_id)
         for cat in self.catalog_names:
             if sami_id not in self.catalogs[cat]['CATAID']:
-                print "SAMI ID %s not in GAMA catalog %s" % (sami_id, cat)
+                print("SAMI ID %s not in GAMA catalog %s" % (sami_id, cat))
                 return False
         # Found in all catalogs
         return True
@@ -294,7 +294,7 @@ def aperture_spectra_pair(path_blue, path_red, path_to_catalogs,overwrite=False)
                 binned_cube, binned_var = bin_cube(hdulist, aperture_data['mask'])
 
                 if log.isEnabledFor(slogging.DEBUG):
-                    print "Bins: ", np.unique(bin_mask[aper]).tolist()
+                    log.debug("Bins: ", np.unique(bin_mask[aper]).tolist())
 
                 n_spax_included = aperture_data['n_pix_included']
 
