@@ -43,10 +43,6 @@ def reduction_dir(request):
 
     return tmpdir
 
-@pytest.fixture(scope='module')
-def raw_test_data(request):
-    return os.path.join(TEST_DIR, "sami_raw_test_data")
-
 @pytest.mark.incremental
 class TestSAMIManagerReduction:
 
