@@ -8,3 +8,4 @@ utils/libcCirc\.so
 utils/cCirc\.o
 general/libcCovar\.so
 general/cCovar\.o
+tests/test_data
