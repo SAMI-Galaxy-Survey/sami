@@ -125,8 +125,9 @@ def call_2dfdr_reduce(dirname, options=None):
             )
         except (IndexError, AssertionError):
             log.debug(tdfdr_stdout)
+            log.error("2dfdr may not have run to completion (if you have 6.28 or 6.14)")
             message = "2dfdr did not run to completion for command: %s" % " ".join(command_line)
-            raise TdfdrException(message)
+            # raise TdfdrException(message)
 
 
 def call_2dfdr_gui(dirname, options=None):
