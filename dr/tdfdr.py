@@ -77,9 +77,15 @@ def subprocess_call(command_line, **kwargs):
     log.info("async call: {}".format(formatted_command))
     log.debug("Starting async processs: %s", formatted_command)
 
+    if log.isEnabledFor(slogging.DEBUG):
+        # Get current working directory and it's contents:
+        log.debug("CWD: %s", subprocess.check_output("pwd", shell=False, stderr=None, **kwargs))
+        log.debug(subprocess.check_output("ls", shell=True, stderr=None, **kwargs))
+
     # Create subprocess
-    stdout = subprocess.check_output(command_line, stderr=None, **kwargs)
+    stdout = subprocess.check_output(command_line, shell=False, stderr=None, **kwargs)
     log.debug("Async process finished: %s", formatted_command)
+
 
     stdout = stdout.decode("utf-8")
     # Note: stderr is not currently captured, so this will return None.

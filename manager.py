@@ -784,7 +784,8 @@ class Manager:
 
     def __init__(self, root, copy_files=False, move_files=False, fast=False,
                  gratlpmm=GRATLPMM, n_cpu=1, demo=False,
-                 demo_data_source='demo',use_twilight_tlm_blue=False,use_twilight_flat_blue=False,verbose=False):
+                 demo_data_source='demo',use_twilight_tlm_blue=False,use_twilight_flat_blue=False,
+                 debug=False):
         if fast:
             self.speed = 'fast'
         else:
@@ -799,7 +800,6 @@ class Manager:
         # Internal flag to allow for greater output during processing.
         # this is not actively used at present, but show be at some point
         # so we can easily get output for testing
-        self.verbose = verbose
         self.gratlpmm = gratlpmm
         self.n_cpu = n_cpu
         self.root = root
@@ -853,6 +853,7 @@ class Manager:
         self.demo = demo
         self.demo_data_source = demo_data_source
         self._debug = False
+        self.debug = debug
 
     @property
     def debug(self):
@@ -3760,22 +3761,6 @@ class Manager:
             raise ValueError("Speed must be 'fast' or 'slow'.")
         self.speed = speed
         self.idx_files = IDX_FILES[self.speed]
-        return
-
-    def change_verbose(self, verbose=None):
-        """Switch between verbose and quiet reductions."""
-        # is no option give, just switch modes:
-        if (verbose is None):
-            if (self.verbose):
-                self.verbose = False
-                print('verbose now set to False')
-            else:
-                self.verbose = True
-                print('verbose now set to True')
-
-        if verbose not in (True, False):
-            raise ValueError("Verbose must be True or False.")
-        self.verbose = verbose
         return
 
     @contextmanager

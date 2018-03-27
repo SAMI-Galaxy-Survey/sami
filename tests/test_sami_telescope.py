@@ -9,7 +9,6 @@ import fnmatch
 import os
 import os.path
 
-
 import sami
 
 TEST_DIR = os.path.join(os.path.split(__file__)[0], "test_data")
@@ -46,15 +45,14 @@ def reduction_dir(request):
 
 @pytest.fixture(scope='module')
 def raw_test_data(request):
-    return os.path.join(TEST_DIR, "raw_test_data")
+    return os.path.join(TEST_DIR, "sami_raw_test_data")
 
 @pytest.mark.incremental
 class TestSAMIManagerReduction:
 
     @pytest.fixture
     def sami_manager(self, reduction_dir):
-        mngr = sami.manager.Manager(reduction_dir + "/test/", fast=True, n_cpu=1, verbose=True)
-        mngr.debug = True
+        mngr = sami.manager.Manager(reduction_dir + "/test/", fast=True, debug=True)
         return mngr
 
     def test_tests(self, sami_manager, raw_test_data, reduction_dir):
@@ -65,8 +63,10 @@ class TestSAMIManagerReduction:
         # assert os.path.exists(reduction_dir + "/test")
 
     def test_import_data(self, sami_manager, raw_test_data):
-        mngr = sami_manager
+        mngr = sami_manager  # type: sami.Manager
         mngr.import_dir(raw_test_data)
+        print(len(mngr.file_list))
+        assert len(mngr.file_list) == 8
 
     def test_make_tlm(self, sami_manager, raw_test_data, reduction_dir):
         mngr = sami_manager
