@@ -51,12 +51,6 @@ class TestSAMIManagerReduction:
         mngr = sami.manager.Manager(reduction_dir + "/test/", fast=True, debug=True)
         return mngr
 
-    def test_pytest_not_capturing_fds(self, pytestconfig):
-        # Note: pytest must be run in sys capture mode, instead of file descriptor capture mode
-        # otherwise calls to "aaorun" seem to fail. This next test ensures that is the case.
-        print("If this test fails, then you must run pytest with the option '--capture=sys'.")
-        assert pytestconfig.getoption("capture") == "sys"
-
     def test_tests(self, sami_manager, raw_test_data, reduction_dir):
         mngr = sami_manager
         assert isinstance(mngr, sami.manager.Manager)
@@ -72,7 +66,10 @@ class TestSAMIManagerReduction:
 
     def test_make_tlm(self, sami_manager, raw_test_data, reduction_dir, capfd):
         mngr = sami_manager
-        mngr.make_tlm()
+        with capfd.disabled():
+            # Capturing the low level file descriptors seems to interfer with AAO run, so we disable it.
+            # See: https://docs.pytest.org/en/3.5.0/capture.html#setting-capturing-methods-or-disabling-capturing
+            mngr.make_tlm()
 
         # Check that files actually generated
         for base in tlm_files:
@@ -81,20 +78,30 @@ class TestSAMIManagerReduction:
 
     def test_reduce_arc(self, sami_manager, raw_test_data, reduction_dir, capfd):
         mngr = sami_manager
-        mngr.reduce_arc()
+        with capfd.disabled():
+            # Capturing the low level file descriptors seems to interfer with AAO run, so we disable it.
+            # See: https://docs.pytest.org/en/3.5.0/capture.html#setting-capturing-methods-or-disabling-capturing
+            mngr.reduce_arc()
         # Check that files actually generated
         for base in arc_files:
             assert base + "red.fits" in find_files(reduction_dir + "/test/", base + "*")
 
     def test_reduce_fflat(self, sami_manager, raw_test_data, reduction_dir, capfd):
         mngr = sami_manager
-        mngr.reduce_fflat()
+        with capfd.disabled():
+            # Capturing the low level file descriptors seems to interfer with AAO run, so we disable it.
+            # See: https://docs.pytest.org/en/3.5.0/capture.html#setting-capturing-methods-or-disabling-capturing
+
+            mngr.reduce_fflat()
         for base in flat_files:
             assert base + "red.fits" in find_files(reduction_dir + "/test/", base + "*")
 
 
     def test_reduce_object(self, sami_manager, raw_test_data, reduction_dir, capfd):
         mngr = sami_manager
-        mngr.reduce_object()
+        with capfd.disabled():
+            # Capturing the low level file descriptors seems to interfer with AAO run, so we disable it.
+            # See: https://docs.pytest.org/en/3.5.0/capture.html#setting-capturing-methods-or-disabling-capturing
+            mngr.reduce_object()
         for base in obj_files:
             assert base + "red.fits" in find_files(reduction_dir + "/test/", base + "*")

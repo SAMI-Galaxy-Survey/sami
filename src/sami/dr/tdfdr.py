@@ -84,6 +84,7 @@ def subprocess_call(command_line, **kwargs):
 
     # Create subprocess
     stdout = subprocess.check_output(command_line, shell=False, stderr=None, **kwargs)
+
     log.debug("Async process finished: %s", formatted_command)
 
 
