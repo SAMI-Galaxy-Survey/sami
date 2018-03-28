@@ -9,3 +9,4 @@ utils/cCirc\.o
 general/libcCovar\.so
 general/cCovar\.o
 tests/test_data
+tests/.pytest_cache
