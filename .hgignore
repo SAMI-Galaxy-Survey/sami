@@ -1,13 +1,71 @@
 syntax: glob
 
-*.pyc
-.DS_Store
-^.project
-^.pydevproject
-utils/libcCirc\.so
-utils/cCirc\.o
-general/libcCovar\.so
-general/cCovar\.o
+# Test data directory
 tests/test_data
-tests/.pytest_cache
+
+*.py[cod]
+
+# C extensions
+*.so
+*.o
+
+# Packages
+*.egg
+*.egg-info
+dist
+build
+eggs
+.eggs
+parts
+bin
+var
+sdist
+wheelhouse
+develop-eggs
+.installed.cfg
+lib
+lib64
+venv*/
+pyvenv*/
+
+# Installer logs
+pip-log.txt
+
+# Unit test / coverage reports
+.coverage
+.tox
+.coverage.*
+nosetests.xml
+coverage.xml
+htmlcov
+
+# Translations
+*.mo
+
+# Mr Developer
+.mr.developer.cfg
+.project
+.pydevproject
+.idea
+*.iml
+*.komodoproject
+
+# Complexity
+output/*.html
+output/*/index.html
+
+# Sphinx
+docs/_build
+
+.DS_Store
+*~
+.*.sw[po]
+.build
+.ve
+.env
+.cache
+.pytest
 .pytest_cache
+.bootstrap
+.appveyor.token
+*.bak
