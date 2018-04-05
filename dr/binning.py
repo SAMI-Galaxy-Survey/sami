@@ -1,8 +1,4 @@
-"""
-Code for binning data in SAMI datacubes. Typically accessed via
-bin_cube_pair(), which will calculate and save bins for a pair of cubes.
-See sami.manager.bin_cubes_pair() for an example of calling this function.
-"""
+
 from __future__ import absolute_import, division, print_function, unicode_literals
 
 # -----------------------------------------------------------------------------
@@ -106,11 +102,18 @@ class CatalogAccessor(object):
 
     def cataid_available(self, sami_id):
         sami_id = int(sami_id)
+        found = []
         for cat in self.catalog_names:
             if sami_id not in self.catalogs[cat]['CATAID']:
-                print("SAMI ID %s not in GAMA catalog %s" % (sami_id, cat))
-                return False
-        # Found in all catalogs
+                print("SAMI ID %s not in catalog %s" % (sami_id, cat))
+                found.append(0)
+            else:
+                found.append(1)
+
+        if all([ff == 0 for ff in found]):
+            return False
+        
+        #Found in at least some catalogs
         return True
 
     def retrieve(self, catalog_name, column, cataid):
@@ -140,7 +143,9 @@ def aperture_spectra_pair(path_blue, path_red, path_to_catalogs,overwrite=False)
             'GALR90_r',
             'GALELLIP_r'],
         # Note spelling of Distance(s)Frames different from that used by GAMA
-        'DistanceFrames': ['Z_TONRY_2']
+        'DistanceFrames': ['Z_TONRY_2'],
+        'MGEPhotom': ['ReMGE_r','PAMGE_r','epsMGE_r'],
+        'ClustersCombined':['Z']
     }
 
     gama_catalogs = CatalogAccessor(path_to_catalogs, catalogs_required)
@@ -150,7 +155,7 @@ def aperture_spectra_pair(path_blue, path_red, path_to_catalogs,overwrite=False)
     if out_dir == "":
         out_dir = '.'
     out_file_base = os.path.basename(path).split(".")[0]
-    output_filename = out_dir + "/" + out_file_base + "_aperture_spec.fits"
+    output_filename = out_dir + "/" + out_file_base + "_aperture_spec_mge.fits"
     
     if (os.path.exists(output_filename)) & (overwrite == False):
         return
@@ -173,14 +178,10 @@ def aperture_spectra_pair(path_blue, path_red, path_to_catalogs,overwrite=False)
         if gama_catalogs.cataid_available(sami_id):
             log.info("Constructing apertures using GAMA data for SAMI ID %s", sami_id)
         else:
-            print("No aperture spectra produced for {} because it is not in the GAMA catalogs".format(sami_id))
+            print("No aperture spectra produced for {} because it is not in the GAMA or cluster catalogs".format(sami_id))
             return None
 
 
-        # The position angle must be adjusted to get PA on the sky.
-        # See http://www.gama-survey.org/dr2/schema/dmu.php?id=36
-        pos_angle_adjust = (gama_catalogs.retrieve('ApMatchedCat', 'THETA_J2000', sami_id) -
-                            gama_catalogs.retrieve('ApMatchedCat', 'THETA_IMAGE', sami_id))
 
 
         # size of a pixel in angular units. CDELT1 is the WCS pixel size, and CTYPE1 is "DEGREE"
@@ -190,12 +191,29 @@ def aperture_spectra_pair(path_blue, path_red, path_to_catalogs,overwrite=False)
         #assert hdulist_blue[0].header['CTYPE1'] == hdulist_red[0].header['CTYPE1']
         #assert hdulist_blue[0].header['CDELT1'] == hdulist_red[0].header['CDELT1']
 
+        try:
+            standard_apertures['re_MGE'] = {
+                'aperture_radius':gama_catalogs.retrieve('MGEPhotom','ReMGE_r',sami_id)/pix_size,
+                'pa': gama_catalogs.retrieve('MGEPhotom','PAMGE_r',sami_id),
+                'ellipticity': gama_catalogs.retrieve('MGEPhotom','epsMGE_r',sami_id)
+                }
+        except:
+            print('%s not found in MGE catalogue. No MGE Re spectrum produced for %s' % (sami_id,sami_id))
 
-        standard_apertures['re'] = {
-            'aperture_radius': gama_catalogs.retrieve('SersicCatAll', 'GALRE_r', sami_id)/pix_size,
-            'pa': gama_catalogs.retrieve('SersicCatAll', 'GALPA_r', sami_id) + pos_angle_adjust,
-            'ellipticity': gama_catalogs.retrieve('SersicCatAll', 'GALELLIP_r', sami_id)
-        }
+        try:
+
+            # The position angle must be adjusted to get PA on the sky.
+            # See http://www.gama-survey.org/dr2/schema/dmu.php?id=36
+            pos_angle_adjust = (gama_catalogs.retrieve('ApMatchedCat', 'THETA_J2000', sami_id) -
+                            gama_catalogs.retrieve('ApMatchedCat', 'THETA_IMAGE', sami_id))
+
+            standard_apertures['re'] = {
+                'aperture_radius': gama_catalogs.retrieve('SersicCatAll', 'GALRE_r', sami_id)/pix_size,
+                'pa': gama_catalogs.retrieve('SersicCatAll', 'GALPA_r', sami_id) + pos_angle_adjust,
+                'ellipticity': gama_catalogs.retrieve('SersicCatAll', 'GALELLIP_r', sami_id)
+                }
+        except:
+            print('%s not found in GAMA catalogue. No GAMA Re spectrum produced for %s' % (sami_id,sami_id))
 
 #        standard_apertures['r90'] = {
 #            'aperture_radius': gama_catalogs.retrieve('SersicCatAll', 'GAL_R90_R', sami_id)/pix_size,
@@ -203,7 +221,10 @@ def aperture_spectra_pair(path_blue, path_red, path_to_catalogs,overwrite=False)
 #            'ellipticity': gama_catalogs.retrieve('SersicCatAll', 'GAL_ELLIP_R', sami_id)
 #        }
 
-        redshift = gama_catalogs.retrieve('DistanceFrames', 'Z_TONRY_2', sami_id)
+        try:
+            redshift = gama_catalogs.retrieve('DistanceFrames', 'Z_TONRY_2', sami_id)
+        except:
+            redshift = gama_catalogs.retrieve('ClustersCombined','Z',sami_id)
         ang_size_kpc = (1*u.kpc / cosmo.kpc_proper_per_arcmin(redshift)).to(u.arcsec).value / pix_size
 
         standard_apertures['3kpc_round'] = {
@@ -257,7 +278,7 @@ def aperture_spectra_pair(path_blue, path_red, path_to_catalogs,overwrite=False)
             if out_dir == "":
                 out_dir = '.'
             out_file_base = os.path.basename(path).split(".")[0]
-            output_filename = out_dir + "/" + out_file_base + "_aperture_spec.fits"
+            output_filename = out_dir + "/" + out_file_base + "_aperture_spec_mge.fits"
 
             # Create a new output FITS file:
             aperture_hdulist = pf.HDUList([pf.PrimaryHDU()])
