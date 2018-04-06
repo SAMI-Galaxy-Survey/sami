@@ -13,7 +13,7 @@ A few things to be aware of:
 * Alignment should be done before calling the cubing. If it hasn't, the
   cubing will fall back to measuring the offsets itself, but this is much
   worse than the proper alignment code.
-* By default, the absolute astrometry is measured by comparison to SDSS
+* By default, the absolute astrometry is measured  comparison to SDSS
   images. However, this doesn't work properly, so until someone fixes it
   you should always ask for nominal astrometry by setting nominal=True.
 * The covariance information would be too large to store at every
@@ -362,7 +362,6 @@ def dar_correct(ifu_list, xfibre_all, yfibre_all, method='simple',update_rss=Fal
         diagnostics.DAR.xfib = xfibre_all
         diagnostics.DAR.yfib = yfibre_all
 
-
 def dithered_cubes_from_rss_files(inlist, **kwargs):
     """A wrapper to make a cube from reduced RSS files, passed as a filename containing a list of filenames. Only input files that go together - ie have the same objects."""
 
@@ -406,6 +405,36 @@ def dithered_cubes_from_rss_list(files, objects='all', **kwargs):
     print("Time dithered_cubes_from_files wall time: {0}".format(datetime.datetime.now() - start_time))
     return
 
+def cube_wrapper(inputs):
+    """Calls the relevant single-object cubing function for the requested cubing method.
+    Currently supported cubing methods are:
+                   'original' - drizzle based approach
+                   'gp' - Gaussian Process based approach
+    """
+
+    cubing_method = inputs['cubing_method']
+
+    if cubing_method == 'original':
+        (path_list, name, cubed_root, overwrite, drop_factor, update_tol,
+         output_pix_size_arcsec, size_of_grid, suffix) = (inputs['path_list'],
+        inputs['name'], inputs['cubed_root'], inputs['overwrite'], 
+        inputs['drop_factor'], inputs['update_tol'], inputs['output_pix_size_arcsec'],
+        inputs['size_of_grid'], inputs['suffix'])
+
+        return dithered_cube_from_rss_wrapper(
+            path_list, name, suffix=suffix, write=True, nominal=True,
+            root=cubed_root, overwrite=overwrite, do_dar_correct=True,
+            clip=True, drop_factor=drop_factor, update_tol=update_tol,
+            size_of_grid=size_of_grid, 
+            output_pix_size_arcsec=output_pix_size_arcsec)
+    elif cubing_method == 'gp':
+        pass
+    else:
+        print('{} is not a supported cubing method'.format(cubing_method))
+        return False
+
+    return
+
 def dithered_cube_from_rss_wrapper(files, name, size_of_grid=50, 
                                    output_pix_size_arcsec=0.5, drop_factor=0.5,
                                    clip=True, plot=True, write=True, suffix='',
@@ -438,7 +467,7 @@ def dithered_cube_from_rss_wrapper(files, name, size_of_grid=50,
         outfile_name_full=os.path.join(directory, outfile_name)
 
         # Check if the filename already exists
-        if os.path.exists(outfile_name_full):
+        if os.path.exists(outfile_name_full) | os.path.exists(outfile_name_full+'.gz'):
             if overwrite:
                 os.remove(outfile_name_full)
             else:
