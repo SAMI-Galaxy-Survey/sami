@@ -132,6 +132,8 @@ warnings.simplefilter('always', DeprecationWarning)
 warnings.simplefilter('always', ImportWarning)
 from glob import glob
 
+import run_datafuse_r2
+
 # This switch selects wich implementation to use to compute the covariance
 # matrix. The two implementations differ only in their technical aspects, but
 # the results are the same (within the numerical precision). The C
@@ -428,7 +430,15 @@ def cube_wrapper(inputs):
             size_of_grid=size_of_grid, 
             output_pix_size_arcsec=output_pix_size_arcsec)
     elif cubing_method == 'gp':
-        pass
+        (path_list, name, cubed_root, overwrite, output_pix_size_arcsec, 
+         size_of_grid, suffix, ccd) = (inputs['path_list'], inputs['name'], 
+                                  inputs['cubed_root'], inputs['overwrite'], 
+                                  inputs['output_pix_size_arcsec'], inputs['size_of_grid'], 
+                                  inputs['suffix'],inputs['ccd'])
+        return run_datafuse_r2.new_cube(path_list, name, ccdband=ccd, Lpix=size_of_grid,
+                                        pixscale=output_pix_size_arcsec,
+                                        path_out=cubed_root,filename_ext=suffix,
+                                        write_fits=True)
     else:
         print('{} is not a supported cubing method'.format(cubing_method))
         return False
