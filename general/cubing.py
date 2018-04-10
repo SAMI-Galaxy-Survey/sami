@@ -132,7 +132,12 @@ warnings.simplefilter('always', DeprecationWarning)
 warnings.simplefilter('always', ImportWarning)
 from glob import glob
 
-import run_datafuse_r2
+try:
+    import run_datafuse_r2
+except Import Error:
+    warn_message = ('Could not import run_datafuse_r2.py, the Gaussian Process'
+                    +' cubing implementation. "gp" cubing_method unavailable.')
+    warnings.warn(warn_message,ImportWarning)
 
 # This switch selects wich implementation to use to compute the covariance
 # matrix. The two implementations differ only in their technical aspects, but
