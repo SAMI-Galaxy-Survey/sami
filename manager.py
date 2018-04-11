@@ -783,7 +783,7 @@ class Manager:
     )
 
     def __init__(self, root, copy_files=False, move_files=False, fast=False,
-                 gratlpmm=GRATLPMM, n_cpu=1, demo=False,
+                 gratlpmm=GRATLPMM, n_cpu=1,
                  demo_data_source='demo',use_twilight_tlm_blue=False,use_twilight_flat_blue=False,
                  debug=False):
         if fast:
@@ -831,14 +831,6 @@ class Manager:
             print('Warning: directory locks in place!')
             print('If this is because you killed a crashed manager, clean them')
             print('up using mngr.remove_directory_locks()')
-        if demo:
-            if PATCH_AVAILABLE:
-                print('WARNING: Manager is in demo mode.')
-                print('No actual data reduction will take place!')
-            else:
-                print('You must install the mock module to use the demo mode.')
-                print('Continuing in normal mode.')
-                demo = False
 
         if use_twilight_tlm_blue:
             print('Using twilight frames to derive TLM and profile map')
@@ -850,8 +842,6 @@ class Manager:
         else:
             print('NOT using twilight frames for fibre flat field')
             
-        self.demo = demo
-        self.demo_data_source = demo_data_source
         self._debug = False
         self.debug = debug
 
@@ -1787,10 +1777,8 @@ class Manager:
         # Send the items out for reducing. Keep track of which ones were done.
         while input_list:
             print(len(input_list), 'files remaining.')
-            with self.patch_if_demo(
-                    'sami.dr.tdfdr.run_2dfdr_single', fake_run_2dfdr_single):
-                finished = np.array(self.map(
-                    run_2dfdr_single_wrapper, input_list))
+            finished = np.array(self.map(
+                run_2dfdr_single_wrapper, input_list))
 
             # Mark finished files as requiring checks
             if check:
@@ -1920,10 +1908,8 @@ class Manager:
                 n_trim = 0
             inputs_list.append({'path_pair': path_pair, 'n_trim': n_trim, 
                                 'model_name': model_name, 'smooth': smooth})
-        with self.patch_if_demo(
-                'sami.dr.fluxcal2.derive_transfer_function',
-                fake_derive_transfer_function):
-            self.map(derive_transfer_function_pair, inputs_list)
+
+        self.map(derive_transfer_function_pair, inputs_list)
         self.next_step('derive_transfer_function', print_message=True)
         return
 
@@ -2054,10 +2040,8 @@ class Manager:
         old_n_cpu = self.n_cpu
         if old_n_cpu > 10:
             self.n_cpu = 10
-        with self.patch_if_demo(
-                'sami.dr.telluric.derive_transfer_function',
-                fake_derive_transfer_function):
-            done_list = self.map(telluric_correct_pair, inputs_list)
+
+        done_list = self.map(telluric_correct_pair, inputs_list)
 
         # Mark files as needing visual checks:
         for item in inputs_list:
@@ -2180,8 +2164,7 @@ class Manager:
                     update_checks('ALI', fits_list, False)
                     break
 
-        with self.patch_if_demo('sami.manager.find_dither', fake_find_dither):
-            self.map(measure_offsets_group, complete_groups)
+        self.map(measure_offsets_group, complete_groups)
 
         self.next_step('measure_offsets', print_message=True)
         return
@@ -2237,9 +2220,8 @@ class Manager:
             outfile.writelines(failed_fields)
         
         # Send the cubing tasks off to multiple CPUs
-        with self.patch_if_demo('sami.manager.dithered_cubes_from_rss_wrapper',
-                                fake_dithered_cube_from_rss_wrapper):
-            cubed_list = self.map(cube_object, inputs_list)
+        cubed_list = self.map(cube_object, inputs_list)
+
         # Mark cubes as not checked. Only mark the first file in each input set
         for inputs, cubed in zip(inputs_list, cubed_list):
             if cubed:
@@ -2333,9 +2315,7 @@ class Manager:
             object_path_pair_list = [
                 pair for pair in object_path_pair_list if None not in pair]
             input_list.append((star_path_pair, object_path_pair_list, star))
-        with self.patch_if_demo('sami.manager.stellar_mags_cube_pair',
-                                fake_stellar_mags_cube_pair):
-            self.map(scale_cubes_field, input_list)
+        self.map(scale_cubes_field, input_list)
         self.next_step('scale_cubes', print_message=True)
         return
 
@@ -2459,8 +2439,7 @@ class Manager:
                         os.remove(output_path)
                     if not os.path.exists(output_path):
                         input_list.append(input_path)
-        with self.patch_if_demo('sami.manager.gzip', fake_gzip):
-            self.map(gzip_wrapper, input_list)
+        self.map(gzip_wrapper, input_list)
         return
 
     def reduce_all(self, start=None, finish=None, overwrite=False, **kwargs):
@@ -4079,19 +4058,6 @@ class Manager:
 
         return
 
-    @contextmanager
-    def patch_if_demo(self, target, new, requires_data=True):
-        """If in demo mode, patch the target, otherwise do nothing."""
-        if self.demo:
-            if requires_data:
-                func = new(self.demo_data_source)
-            else:
-                func = new
-            with patch(target, func):
-                yield
-        else:
-            yield
-
 
 
 
@@ -4993,143 +4959,6 @@ def read_stellar_mags():
         new_data_dict = {name_func(line): line for line in data}
         data_dict.update(new_data_dict)
     return data_dict
-
-def fake_run_2dfdr_single(demo_data_source):
-    """Return a function that pretends to reduce a data file."""
-    source = os.path.join(demo_data_source, 'tdfdr')
-    def inner(fits, *args, **kwargs):
-        """Pretend to reduce a data file."""
-        print('Reducing file: ' + fits.filename)
-        suffixes = ('im', 'tlm', 'ex', 'red')
-        filename_list = [
-            fits.filename.replace('.', suff+'.') for suff in suffixes]
-        for filename in filename_list:
-            copy_demo_data(filename, source, fits.reduced_dir)
-    return inner
-
-def fake_derive_transfer_function(demo_data_source):
-    """Return a function that pretends to derive a transfer function."""
-    source = os.path.join(demo_data_source, 'transfer_function')
-    def inner(path_pair, *args, **kwargs):
-        """Pretend to derive a transfer function."""
-        for path in path_pair:
-            filename = os.path.basename(path)
-            destination = os.path.dirname(path)
-            copy_demo_data(filename, source, destination)
-    return inner
-
-def fake_find_dither(demo_data_source):
-    """Return a function that pretends to find a dither pattern."""
-    source = os.path.join(demo_data_source, 'offset')
-    def inner(path_list, *args, **kwargs):
-        """Pretend to find a dither pattern."""
-        for path in path_list:
-            filename = os.path.basename(path)
-            destination = os.path.dirname(path)
-            copy_demo_data(filename, source, destination)
-    return inner
-
-def fake_dithered_cubes_from_rss_list(demo_data_source):
-    """Return a function that pretends to make datacubes."""
-    source = os.path.join(demo_data_source, 'cubes')
-    def inner(path_list, suffix='', root='', overwrite=True, *args, **kwargs):
-        """Pretend to make datacubes."""
-        object_names = get_object_names(path_list[0])
-        for name in object_names:
-            ifu_list = [IFU(path, name, flag_name=True) for path in path_list]
-            directory = os.path.join(root, name)
-            try:
-                os.makedirs(directory)
-            except OSError:
-                print("Directory Exists", directory)
-                print("Writing files to the existing directory")
-            else:
-                print("Making directory", directory)
-            # Filename to write to
-            arm = ifu_list[0].spectrograph_arm            
-            outfile_name = (
-                str(name)+'_'+str(arm)+'_'+str(len(path_list))+suffix+'.fits')
-            outfile_name_full = os.path.join(directory, outfile_name)
-            # Check if the filename already exists
-            if os.path.exists(outfile_name_full):
-                if overwrite:
-                    os.remove(outfile_name_full)
-                else:
-                    print('Output file already exists:')
-                    print(outfile_name_full)
-                    print('Skipping this object')
-                    continue
-            copy_demo_data(outfile_name, source, directory)
-    return inner
-
-def fake_dithered_cube_from_rss_wrapper(demo_data_source):
-    """Return a function that pretends to make cubes for 1 object."""
-    def inner(path_list, name, suffix='', root='', overwrite=True,
-              *args, **kwargs):
-        """Pretend to make datacubes."""
-        ifu_list = [IFU(path, name, flag_name=True) for path in path_list]
-        directory = os.path.join(root, name)
-        try:
-            os.makedirs(directory)
-        except OSError:
-            print("Directory Exists", directory)
-            print("Writing files to the existing directory")
-        else:
-            print("Making directory", directory)
-        # Filename to write to
-        arm = ifu_list[0].spectrograph_arm            
-        outfile_name = (
-            str(name)+'_'+str(arm)+'_'+str(len(path_list))+suffix+'.fits')
-        outfile_name_full = os.path.join(directory, outfile_name)
-        # Check if the filename already exists
-        if os.path.exists(outfile_name_full):
-            if overwrite:
-                os.remove(outfile_name_full)
-            else:
-                print('Output file already exists:')
-                print(outfile_name_full)
-                print('Skipping this object')
-                return False
-        copy_demo_data(outfile_name, source, directory)
-        return True
-    return inner    
-
-def fake_stellar_mags_cube_pair(demo_data_source):
-    """Return a function that pretends to measure and scale stellar mags."""
-    source = os.path.join(demo_data_source, 'scaled_cubes')
-    def inner(star_path_pair, *args, **kwargs):
-        """Pretend to measure and scale stellar magnitudes."""
-        for path in star_path_pair:
-            filename = os.path.basename(path)
-            destination = os.path.dirname(path)
-            copy_demo_data(filename, source, destination)
-    return inner
-
-def fake_gzip(demo_data_source):
-    """Return a function that pretends to gzip files."""
-    source = os.path.join(demo_data_source, 'gzipped_cubes')
-    def inner(path, *args, **kwargs):
-        """Pretend to gzip a file."""
-        filename = os.path.basename(path) + '.gz'
-        destination = os.path.dirname(path)
-        copy_demo_data(filename, source, destination)
-        os.remove(path)
-    return inner
-
-def copy_demo_data(filename, source, destination, skip_missing=True):
-    """Find and copy demo data from source dir to destination dir."""
-    for root, dirs, files in os.walk(source):
-        if filename in files:
-            path = os.path.join(root, filename)
-            if os.path.isfile(path) and not os.path.islink(path):
-                dest_path = os.path.join(destination, filename)
-                shutil.copy2(path, dest_path)
-                sleep(0.5)
-                break
-    else:
-        # No file found. Raise an error if skip_missing set to False
-        if not skip_missing:
-            raise IOError('File not found: ' + filename)
 
 class MatchException(Exception):
     """Exception raised when no matching calibrator is found."""
