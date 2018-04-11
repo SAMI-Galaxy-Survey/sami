@@ -68,6 +68,7 @@ import itertools
 import traceback
 import datetime
 
+import six
 from six.moves import input
 
 # Set up logging
@@ -3175,7 +3176,7 @@ class Manager:
 
     def group_files_by(self, keys, require_this_manager=True, **kwargs):
         """Return a dictionary of FITSFile objects grouped by the keys."""
-        if isinstance(keys, (str,unicode)):
+        if isinstance(keys, six.string_types):
             keys = [keys]
         groups = defaultdict(list)
         for fits in self.files(**kwargs):
