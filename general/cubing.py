@@ -134,7 +134,7 @@ from glob import glob
 
 try:
     import run_datafuse_r2
-except Import Error:
+except ImportError:
     warn_message = ('Could not import run_datafuse_r2.py, the Gaussian Process'
                     +' cubing implementation. "gp" cubing_method unavailable.')
     warnings.warn(warn_message,ImportWarning)
