@@ -45,7 +45,7 @@ def reduction_dir(request):
     tmpdir = mkdtemp(prefix="sami_test")
     print(tmpdir)
     def fin():
-        #shutil.rmtree(tmpdir)
+        shutil.rmtree(tmpdir)
         pass
     request.addfinalizer(fin)
 
