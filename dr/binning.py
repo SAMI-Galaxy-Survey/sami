@@ -127,7 +127,7 @@ class CatalogAccessor(object):
             # Cut down the catalog to only contain the row for this SAMI ID.
             return catalog[catalog['CATAID'] == cataid][column][0]
 
-def aperture_spectra_pair(path_blue, path_red, path_to_catalogs,overwrite=False):
+def aperture_spectra_pair(path_blue, path_red, path_to_catalogs,overwrite=True):
     """Calculate binned spectra and save as new file for each pair of cubes."""
 
     if log.isEnabledFor(slogging.INFO):
@@ -155,8 +155,9 @@ def aperture_spectra_pair(path_blue, path_red, path_to_catalogs,overwrite=False)
     if out_dir == "":
         out_dir = '.'
     out_file_base = os.path.basename(path).split(".")[0]
-    output_filename = out_dir + "/" + out_file_base + "_aperture_spec_mge.fits"
+    output_filename = out_dir + "/" + out_file_base + "_aperture_spec_test.fits"
     
+    overwrite = True
     if (os.path.exists(output_filename)) & (overwrite == False):
         return
 
@@ -278,7 +279,7 @@ def aperture_spectra_pair(path_blue, path_red, path_to_catalogs,overwrite=False)
             if out_dir == "":
                 out_dir = '.'
             out_file_base = os.path.basename(path).split(".")[0]
-            output_filename = out_dir + "/" + out_file_base + "_aperture_spec_mge.fits"
+            output_filename = out_dir + "/" + out_file_base + "_aperture_spec_test.fits"
 
             # Create a new output FITS file:
             aperture_hdulist = pf.HDUList([pf.PrimaryHDU()])
@@ -312,7 +313,7 @@ def aperture_spectra_pair(path_blue, path_red, path_to_catalogs,overwrite=False)
             for aper in standard_apertures:
                 aperture_data = standard_apertures[aper]
 
-                binned_cube, binned_var = bin_cube(hdulist, aperture_data['mask'])
+                binned_cube, binned_var = bin_cube(hdulist, aperture_data['mask'],mode='aperture')
 
                 if log.isEnabledFor(slogging.DEBUG):
                     log.debug("Bins: ", np.unique(bin_mask[aper]).tolist())
@@ -337,7 +338,7 @@ def aperture_spectra_pair(path_blue, path_red, path_to_catalogs,overwrite=False)
                     # Find the x, y index of a spectrum inside the first (only) bin:
                     x, y = np.transpose(np.where(bin_mask[aper] == 1))[0]
                     aperture_spectrum = binned_cube[:, x, y] * n_spax_included
-                    aperture_variance = binned_var[:, x, y] * n_spax_included
+                    aperture_variance = binned_var[:, x, y] * n_spax_included**2
                 else:
                     aperture_spectrum = np.zeros_like(binned_cube[:, 0, 0])
                     aperture_variance = np.zeros_like(binned_var[:, 0, 0])
@@ -574,8 +575,11 @@ def return_covar_factor(xin,yin,covar,order):
         xoverlap = xin2[:i,:] - (ximprint + xin[i])
         yoverlap = yin2[:i,:] - (yimprint + yin[i])
         w = np.where((xoverlap == 0) & (yoverlap == 0))[1]
-        #covar_factor[i] = np.nansum(covar_flat[i,w]+1)
-        covar_factor[:,i] = np.nansum(covar_flat[i,:,w]+1,axis=0)
+        cf = np.nansum(covar_flat[i,:,w]+1,axis=0)
+        if np.nansum(cf) != 0:
+            covar_factor[:,i] = cf
+        else:
+            covar_factor[:,i] = np.ones(covar.shape[0])
     
     covar_factor = covar_factor[:,np.argsort(order)]
     
