@@ -1,4 +1,3 @@
-
 from __future__ import absolute_import, division, print_function, unicode_literals
 
 # -----------------------------------------------------------------------------
@@ -871,13 +870,14 @@ def aperture_bin_sami(hdu, aperture_radius=1, ellipticity=0, pa=0):
     # If so, update xmed and ymed accordingly.
 
     centres_cat_file = '/import/opus1/nscott/SAMI_Survey/gama_catalogues/cube_centres_adjusted.dat'
-    centres_cat = Table.read(centres_cat_file,format='ascii')
-    id = np.int(hdu[0].header['NAME'])
+    if os.path.exists(centres_cat_file):
+        centres_cat = Table.read(centres_cat_file,format='ascii')
+        id = np.int(hdu[0].header['NAME'])
 
-    if id in centres_cat['CATID']:
-        ww = np.where(id == centres_cat['CATID'])[0]
-        xmed = centres_cat['x_sree'][ww]-1.0
-        ymed = centres_cat['y_sree'][ww]-1.0
+        if id in centres_cat['CATID']:
+            ww = np.where(id == centres_cat['CATID'])[0]
+            xmed = centres_cat['x_sree'][ww]-1.0
+            ymed = centres_cat['y_sree'][ww]-1.0
 
     pa_rad = np.radians(pa)
 
