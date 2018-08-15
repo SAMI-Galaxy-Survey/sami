@@ -121,7 +121,11 @@ def call_2dfdr_reduce(dirname, options=None):
 
 
         with directory_lock(dirname):
+            # add some debug printing:
+            #print('2dfdr call options:')
+            #print(command_line)
             tdfdr_stdout = subprocess_call(command_line, cwd=dirname, env=environment)
+            #print(tdfdr_stdout)
 
         # @TODO: Make this work with various versions of 2dfdr.
         # Confirm that the above command ran to completion, otherwise raise an exception
