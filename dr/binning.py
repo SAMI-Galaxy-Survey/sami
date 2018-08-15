@@ -168,7 +168,8 @@ def aperture_spectra_pair(path_blue, path_red, path_to_catalogs,overwrite=True):
         #     This step requires some details from the header, so it must be done
         #     after the files have been opened.
 
-        from astropy.cosmology import WMAP9 as cosmo
+        from astropy.cosmology import FlatLambdaCDM
+        cosmo = FlatLambdaCDM(H0=70,Om0=0.3)
         from astropy import units as u
         from astropy.wcs import WCS
         standard_apertures = dict()
@@ -192,6 +193,8 @@ def aperture_spectra_pair(path_blue, path_red, path_to_catalogs,overwrite=True):
         #assert hdulist_blue[0].header['CDELT1'] == hdulist_red[0].header['CDELT1']
 
         try:
+            if not np.isfinite(gama_catalogs.retrieve('MGEPhotom','ReMGE_r',sami_id)/pix_size):
+                raise Exception
             standard_apertures['re_MGE'] = {
                 'aperture_radius':gama_catalogs.retrieve('MGEPhotom','ReMGE_r',sami_id)/pix_size,
                 'pa': gama_catalogs.retrieve('MGEPhotom','PAMGE_r',sami_id),
@@ -199,6 +202,8 @@ def aperture_spectra_pair(path_blue, path_red, path_to_catalogs,overwrite=True):
                 }
         except:
             print('%s not found in MGE catalogue. No MGE Re spectrum produced for %s' % (sami_id,sami_id))
+
+        
 
         try:
 
@@ -234,25 +239,25 @@ def aperture_spectra_pair(path_blue, path_red, path_to_catalogs,overwrite=True):
         }
 
         standard_apertures['1.4_arcsecond'] = {
-            'aperture_radius': 1.4/pix_size,
+            'aperture_radius': 1.4/2./pix_size,
             'pa': 0,
             'ellipticity': 0
         }
 
         standard_apertures['2_arcsecond'] = {
-            'aperture_radius': 2.0/pix_size,
+            'aperture_radius': 2.0/2./pix_size,
             'pa': 0,
             'ellipticity': 0
         }
 
         standard_apertures['3_arcsecond'] = {
-            'aperture_radius': 3.0/pix_size,
+            'aperture_radius': 3.0/2./pix_size,
             'pa': 0,
             'ellipticity': 0
             }
 
         standard_apertures['4_arcsecond'] = {
-            'aperture_radius': 4.0/pix_size,
+            'aperture_radius': 4.0/2./pix_size,
             'pa': 0,
             'ellipticity': 0
             }
@@ -907,6 +912,10 @@ def aperture_bin_sami(hdu, aperture_radius=1, ellipticity=0, pa=0):
 
     # Determine the elliptical distance of each spaxel to the origin
     dist_ellipse = np.sqrt((spax_pos_rot[0, :, :] / (1. - ellipticity)) ** 2 + spax_pos_rot[1, :, :] ** 2)
+    
+    # If aperture is so small no spaxels are included, ensure at least one spaxel is included
+    if np.nanmin(dist_ellipse) > aperture_radius:
+        aperture_radius = np.nanmin(dist_ellipse)*1.01
 
     log.debug("Range of distances: %s to %s", np.min(dist_ellipse), np.max(dist_ellipse))
     log.debug("Pixels within radius: %s", np.sum(dist_ellipse < aperture_radius))
