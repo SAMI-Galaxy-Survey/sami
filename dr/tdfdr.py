@@ -33,7 +33,7 @@ import tempfile
 import re
 from contextlib import contextmanager
 import six
-import shutil
+import shutil, shlex
 
 # Set up logging
 from .. import slogging
@@ -112,8 +112,20 @@ def call_2dfdr_reduce(dirname, options=None):
         environment = dict(os.environ)
         environment["IMP_SCRATCH"] = imp_scratch
 
+        if log.isEnabledFor(slogging.DEBUG):
+            with open("2dfdr_commands.txt", "a") as cmd_file:
+                cmd_file.write("\n[2dfdr_command]\n")
+                cmd_file.write("working_dir = {}\n".format(dirname))
+                cmd_file.write("command = {}\n".format(
+                    " ".join(map(shlex.quote, command_line))))
+
+
         with directory_lock(dirname):
+            # add some debug printing:
+            #print('2dfdr call options:')
+            #print(command_line)
             tdfdr_stdout = subprocess_call(command_line, cwd=dirname, env=environment)
+            #print(tdfdr_stdout)
 
         # @TODO: Make this work with various versions of 2dfdr.
         # Confirm that the above command ran to completion, otherwise raise an exception
