@@ -5,6 +5,7 @@ A test package in this context is a collection of data used to test out
 potential improvements to the data reduction. The test package provides
 a fiducial reduction against which the improvement can be compared.
 """
+from __future__ import absolute_import, division, print_function, unicode_literals
 
 import os
 import shutil

@@ -10,6 +10,9 @@ field, is used. As an alternative the primary (spectrophotometric)
 standard can be used - this is useful for the pilot data where the
 secondary standards were too faint to be much use.
 """
+from __future__ import absolute_import, division, print_function, unicode_literals
+
+import warnings
 
 from .fluxcal2 import read_chunked_data, set_fixed_parameters, fit_model_flux
 from .fluxcal2 import insert_fixed_parameters, check_psf_parameters
@@ -141,7 +144,7 @@ def primary_standard_transfer_function(PS_spec_file):
     # extract PSS spectra and create a median spectrum that has be shape corrected
     PS_spec_list = []
     PS_noise_list = []
-    for i in xrange(len(PS_spec_data)):
+    for i in range(len(PS_spec_data)):
         if i == 0:
             pass
         else:
@@ -298,9 +301,13 @@ def apply_correction(path_in, path_out):
     sigma_factor = hdulist['FLUX_CALIBRATION'].data[-1, :]
     uncorrected_flux = hdulist[0].data.copy()
     hdulist[0].data *= telluric_function
-    hdulist['VARIANCE'].data = hdulist[0].data**2 * (
-        (sigma_factor / telluric_function)**2 + 
-        hdulist['VARIANCE'].data / uncorrected_flux**2)
+    with warnings.catch_warnings():
+        # We get lots of invalid value warnings arising because of divide by zero errors.
+        warnings.filterwarnings('ignore', r'invalid value', RuntimeWarning)
+        warnings.filterwarnings('ignore', r'divide by zero', RuntimeWarning)
+        hdulist['VARIANCE'].data = hdulist[0].data**2 * (
+            (sigma_factor / telluric_function)**2 +
+            hdulist['VARIANCE'].data / uncorrected_flux**2)
     hdulist[0].header['HGTELLUR'] = (HG_CHANGESET, 
                                      'Hg changeset ID for telluric code')
     hdulist.writeto(path_out)

@@ -1,8 +1,4 @@
-"""
-Code for binning data in SAMI datacubes. Typically accessed via
-bin_cube_pair(), which will calculate and save bins for a pair of cubes.
-See sami.manager.bin_cubes_pair() for an example of calling this function.
-"""
+from __future__ import absolute_import, division, print_function, unicode_literals
 
 # -----------------------------------------------------------------------------
 # NB Not all input keywords are fully implemented yet!!
@@ -28,6 +24,13 @@ See sami.manager.bin_cubes_pair() for an example of calling this function.
 #                   log={True,False},xmed=??,ymed=??,pa=??,eps=??)
 #
 # -----------------------------------------------------------------------------
+import os.path
+
+from glob import glob
+
+from .. import slogging
+log = slogging.getLogger(__name__)
+log.setLevel(slogging.INFO)
 
 import astropy.io.fits as pf
 import numpy as np
@@ -35,9 +38,10 @@ from numpy import nanmedian
 from scipy.ndimage.filters import median_filter
 from scipy.ndimage.measurements import label
 from . import voronoi_2d_binning_wcovar
-import code
 
-import code
+from ..utils.other import hg_changeset
+from astropy.table import Table
+
 
 def bin_cube_pair(path_blue, path_red, name=None, **kwargs):
     """Calculate bins, do binning and save results for a pair of cubes."""
@@ -50,6 +54,350 @@ def bin_cube_pair(path_blue, path_red, name=None, **kwargs):
 
     hdulist_blue.close()
     hdulist_red.close()
+
+def is_id_in_catalogs(sami_id, catalogs):
+    sami_id = int(sami_id)
+    for cat in catalogs:
+        if sami_id not in catalogs[cat]['CATAID']:
+            print("SAMI ID %s not in GAMA catalog %s" % (sami_id, cat))
+            return False
+    # Found in all catalogs
+    return True
+
+
+class CatalogAccessor(object):
+    """Class to handle accessing GAMA catalogs stored in FITS files."""
+
+    def __init__(self, path_to_catalogs, catalog_descriptions):
+        self.path_to_catalogs = path_to_catalogs
+        self.catalog_names = catalog_descriptions.keys()
+        self.catalog_descriptions = catalog_descriptions
+        self.catalogs = dict()
+        self.catalog_filenames = dict()
+
+        self.load_catalogs()
+        log.debug("Catalog data is loaded and available.")
+
+
+    def load_catalogs(self):
+        """Find, load, and check the catalogs.
+
+        For each, search in the path_to_catalogs directory for a likely looking
+        file, open it, find the data, and then check that the expected columns
+        are present.
+
+        """
+
+        for cat in self.catalog_names:
+            try:
+                files_found = glob(self.path_to_catalogs + "/*" + cat + "*.fits")
+                if len(files_found) > 1:
+                    log.warning("Multiple potential catalogs found for %s!", cat)
+                self.catalog_filenames[cat] = files_found[0]
+                with pf.open(self.catalog_filenames[cat]) as f:
+                    self.catalogs[cat] = f[1].data
+                for col in self.catalog_descriptions[cat]:
+                    assert col in self.catalogs[cat].columns.dtype.names
+            except Exception as e:
+                print("Original error: %s" % e.message)
+                raise ValueError("Invalid or missing GAMA Catalog %s in directory %s" %
+                                 (cat, os.path.abspath(self.path_to_catalogs)))
+
+    def cataid_available(self, sami_id):
+        sami_id = int(sami_id)
+        found = []
+        for cat in self.catalog_names:
+            if sami_id not in self.catalogs[cat]['CATAID']:
+                print("SAMI ID %s not in catalog %s" % (sami_id, cat))
+                found.append(0)
+            else:
+                found.append(1)
+
+        if all([ff == 0 for ff in found]):
+            return False
+        
+        #Found in at least some catalogs
+        return True
+
+    def retrieve(self, catalog_name, column, cataid):
+        """Return the value from the catalog for the given CATAID"""
+        cataid = int(cataid)
+        catalog = self.catalogs[catalog_name]
+        if cataid not in catalog['CATAID']:
+            # print "SAMI ID %s not in GAMA catalogs - no aperture spectra produced" % cataid
+            raise ValueError("CATAID %s not in GAMA Catalog" % cataid)
+        else:
+            # Cut down the catalog to only contain the row for this SAMI ID.
+            return catalog[catalog['CATAID'] == cataid][column][0]
+
+def aperture_spectra_pair(path_blue, path_red, path_to_catalogs,overwrite=True):
+    """Calculate binned spectra and save as new file for each pair of cubes."""
+
+    if log.isEnabledFor(slogging.INFO):
+        log.info("Running aperture_spectra_pair HG version %s", hg_changeset(__file__))
+    log.debug("Starting aperture_spectra_pair: %s, %s, %s", path_blue, path_red, path_to_catalogs)
+
+    # A dictionary of required catalogs and the columns required in each catalog.
+    catalogs_required = {
+        'ApMatchedCat': ['THETA_J2000', 'THETA_IMAGE'],
+        'SersicCatAll': [
+            'GALRE_r',
+            'GALPA_r',
+            'GALR90_r',
+            'GALELLIP_r'],
+        # Note spelling of Distance(s)Frames different from that used by GAMA
+        'DistanceFrames': ['Z_TONRY_2'],
+        'MGEPhotom': ['ReMGE_r','PAMGE_r','epsMGE_r'],
+        'ClustersCombined':['Z']
+    }
+
+    gama_catalogs = CatalogAccessor(path_to_catalogs, catalogs_required)
+
+    path = path_blue
+    out_dir = os.path.dirname(path)
+    if out_dir == "":
+        out_dir = '.'
+    out_file_base = os.path.basename(path).split(".")[0]
+    output_filename = out_dir + "/" + out_file_base + "_aperture_spec_test.fits"
+    
+    overwrite = True
+    if (os.path.exists(output_filename)) & (overwrite == False):
+        return
+
+    # Open the two cubes
+    with pf.open(path_blue, memmap=True) as hdulist_blue, pf.open(path_red, memmap=True) as hdulist_red:
+
+        # Work out the standard apertures to extract
+        #
+        #     This step requires some details from the header, so it must be done
+        #     after the files have been opened.
+
+        from astropy.cosmology import WMAP9 as cosmo
+        from astropy import units as u
+        from astropy.wcs import WCS
+        standard_apertures = dict()
+
+        sami_id = hdulist_blue[0].header['NAME']
+
+        if gama_catalogs.cataid_available(sami_id):
+            log.info("Constructing apertures using GAMA data for SAMI ID %s", sami_id)
+        else:
+            print("No aperture spectra produced for {} because it is not in the GAMA or cluster catalogs".format(sami_id))
+            return None
+
+
+
+
+        # size of a pixel in angular units. CDELT1 is the WCS pixel size, and CTYPE1 is "DEGREE"
+        pix_size = np.abs((hdulist_blue[0].header['CDELT1'] * u.deg).to(u.arcsec).value)
+        # confirm that both files are the same!
+        #assert hdulist_blue[0].header['CTYPE1'] == 'DEGREE'
+        #assert hdulist_blue[0].header['CTYPE1'] == hdulist_red[0].header['CTYPE1']
+        #assert hdulist_blue[0].header['CDELT1'] == hdulist_red[0].header['CDELT1']
+
+        try:
+            standard_apertures['re_MGE'] = {
+                'aperture_radius':gama_catalogs.retrieve('MGEPhotom','ReMGE_r',sami_id)/pix_size,
+                'pa': gama_catalogs.retrieve('MGEPhotom','PAMGE_r',sami_id),
+                'ellipticity': gama_catalogs.retrieve('MGEPhotom','epsMGE_r',sami_id)
+                }
+        except:
+            print('%s not found in MGE catalogue. No MGE Re spectrum produced for %s' % (sami_id,sami_id))
+
+        try:
+
+            # The position angle must be adjusted to get PA on the sky.
+            # See http://www.gama-survey.org/dr2/schema/dmu.php?id=36
+            pos_angle_adjust = (gama_catalogs.retrieve('ApMatchedCat', 'THETA_J2000', sami_id) -
+                            gama_catalogs.retrieve('ApMatchedCat', 'THETA_IMAGE', sami_id))
+
+            standard_apertures['re'] = {
+                'aperture_radius': gama_catalogs.retrieve('SersicCatAll', 'GALRE_r', sami_id)/pix_size,
+                'pa': gama_catalogs.retrieve('SersicCatAll', 'GALPA_r', sami_id) + pos_angle_adjust,
+                'ellipticity': gama_catalogs.retrieve('SersicCatAll', 'GALELLIP_r', sami_id)
+                }
+        except:
+            print('%s not found in GAMA catalogue. No GAMA Re spectrum produced for %s' % (sami_id,sami_id))
+
+#        standard_apertures['r90'] = {
+#            'aperture_radius': gama_catalogs.retrieve('SersicCatAll', 'GAL_R90_R', sami_id)/pix_size,
+#            'pa': gama_catalogs.retrieve('SersicCatAll', 'GAL_PA_R', sami_id) + pos_angle_adjust,
+#            'ellipticity': gama_catalogs.retrieve('SersicCatAll', 'GAL_ELLIP_R', sami_id)
+#        }
+
+        try:
+            redshift = gama_catalogs.retrieve('DistanceFrames', 'Z_TONRY_2', sami_id)
+        except:
+            redshift = gama_catalogs.retrieve('ClustersCombined','Z',sami_id)
+        ang_size_kpc = (1*u.kpc / cosmo.kpc_proper_per_arcmin(redshift)).to(u.arcsec).value / pix_size
+
+        standard_apertures['3kpc_round'] = {
+            'aperture_radius': 1.5*ang_size_kpc,
+            'pa': 0,
+            'ellipticity': 0
+        }
+
+        standard_apertures['1.4_arcsecond'] = {
+            'aperture_radius': 1.4/pix_size,
+            'pa': 0,
+            'ellipticity': 0
+        }
+
+        standard_apertures['2_arcsecond'] = {
+            'aperture_radius': 2.0/pix_size,
+            'pa': 0,
+            'ellipticity': 0
+        }
+
+        standard_apertures['3_arcsecond'] = {
+            'aperture_radius': 3.0/pix_size,
+            'pa': 0,
+            'ellipticity': 0
+            }
+
+        standard_apertures['4_arcsecond'] = {
+            'aperture_radius': 4.0/pix_size,
+            'pa': 0,
+            'ellipticity': 0
+            }
+
+#        try:
+#            seeing = get_seeing(hdulist_blue)
+#        except:
+#            print "Unable to determine seeing for %s, seeing aperture not included" % path_blue
+#        else:
+#            standard_apertures['seeing'] = {
+#                'aperture_radius': seeing/pix_size,
+#                'pa': 0,
+#                'ellipticity': 0
+#            }
+
+        bin_mask = None
+
+        for hdulist in (hdulist_blue, hdulist_red):
+
+            # Construct a path name for the output spectra:
+            path = hdulist.filename()
+            out_dir = os.path.dirname(path)
+            if out_dir == "":
+                out_dir = '.'
+            out_file_base = os.path.basename(path).split(".")[0]
+            output_filename = out_dir + "/" + out_file_base + "_aperture_spec_test.fits"
+
+            # Create a new output FITS file:
+            aperture_hdulist = pf.HDUList([pf.PrimaryHDU()])
+
+            # Copy the header from the fits CUBE to primary HDU
+            aperture_hdulist[0].header = hdulist[0].header
+
+            aperture_hdulist[0].header['HGAPER'] = (hg_changeset(__file__), "Hg changeset ID for aperture code")
+
+            # Add header item to indicate if centre of aperture has been adjusted
+
+            centres_cat_file = '/import/opus1/nscott/SAMI_Survey/gama_catalogues/cube_centres_adjusted.dat'
+            centres_cat = Table.read(centres_cat_file,format='ascii')
+            id = np.int(hdulist[0].header['NAME'])
+            if id in centres_cat['CATID']:
+                ap_adjusted_flag = 'Y'
+            else:
+                ap_adjusted_flag = 'N'
+
+            aperture_hdulist[0].header['AP_ADJ'] = (ap_adjusted_flag, "Aperture position manually adjusted")
+
+            # Calculate the aperture bins based on first file only.
+            if bin_mask is None:
+                bin_mask = dict()
+                for aper in standard_apertures:
+                    bin_mask[aper] = aperture_bin_sami(hdulist, **standard_apertures[aper])
+                    standard_apertures[aper]['mask'] = (bin_mask[aper] == 1)
+                    standard_apertures[aper]['n_pix_included'] = int(np.sum(standard_apertures[aper]['mask']))
+                log_aperture_data(standard_apertures, sami_id)
+
+            for aper in standard_apertures:
+                aperture_data = standard_apertures[aper]
+
+                binned_cube, binned_var = bin_cube(hdulist, aperture_data['mask'],mode='aperture')
+
+                if log.isEnabledFor(slogging.DEBUG):
+                    log.debug("Bins: ", np.unique(bin_mask[aper]).tolist())
+
+                n_spax_included = aperture_data['n_pix_included']
+
+                # Calculate area correction:
+                #
+                #     The minimum quantum for binning spectra is whole spaxels.
+                #     So the area of the binned aperture spectra will generally
+                #     not exactly match the area of the aperture. We compute a
+                #     scaling that will standardize this, so that comparing
+                #     aperture spectra will not introduce any systematics.
+                spaxel_area = n_spax_included * pix_size**2
+                # (remember aperture_radius is in pix_size, so the ellipse is initially pix_size)
+                aperture_area = (2 * np.pi *
+                                 (aperture_data['aperture_radius'])**2 *
+                                 (1 - aperture_data['ellipticity'])) * pix_size**2
+                area_correction = aperture_area / spaxel_area
+
+                if n_spax_included > 0:
+                    # Find the x, y index of a spectrum inside the first (only) bin:
+                    x, y = np.transpose(np.where(bin_mask[aper] == 1))[0]
+                    aperture_spectrum = binned_cube[:, x, y] * n_spax_included
+                    aperture_variance = binned_var[:, x, y] * n_spax_included**2
+                else:
+                    aperture_spectrum = np.zeros_like(binned_cube[:, 0, 0])
+                    aperture_variance = np.zeros_like(binned_var[:, 0, 0])
+
+                aperture_hdulist.extend([
+                    pf.ImageHDU(aperture_spectrum, name=aper.upper()),
+                    pf.ImageHDU(aperture_variance, name=aper.upper() + "_VAR"),
+                    pf.ImageHDU((bin_mask[aper] == 1).astype(int), name=aper.upper() + "_MASK")])
+
+                output_header = aperture_hdulist[aper.upper()].header
+                output_header['RADIUS'] = (
+                    aperture_data['aperture_radius'],
+                    "Radius of the aperture in spaxels")
+                output_header['ELLIP'] = (
+                    aperture_data['ellipticity'],
+                    "Ellipticity of the aperture (1-b/a)")
+                output_header['POS_ANG'] = (
+                    aperture_data['pa'],
+                    "Position angle of the major axis, N->E")
+                output_header['KPC_SIZE'] = (
+                    ang_size_kpc,
+                    "Size of 1 kpc at galaxy distance in pixels")
+                output_header['Z_TONRY'] = (
+                    redshift,
+                    "Redshift used to calculate galaxy distance")
+                output_header['N_SPAX'] = (
+                    n_spax_included,
+                    "Number of spaxels included in mask")
+                output_header['AREACORR'] = (
+                    area_correction,
+                    "Ratio of included spaxel area to aper area")
+
+                # Copy the wavelength axis WCS information into the new header.
+                # This is done by creating a new WCS for the cube header,
+                # dropping the first two axes (which are spatial coordinates),
+                # and then appending the remaining header keywords.
+                #output_header.extend(WCS(hdulist[0].header).dropaxis(0).dropaxis(0).to_header())
+
+
+                output_header['CRVAL1'] = (hdulist[0].header['CRVAL3'],
+                        '[A] Coordinate value at reference point')
+                output_header['CRPIX1'] = (hdulist[0].header['CRPIX3'],
+                        hdulist[0].header.comments['CRPIX3'])
+                output_header['CDELT1'] = (hdulist[0].header['CDELT3'],
+                        '[A] Coordinate increment at reference point')
+                output_header['CUNIT1'] = (hdulist[0].header['CUNIT3'],
+                        hdulist[0].header.comments['CUNIT3'])
+                output_header['CTYPE1'] = (hdulist[0].header['CTYPE3'],
+                        hdulist[0].header.comments['CTYPE3'])
+                output_header['WCSAXES'] = (1,'Number of coordinate axes')
+
+                log.debug("Aperture %s completed", aper)
+
+            aperture_hdulist.writeto(output_filename, clobber=True)
+            log.info("Aperture spectra written to %s", output_filename)
+
 
 def bin_and_save(hdulist, bin_mask, name=None, **kwargs):
     """Do binning and save results for an HDUList."""
@@ -93,20 +441,32 @@ def return_bin_mask(hdu, mode='adaptive', targetSN=5, minSN=None, sectors=8,radi
         
     elif mode == 'prescriptive':
         bin_mask = prescribed_bin_sami(hdu,sectors=sectors,radial=radial,log=log)
-        
+
     else:
         raise Exception('Invalid binning mode requested')
 
     return bin_mask
 
 def bin_cube(hdu,bin_mask, mode='', **kwargs):
-    #Produce a SAMI cube where each spaxel contains the
-    #spectrum of the bin it is associated with
+    """
+    Produce a SAMI cube where each spaxel contains the
+    spectrum of the bin it is associated with
     
-    # The variance in output correctly accounts for covariance, but the remaining covariance
-    # between bins is not tracked (this may change if enough people request it)
+    Parameters
 
-    # Bin spectra and assign to spaxels
+        bin_mask is a 2D array of integers. Spaxels with the same integer
+        value will be combined into the same binned spectrum. Spaxels with a
+        bin "id" of 0 will not be binned.
+
+        hdu is an open SAMI FITS Cube file.
+
+    Notes:
+
+        The variance in output correctly accounts for covariance, but the
+        remaining covariance between bins is not tracked (this may change if
+        enough people request it)
+
+    """
 
     cube = hdu[0].data
     var = hdu[1].data
@@ -132,10 +492,12 @@ def bin_cube(hdu,bin_mask, mode='', **kwargs):
             binned_weighted_spectrum = np.nansum(weighted_cube[:,spaxel_coords[0,:],spaxel_coords[1,:]],axis=1)#/n_spaxels
             binned_weight = np.nansum(weight[:,spaxel_coords[0,:],spaxel_coords[1,:]],axis=1)
             binned_weight2 = np.nansum(weight[:,spaxel_coords[0,:],spaxel_coords[1,:]]**2,axis=1)
+
             if mode == 'adaptive':
                 temp = np.tile(np.reshape(binned_weighted_spectrum/binned_weight,(len(binned_spectrum),1)),n_spaxels)
             else:
                 temp = np.tile(np.reshape(binned_spectrum,(len(binned_spectrum),1)),n_spaxels)
+
             binned_cube[:,spaxel_coords[0,:],spaxel_coords[1,:]] = temp
             #covar_factor = np.nansum(np.nansum(covar[:,:,:,spaxel_coords[0,:],spaxel_coords[1,:]],axis=1)/2.0,axis=1) #This needs to be an accurate calculation of the covar factor
             order = np.argsort(np.nanmedian(weight[:,spaxel_coords[0,:],spaxel_coords[1,:]],axis=0))[::-1]
@@ -216,8 +578,11 @@ def return_covar_factor(xin,yin,covar,order):
         xoverlap = xin2[:i,:] - (ximprint + xin[i])
         yoverlap = yin2[:i,:] - (yimprint + yin[i])
         w = np.where((xoverlap == 0) & (yoverlap == 0))[1]
-        #covar_factor[i] = np.nansum(covar_flat[i,w]+1)
-        covar_factor[:,i] = np.nansum(covar_flat[i,:,w]+1,axis=0)
+        cf = np.nansum(covar_flat[i,:,w]+1,axis=0)
+        if np.nansum(cf) != 0:
+            covar_factor[:,i] = cf
+        else:
+            covar_factor[:,i] = np.ones(covar.shape[0])
     
     covar_factor = covar_factor[:,np.argsort(order)]
     
@@ -259,6 +624,11 @@ def adaptive_bin_sami(hdu, targetSN=10.0, minSN=None):
     else:
         goodpixels = np.where((np.isfinite(signal) == True) &
                         (np.isfinite(noise) == True) & (signal/noise > minSN))
+
+        # Added by DEF for JVDS.
+        if len(goodpixels) == 0:
+            goodpixels = np.where((np.isfinite(signal) == True) &
+                                  (np.isfinite(noise) == True))
 
     signal = signal[goodpixels]
     noise = noise[goodpixels]
@@ -329,10 +699,10 @@ def second_moments(image,ind):
     return maj,eps,theta,xpeak,ypeak,xmed,ymed
 
 def find_galaxy(image,nblob=1,fraction=0.1,quiet=True):
-    #Based on Michele Cappellari's IDL routine find_galaxy.pro
-    #Derives basic galaxy parameters using the weighted 2nd moments
-    #of the luminosity distribution
-    #Makes use of 2nd_moments
+    # Based on Michele Cappellari's IDL routine find_galaxy.pro
+    # Derives basic galaxy parameters using the weighted 2nd moments
+    # of the luminosity distribution
+    # Makes use of 2nd_moments
     
     s = np.shape(image)
     a = median_filter(image,size=5,mode='constant')
@@ -353,12 +723,12 @@ def find_galaxy(image,nblob=1,fraction=0.1,quiet=True):
     maj,eps,pa,xpeak,ypeak,xmed,ymed = second_moments(image,ind)
     
     if quiet != True:
-        print 'Pixels used: %i' % len(ind[0])
-        print 'Peak (x,y): %i %i' % (xpeak,ypeak)
-        print 'Mean (x,y): %f %f' % (xmed,ymed)
-        print 'Theta (deg): %f' % pa
-        print 'Eps: %f' % eps
-        print 'Sigma along major axis (pixels): %f' % maj
+        print('Pixels used: %i' % len(ind[0]))
+        print('Peak (x,y): %i %i' % (xpeak,ypeak))
+        print('Mean (x,y): %f %f' % (xmed,ymed))
+        print('Theta (deg): %f' % pa)
+        print('Eps: %f' % eps)
+        print('Sigma along major axis (pixels): %f' % maj)
 
     n_blobs = np.max(a)
     
@@ -366,16 +736,20 @@ def find_galaxy(image,nblob=1,fraction=0.1,quiet=True):
 
 def prescribed_bin_sami(hdu,sectors=8,radial=5,log=False,
                         xmed='',ymed='',pa='',eps=''):
+    """Allocate spaxels to a bin, based on the standard SAMI binning scheme.
 
-#Allocate spaxels to a bin, based on the standard SAMI binning scheme
-#Returns a 50x50 array where each element contains the bin number to which
-#a given spaxel is allocated. Bin ids spiral out from the centre.
+    Returns a 50x50 array where each element contains the bin number to which
+    a given spaxel is allocated. Bin ids spiral out from the centre.
 
-#Users can select number of sectors (1, 4, 8, maybe 16?), number of radial bins and
-#whether the radial progression is linear or logarithmic
+    Users can select number of sectors (1, 4, 8, maybe 16?), number of radial bins and
+    whether the radial progression is linear or logarithmic
 
-#Users can provide centroid, pa and ellipticity information manually.
-#The PA should be in degrees.
+    Users can provide centroid, pa and ellipticity information manually.
+    The PA should be in degrees.
+
+    NOTE: This code will break if the SAMI cubes are ever not square.
+
+    """
 
     cube = hdu['PRIMARY'].data
     n_spax = cube.shape[1]
@@ -482,3 +856,105 @@ def prescribed_bin_sami(hdu,sectors=8,radial=5,log=False,
 
     return bin_mask
 
+def aperture_bin_sami(hdu, aperture_radius=1, ellipticity=0, pa=0):
+    """Produce an aperture bin (inside and outside) for the aperture given."""
+    log.debug("Arguments: %s, %s, %s", aperture_radius, ellipticity, pa)
+
+    # Note, pyfits transposes axes compared to python, so we un-do that below.
+    # `cube` will now have RA on the first axis, DEC on the second axis, and
+    # WAVELENGTH on the 3rd.
+    cube = np.transpose(hdu['PRIMARY'].data)
+    n_spax = cube.shape[1]
+
+    # Use the centre of the cube...
+    xmed = float(cube.shape[0] - 1)/2.0
+    ymed = float(cube.shape[1] - 1)/2.0
+
+    # Check to see if the centre needs adjusting following Sree's catalogue.
+    # If so, update xmed and ymed accordingly.
+
+    centres_cat_file = '/import/opus1/nscott/SAMI_Survey/gama_catalogues/cube_centres_adjusted.dat'
+    if os.path.exists(centres_cat_file):
+        centres_cat = Table.read(centres_cat_file,format='ascii')
+        id = np.int(hdu[0].header['NAME'])
+
+        if id in centres_cat['CATID']:
+            ww = np.where(id == centres_cat['CATID'])[0]
+            xmed = centres_cat['x_sree'][ww]-1.0
+            ymed = centres_cat['y_sree'][ww]-1.0
+
+    pa_rad = np.radians(pa)
+
+    # Compute coordinates of input spaxels in the coordinate system of the
+    # galaxy, i.e., distance from the major axis in the first coordinate and
+    # distance from the minor axis in the second coordinate
+
+    spax_pos = np.indices((n_spax, n_spax), dtype=np.float)
+    # Shift centre to be centre of cube.
+    spax_pos[0, :] = spax_pos[0, :, :] - xmed
+    spax_pos[1, :] = spax_pos[1, :, :] - ymed
+    spax_pos_rot = np.zeros_like(spax_pos)
+
+    # Here, for SAMI, the first axis is RA and the second axis -DEC.
+    # (This gives for north up, east to the left.)
+    #
+    # Below is the standard form of the rotation matrix formula, which rotates
+    # counter-clockwise in the x-y plane.
+    #
+    # However, we are rotating the input coordinates, before applying the
+    # elipticity. This reverses the sense of the rotation.
+    #
+    # Therefore, we rotate by `-pa_rad` so that the rotation is North  through
+    # east, or counter-clockwise.
+    spax_pos_rot[0, :] = spax_pos[0, :, :] * np.cos(-pa_rad) - spax_pos[1, :, :] * np.sin(-pa_rad)
+    spax_pos_rot[1, :] = spax_pos[0, :, :] * np.sin(-pa_rad) + spax_pos[1, :, :] * np.cos(-pa_rad)
+
+    # Determine the elliptical distance of each spaxel to the origin
+    dist_ellipse = np.sqrt((spax_pos_rot[0, :, :] / (1. - ellipticity)) ** 2 + spax_pos_rot[1, :, :] ** 2)
+
+    log.debug("Range of distances: %s to %s", np.min(dist_ellipse), np.max(dist_ellipse))
+    log.debug("Pixels within radius: %s", np.sum(dist_ellipse < aperture_radius))
+
+    log.debug(dist_ellipse)
+
+    # Finally, we transpose back to the coordinate system y, x so that the
+    # output of this code will match the expectation of `bin_cube`, which does
+    # not transpose the FITS data.
+    dist_ellipse = np.transpose(dist_ellipse)
+
+    # Assign each spaxel to a different radial bin
+    rad_bins = np.digitize(np.ravel(dist_ellipse), (0, aperture_radius)).reshape(n_spax, n_spax)
+
+    return rad_bins
+
+
+def get_seeing(hdulist):
+
+    sami_id = hdulist[0].header['NAME']
+    std_id = hdulist[0].header['STDNAME']
+    obj_cube_path = hdulist.filename()
+
+    id_path_section = "{0}/{0}".format(sami_id)
+
+    start = obj_cube_path.rfind(id_path_section)
+    star_cube_path = (obj_cube_path[:start] +
+                      "{0}/{0}".format(std_id) +
+                      obj_cube_path[start+len(id_path_section):])
+
+    return pf.getval(star_cube_path, 'PSFFWHM')
+
+
+def log_aperture_data(standard_apertures, sami_id):
+    """Log aperture information in a readable format"""
+    if log.isEnabledFor(slogging.INFO):
+        aperture_info = "Aperture Information for %s:\n" % sami_id
+        aperture_info += ("   {:<11s} {:>8s} {:>8s} {:>8s} {:>8s}\n".format(
+            'Aperture', 'n_pix', 'radius', 'ellip', 'PA'))
+        for aper in standard_apertures:
+            aperture_info += ("   {:11s} {:8.0f} {:8.2f} {:8.2f} {:8.2f}\n".format(
+                aper,
+                standard_apertures[aper]['n_pix_included'],
+                standard_apertures[aper]['aperture_radius'],
+                standard_apertures[aper]['ellipticity'],
+                standard_apertures[aper]['pa']))
+        log.info(aperture_info)

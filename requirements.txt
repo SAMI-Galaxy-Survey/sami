@@ -1,0 +1,14 @@
+scipy
+astropy<3
+# tkinter
+fitsio
+requests
+cached_property
+
+typing
+
+# Progress bars for the manager
+tqdm
+
+# Required for python 2
+#asyncio

@@ -12,6 +12,7 @@ affects a given file, and makes the necessary corrections.
 These functions will presumably never be needed again, but should be kept
 for reference.
 """
+from __future__ import absolute_import, division, print_function, unicode_literals
 
 import astropy.io.fits as pf
 import numpy as np
@@ -47,7 +48,7 @@ def rotate_all_hexas(fibre_table):
 
     See rotate_probe for further details.
     """
-    for probenum in xrange(1,14):
+    for probenum in range(1,14):
         # Have to do things as a slice to avoid copying the data back and forth
         this_probe = np.where((fibre_table['PROBENUM'] == probenum) &
                               (fibre_table['TYPE'] == 'P'))[0]
@@ -229,6 +230,6 @@ def correct_all_coordinates(root='.'):
     for dirname, subdir_list, filename_list in os.walk(root):
         for filename in filename_list:
             if filename.endswith('.fits'):
-                print filename
+                print(filename)
                 correct_coordinates(os.path.join(dirname, filename))
     return

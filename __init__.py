@@ -13,22 +13,33 @@ the general user, the important modules are:
 The other modules are normally not used directly, but are used by those listed
 above.
 """
+from __future__ import absolute_import, division, print_function, unicode_literals
+
+import warnings
+
+__all__ = ['utils', 'samifitting', 'update_csv', 'manager', 'dr', 'qc']
 
 # sami package init file
 # import the modules at package level
-import utils
-import samifitting
-import update_csv
-import manager
-import dr
-import qc
+from . import utils
+from . import samifitting
+from . import update_csv
+from . import manager
+from .manager import Manager
+from . import dr
+from . import qc
 
-from log import logger
+from .log import logger
 
 # the config file which contains some constants and stuff
-import config
+from . import config
 
 # Bring all subpackage modules up to the package name space.
-from general import *
-from observing import *
-from sdss import *
+from .general import *
+from .observing import *
+from .sdss import *
+
+
+# Disable some numerical warnings:
+# We get lots of invalid value warnings arising because of divide by zero errors.
+warnings.filterwarnings('ignore', r'invalid value', RuntimeWarning)

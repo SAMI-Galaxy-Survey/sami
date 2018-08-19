@@ -47,13 +47,15 @@ is done. Instead, the pre-calculated results are simply copied into the output
 directories. This is useful for demonstrating how to use the Manager without
 waiting for the actual data reduction to happen.
 """
+from __future__ import absolute_import, division, print_function, unicode_literals
+
+from typing import List, Tuple, Dict, Sequence
 
 import shutil
 import os
 import re
-import subprocess
 import multiprocessing
-import signal
+
 import warnings
 from functools import wraps
 from contextlib import contextmanager
@@ -63,21 +65,35 @@ from time import sleep
 from glob import glob
 from pydoc import pager
 import itertools
+import traceback
 import datetime
+
+import six
+from six.moves import input
+
+# Set up logging
+from . import slogging
+
+log = slogging.getLogger(__name__)
+log.setLevel(slogging.WARNING)
+# log.enable_console_logging()
+
 import astropy.coordinates as coord
 from astropy import units
 import astropy.io.fits as pf
 from astropy import __version__ as ASTROPY_VERSION
 import numpy as np
-import code
+
 
 try:
     import pysftp
+
     PYSFTP_AVAILABLE = True
 except ImportError:
     PYSFTP_AVAILABLE = False
 try:
     from mock import patch
+
     PATCH_AVAILABLE = True
 except ImportError:
     PATCH_AVAILABLE = False
@@ -91,7 +107,7 @@ from .general.align_micron import find_dither
 from .dr import fluxcal2, telluric, check_plots, tdfdr, dust, binning
 from .dr.throughput import make_clipped_thput_files
 from .qc.fluxcal import stellar_mags_cube_pair, stellar_mags_frame_pair
-from .qc.fluxcal import throughput, get_sdss_stellar_mags
+from .qc.fluxcal import throughput, get_sdss_stellar_mags, identify_secondary_standard
 from .qc.sky import sky_residuals
 from .qc.arc import bad_fibres
 from .dr.fflat import correct_bad_fibres
@@ -100,9 +116,9 @@ from .dr.fflat import correct_bad_fibres
 try:
     import bottleneck.__version__ as BOTTLENECK_VERSION
 except ImportError:
-    BOTTLENECK_VERSION=''
+    BOTTLENECK_VERSION = ''
 
-if BOTTLENECK_VERSION=='1.0.0':
+if BOTTLENECK_VERSION == '1.0.0':
     raise ImportError('Bottleneck {} has a Blue Whale sized bug. Please update your library NOW')
 
 # Get the astropy version as a tuple of integers
@@ -117,9 +133,10 @@ else:
     def ICRS(*args, **kwargs):
         return coord.SkyCoord(*args, frame='icrs', **kwargs)
 
-IDX_FILES_SLOW = {'580V': 'sami580V_v1_5.idx',
+
+IDX_FILES_SLOW = {'580V': 'sami580V_v1_6.idx',
                   '1500V': 'sami1500V_v1_5.idx',
-                  '1000R': 'sami1000R_v1_5.idx'}
+                  '1000R': 'sami1000R_v1_6.idx'}
 
 IDX_FILES_FAST = {'580V': 'sami580V.idx',
                   '1500V': 'sami1500V.idx',
@@ -131,49 +148,51 @@ GRATLPMM = {'580V': 582.0,
             '1500V': 1500.0,
             '1000R': 1001.0}
 
+CATALOG_PATH = "./gama_catalogues/"
+
 # This list is used for identifying field numbers in the pilot data.
 PILOT_FIELD_LIST = [
-    {'plate_id': 'run_6_star_P1', 'field_no': 1, 
+    {'plate_id': 'run_6_star_P1', 'field_no': 1,
      'coords': '18h01m54.38s -22d46m49.1s'},
-    {'plate_id': 'run_6_star_P1', 'field_no': 2, 
+    {'plate_id': 'run_6_star_P1', 'field_no': 2,
      'coords': '21h12m25.06s +04d14m59.6s'},
-    {'plate_id': 'run_6_P1', 'field_no': 1, 
+    {'plate_id': 'run_6_P1', 'field_no': 1,
      'coords': '00h41m35.46s -09d40m29.9s'},
-    {'plate_id': 'run_6_P1', 'field_no': 2, 
+    {'plate_id': 'run_6_P1', 'field_no': 2,
      'coords': '01h13m02.16s +00d26m42.2s'},
-    {'plate_id': 'run_6_P1', 'field_no': 3, 
+    {'plate_id': 'run_6_P1', 'field_no': 3,
      'coords': '21h58m30.77s -08d09m23.9s'},
-    {'plate_id': 'run_6_P2', 'field_no': 2, 
+    {'plate_id': 'run_6_P2', 'field_no': 2,
      'coords': '01h16m01.24s +00d03m23.4s'},
-    {'plate_id': 'run_6_P2', 'field_no': 3, 
+    {'plate_id': 'run_6_P2', 'field_no': 3,
      'coords': '21h55m37.75s -07d40m58.3s'},
-    {'plate_id': 'run_6_P3', 'field_no': 2, 
+    {'plate_id': 'run_6_P3', 'field_no': 2,
      'coords': '01h16m19.66s +00d17m46.9s'},
-    {'plate_id': 'run_6_P3', 'field_no': 3, 
+    {'plate_id': 'run_6_P3', 'field_no': 3,
      'coords': '21h56m37.34s -07d32m16.2s'},
-    {'plate_id': 'run_7_star_P1', 'field_no': 1, 
+    {'plate_id': 'run_7_star_P1', 'field_no': 1,
      'coords': '20h04m08.32s +07d16m40.6s'},
-    {'plate_id': 'run_7_star_P1', 'field_no': 2, 
+    {'plate_id': 'run_7_star_P1', 'field_no': 2,
      'coords': '23h14m36.57s +12d45m20.6s'},
-    {'plate_id': 'run_7_star_P1', 'field_no': 3, 
+    {'plate_id': 'run_7_star_P1', 'field_no': 3,
      'coords': '02h11m46.77s -08d56m09.0s'},
-    {'plate_id': 'run_7_star_P1', 'field_no': 4, 
+    {'plate_id': 'run_7_star_P1', 'field_no': 4,
      'coords': '05h32m00.40s -00d17m56.9s'},
-    {'plate_id': 'run_7_P1', 'field_no': 1, 
+    {'plate_id': 'run_7_P1', 'field_no': 1,
      'coords': '21h58m27.59s -07d43m50.7s'},
-    {'plate_id': 'run_7_P1', 'field_no': 2, 
+    {'plate_id': 'run_7_P1', 'field_no': 2,
      'coords': '00h40m12.73s -09d31m47.5s'},
-    {'plate_id': 'run_7_P2', 'field_no': 1, 
+    {'plate_id': 'run_7_P2', 'field_no': 1,
      'coords': '21h56m27.49s -07d12m02.4s'},
-    {'plate_id': 'run_7_P2', 'field_no': 2, 
+    {'plate_id': 'run_7_P2', 'field_no': 2,
      'coords': '00h40m33.40s -09d04m21.6s'},
-    {'plate_id': 'run_7_P3', 'field_no': 1, 
+    {'plate_id': 'run_7_P3', 'field_no': 1,
      'coords': '21h56m27.86s -07d46m17.1s'},
-    {'plate_id': 'run_7_P3', 'field_no': 2, 
+    {'plate_id': 'run_7_P3', 'field_no': 2,
      'coords': '00h41m25.78s -09d17m14.4s'},
-    {'plate_id': 'run_7_P4', 'field_no': 1, 
+    {'plate_id': 'run_7_P4', 'field_no': 1,
      'coords': '21h57m48.55s -07d23m40.6s'},
-    {'plate_id': 'run_7_P4', 'field_no': 2, 
+    {'plate_id': 'run_7_P4', 'field_no': 2,
      'coords': '00h42m34.09s -09d12m08.1s'}]
 
 # Things that should be visually checked
@@ -246,21 +265,21 @@ PRIORITY_RECENT = 100
 
 STELLAR_MAGS_FILES = [
     ('standards/secondary/APMCC_0917_STARS.txt', 'ATLAS',
-        (0.076, 0.059, 0.041, 0.030, 0.023)),
+     (0.076, 0.059, 0.041, 0.030, 0.023)),
     ('standards/secondary/Abell_3880_STARS.txt', 'ATLAS',
-        (0.064, 0.050, 0.034, 0.025, 0.019)),
+     (0.064, 0.050, 0.034, 0.025, 0.019)),
     ('standards/secondary/Abell_4038_STARS.txt', 'ATLAS',
-        (0.081, 0.063, 0.044, 0.033, 0.024)),
+     (0.081, 0.063, 0.044, 0.033, 0.024)),
     ('standards/secondary/EDCC_0442_STARS.txt', 'ATLAS',
-        (0.071, 0.052, 0.038, 0.029, 0.020)),
+     (0.071, 0.052, 0.038, 0.029, 0.020)),
     ('standards/secondary/Abell_0085.fstarcat.txt', 'SDSS_cluster',
-        (0.0, 0.0, 0.0, 0.0, 0.0)),
+     (0.0, 0.0, 0.0, 0.0, 0.0)),
     ('standards/secondary/Abell_0119.fstarcat.txt', 'SDSS_cluster',
-        (0.0, 0.0, 0.0, 0.0, 0.0)),
+     (0.0, 0.0, 0.0, 0.0, 0.0)),
     ('standards/secondary/Abell_0168.fstarcat.txt', 'SDSS_cluster',
-        (0.0, 0.0, 0.0, 0.0, 0.0)),
+     (0.0, 0.0, 0.0, 0.0, 0.0)),
     ('standards/secondary/Abell_2399.fstarcat.txt', 'SDSS_cluster',
-        (0.0, 0.0, 0.0, 0.0, 0.0)),
+     (0.0, 0.0, 0.0, 0.0, 0.0)),
     ('standards/secondary/sdss_stellar_mags.csv', 'SDSS_GAMA',
         (0.0, 0.0, 0.0, 0.0, 0.0)),
     ('standards/secondary/fornax_stellar_mags.txt', 'FORNAX',
@@ -276,6 +295,7 @@ def stellar_mags_files():
     for path in glob('standards/secondary/sdss_stellar_mags_*.csv'):
         # Extra files that have been downloaded by the user
         yield (path, 'SDSS_GAMA', (0.0, 0.0, 0.0, 0.0, 0.0))
+
 
 class Manager:
     """Object for organising and reducing SAMI data.
@@ -745,7 +765,6 @@ class Manager:
     The other functions defined probably aren't useful to you.
     """
 
-
     # Task list provides the list of standard reduction tasks in the necessary
     # order. This is used by `reduce_all`, and also by each reduction step to provide instructions on the next step to run.
     task_list = (
@@ -772,8 +791,9 @@ class Manager:
     )
 
     def __init__(self, root, copy_files=False, move_files=False, fast=False,
-                 gratlpmm=GRATLPMM, n_cpu=1, demo=False,
-                 demo_data_source='demo',use_twilight_tlm_blue=False,use_twilight_flat_blue=False,verbose=False):
+                 gratlpmm=GRATLPMM, n_cpu=1,
+                 demo_data_source='demo', use_twilight_tlm_blue=False, use_twilight_flat_blue=False,
+                 debug=False):
         if fast:
             self.speed = 'fast'
         else:
@@ -788,7 +808,6 @@ class Manager:
         # Internal flag to allow for greater output during processing.
         # this is not actively used at present, but show be at some point
         # so we can easily get output for testing
-        self.verbose = verbose
         self.gratlpmm = gratlpmm
         self.n_cpu = n_cpu
         self.root = root
@@ -817,31 +836,39 @@ class Manager:
         self.aat_password = None
         self.inspect_root(copy_files, move_files)
         if self.find_directory_locks():
-            print 'Warning: directory locks in place!'
-            print 'If this is because you killed a crashed manager, clean them'
-            print 'up using mngr.remove_directory_locks()'
-        if demo:
-            if PATCH_AVAILABLE:
-                print 'WARNING: Manager is in demo mode.'
-                print 'No actual data reduction will take place!'
-            else:
-                print 'You must install the mock module to use the demo mode.'
-                print 'Continuing in normal mode.'
-                demo = False
+            print('Warning: directory locks in place!')
+            print('If this is because you killed a crashed manager, clean them')
+            print('up using mngr.remove_directory_locks()')
 
         if use_twilight_tlm_blue:
-            print 'Using twilight frames to derive TLM and profile map'
+            print('Using twilight frames to derive TLM and profile map')
         else:
-            print 'NOT using twilight frames to derive TLM and profile map'
-            
+            print('NOT using twilight frames to derive TLM and profile map')
+
         if use_twilight_flat_blue:
-            print 'Using twilight frames for fibre flat field'
+            print('Using twilight frames for fibre flat field')
         else:
-            print 'NOT using twilight frames for fibre flat field'
-            
-        self.demo = demo
-        self.demo_data_source = demo_data_source
-        self.debug = False
+            print('NOT using twilight frames for fibre flat field')
+
+        self._debug = False
+        self.debug = debug
+
+    @property
+    def debug(self):
+        return self._debug
+
+    @debug.setter
+    def debug(self, value):
+        if not isinstance(value, bool):
+            raise ValueError("debug must be set to a boolean value.")
+        if not value == self._debug:
+            if value:
+                log.setLevel(slogging.DEBUG)
+                tdfdr.log.setLevel(slogging.DEBUG)
+            else:
+                log.setLevel(slogging.WARNING)
+                tdfdr.log.setLevel(slogging.WARNING)
+            self._debug = value
 
     def next_step(self, step, print_message=False):
         task_name_list = list(map(lambda x: x[0], self.task_list))
@@ -852,7 +879,7 @@ class Manager:
             # nothing left
             next_step = None
         if print_message:
-            print "'{}' step complete. Next step is '{}'".format(step, next_step)
+            print("'{}' step complete. Next step is '{}'".format(step, next_step))
         return next_step
 
     def __repr__(self):
@@ -865,8 +892,35 @@ class Manager:
             # this issue, but in one case it hung on aatmacb, so let's be
             # absolutely sure to avoid the issue
             return []
+        # if asyncio.iscoroutinefunction(function):
+        #
+        #     result_list = []
+        #
+        #     # loop = asyncio.new_event_loop()
+        #     loop = asyncio.get_event_loop()
+        #     # Break up the overall job into chunks that are n_cpu in size:
+        #     for i in range(0, len(input_list), self.n_cpu):
+        #         print("{} jobs total, running {} to {} in parallel".format(len(input_list), i, min(i+self.n_cpu, len(input_list))))
+        #         # Create an awaitable object which can be used as a future.
+        #         # This is the job that will be run in parallel.
+        #         @asyncio.coroutine
+        #         def job():
+        #             tasks = [function(item) for item in input_list[i:i+self.n_cpu]]
+        #             # for completed in asyncio.as_completed(tasks):  # print in the order they finish
+        #             #     await completed
+        #             #     # print(completed.result())
+        #             sub_results = yield from asyncio.gather(*tasks, loop=loop)
+        #             result_list.extend(sub_results)
+        #
+        #         loop.run_until_complete(job())
+        #     # loop.close()
+        #
+        #     return np.array(result_list)
+        #
+        # else:
+        # Fall back to using multiprocessing for non-coroutine functions
         if self.n_cpu == 1:
-            result_list = map(function, input_list)
+            result_list = list(map(function, input_list))
         else:
             pool = multiprocessing.Pool(self.n_cpu)
             result_list = pool.map(function, input_list, chunksize=1)
@@ -876,14 +930,28 @@ class Manager:
 
     def inspect_root(self, copy_files, move_files, trust_header=True):
         """Add details of existing files to internal lists."""
-        for dirname, subdirname_list, filename_list in os.walk(self.abs_root):
+        files_to_add = []
+        for dirname, subdirname_list, filename_list in os.walk(os.path.join(self.abs_root, "raw")):
             for filename in filename_list:
                 if self.file_filter(filename):
-                    self.import_file(dirname, filename,
-                                     trust_header=trust_header,
-                                     copy_files=copy_files,
-                                     move_files=move_files)
-        return
+                    full_path = os.path.join(dirname, filename)
+                    files_to_add.append(full_path)
+
+        assert len(set(files_to_add)) == len(files_to_add), "Some files would be duplicated on manager startup."
+
+        if self.n_cpu == 1:
+            fits_list = list(map(FITSFile, files_to_add))
+        else:
+            pool = multiprocessing.Pool(self.n_cpu)
+            fits_list = pool.map(FITSFile, files_to_add, chunksize=20)
+            pool.close()
+            pool.join()
+
+        for fits in fits_list:
+            self.import_file(fits,
+                             trust_header=trust_header,
+                             copy_files=copy_files,
+                             move_files=move_files)
 
     def file_filter(self, filename):
         """Return True if the file should be added."""
@@ -894,22 +962,27 @@ class Manager:
                          filename)
                 and (self.fits_file(filename) is None))
 
-    def import_file(self, dirname, filename,
+    def import_file(self, source,
                     trust_header=True, copy_files=True, move_files=False):
         """Add details of a file to the manager"""
-        source_path = os.path.join(dirname, filename)
-        # Initialize an instance of the FITSFile:
-        fits = FITSFile(source_path)
+        if not isinstance(source, FITSFile):
+            # source_path = os.path.join(dirname, filename)
+            # Initialize an instance of the FITSFile:
+            filename = os.path.basename(source)
+            fits = FITSFile(source)
+        else:
+            filename = source.filename
+            fits = source
         if fits.copy:
-            #print 'this is a copy, do not import:',dirname,filename
+            # print 'this is a copy, do not import:',dirname,filename
             # This is a copy of a file, don't add it to the list
             return
         if fits.ndf_class not in [
-                'BIAS', 'DARK', 'LFLAT', 'MFFFF', 'MFARC', 'MFSKY', 
-                'MFOBJECT']:
-            print 'Unrecognised NDF_CLASS for {}: {}'.format(
-                filename, fits.ndf_class)
-            print 'Skipping this file'
+            'BIAS', 'DARK', 'LFLAT', 'MFFFF', 'MFARC', 'MFSKY',
+            'MFOBJECT']:
+            print('Unrecognised NDF_CLASS for {}: {}'.format(
+                filename, fits.ndf_class))
+            print('Skipping this file')
             return
         if fits.ndf_class == 'DARK':
             if fits.exposure_str not in self.dark_exposure_str_list:
@@ -918,16 +991,16 @@ class Manager:
         self.set_raw_path(fits)
         if os.path.abspath(fits.source_path) != os.path.abspath(fits.raw_path):
             if copy_files:
-                print 'Copying file:', filename
+                print('Copying file:', filename)
                 self.update_copy(fits.source_path, fits.raw_path)
             if move_files:
-                print 'Moving file: ', filename
+                print('Moving file: ', filename)
                 self.move(fits.source_path, fits.raw_path)
             if not copy_files and not move_files:
-                print 'Warning! Adding', filename, 'in unexpected location'
+                print('Warning! Adding', filename, 'in unexpected location')
                 fits.raw_path = fits.source_path
         else:
-            print 'Adding file: ', filename
+            print('Adding file: ', filename)
         self.set_name(fits, trust_header=trust_header)
         fits.set_check_data()
         self.set_reduced_path(fits)
@@ -1049,10 +1122,10 @@ class Manager:
             best_name = None
             while best_name is None:
                 try:
-                    best_name = raw_input('Enter object name for file ' +
-                                          fits.filename + '\n > ')
+                    best_name = input('Enter object name for file ' +
+                                      fits.filename + '\n > ')
                 except ValueError as error:
-                    print error
+                    print(error)
         # If there are any remaining bad characters (from an earlier version of
         # the manager), just quietly replace them with underscores
         best_name = re.sub(r'[\\\[\]*/?<>|;:&,.$ ]', '_', best_name)
@@ -1066,17 +1139,17 @@ class Manager:
             fits.update_spectrophotometric(spectrophotometric_extra)
         else:
             # Ask the user whether this is a spectrophotometric standard
-            yn = raw_input('Is ' + fits.name + ' in file ' + fits.filename +
-                           ' a spectrophotometric standard? (y/n)\n > ')
+            yn = input('Is ' + fits.name + ' in file ' + fits.filename +
+                       ' a spectrophotometric standard? (y/n)\n > ')
             spectrophotometric_input = (yn.lower()[0] == 'y')
             fits.update_spectrophotometric(spectrophotometric_input)
         # If the field was new and it's not a "main", add it to the list
         if name_extra is None and name_coords is None:
             self.extra_list.append(
-                {'name':fits.name,
-                 'coords':fits_coords,
-                 'spectrophotometric':fits.spectrophotometric,
-                 'fitsfile':fits})
+                {'name': fits.name,
+                 'coords': fits_coords,
+                 'spectrophotometric': fits.spectrophotometric,
+                 'fitsfile': fits})
         return
 
     def update_name(self, file_iterable, name):
@@ -1088,7 +1161,7 @@ class Manager:
             try:
                 fits.update_name(name)
             except ValueError as error:
-                print error
+                print(error)
                 return
             # Update the extra list if necessary
             for extra in self.extra_list:
@@ -1100,7 +1173,7 @@ class Manager:
                 self.set_reduced_path(fits)
                 if fits.reduced_dir != old_reduced_dir:
                     # The path has changed, so move all the reduced files
-                    self.move_reduced_files(fits.filename_root, old_reduced_dir, 
+                    self.move_reduced_files(fits.filename_root, old_reduced_dir,
                                             fits.reduced_dir)
         return
 
@@ -1156,9 +1229,10 @@ class Manager:
                     tmp_path = os.path.join(self.tmp_dir, filename)
                     self.update_copy(os.path.join(dirname, filename),
                                      tmp_path)
-                    self.import_file(self.tmp_dir, filename,
-                                     trust_header=trust_header,
-                                     copy_files=False, move_files=True)
+                    self.import_file(
+                        os.path.join(self.tmp_dir, filename),
+                        trust_header=trust_header,
+                        copy_files=False, move_files=True)
                     if os.path.exists(tmp_path):
                         # The import was abandoned; delete the temporary copy
                         os.remove(tmp_path)
@@ -1196,19 +1270,20 @@ class Manager:
                 filename_list = sorted(srv.listdir(dirname))
                 for filename in filename_list:
                     if self.file_filter(filename):
-                        srv.get(os.path.join(dirname, filename), 
+                        srv.get(os.path.join(dirname, filename),
                                 localpath=os.path.join(self.tmp_dir, filename))
-                        self.import_file(self.tmp_dir, filename,
-                                         trust_header=False, copy_files=False,
-                                         move_files=True)
+                        self.import_file(
+                            os.path.join(self.tmp_dir, filename),
+                            trust_header=False, copy_files=False,
+                            move_files=True)
         if os.path.exists(self.tmp_dir) and len(os.listdir(self.tmp_dir)) == 0:
             os.rmdir(self.tmp_dir)
         return
 
     def fits_file(self, filename, include_linked_managers=False):
         """Return the FITSFile object that corresponds to the given filename."""
-        filename_options = [filename, filename+'.fit', filename+'.fits',
-                            filename+'.FIT', filename+'.FITS']
+        filename_options = [filename, filename + '.fit', filename + '.fits',
+                            filename + '.FIT', filename + '.FITS']
         if include_linked_managers:
             # Include files from linked managers too
             file_list = itertools.chain(
@@ -1224,8 +1299,8 @@ class Manager:
     def check_reduced_dir_contents(self, reduced_dir):
         """Return True if any FITSFile objects point to reduced_dir."""
         for fits in self.file_list:
-            if (fits.do_not_use is False and 
-                os.path.samefile(fits.reduced_dir, reduced_dir)):
+            if (fits.do_not_use is False and
+                    os.path.samefile(fits.reduced_dir, reduced_dir)):
                 # There is still something in this directory
                 return True
         # Failed to find anything
@@ -1262,7 +1337,7 @@ class Manager:
         if manager not in self.linked_managers:
             self.linked_managers.append(manager)
         else:
-            print 'Already including that manager!'
+            print('Already including that manager!')
         return
 
     def unlink_manager(self, manager):
@@ -1270,7 +1345,7 @@ class Manager:
         if manager in self.linked_managers:
             self.linked_managers.remove(manager)
         else:
-            print 'Manager not in linked list!'
+            print('Manager not in linked list!')
         return
 
     def bias_combined_filename(self):
@@ -1294,7 +1369,7 @@ class Manager:
         """Return the path for DARKcombined.fits"""
         return os.path.join(self.abs_root, 'reduced', 'dark', ccd, exposure_str,
                             self.dark_combined_filename(exposure_str))
-    
+
     def lflat_combined_path(self, ccd):
         """Return the path for LFLATcombined.fits"""
         return os.path.join(self.abs_root, 'reduced', 'lflat', ccd,
@@ -1304,7 +1379,7 @@ class Manager:
                           **kwargs):
         """Reduce all biases, darks of lflats."""
         self.check_calibrator_type(calibrator_type)
-        file_iterable = self.files(ndf_class=calibrator_type.upper(), 
+        file_iterable = self.files(ndf_class=calibrator_type.upper(),
                                    do_not_use=False, **kwargs)
         reduced_files = self.reduce_file_iterable(
             file_iterable, overwrite=overwrite, check=check)
@@ -1333,7 +1408,7 @@ class Manager:
             dir_type_list = ['dark', 'lflat', 'calibrators', 'object',
                              'spectrophotometric']
         elif calibrator_type.lower() == 'dark':
-            dir_type_list = ['lflat', 'calibrators', 'object', 
+            dir_type_list = ['lflat', 'calibrators', 'object',
                              'spectrophotometric']
         elif calibrator_type.lower() == 'lflat':
             dir_type_list = ['calibrators', 'object', 'spectrophotometric']
@@ -1349,7 +1424,7 @@ class Manager:
                     if (not os.path.exists(link_path)) and os.path.exists(path):
                         os.symlink(os.path.relpath(path, link_dir),
                                    link_path)
-        return        
+        return
 
     def check_calibrator_type(self, calibrator_type):
         """Raise an exception if that's not a real calibrator type."""
@@ -1366,7 +1441,7 @@ class Manager:
         return
 
     def combine_bias(self, overwrite=False):
-        """Produce and link necessary BIAScombined.fits files."""        
+        """Produce and link necessary BIAScombined.fits files."""
         self.combine_calibrator('bias', overwrite=overwrite)
         self.next_step('combine_bias', print_message=True)
         return
@@ -1382,7 +1457,7 @@ class Manager:
             'dark', overwrite=overwrite, check='DRK', **kwargs)
         self.next_step('reduce_dark', print_message=True)
         return
-        
+
     def combine_dark(self, overwrite=False):
         """Produce and link necessary DARKcombinedXXXX.fits files."""
         self.combine_calibrator('dark', overwrite=overwrite)
@@ -1426,7 +1501,7 @@ class Manager:
         if ('ccd' in kwargs):
             if (kwargs['ccd'] == 'ccd_1'):
                 do_twilight = True
-                
+
             else:
                 do_twilight = False
             # make a copy of the keywords, but remove the ccd flag for the
@@ -1436,30 +1511,29 @@ class Manager:
         else:
             kwargs_copy = dict(kwargs)
 
-            
         if (self.use_twilight_tlm_blue and do_twilight):
-            fits_twilight_list=[]
-            print 'Processing twilight frames to get TLM'
+            fits_twilight_list = []
+            print('Processing twilight frames to get TLM')
             # for each twilight frame use the copy_as() function to
             # make a copy with file type MFFFF.  The copied files are
             # placed in the list fits_twilight_list and then can be
             # processed as normal MFFFF files.
-            #for fits in self.files(ndf_class='MFSKY',do_not_use=False,**kwargs):
-            for fits in self.files(ndf_class='MFSKY',do_not_use=False,ccd='ccd_1',**kwargs_copy):
-                
-                fits_twilight_list.append(self.copy_as(fits,'MFFFF',overwrite=overwrite))
-                
+            # for fits in self.files(ndf_class='MFSKY',do_not_use=False,**kwargs):
+            for fits in self.files(ndf_class='MFSKY', do_not_use=False, ccd='ccd_1', **kwargs_copy):
+                fits_twilight_list.append(self.copy_as(fits, 'MFFFF', overwrite=overwrite))
+
             # use the iterable file reducer to loop over the copied twilight list and
             # reduce them as MFFFF files to make TLMs.
-            self.reduce_file_iterable(fits_twilight_list, overwrite=overwrite, tlm=True,leave_reduced=leave_reduced, check='TLM')
+            self.reduce_file_iterable(fits_twilight_list, overwrite=overwrite, tlm=True, leave_reduced=leave_reduced,
+                                      check='TLM')
 
         # now we will process the normal MFFFF files
         # this currently only allows TLMs to be made from MFFFF files
         file_iterable = self.files(ndf_class='MFFFF', do_not_use=False,
                                    **kwargs)
-        
+
         self.reduce_file_iterable(
-            file_iterable, overwrite=overwrite, tlm=True, 
+            file_iterable, overwrite=overwrite, tlm=True,
             leave_reduced=leave_reduced, check='TLM')
         self.next_step('make_tlm', print_message=True)
         return
@@ -1475,7 +1549,7 @@ class Manager:
         self.next_step('reduce_arc', print_message=True)
         return
 
-    def reduce_fflat(self, overwrite=False, twilight_only=False,**kwargs):
+    def reduce_fflat(self, overwrite=False, twilight_only=False, **kwargs):
         """Reduce all fibre flat frames matching given criteria."""
 
         # check if ccd keyword argument is set, as we need to account for the
@@ -1484,7 +1558,7 @@ class Manager:
         if ('ccd' in kwargs):
             if (kwargs['ccd'] == 'ccd_1'):
                 do_twilight = True
-                
+
             else:
                 do_twilight = False
             # make a copy of the keywords, but remove the ccd flag for the
@@ -1493,10 +1567,10 @@ class Manager:
             del kwargs_copy['ccd']
         else:
             kwargs_copy = dict(kwargs)
-        
+
         if (self.use_twilight_flat_blue and do_twilight):
-            fits_twilight_list=[]
-            print 'Processing twilight frames to get fibre flat field'
+            fits_twilight_list = []
+            print('Processing twilight frames to get fibre flat field')
             # The twilights should already have been copied as MFFFF
             # at the make_tlm stage, but we can do this again here without
             # any penalty (easier to sue the same code).  So for   
@@ -1504,27 +1578,26 @@ class Manager:
             # make a copy with file type MFFFF.  The copied files are
             # placed in the list fits_twilight_list and then can be
             # processed as normal MFFFF files.
-            #for fits in self.files(ndf_class='MFSKY',do_not_use=False,**kwargs):
-            for fits in self.files(ndf_class='MFSKY',do_not_use=False,ccd='ccd_1',**kwargs_copy):
-                
-                fits_twilight_list.append(self.copy_as(fits,'MFFFF',overwrite=overwrite))
-                
+            # for fits in self.files(ndf_class='MFSKY',do_not_use=False,**kwargs):
+            for fits in self.files(ndf_class='MFSKY', do_not_use=False, ccd='ccd_1', **kwargs_copy):
+                fits_twilight_list.append(self.copy_as(fits, 'MFFFF', overwrite=overwrite))
+
             # use the iterable file reducer to loop over the copied twilight list and
             # reduce them as MFFFF files:
             reduced_twilights = self.reduce_file_iterable(fits_twilight_list, overwrite=overwrite, check='FLT')
 
             # Identify bad fibres and replace with an average over all other twilights
             if len(reduced_twilights) >= 3:
-                    path_list = [os.path.join(fits.reduced_dir,fits.copy_reduced_filename) for fits in reduced_twilights]
-                    correct_bad_fibres(path_list)
+                path_list = [os.path.join(fits.reduced_dir, fits.copy_reduced_filename) for fits in reduced_twilights]
+                correct_bad_fibres(path_list)
 
         # now we will process the normal MFFFF files
         if (not twilight_only):
             file_iterable = self.files(ndf_class='MFFFF', do_not_use=False,
-                                   **kwargs)
+                                       **kwargs)
             self.reduce_file_iterable(
                 file_iterable, overwrite=overwrite, check='FLT')
-            
+
         self.next_step('reduce_fflat', print_message=True)
         return
 
@@ -1580,9 +1653,9 @@ class Manager:
     def copy_as(self, fits, ndf_class, overwrite=False):
         """Copy a fits file and change its class. Return a new FITSFile."""
         old_num = int(fits.filename[6:10])
-        new_num = old_num + 1000 * (9 - (old_num / 1000))
+        new_num = old_num + 1000 * (9 - (old_num // 1000))
         new_filename = (
-            fits.filename[:6] + '{:04d}'.format(new_num) + fits.filename[10:])
+                fits.filename[:6] + '{:04d}'.format(int(new_num)) + fits.filename[10:])
         new_path = os.path.join(fits.reduced_dir, new_filename)
         if os.path.exists(new_path) and overwrite:
             os.remove(new_path)
@@ -1596,10 +1669,10 @@ class Manager:
                 True, 'True if this is a copy created by a Manager')
             hdulist.flush()
             hdulist.close()
-            
+
         new_fits = FITSFile(new_path)
 
-#        print 'new_fits:',new_fits
+        #        print('new_fits:',new_fits
         # Add paths to the new FITSFile instance.
         # Don't use Manager.set_reduced_path because the raw location is
         # unusual
@@ -1615,7 +1688,7 @@ class Manager:
         if ndf_class == 'MFFFF':
             new_fits.tlm_path = os.path.join(new_fits.reduced_dir, new_fits.tlm_filename)
             # Do we also set the lamp? Probably not.
-                        
+
         return new_fits
 
     def copy_path(self, path):
@@ -1623,9 +1696,9 @@ class Manager:
         directory = os.path.dirname(path)
         old_filename = os.path.basename(path)
         old_num = int(old_filename[6:10])
-        new_num = old_num + 1000 * (9 - (old_num / 1000))
+        new_num = old_num + 1000 * (9 - (old_num // 1000))
         new_filename = (
-            old_filename[:6] + '{:04d}'.format(new_num) + old_filename[10:])
+                old_filename[:6] + '{:04d}'.format(int(new_num)) + old_filename[10:])
         new_path = os.path.join(directory, new_filename)
         return new_path
 
@@ -1651,7 +1724,7 @@ class Manager:
             self.reduce_file_iterable(
                 fits_list, throughput_method='skylines',
                 overwrite=True, check='OBJ')
-            bad_fields = np.unique([fits.field_id for fits in fits_list])
+            bad_fields = set([fits.field_id for fits in fits_list])
         else:
             bad_fields = []
         if recalculate_throughput:
@@ -1696,33 +1769,34 @@ class Manager:
         """Reduce all files in the iterable."""
         # First establish the 2dfdr options for all files that need reducing
         # Would be more memory-efficient to construct a generator
-        input_list = [(fits,
-                       self.idx_files[fits.grating],
-                       tuple(self.tdfdr_options(
-                           fits, throughput_method=throughput_method,
-                           tlm=tlm)),
-                       self.cwd,
-                       self.imp_scratch,
-                       self.scratch_dir,
-                       check,
-                       self.debug)
-                      for fits in file_iterable
-                      if (overwrite or
-                          not os.path.exists(self.target_path(fits, tlm=tlm)))]
+
+        input_list = []  # type: List[Tuple[FITSFile, str, Sequence]]
+        for fits in file_iterable:
+            if (overwrite or
+                    not os.path.exists(self.target_path(fits, tlm=tlm))):
+                tdfdr_options = tuple(self.tdfdr_options(fits, throughput_method=throughput_method, tlm=tlm))
+                input_list.append(
+                    (fits, self.idx_files[fits.grating], tdfdr_options))
         reduced_files = [item[0] for item in input_list]
+
         # Send the items out for reducing. Keep track of which ones were done.
         while input_list:
-            print len(input_list), 'files remaining.'
-            with self.patch_if_demo(
-                    'sami.dr.tdfdr.run_2dfdr_single', fake_run_2dfdr_single):
-                finished = np.array(self.map(
-                    run_2dfdr_single_wrapper, input_list))
-            input_list = [item for i, item in enumerate(input_list) 
+            print(len(input_list), 'files remaining.')
+            finished = np.array(self.map(
+                run_2dfdr_single_wrapper, input_list))
+
+            # Mark finished files as requiring checks
+            if check:
+                for fin, reduction_tuple in zip(finished, input_list):
+                    fits = reduction_tuple[0]
+                    if fin:
+                        update_checks(check, [fits], False)
+
+            input_list = [item for i, item in enumerate(input_list)
                           if not finished[i]]
         # Delete unwanted reduced files
         for fits in reduced_files:
-            if (fits.ndf_class == 'MFFFF' and tlm and not leave_reduced and
-                os.path.exists(fits.reduced_path)):
+            if (fits.ndf_class == 'MFFFF' and tlm and not leave_reduced and os.path.exists(fits.reduced_path)):
                 os.remove(fits.reduced_path)
         # Return a list of fits objects that were reduced
         return reduced_files
@@ -1810,9 +1884,9 @@ class Manager:
             rereduce, throughput_method='external', overwrite=True)
         return reduced_files
 
-    def derive_transfer_function(self, 
-            overwrite=False, model_name='ref_centre_alpha_dist_circ_hdratm', 
-            smooth='spline', **kwargs):
+    def derive_transfer_function(self,
+                                 overwrite=False, model_name='ref_centre_alpha_dist_circ_hdratm',
+                                 smooth='spline', **kwargs):
         """Derive flux calibration transfer functions and save them."""
         inputs_list = []
         for fits in self.files(ndf_class='MFOBJECT', do_not_use=False,
@@ -1830,51 +1904,56 @@ class Manager:
                     continue
             fits_2 = self.other_arm(fits)
             path_pair = (fits.reduced_path, fits_2.reduced_path)
+            log.info(path_pair)
             if fits.epoch < 2013.0:
                 # SAMI v1 had awful throughput at blue end of blue, need to
                 # trim that data
                 n_trim = 3
             else:
                 n_trim = 0
-            inputs_list.append({'path_pair': path_pair, 'n_trim': n_trim, 
+            inputs_list.append({'path_pair': path_pair, 'n_trim': n_trim,
                                 'model_name': model_name, 'smooth': smooth})
-        with self.patch_if_demo(
-                'sami.dr.fluxcal2.derive_transfer_function',
-                fake_derive_transfer_function):
-            self.map(derive_transfer_function_pair, inputs_list)
+
+        self.map(derive_transfer_function_pair, inputs_list)
         self.next_step('derive_transfer_function', print_message=True)
         return
 
     def combine_transfer_function(self, overwrite=False, **kwargs):
         """Combine and save transfer functions from multiple files."""
-        # First sort the spectrophotometric files into date/field/CCD/name 
+
+        # First sort the spectrophotometric files into date/field/CCD/name
         # groups. Grouping by name is not strictly necessary and could be
         # removed, which would cause results from different stars to be
         # combined.
         groups = self.group_files_by(('date', 'field_id', 'ccd', 'name'),
-            ndf_class='MFOBJECT', do_not_use=False,
-            spectrophotometric=True, **kwargs)
+                                     ndf_class='MFOBJECT', do_not_use=False,
+                                     spectrophotometric=True, **kwargs)
+
         # Now combine the files within each group
         for fits_list in groups.values():
             path_list = [fits.reduced_path for fits in fits_list]
             path_out = os.path.join(os.path.dirname(path_list[0]),
                                     'TRANSFERcombined.fits')
             if overwrite or not os.path.exists(path_out):
-                print 'Combining files to create', path_out
+                print('Combining files to create', path_out)
                 fluxcal2.combine_transfer_functions(path_list, path_out)
                 # Run the QC throughput measurement
                 self.qc_throughput_spectrum(path_out)
+
+                # Since we've now changed the transfer functions, mark these as needing checks.
+                update_checks('FLX', fits_list, False)
+
             # Copy the file into all required directories
-            done = [os.path.dirname(path_list[0])]
+            paths_with_copies = [os.path.dirname(path_list[0])]
             for path in path_list:
-                if os.path.dirname(path) not in done:
+                if os.path.dirname(path) not in paths_with_copies:
                     path_copy = os.path.join(os.path.dirname(path),
                                              'TRANSFERcombined.fits')
-                    done.append(os.path.dirname(path_copy))
                     if overwrite or not os.path.exists(path_copy):
-                        print 'Copying combined file to', path_copy
+                        print('Copying combined file to', path_copy)
                         shutil.copy2(path_out, path_copy)
-            update_checks('FLX', fits_list, False)
+
+                    paths_with_copies.append(os.path.dirname(path_copy))
         self.next_step('combine_transfer_function', print_message=True)
         return
 
@@ -1890,7 +1969,7 @@ class Manager:
                     raise MatchException('No matching flux calibrator found ' +
                                          'for ' + fits.filename)
             if overwrite or not os.path.exists(fits.fluxcal_path):
-                print 'Flux calibrating file:', fits.reduced_path
+                print('Flux calibrating file:', fits.reduced_path)
                 if os.path.exists(fits.fluxcal_path):
                     os.remove(fits.fluxcal_path)
                 path_transfer_fn = os.path.join(
@@ -1909,7 +1988,7 @@ class Manager:
         # First make the list of file pairs to correct
         inputs_list = []
         for fits_2 in self.files(ndf_class='MFOBJECT', do_not_use=False,
-                                 spectrophotometric=False, ccd='ccd_2', 
+                                 spectrophotometric=False, ccd='ccd_2',
                                  name=name, **kwargs):
             if os.path.exists(fits_2.telluric_path) and not overwrite:
                 # Already been done; skip to the next file
@@ -1927,7 +2006,7 @@ class Manager:
                     fits_spectrophotometric = self.matchmaker(
                         fits_2, 'fcal_loose')
                     if fits_spectrophotometric is None:
-                        raise MatchException('No matching flux calibrator ' + 
+                        raise MatchException('No matching flux calibrator ' +
                                              'found for ' + fits_2.filename)
                 PS_spec_file = os.path.join(
                     fits_spectrophotometric.reduced_dir,
@@ -1966,10 +2045,13 @@ class Manager:
         old_n_cpu = self.n_cpu
         if old_n_cpu > 10:
             self.n_cpu = 10
-        with self.patch_if_demo(
-                'sami.dr.telluric.derive_transfer_function',
-                fake_derive_transfer_function):
-            done_list = self.map(telluric_correct_pair, inputs_list)
+
+        done_list = self.map(telluric_correct_pair, inputs_list)
+
+        # Mark files as needing visual checks:
+        for item in inputs_list:
+            update_checks('TEL', [item["fits_2"]], False)
+
         self.n_cpu = old_n_cpu
         for inputs in [inputs for inputs, done in
                        zip(inputs_list, done_list) if done]:
@@ -1979,13 +2061,36 @@ class Manager:
         self.next_step('telluric_correct', print_message=True)
         return
 
+    def _get_missing_stars(self, catalogue=None):
+        """Return lists of observed stars missing from the catalogue."""
+        name_list = []
+        coords_list = []
+        for fits_list in self.group_files_by(
+                'field_id', ndf_class='MFOBJECT', reduced=True).values():
+            fits = fits_list[0]
+            path = fits.reduced_path
+            try:
+                star = identify_secondary_standard(path)
+            except ValueError:
+                # A frame didn't have a recognised star. Just skip it.
+                continue
+            if catalogue and star['name'] in catalogue:
+                continue
+            fibres = pf.getdata(path, 'FIBRES_IFU')
+            fibre = fibres[fibres['NAME'] == star['name']][0]
+            name_list.append(star['name'])
+            coords_list.append((fibre['GRP_MRA'], fibre['GRP_MDEC']))
+        return name_list, coords_list
+
     def get_stellar_photometry(self, refresh=False, automatic=True):
         """Get photometry of stars, with help from the user."""
         if refresh:
             catalogue = None
         else:
             catalogue = read_stellar_mags()
-        new = get_sdss_stellar_mags(self, catalogue=catalogue, automatic=automatic)
+
+        name_list, coords_list = self._get_missing_stars(catalogue=catalogue)
+        new = get_sdss_stellar_mags(name_list, coords_list, catalogue=catalogue, automatic=automatic)
         # Note: with automatic=True, get_sdss_stellar_mags will try to download
         # the data and return it as a string
         if isinstance(new, bool) and not new:
@@ -1999,7 +2104,7 @@ class Manager:
                 'standards/secondary/sdss_stellar_mags_{}.csv'.format(idx))
         if isinstance(new, bool) and new:
             # get_sdss_stellar_mags could not do an automatic retrieval.
-            path_in = raw_input('Enter the path to the downloaded file:\n')
+            path_in = input('Enter the path to the downloaded file:\n')
             shutil.move(path_in, path_out)
         else:
             with open(path_out, 'w') as f:
@@ -2011,10 +2116,10 @@ class Manager:
         # First make the list of file pairs to scale
         inputs_list = []
         for fits_2 in self.files(ndf_class='MFOBJECT', do_not_use=False,
-                                 spectrophotometric=False, ccd='ccd_2', 
+                                 spectrophotometric=False, ccd='ccd_2',
                                  telluric_corrected=True, name='main',
                                  **kwargs):
-            if (not overwrite and 'RESCALE' in 
+            if (not overwrite and 'RESCALE' in
                     pf.getheader(fits_2.telluric_path, 'FLUX_CALIBRATION')):
                 # Already been done; skip to the next file
                 continue
@@ -2057,15 +2162,19 @@ class Manager:
                 except KeyError:
                     # No previous measurement, so we need to do this group
                     complete_groups.append(
-                        (key, fits_list, copy_to_other_arm, 
+                        (key, fits_list, copy_to_other_arm,
                          fits_list_other_arm))
+
+                    # Also mark this group as requiring visual checks:
+                    update_checks('ALI', fits_list, False)
                     break
-        with self.patch_if_demo('sami.manager.find_dither', fake_find_dither):
-            self.map(measure_offsets_group, complete_groups)
+
+        self.map(measure_offsets_group, complete_groups)
+
         self.next_step('measure_offsets', print_message=True)
         return
 
-    def cube(self, overwrite=False, min_exposure=599.0, name='main', 
+    def cube(self, overwrite=False, min_exposure=599.0, name='main',
              star_only=False, drop_factor=None, tag='', update_tol=0.02,
              size_of_grid=25, output_pix_size_arcsec=1.0,
              min_transmission=0.333, max_seeing=4.0, min_frames=6, **kwargs):
@@ -2078,10 +2187,10 @@ class Manager:
         cubed_root = os.path.join(self.root, 'cubed')
         inputs_list = []
 
-        failed_qc_file = os.path.join(self.root,'failed_qc_fields.txt')
-        with open(failed_qc_file,"w+") as infile:
+        failed_qc_file = os.path.join(self.root, 'failed_qc_fields.txt')
+        with open(failed_qc_file, "w+") as infile:
             failed_fields = [line.rstrip() for line in infile]
-            
+
             for (field_id, ccd), fits_list in groups.items():
                 good_fits_list = self.qc_for_cubing(
                     fits_list, min_transmission=min_transmission,
@@ -2104,26 +2213,26 @@ class Manager:
                         drop_factor = 0.75
                     else:
                         drop_factor = 0.5
-                        
+
                 for name in objects:
                     inputs_list.append(
                         (field_id, ccd, path_list, name, cubed_root, drop_factor,
-                        tag, update_tol, size_of_grid, output_pix_size_arcsec,
-                        overwrite))       
- 
-        with open(failed_qc_file,"w") as outfile:
-	    failed_fields = [field+'\n' for field in failed_fields]
+                         tag, update_tol, size_of_grid, output_pix_size_arcsec,
+                         overwrite))
+
+        with open(failed_qc_file, "w") as outfile:
+            failed_fields = [field + '\n' for field in failed_fields]
             outfile.writelines(failed_fields)
-        
-	# Send the cubing tasks off to multiple CPUs
-        with self.patch_if_demo('sami.manager.dithered_cubes_from_rss_wrapper',
-                                fake_dithered_cube_from_rss_wrapper):
-            cubed_list = self.map(cube_object, inputs_list)
+
+        # Send the cubing tasks off to multiple CPUs
+        cubed_list = self.map(cube_object, inputs_list)
+
         # Mark cubes as not checked. Only mark the first file in each input set
         for inputs, cubed in zip(inputs_list, cubed_list):
             if cubed:
                 # Select the first fits file from this run (not linked runs)
-                for path in inputs[2]:
+                path_list = inputs[2]  # From inputs_list above.
+                for path in path_list:
                     fits = self.fits_file(os.path.basename(path)[:10])
                     if fits:
                         break
@@ -2158,12 +2267,12 @@ class Manager:
                 except KeyError:
                     # Either QC HDU doesn't exist or FWHM isn't there
                     pass
-            if (transmission >= min_transmission 
+            if (transmission >= min_transmission
                     and seeing <= max_seeing
                     and fits.exposure >= min_exposure):
                 good_fits_list.append(fits)
         return good_fits_list
-        
+
     def scale_cubes(self, overwrite=False, min_exposure=599.0, name='main',
                     min_transmission=0.333, max_seeing=4.0, tag=None,
                     **kwargs):
@@ -2172,16 +2281,16 @@ class Manager:
             'field_id', ccd='ccd_1', ndf_class='MFOBJECT', do_not_use=False,
             reduced=True, name=name, include_linked_managers=True, **kwargs)
         input_list = []
-        for (field_id, ), fits_list in groups.items():
+        for (field_id,), fits_list in groups.items():
             table = pf.getdata(fits_list[0].reduced_path, 'FIBRES_IFU')
             objects = table['NAME'][table['TYPE'] == 'P']
             objects = np.unique(objects).tolist()
-	    objects = [obj.strip() for obj in objects] #Stripping whitespace from object names
+            objects = [obj.strip() for obj in objects]  # Stripping whitespace from object names
             for name in objects:
                 if telluric.is_star(name):
                     break
             else:
-                print 'No star found in field, skipping: ' + field_id
+                print('No star found in field, skipping: ' + field_id)
                 continue
             star = name
             objects.remove(star)
@@ -2211,9 +2320,7 @@ class Manager:
             object_path_pair_list = [
                 pair for pair in object_path_pair_list if None not in pair]
             input_list.append((star_path_pair, object_path_pair_list, star))
-        with self.patch_if_demo('sami.manager.stellar_mags_cube_pair',
-                                fake_stellar_mags_cube_pair):
-            self.map(scale_cubes_field, input_list)
+        self.map(scale_cubes_field, input_list)
         self.next_step('scale_cubes', print_message=True)
         return
 
@@ -2224,14 +2331,14 @@ class Manager:
         groups = self.group_files_by(
             'field_id', ccd='ccd_1', ndf_class='MFOBJECT', do_not_use=False,
             reduced=True, name=name, include_linked_managers=True, **kwargs)
-        for (field_id, ), fits_list in groups.items():
+        for (field_id,), fits_list in groups.items():
             table = pf.getdata(fits_list[0].reduced_path, 'FIBRES_IFU')
             objects = table['NAME'][table['TYPE'] == 'P']
             objects = np.unique(objects).tolist()
-	    objects = [obj.strip() for obj in objects] #Strip whitespace from object names
+            objects = [obj.strip() for obj in objects]  # Strip whitespace from object names
             for name in objects:
                 path_pair = [
-                    self.cubed_path(name, arm, fits_list, field_id, 
+                    self.cubed_path(name, arm, fits_list, field_id,
                                     exists=True, min_exposure=min_exposure,
                                     min_transmission=min_transmission,
                                     max_seeing=max_seeing, tag=tag)
@@ -2250,13 +2357,42 @@ class Manager:
         self.next_step('bin_cubes', print_message=True)
         return
 
+    def bin_aperture_spectra(self, overwrite=False, min_exposure=599.0, name='main',
+                             min_transmission=0.333, max_seeing=4.0, tag=None, **kwargs):
+        """Create aperture spectra."""
+        print('Producing aperture spectra')
+        path_pair_list = []
+        groups = self.group_files_by(
+            'field_id', ccd='ccd_1', ndf_class='MFOBJECT', do_not_use=False,
+            reduced=True, name=name, include_linked_managers=True, **kwargs)
+        for (field_id,), fits_list in groups.items():
+            table = pf.getdata(fits_list[0].reduced_path, 'FIBRES_IFU')
+            objects = table['NAME'][table['TYPE'] == 'P']
+            objects = np.unique(objects)
+            for name in objects:
+                path_pair = [
+                    self.cubed_path(name.strip(), arm, fits_list, field_id,
+                                    exists=True, min_exposure=min_exposure,
+                                    min_transmission=min_transmission,
+                                    max_seeing=max_seeing, tag=tag)
+                    for arm in ('blue', 'red')]
+                if path_pair[0] and path_pair[1]:
+                    path_pair_list.append(path_pair)
+
+        inputs_list = []
+        for path_pair in path_pair_list:
+            inputs_list.append(overwrite)
+        self.map(aperture_spectra_pair, path_pair_list)
+
+        return
+
     def record_dust(self, overwrite=False, min_exposure=599.0, name='main',
                     min_transmission=0.333, max_seeing=4.0, tag=None, **kwargs):
         """Record information about dust in the output datacubes."""
         groups = self.group_files_by(
             'field_id', ccd='ccd_1', ndf_class='MFOBJECT', do_not_use=False,
             reduced=True, name=name, **kwargs)
-        for (field_id, ), fits_list in groups.items():
+        for (field_id,), fits_list in groups.items():
             table = pf.getdata(fits_list[0].reduced_path, 'FIBRES_IFU')
             objects = table['NAME'][table['TYPE'] == 'P']
             objects = np.unique(objects).tolist()
@@ -2271,7 +2407,7 @@ class Manager:
                     if path:
                         dust.dustCorrectSAMICube(path, overwrite=overwrite)
         return
-            
+
     def gzip_cubes(self, overwrite=False, min_exposure=599.0, name='main',
                    star_only=False, min_transmission=0.333, max_seeing=4.0,
                    tag=None, **kwargs):
@@ -2286,7 +2422,7 @@ class Manager:
             else:
                 arm = 'red'
             if star_only:
-                objects = [pf.getval(fits_list[0].fcal_path, 'STDNAME', 
+                objects = [pf.getval(fits_list[0].fcal_path, 'STDNAME',
                                      'FLUX_CALIBRATION')]
             else:
                 table = pf.getdata(fits_list[0].reduced_path, 'FIBRES_IFU')
@@ -2308,8 +2444,7 @@ class Manager:
                         os.remove(output_path)
                     if not os.path.exists(output_path):
                         input_list.append(input_path)
-        with self.patch_if_demo('sami.manager.gzip', fake_gzip):
-            self.map(gzip_wrapper, input_list)
+        self.map(gzip_wrapper, input_list)
         return
 
     def reduce_all(self, start=None, finish=None, overwrite=False, **kwargs):
@@ -2322,8 +2457,8 @@ class Manager:
             start = task_list[0][0]
         if finish is None:
             finish = task_list[-1][0]
-        
-        task_name_list = map(lambda x:x[0], task_list)
+
+        task_name_list = list(map(lambda x: x[0], task_list))
         if start not in task_name_list:
             raise ValueError("Invalid start step! Must be one of: {}".format(", ".join(task_name_list)))
         if finish not in task_name_list:
@@ -2336,7 +2471,7 @@ class Manager:
                 continue
             started = True
             method = getattr(self, task)
-            print "Starting reduction step '{}'".format(task)
+            print("Starting reduction step '{}'".format(task))
             if include_kwargs:
                 method(overwrite, **kwargs)
             else:
@@ -2437,16 +2572,16 @@ class Manager:
         epoch = pf.getval(path_input, 'EPOCH')
         # Load mean throughput function for that CCD
         path_list = (glob('standards/throughput/mean_throughput_' +
-                          detector + '.fits') + 
-                     glob('standards/throughput/mean_throughput_' + 
+                          detector + '.fits') +
+                     glob('standards/throughput/mean_throughput_' +
                           detector + '_*.fits'))
         for path_mean in path_list:
             hdulist_mean = pf.open(path_mean)
             header = hdulist_mean[0].header
             if (('DATESTRT' not in header or
                  epoch >= header['DATESTRT']) and
-                ('DATEFNSH' not in header or
-                 epoch <= header['DATEFNSH'])):
+                    ('DATEFNSH' not in header or
+                     epoch <= header['DATEFNSH'])):
                 # This file is suitable for use
                 found_mean = True
                 mean_throughput = hdulist_mean[0].data
@@ -2454,7 +2589,7 @@ class Manager:
                 break
             hdulist_mean.close()
         else:
-            print 'Warning: No mean throughput file found for QC checks.'
+            print('Warning: No mean throughput file found for QC checks.')
             found_mean = False
         if found_mean:
             relative_throughput = absolute_throughput / mean_throughput
@@ -2483,14 +2618,14 @@ class Manager:
                           'MEDRELTH', 'THROUGHPUT'))
         except KeyError:
             # Not all the data is available
-            print "Warning: 'combine_transfer_function' required to calculate transmission."
+            print("Warning: 'combine_transfer_function' required to calculate transmission.")
             return
         try:
             median_relative_throughput /= (
                 pf.getval(path, 'RESCALE', 'FLUX_CALIBRATION'))
         except KeyError:
             # Not all the data is available
-            print 'Warning: Flux calibration required to calculate transmission.'
+            print('Warning: Flux calibration required to calculate transmission.')
             return
 
         if not np.isfinite(median_relative_throughput):
@@ -2507,19 +2642,65 @@ class Manager:
     def qc_summary(self, min_exposure=599.0, ccd='ccd_1', **kwargs):
         """Print a summary of the QC information available."""
         text = 'QC summary table\n'
-        text += '='*75+'\n'
+        text += '=' * 75 + '\n'
         text += 'Use space bar and cursor keys to move up and down; q to quit.\n'
         text += 'If one file in a pair is disabled it is marked with a +\n'
         text += 'If both are disabled it is marked with a *\n'
         text += '\n'
+
+        #
+        #  Summarize shared calibrations
+        #
+        text += "Summary of shared calibrations\n"
+        text += "-" * 75 + "\n"
+
+        # Get grouped lists and restructure to be a dict of dicts.
+        by_ndf_class = defaultdict(dict)
+        for k, v in self.group_files_by(["ndf_class", "date", "ccd"]).items():
+            if k[2] == ccd:
+                by_ndf_class[k[0]].update({k[1]: v})
+
+        # Print info about basic cals
+        for cal_type in ("BIAS", "DARK", "LFLAT"):
+            if cal_type in by_ndf_class:
+                text += "{} Frames:\n".format(cal_type)
+                total_cals = 0
+                for date in sorted(by_ndf_class[cal_type].keys()):
+                    n_cals = len(by_ndf_class[cal_type][date])
+                    text += "  {}: {} frames\n".format(date, n_cals)
+                    total_cals += n_cals
+                text += "  TOTAL {}s: {} frames\n".format(cal_type, total_cals)
+
+        # Gather info about flux standards
+        text += "Flux standards\n"
+        flux_standards = defaultdict(dict)
+        for k, v in self.group_files_by(["date", "name", "spectrophotometric", "ccd"]).items():
+            if k[3] == ccd and k[2]:
+                flux_standards[k[0]].update({k[1]: v})
+
+        # Print info about flux standards
+        total_all_stds = 0
+        for date in flux_standards:
+            text += "  {}:\n".format(date)
+            total_cals = 0
+            for std_name in sorted(flux_standards[date].keys()):
+                n_cals = len(flux_standards[date][std_name])
+                text += "    {}: {} frames\n".format(std_name, n_cals)
+                total_cals += n_cals
+            text += "    Total: {} frames\n".format(total_cals)
+            total_all_stds += total_cals
+        text += "  TOTAL Flux Standards: {} frames\n".format(total_all_stds)
+        text += "\n"
+
+        # Summarize field observations
         for (field_id,), fits_list in self.group_files_by(
                 'field_id', ndf_class='MFOBJECT', min_exposure=min_exposure,
                 ccd=ccd, **kwargs).items():
-            text += '+'*75+'\n'
-            text += field_id+'\n'
-            text += '-'*75+'\n'
+            text += '+' * 75 + '\n'
+            text += field_id + '\n'
+            text += '-' * 75 + '\n'
             text += 'File        Exposure  FWHM (")  Transmission  Sky residual\n'
-            for fits in fits_list:
+            for fits in sorted(fits_list, key=lambda f: f.filename):
                 fwhm = '       -'
                 transmission = '           -'
                 sky_residual = '           -'
@@ -2544,47 +2725,24 @@ class Manager:
                 text += '{} {}{} {:8d}  {}  {}  {}\n'.format(
                     fits.filename[:5], fits.filename[6:10], disabled_flag,
                     int(fits.exposure), fwhm, transmission, sky_residual)
-            text += '+'*75+'\n'
+            text += '+' * 75 + '\n'
             text += '\n'
         pager(text)
         return
-
-    def reduce_file(self, fits, overwrite=False, tlm=False,
-                    leave_reduced=False):
-        """Select appropriate options and reduce the given file.
-
-        For MFFFF files, if tlm is True then a tramline map is produced; if it
-        is false then a full reduction is done. If tlm is True and leave_reduced
-        is false, then any reduced MFFFF produced as a side-effect will be
-        removed.
-
-        Returns True if the file was reduced; False otherwise."""
-        target = self.target_path(fits, tlm=tlm)
-        if os.path.exists(target) and not overwrite:
-            # File to be created already exists, abandon this.
-            return False
-        options = self.tdfdr_options(fits, tlm=tlm)
-        # All options have been set, so run 2dfdr
-        tdfdr.run_2dfdr_single(fits, self.idx_files[fits.grating], 
-                               options=options, cwd=self.cwd, debug=self.debug)
-        if (fits.ndf_class == 'MFFFF' and tlm and not leave_reduced and
-            os.path.exists(fits.reduced_path)):
-            os.remove(fits.reduced_path)
-        return True
 
     def tdfdr_options(self, fits, throughput_method='default', tlm=False):
         """Set the 2dfdr reduction options for this file."""
         options = []
 
         # Define what the best choice is for a TLM:
-        if (self.use_twilight_tlm_blue):
+        if (self.use_twilight_tlm_blue and (fits.ccd == 'ccd_1')):
             best_tlm = 'tlmap_mfsky'
         else:
             best_tlm = 'tlmap'
-            
+
         # Define what the best choice is for a FFLAT, in particular
         # if we are going to use a twilight flat:
-        if (self.use_twilight_flat_blue):
+        if (self.use_twilight_flat_blue  and (fits.ccd == 'ccd_1')):
             best_fflat = 'fflat_mfsky'
         else:
             best_fflat = 'fflat'
@@ -2603,7 +2761,7 @@ class Manager:
         # and E2V3 (red).
         if ((fits.detector == 'E2V2A') or (fits.detector == 'E2V3A')):
             options.extend(['-USEBIASIM', '0', '-USEDARKIM', '0'])
-            
+
         if fits.ndf_class == 'BIAS':
             files_to_match = []
         elif fits.ndf_class == 'DARK':
@@ -2619,6 +2777,15 @@ class Manager:
             # pixels
             options.extend(['-EXTR_OPERATION', 'GAUSS'])
         elif fits.ndf_class == 'MFFFF' and not tlm:
+            # new version of 2dfdr aaorun (2dfdr 7.0) also needs to pass the TLMAP_FILENAME argument
+            # when reducing flat fields.  As a result we need to add this to the arguments.
+            # We need to be careful (see discussion below) that it is the right filename,
+            # i.e. just the tlm for the frame being reduced (SMC 14/06/2018).
+            options.extend(['-TLMAP_FILENAME',fits.tlm_filename])
+            # if not reduced for a TLM, then assume it has already been done, and set
+            # flag to not repeat TLM.  The only reason to do this is save time in the
+            # reductions.  Otherwise the result should be the same:
+            options.extend(['-DO_TLMAP','0'])
             if fits.lamp == 'Flap':
                 # Flap flats should use their own tramline maps, not those
                 # generated by dome flats.  Do we want this to happen, even
@@ -2626,11 +2793,11 @@ class Manager:
                 # leave it as this, but it may be that the twilight tlm (if
                 # available) is better, at least in regard to the measurement
                 # of the fibre profile widths.
-                #files_to_match = ['bias', 'dark', 'lflat', 'tlmap_flap', 
+                # files_to_match = ['bias', 'dark', 'lflat', 'tlmap_flap',
                 #                  'wavel']
                 # 2dfdr always remakes a TLM for an MFFFF, so don't set the
                 # tlmap for these anyway:
-                files_to_match = ['bias', 'dark', 'lflat','wavel']
+                files_to_match = ['bias', 'dark', 'lflat', 'wavel']
             else:
                 # if this is an MFFFF then always assure that we are using the
                 # TLM that came from that file.  The main reason for this is that
@@ -2638,9 +2805,8 @@ class Manager:
                 # anyway, but overwritten into the filename that is passed (e.g.
                 # a twilight TLM could be overwritten by a dome flat TLM): 
                 #files_to_match = ['bias', 'dark', 'lflat', 'tlmap', 'wavel']
-                # 2dfdr always remakes a TLM for an MFFFF, so don't set the
-                # tlmap for these anyway:
                 files_to_match = ['bias', 'dark', 'lflat','wavel']
+
         elif fits.ndf_class == 'MFSKY':
             files_to_match = ['bias', 'dark', 'lflat', best_tlm, 'wavel',
                               best_fflat]
@@ -2651,12 +2817,12 @@ class Manager:
                 options.extend(['-TPMETH', 'OFFSKY'])
             elif throughput_method == 'external':
                 files_to_match = ['bias', 'dark', 'lflat', best_tlm, 'wavel',
-                                 best_fflat]
+                                  best_fflat]
                 options.extend(['-TPMETH', 'OFFSKY'])
                 options.extend(['-THPUT_FILENAME',
-                                'thput_'+fits.reduced_filename])
+                                'thput_' + fits.reduced_filename])
             elif throughput_method == 'skylines':
-                if (fits.exposure >= self.min_exposure_for_throughput and 
+                if (fits.exposure >= self.min_exposure_for_throughput and
                         fits.has_sky_lines()):
                     files_to_match = ['bias', 'dark', 'lflat', best_tlm, 'wavel',
                                       best_fflat]
@@ -2666,7 +2832,7 @@ class Manager:
                                       best_fflat, 'thput_object']
                     options.extend(['-TPMETH', 'OFFSKY'])
         else:
-            raise ValueError('Unrecognised NDF_CLASS: '+fits.ndf_class)
+            raise ValueError('Unrecognised NDF_CLASS: ' + fits.ndf_class)
         # Remove unnecessary files from files_to_match
         if 'bias' in files_to_match and '-USEBIASIM' in options:
             if options[options.index('-USEBIASIM') + 1] == '0':
@@ -2691,18 +2857,18 @@ class Manager:
             if filename_match is None:
                 # What to do if no match was found
                 if match_class == 'bias':
-                    print ('Warning: Bias frame not found. '
-                           'Turning off bias subtraction for '+fits.filename)
+                    print('Warning: Bias frame not found. '
+                          'Turning off bias subtraction for ' + fits.filename)
                     options.extend(['-USEBIASIM', '0'])
                     continue
                 elif match_class == 'dark':
-                    print ('Warning: Dark frame not found. '
-                           'Turning off dark subtraction for '+fits.filename)
+                    print('Warning: Dark frame not found. '
+                          'Turning off dark subtraction for ' + fits.filename)
                     options.extend(['-USEDARKIM', '0'])
                     continue
                 elif match_class == 'lflat':
-                    print ('Warning: LFlat frame not found. '
-                           'Turning off LFlat division for '+fits.filename)
+                    print('Warning: LFlat frame not found. '
+                          'Turning off LFlat division for ' + fits.filename)
                     options.extend(['-USEFLATIM', '0'])
                     continue
                 elif match_class == 'thput':
@@ -2717,9 +2883,9 @@ class Manager:
                             # Really run out of options here
                             if filename_match is None:
                                 # Still nothing
-                                print ('Warning: Offsky (or substitute) frame '
-                                       'not found. Turning off throughput '
-                                       'calibration for '+fits.filename)
+                                print('Warning: Offsky (or substitute) frame '
+                                      'not found. Turning off throughput '
+                                      'calibration for ' + fits.filename)
                                 options.extend(['-THRUPUT', '0'])
                                 continue
                         else:
@@ -2731,35 +2897,35 @@ class Manager:
                     # twilight options first.  If they are not found, then default
                     # back to the normal tlmap route.
                     found = 0
-                    if self.use_twilight_tlm_blue:
+                    if (self.use_twilight_tlm_blue and (fits.ccd == 'ccd_1')):
                         filename_match = self.match_link(fits, 'tlmap_mfsky')
                         if filename_match is None:
                             filename_match = self.match_link(fits, 'tlmap_mfsky_loose')
                             if filename_match is None:
                                 filename_match = self.match_link(fits, 'tlmap_mfsky_any')
                                 if filename_match is None:
-                                    print ('Warning: no matching twilight frames found for TLM.'
-                                       'Will default to using flat field frames instead'
-                                       'for '+fits.filename)
+                                    print('Warning: no matching twilight frames found for TLM.'
+                                          'Will default to using flat field frames instead'
+                                          'for ' + fits.filename)
                                 else:
-                                    print ('Warning: No matching twilight found for TLM.'
-                                        'Using a twilight frame from a different night'
-                                        'for '+fits.filename)
+                                    print('Warning: No matching twilight found for TLM.'
+                                          'Using a twilight frame from a different night'
+                                          'for ' + fits.filename)
                                     found = 1
                             else:
-                                print ('Warning: No matching twilight found for TLM.'
-                                    'Using a twilight frame from the same night'
-                                    'for '+fits.filename)
+                                print('Warning: No matching twilight found for TLM.'
+                                      'Using a twilight frame from the same night'
+                                      'for ' + fits.filename)
                                 found = 1
                         else:
-                            print ('Found matching twilight for TLM '
-                                    'for '+fits.filename)
+                            print('Found matching twilight for TLM '
+                                  'for ' + fits.filename)
                             found = 1
-                            
+
                     # if we haven't already found a matching TLM above (i.e. if found = 0), then
                     # go through the options with the flats:
                     if (found == 0):
-                    # Try with normal TLM from flat:
+                        # Try with normal TLM from flat:
                         filename_match = self.match_link(fits, 'tlmap')
                         if filename_match is None:
                             # Try with looser criteria
@@ -2774,59 +2940,59 @@ class Manager:
                                     if filename_match is None:
                                         # Still nothing. Raise an exception
                                         raise MatchException(
-                                            'No matching tlmap found for ' + 
+                                            'No matching tlmap found for ' +
                                             fits.filename)
                                     else:
-                                        print ('Warning: No good flat found for TLM. '
-                                            'Using flap flat from different field '
-                                            'for ' + fits.filename)
+                                        print('Warning: No good flat found for TLM. '
+                                              'Using flap flat from different field '
+                                              'for ' + fits.filename)
                                 else:
-                                    print ('Warning: No dome flat found for TLM. '
-                                        'Using flap flat instead for ' + fits.filename)
+                                    print('Warning: No dome flat found for TLM. '
+                                          'Using flap flat instead for ' + fits.filename)
                             else:
-                                print ('Warning: No matching flat found for TLM. '
-                                        'Using flat from different field for ' + 
-                                    fits.filename)
+                                print('Warning: No matching flat found for TLM. '
+                                      'Using flat from different field for ' +
+                                      fits.filename)
                         else:
-                            print ('Warning: No matching twilight found for TLM. '
-                                    'Using a dome flat instead ' + 
-                                    fits.filename)
-                            
+                            print('Warning: No matching twilight found for TLM. '
+                                  'Using a dome flat instead ' +
+                                  fits.filename)
+
                 elif match_class == best_fflat:
                     # If we are using twilights, then go through the 3 different
                     # twilight options first.  If they are not found, then default
                     # back to the normal fflat route (this is a copy of the version
                     # for the TLM above - with minor changes):
                     found = 0
-                    if self.use_twilight_flat_blue:
+                    if (self.use_twilight_flat_blue  and (fits.ccd == 'ccd_1')):
                         filename_match = self.match_link(fits, 'fflat_mfsky')
                         if filename_match is None:
                             filename_match = self.match_link(fits, 'fflat_mfsky_loose')
                             if filename_match is None:
                                 filename_match = self.match_link(fits, 'fflat_mfsky_any')
                                 if filename_match is None:
-                                    print ('Warning: no matching twilight frames found for FFLAT.'
-                                       'Will default to using flat field frames instead'
-                                       'for '+fits.filename)
+                                    print('Warning: no matching twilight frames found for FFLAT.'
+                                          'Will default to using flat field frames instead'
+                                          'for ' + fits.filename)
                                 else:
-                                    print ('Warning: No matching twilight found for FFLAT.'
-                                        'Using a twilight frame from a different night'
-                                        'for '+fits.filename)
+                                    print('Warning: No matching twilight found for FFLAT.'
+                                          'Using a twilight frame from a different night'
+                                          'for ' + fits.filename)
                                     found = 1
                             else:
-                                print ('Warning: No matching twilight found for FFLAT.'
-                                    'Using a twilight frame from the same night'
-                                    'for '+fits.filename)
+                                print('Warning: No matching twilight found for FFLAT.'
+                                      'Using a twilight frame from the same night'
+                                      'for ' + fits.filename)
                                 found = 1
                         else:
-                            print ('Found matching twilight for FFLAT '
-                                    'for '+fits.filename)
+                            print('Found matching twilight for FFLAT '
+                                  'for ' + fits.filename)
                             found = 1
-                            
+
                     # if we haven't already found a matching FFLAT above (i.e. if found = 0), then
                     # go through the options with the flats:
                     if (found == 0):
-                    # Try with normal FFLAT from flat:
+                        # Try with normal FFLAT from flat:
                         filename_match = self.match_link(fits, 'fflat')
                         if filename_match is None:
                             # Try with looser criteria
@@ -2841,24 +3007,24 @@ class Manager:
                                     if filename_match is None:
                                         # Still nothing. Raise an exception
                                         raise MatchException(
-                                            'No matching tlmap found for ' + 
+                                            'No matching tlmap found for ' +
                                             fits.filename)
                                     else:
-                                        print ('Warning: No good flat found for FFLAT. '
-                                            'Using flap flat from different field '
-                                            'for ' + fits.filename)
+                                        print('Warning: No good flat found for FFLAT. '
+                                              'Using flap flat from different field '
+                                              'for ' + fits.filename)
                                 else:
-                                    print ('Warning: No dome flat found for FFLAT. '
-                                        'Using flap flat instead for ' + fits.filename)
+                                    print('Warning: No dome flat found for FFLAT. '
+                                          'Using flap flat instead for ' + fits.filename)
                             else:
-                                print ('Warning: No matching flat found for FFLAT. '
-                                        'Using flat from different field for ' + 
-                                    fits.filename)
+                                print('Warning: No matching flat found for FFLAT. '
+                                      'Using flat from different field for ' +
+                                      fits.filename)
                         else:
-                            print ('Warning: No matching twilight found for FFLAT. '
-                                    'Using a dome flat instead ' + 
-                                    fits.filename)
-                            
+                            print('Warning: No matching twilight found for FFLAT. '
+                                  'Using a dome flat instead ' +
+                                  fits.filename)
+
                 ## elif match_class == 'fflat':
                 ##     # Try with looser criteria
                 ##     filename_match = self.match_link(fits, 'fflat_loose')
@@ -2896,9 +3062,9 @@ class Manager:
                         raise MatchException('No matching wavel found for ' +
                                              fits.filename)
                     else:
-                        print ('Warning: No good arc found for wavelength '
-                               'solution. Using arc from different field '
-                               'for ' + fits.filename)
+                        print('Warning: No good arc found for wavelength '
+                              'solution. Using arc from different field '
+                              'for ' + fits.filename)
                 else:
                     # Anything else missing is fatal
                     raise MatchException('No matching ' + match_class +
@@ -2929,23 +3095,22 @@ class Manager:
                 elif match_class == 'fflat_mfsky_any':
                     match_class = 'fflat'
 
-                options.extend(['-'+match_class.upper()+'_FILENAME',
+                options.extend(['-' + match_class.upper() + '_FILENAME',
                                 filename_match])
-        return options        
+        return options
 
     def run_2dfdr_combine(self, file_iterable, output_path):
         """Use 2dfdr to combine the specified FITS files."""
+        file_iterable, file_iterable_copy = itertools.tee(file_iterable)
         input_path_list = [fits.reduced_path for fits in file_iterable]
         if not input_path_list:
-            print 'No reduced files found to combine!'
+            print('No reduced files found to combine!')
             return
         # Following line uses the last FITS file, assuming all are the same CCD
-        idx_file = self.idx_files[fits.grating]
-        print 'Combining files to create', output_path
-        tdfdr.run_2dfdr_combine(
-            input_path_list, output_path, idx_file, unique_imp_scratch=True, 
-            return_to=self.cwd, restore_to=self.imp_scratch, 
-            scratch_dir=self.scratch_dir, debug=self.debug)
+        grating = next(file_iterable_copy).grating
+        idx_file = self.idx_files[grating]
+        print('Combining files to create', output_path)
+        tdfdr.run_2dfdr_combine(input_path_list, output_path, idx_file)
         return
 
     def files(self, ndf_class=None, date=None, plate_id=None,
@@ -2964,7 +3129,7 @@ class Manager:
                 self.file_list,
                 *[mngr.file_list for mngr in self.linked_managers])
         else:
-            file_list = self.file_list
+            file_list = self.file_list  # type: List[FITSFile]
         for fits in file_list:
             if fits.ndf_class is None:
                 continue
@@ -3014,17 +3179,17 @@ class Manager:
                     (spectrophotometric is None or
                      (hasattr(fits, 'spectrophotometric') and
                       (fits.spectrophotometric == spectrophotometric))) and
-                    (name is None or 
+                    (name is None or
                      (fits.name is not None and fits.name in name)) and
                     (lamp is None or fits.lamp == lamp) and
-                    (central_wavelength is None or 
+                    (central_wavelength is None or
                      fits.central_wavelength == central_wavelength)):
                 yield fits
         return
 
     def group_files_by(self, keys, require_this_manager=True, **kwargs):
         """Return a dictionary of FITSFile objects grouped by the keys."""
-        if isinstance(keys, str):
+        if isinstance(keys, six.string_types):
             keys = [keys]
         groups = defaultdict(list)
         for fits in self.files(**kwargs):
@@ -3077,8 +3242,8 @@ class Manager:
                 spectrophotometric = False
             else:
                 spectrophotometric = None
-        for fits in self.files(ndf_class=ndf_class, 
-                               spectrophotometric=spectrophotometric, 
+        for fits in self.files(ndf_class=ndf_class,
+                               spectrophotometric=spectrophotometric,
                                **kwargs):
             if fits.reduced_dir not in reduced_dir_list:
                 reduced_dir_list.append(fits.reduced_dir)
@@ -3130,14 +3295,14 @@ class Manager:
         other_fits = self.fits_file(
             other_filename, include_linked_managers=include_linked_managers)
         return other_fits
-        
+
     def cubed_path(self, name, arm, fits_list, field_id, gzipped=False,
                    exists=False, tag=None, **kwargs):
         """Return the path to the cubed file."""
         n_file = len(self.qc_for_cubing(fits_list, **kwargs))
         path = os.path.join(
             self.abs_root, 'cubed', name,
-            name+'_'+arm+'_'+str(n_file)+'_'+field_id)
+            name + '_' + arm + '_' + str(n_file) + '_' + field_id)
         if tag:
             path += '_' + tag
         path += '.fits'
@@ -3151,26 +3316,6 @@ class Manager:
                 if not os.path.exists(path):
                     return None
         return path
-
-    @contextmanager
-    def visit_dir(self, dir_path, cleanup_2dfdr=False):
-        """Context manager to temporarily visit a directory."""
-        if not os.path.exists(dir_path):
-            os.makedirs(dir_path)
-        os.chdir(dir_path)
-        try:
-            yield
-        finally:
-            os.chdir(self.cwd)
-            if cleanup_2dfdr:
-                self.cleanup()
-
-    def cleanup(self):
-        """Clean up 2dfdr rubbish."""
-        with open(os.devnull, 'w') as f:
-            subprocess.call(['cleanup'], stdout=f)
-        os.chdir(self.cwd)
-        return
 
     def matchmaker(self, fits, match_class):
         """Return the file that should be used to help reduce the FITS file.
@@ -3236,21 +3381,24 @@ class Manager:
         time_difference = lambda fits, fits_test: (
             abs(fits_test.epoch - fits.epoch))
         recent_reduction = lambda fits, fits_test: (
-            -1.0 * os.stat(fits_test.reduced_path).st_mtime)
+                -1.0 * os.stat(fits_test.reduced_path).st_mtime)
         copy_recent_reduction = lambda fits, fits_test: (
-            -1.0 * os.stat(self.copy_path(fits_test.reduced_path)).st_mtime)
+                -1.0 * os.stat(self.copy_path(fits_test.reduced_path)).st_mtime)
         # merit function that returns the best fluxlev value.  As the
         # general f-o-m selects objects if the f-o-m is LESS than other values
         # we should just multiple fluxlev by -1:
         flux_level = lambda fits, fits_test: (
-            -1.0 * fits_test.fluxlev)
+                -1.0 * fits_test.fluxlev)
+
         def time_difference_min_exposure(min_exposure):
             def retfunc(fits, fits_test):
                 if fits_test.exposure <= min_exposure:
                     return np.inf
                 else:
                     return time_difference(fits, fits_test)
+
             return retfunc
+
         # Determine what actually needs to be matched, depending on match_class
         #
         # this case is where we want to use a twilight sky frame to derive the
@@ -3371,7 +3519,7 @@ class Manager:
             max_fluxlev = 40000.0  # use a max_fluxlev to reduce the chance of saturated twilights
             ccd = fits.ccd
             copy_reduced = True
-            fom = flux_level            
+            fom = flux_level
         elif match_class.lower() == 'fflat':
             # Find a reduced fibre flat field from the dome lamp
             ndf_class = 'MFFFF'
@@ -3508,19 +3656,19 @@ class Manager:
                 min_fluxlev=min_fluxlev,
                 max_fluxlev=max_fluxlev,
                 do_not_use=False,
-                ):
+        ):
             test_fom = fom(fits, fits_test)
-# output match testing stuff:            
-#            print 'match test (fom):',fits,fits_test,test_fom
+            # output match testing stuff:
+            #            print 'match test (fom):',fits,fits_test,test_fom
             if test_fom < best_fom:
                 fits_match = fits_test
                 best_fom = test_fom
-#        exit()
+        #        exit()
         return fits_match
 
     def match_link(self, fits, match_class):
         """Match and make a link to a file, and return the filename."""
-#        print 'started match_link: ',match_class,fits.filename
+        #        print 'started match_link: ',match_class,fits.filename
         fits_match = self.matchmaker(fits, match_class)
 
         if fits_match is None:
@@ -3562,10 +3710,10 @@ class Manager:
         # These are the cases where we do want to make a link
         require_link = [
             'tlmap_mfsky', 'tlmap_mfsky_loose', 'tlmap_mfsky_any',
-            'tlmap', 'tlmap_loose', 'tlmap_flap', 'tlmap_flap_loose', 
+            'tlmap', 'tlmap_loose', 'tlmap_flap', 'tlmap_flap_loose',
             'fflat', 'fflat_loose', 'fflat_flap', 'fflat_flap_loose',
             'wavel', 'wavel_loose', 'thput', 'thput_fflat', 'thput_object',
-             'tlmap_mfsky', 'fflat_mfsky', 'fflat_mfsky_loose', 'fflat_mfsky_any']
+            'tlmap_mfsky', 'fflat_mfsky', 'fflat_mfsky_loose', 'fflat_mfsky_any']
         if match_class.lower() in require_link:
             link_path = os.path.join(fits.reduced_dir, filename)
             source_path = os.path.join(fits_match.reduced_dir, filename)
@@ -3585,14 +3733,14 @@ class Manager:
                 os.symlink(os.path.relpath(raw_source_path, fits.reduced_dir),
                            raw_link_path)
             # add links to im files if we are looking for a TLM:
-            if match_class.lower().startswith('tlmap'):       
+            if match_class.lower().startswith('tlmap'):
                 im_link_path = os.path.join(fits.reduced_dir, imfilename)
                 im_source_path = os.path.join(fits_match.reduced_dir, imfilename)
                 if os.path.islink(im_link_path):
                     os.remove(im_link_path)
                 if not os.path.exists(im_link_path):
                     os.symlink(os.path.relpath(im_source_path, fits.reduced_dir),
-                            im_link_path)
+                               im_link_path)
         return filename
 
     def change_speed(self, speed=None):
@@ -3608,30 +3756,14 @@ class Manager:
         self.idx_files = IDX_FILES[self.speed]
         return
 
-    def change_verbose(self, verbose=None):
-        """Switch between verbose and quiet reductions."""
-        # is no option give, just switch modes:
-        if (verbose is None):
-            if (self.verbose):
-                self.verbose = False
-                print 'verbose now set to False'
-            else:
-                self.verbose = True
-                print 'verbose now set to True'
-
-        if verbose not in (True, False):
-            raise ValueError("Verbose must be True or False.")
-        self.verbose = verbose
-        return
-
     @contextmanager
     def connection(self, server='aatlxa', username=None, password=None):
         """Make a secure connection to a remote server."""
         if not PYSFTP_AVAILABLE:
-            print "You must install the pysftp package to do that!"
+            print("You must install the pysftp package to do that!")
         if username is None:
             if self.aat_username is None:
-                username = raw_input('Enter AAT username: ')
+                username = input('Enter AAT username: ')
                 self.aat_username = username
             else:
                 username = self.aat_username
@@ -3644,7 +3776,7 @@ class Manager:
         try:
             srv = pysftp.Connection(server, username=username, password=password)
         except pysftp.paramiko.AuthenticationException:
-            print 'Authentication failed! Check username and password.'
+            print('Authentication failed! Check username and password.')
             self.aat_username = None
             self.aat_password = None
             yield None
@@ -3667,10 +3799,7 @@ class Manager:
             # TODO: Look in the directory for a suitable fits file to work out
             # the idx file
             idx_file = None
-        tdfdr.load_gui(dirname=dirname, idx_file=idx_file, 
-                       unique_imp_scratch=True, return_to=self.cwd, 
-                       restore_to=self.imp_scratch, 
-                       scratch_dir=self.scratch_dir, debug=self.debug)
+        tdfdr.load_gui(dirname, idx_file=idx_file)
         return
 
     def find_directory_locks(self, lock_name='2dfdrLockDir'):
@@ -3713,10 +3842,12 @@ class Manager:
             else:
                 raise KeyError(
                     'recent_ever must be "both", "ever" or "recent"')
+
+            # Iterate over checks which have been explicitly been marked as `False`
             for key in [key for key, value in items if value is False]:
                 check_dict_key = []
-                for group_by_key in CHECK_DATA[key]['group_by']:
-                    check_dict_key.append(getattr(fits, group_by_key))
+                for attribute_to_group_by in CHECK_DATA[key]['group_by']:
+                    check_dict_key.append(getattr(fits, attribute_to_group_by))
                 check_dict_key = (key, tuple(check_dict_key), recent_ever)
                 check_dict[check_dict_key].append(fits)
         # Now change the dictionary into a sorted list
@@ -3729,22 +3860,22 @@ class Manager:
         check_list = self.list_checks(*args, **kwargs)
         for index, (key, fits_list) in enumerate(check_list):
             check_data = CHECK_DATA[key[0]]
-            print '{}: {}'.format(index, check_data['name'])
+            print('{}: {}'.format(index, check_data['name']))
             if key[2] == 'ever':
-                print 'Never been checked'
+                print('Never been checked')
             else:
-                print 'Not checked since last re-reduction'
+                print('Not checked since last re-reduction')
             for group_by_key, group_by_value in zip(
-                check_data['group_by'], key[1]):
-                print '   {}: {}'.format(group_by_key, group_by_value)
+                    check_data['group_by'], key[1]):
+                print('   {}: {}'.format(group_by_key, group_by_value))
             for fits in fits_list:
-                print '      {}'.format(fits.filename)
+                print('      {}'.format(fits.filename))
         return
 
     def check_next_group(self, *args, **kwargs):
         """Perform required checks on the highest priority group."""
         if len(self.list_checks(*args, **kwargs)) == 0:
-            print "Yay! no more checks to do."
+            print("Yay! no more checks to do.")
             return
         self.check_group(0, *args, **kwargs)
 
@@ -3753,36 +3884,36 @@ class Manager:
         try:
             key, fits_list = self.list_checks(*args, **kwargs)[index]
         except IndexError:
-            print ("Check group '{}' does not exist.\n" 
-                   + "Try mngr.print_checks() for a list of "
-                   + "available checks.").format(index)
+            print("Check group '{}' does not exist.\n"
+                  + "Try mngr.print_checks() for a list of "
+                  + "available checks.").format(index)
             return
         check_method = getattr(self, 'check_' + key[0].lower())
         check_method(fits_list)
-        print 'Have you finished checking all the files? (y/n)'
-        print 'If yes, the check will be removed from the list.'
-        y_n = raw_input(' > ') + "n"
+        print('Have you finished checking all the files? (y/n)')
+        print('If yes, the check will be removed from the list.')
+        y_n = input(' > ') + "n"
         finished = (y_n.lower()[0] == 'y')
         if finished:
-            print 'Removing this test from the list.'
+            print('Removing this test from the list.')
             for fits in fits_list:
                 fits.update_checks(key[0], True)
         else:
-            print 'Leaving this test in the list.'
-        print '\nIf any files need to be disabled, use commands like:'
-        print ">>> mngr.disable_files(['" + fits_list[0].filename + "'])"
-        print 'To add comments to a specifc file, use commands like:'
-        print ">>> mngr.add_comment(['" + fits_list[0].filename + "'])"
+            print('Leaving this test in the list.')
+        print('\nIf any files need to be disabled, use commands like:')
+        print(">>> mngr.disable_files(['" + fits_list[0].filename + "'])")
+        print('To add comments to a specifc file, use commands like:')
+        print(">>> mngr.add_comment(['" + fits_list[0].filename + "'])")
         return
 
     def check_2dfdr(self, fits_list, message, filename_type='reduced_filename'):
         """Use 2dfdr to perform a check of some sort."""
-        print 'Use 2dfdr to plot the following files.'
-        print 'You may need to click on the triangles to see reduced files.'
-        print 'If the files are not listed, use the plot commands in the 2dfdr menu.'
+        print('Use 2dfdr to plot the following files.')
+        print('You may need to click on the triangles to see reduced files.')
+        print('If the files are not listed, use the plot commands in the 2dfdr menu.')
         for fits in fits_list:
-            print '   ' + getattr(fits, filename_type)
-        print message
+            print('   ' + getattr(fits, filename_type))
+        print(message)
         self.load_2dfdr_gui(fits_list[0])
         return
 
@@ -3801,7 +3932,7 @@ class Manager:
         # Check the individual dark frames, and then the combined file
         message = 'Check that the dark frames are free from any stray light.'
         self.check_2dfdr(fits_list, message)
-        combined_path = self.dark_combined_path(fits_list[0].ccd, 
+        combined_path = self.dark_combined_path(fits_list[0].ccd,
                                                 fits_list[0].exposure_str)
         if os.path.exists(combined_path):
             check_plots.check_drk(combined_path)
@@ -3881,8 +4012,6 @@ class Manager:
         except IOError:
             return
 
-
-
     def add_comment(self, fits_list):
         """Add a comment to the FITS header of the files in ``fits_list``."""
 
@@ -3890,12 +4019,12 @@ class Manager:
         # Run one thing on vanilla names
         # Run the other thing on file names.
 
-        user_comment = raw_input('Please enter a comment (type n to abort):\n')
+        user_comment = input('Please enter a comment (type n to abort):\n')
 
         # If ``user_comment`` is equal to ``'n'``, skip updating the FITS
         # headers and jump to the ``return`` statement.
-        if user_comment!='n':
-    
+        if user_comment != 'n':
+
             time_stamp = 'Comment added by SAMI Observer on '
             time_stamp += '{:%Y-%b-%d %H:%M:%S}'.format(datetime.datetime.now())
             user_comment += ' (' + time_stamp + ')'
@@ -3916,45 +4045,30 @@ class Manager:
                     raise ValueError(error_message)
 
             # Add the comments to each FITSFile instance.
-            map(FITSFile.add_header_item,
-                FITSFile_list,
-                ['COMMENT' for _ in FITSFile_list],
-                [user_comment for _ in FITSFile_list])
+            list(map(FITSFile.add_header_item,
+                     FITSFile_list,
+                     ['COMMENT' for _ in FITSFile_list],
+                     [user_comment for _ in FITSFile_list]))
 
             # Add the comments to each instance of pyfits.
-            map(Manager._add_comment_to_file,
-                [self for _ in fits_file_list],
-                fits_file_list,
-                [user_comment for _ in fits_file_list])
+            list(map(Manager._add_comment_to_file,
+                     [self for _ in fits_file_list],
+                     fits_file_list,
+                     [user_comment for _ in fits_file_list]))
 
             comments_file = os.path.join(self.root, 'observer_comments.txt')
             with open(comments_file, "a") as infile:
                 comments_list = [
                     '{}: '.format(fits_file) \
-                        + user_comment + '\n'
+                    + user_comment + '\n'
                     for fits_file in FITSFile_list]
                 comments_list += [
                     '{}: '.format(fits_file) \
-                        + user_comment + '\n'
+                    + user_comment + '\n'
                     for fits_file in fits_file_list]
                 infile.writelines(comments_list)
 
         return
-
-    @contextmanager
-    def patch_if_demo(self, target, new, requires_data=True):
-        """If in demo mode, patch the target, otherwise do nothing."""
-        if self.demo:
-            if requires_data:
-                func = new(self.demo_data_source)
-            else:
-                func = new
-            with patch(target, func):
-                yield
-        else:
-            yield
-
-
 
 
 class FITSFile:
@@ -4000,11 +4114,11 @@ class FITSFile:
         # twilight frames have sufficient flux:
         if self.ndf_class == 'MFSKY':
             flux = self.hdulist[0].data
-            p05 = np.nanpercentile(flux,5.0)
-            p95 = np.nanpercentile(flux,95.0)
-            self.fluxlev = p95-p05
-            print self.filename,': 5th,95th flux percentile:',p05,p95,', range:',self.fluxlev
-            
+            p05 = np.nanpercentile(flux, 5.0)
+            p95 = np.nanpercentile(flux, 95.0)
+            self.fluxlev = p95 - p05
+            log.debug('%s: 5th,95th flux percentile: %s, %s, range:%s', self.filename, p05, p95, self.fluxlev)
+
         self.set_lamp()
         self.set_central_wavelength()
         self.set_do_not_use()
@@ -4020,8 +4134,8 @@ class FITSFile:
         """Save the NDF_CLASS of an AAT fits file."""
         for hdu in self.hdulist:
             if ('EXTNAME' in hdu.header.keys() and
-                (hdu.header['EXTNAME'] == 'STRUCT.MORE.NDF_CLASS' or
-                 hdu.header['EXTNAME'] == 'NDF_CLASS')):
+                    (hdu.header['EXTNAME'] == 'STRUCT.MORE.NDF_CLASS' or
+                     hdu.header['EXTNAME'] == 'NDF_CLASS')):
                 # It has a class
                 self.ndf_class = hdu.data['NAME'][0]
                 # Change DFLAT to LFLAT
@@ -4029,10 +4143,10 @@ class FITSFile:
                     self.overwrite_ndf_class('LFLAT')
                 # Ask the user if SFLAT should be changed to MFSKY
                 if self.ndf_class == 'SFLAT':
-                    print ('NDF_CLASS of SFLAT (OFFSET FLAT) found for ' + 
-                           self.filename)
-                    print 'Change to MFSKY (OFFSET SKY)? (y/n)'
-                    y_n = raw_input(' > ')
+                    print('NDF_CLASS of SFLAT (OFFSET FLAT) found for ' +
+                          self.filename)
+                    print('Change to MFSKY (OFFSET SKY)? (y/n)')
+                    y_n = input(' > ')
                     if y_n.lower()[0] == 'y':
                         self.overwrite_ndf_class('MFSKY')
                 break
@@ -4053,26 +4167,26 @@ class FITSFile:
         # as a MFFFF:
         elif self.ndf_class == 'MFSKY':
             old_num = int(self.filename_root[6:10])
-            new_num = old_num + 1000 * (9 - (old_num / 1000))
-            new_filename_root = (self.filename_root[:6] + '{:04d}'.format(new_num) + self.filename_root[10:])
+            new_num = old_num + 1000 * (9 - (old_num // 1000))
+            new_filename_root = (self.filename_root[:6] + '{:04d}'.format(int(new_num)) + self.filename_root[10:])
             self.tlm_filename = new_filename_root + 'tlm.fits'
             # If the file is a copy, then we'll also need to set the copy name as
             # the im_filename, as this is the one that will be looked for when
             # doing the TLM offset measurements:
-            self.im_filename =  new_filename_root + 'im.fits'
-            
+            self.im_filename = new_filename_root + 'im.fits'
+
         elif self.ndf_class == 'MFOBJECT':
             self.fluxcal_filename = self.filename_root + 'fcal.fits'
             self.telluric_filename = self.filename_root + 'sci.fits'
         return
-    
+
     def set_copy_reduced_filename(self):
         """Set the filename for the reduced version of a copied file.
         This will be numbered 06mar19001red.fits rather than  06mar10001red.fits"""
         self.copy_reduced_filename = self.filename_root + 'red.fits'
         old_num = int(self.filename_root[6:10])
-        new_num = old_num + 1000 * (9 - (old_num / 1000))
-        new_filename_root = (self.filename_root[:6] + '{:04d}'.format(new_num) + self.filename_root[10:])
+        new_num = old_num + 1000 * (9 - (old_num // 1000))
+        new_filename_root = (self.filename_root[:6] + '{:04d}'.format(int(new_num)) + self.filename_root[10:])
         self.copy_reduced_filename = new_filename_root + 'red.fits'
 
         return
@@ -4082,7 +4196,7 @@ class FITSFile:
         try:
             file_orig = self.header['FILEORIG']
             finish = file_orig.rfind('/', 0, file_orig.rfind('/'))
-            self.date = file_orig[finish-6:finish]
+            self.date = file_orig[finish - 6:finish]
         except KeyError:
             self.date = None
         return
@@ -4090,7 +4204,7 @@ class FITSFile:
     def set_fibres_extno(self):
         """Save the extension number for the fibre table."""
         self.fibres_extno = find_fibre_table(self.hdulist)
-	
+
     def set_plate_id(self):
         """Save the plate ID."""
         try:
@@ -4121,7 +4235,7 @@ class FITSFile:
 
     def set_plate_id_short(self):
         """Save the shortened plate ID."""
-        finish = self.plate_id.find('_', self.plate_id.find('_')+1)
+        finish = self.plate_id.find('_', self.plate_id.find('_') + 1)
         first_sections = self.plate_id[:finish]
         if self.plate_id == 'none':
             self.plate_id_short = 'none'
@@ -4143,13 +4257,13 @@ class FITSFile:
                     dec=self.cfg_coords['dec'],
                     unit=self.cfg_coords['unit'])
                 if (cfg_coords.separation(
-                    ICRS(pilot_field['coords'])).arcsecs < 1.0
-                    and self.plate_id == pilot_field['plate_id']):
+                        ICRS(pilot_field['coords'])).arcsecs < 1.0
+                        and self.plate_id == pilot_field['plate_id']):
                     self.field_no = pilot_field['field_no']
                     break
             else:
                 raise RuntimeError('Field is from pilot data but cannot find'
-                                   ' it in list of known pilot fields: ' + 
+                                   ' it in list of known pilot fields: ' +
                                    self.filename)
         else:
             # SAMIv2. Should be in the fibre table header somewhere
@@ -4183,19 +4297,19 @@ class FITSFile:
             if match:
                 # It is, so just copy the field ID directly
                 self.field_id = match.group(1)
-            elif (self.plate_id.startswith('run_') or 
+            elif (self.plate_id.startswith('run_') or
                   re.match(r'[0-9]+S[0-9]+', self.plate_id)):
                 # Pilot and commissioning data. No field ID in the plate ID, so
                 # append one.
                 self.field_id = self.plate_id + '_F' + str(self.field_no)
-            elif (re.match(r'^Y[0-9]{2}S(A|B)R[0-9]+_P[0-9]+$', 
+            elif (re.match(r'^Y[0-9]{2}S(A|B)R[0-9]+_P[0-9]+$',
                            self.plate_id_short) or
-                  re.match(r'^A[0-9]+_P[0-9]+$', 
+                  re.match(r'^A[0-9]+_P[0-9]+$',
                            self.plate_id_short)):
                 # Main survey or early cluster data. Field ID is stored within the 
                 # plate ID.
                 start = len(self.plate_id_short)
-                for i in xrange(self.field_no):
+                for i in range(self.field_no):
                     start = self.plate_id.find('_', start) + 1
                 finish = self.plate_id.find('_', start)
                 if finish == -1:
@@ -4206,7 +4320,7 @@ class FITSFile:
             elif re.match(r'^A[0-9]+T[0-9]+_A[0-9]+T[0-9]+$', self.plate_id):
                 # Cluster data. Field ID is one segment of the plate ID.
                 start = 0
-                for i in xrange(self.field_no - 1):
+                for i in range(self.field_no - 1):
                     start = self.plate_id.find('_', start) + 1
                 finish = self.plate_id.find('_', start)
                 if finish == -1:
@@ -4218,7 +4332,7 @@ class FITSFile:
                 # Unrecognised form for the plate ID.
                 self.field_id = self.plate_id + '_F' + str(self.field_no)
         return
-        
+
     def set_coords(self):
         """Save the RA/Dec and config RA/Dec."""
         if self.ndf_class and self.ndf_class not in ['BIAS', 'DARK', 'LFLAT']:
@@ -4235,7 +4349,7 @@ class FITSFile:
         else:
             self.cfg_coords = None
         return
-    
+
     def set_detector(self):
         """Set the specific detector name, e.g. E2V2A etc.  This is different from
         the ccd name as ccd is just whether ccd_1 (blue) or ccd_2 (red).  We need
@@ -4247,7 +4361,7 @@ class FITSFile:
         else:
             self.detector = None
         return
-    
+
     def set_ccd(self):
         """Set the CCD name."""
         if self.ndf_class:
@@ -4302,9 +4416,9 @@ class FITSFile:
                 hdulist_write[0].header['OBJECT'] = 'ARC - ' + lamp
                 hdulist_write.flush()
                 hdulist_write.close()
-                print 'No arc lamp specified for ' + self.filename
-                print ('Updating LAMPNAME and OBJECT keywords assuming a ' +
-                       lamp + ' lamp')
+                print('No arc lamp specified for ' + self.filename)
+                print('Updating LAMPNAME and OBJECT keywords assuming a ' +
+                      lamp + ' lamp')
             self.lamp = lamp
         elif self.ndf_class == 'MFFFF':
             if self.exposure >= 17.5:
@@ -4355,7 +4469,7 @@ class FITSFile:
 
     def relevant_check(self, check):
         """Return True if a visual check is relevant for this file."""
-        return (self.ndf_class == check['ndf_class'] and 
+        return (self.ndf_class == check['ndf_class'] and
                 (check['spectrophotometric'] is None or
                  check['spectrophotometric'] == self.spectrophotometric))
 
@@ -4363,7 +4477,7 @@ class FITSFile:
         """Set whether the relevant checks have been done."""
         self.check_ever = {}
         self.check_recent = {}
-        for key in [key for key, check in CHECK_DATA.items() 
+        for key in [key for key, check in CHECK_DATA.items()
                     if self.relevant_check(check)]:
             try:
                 check_done_ever = self.header['MNCH' + key]
@@ -4445,7 +4559,7 @@ class FITSFile:
         if self.check_recent[key] != value:
             # Update the FITS header
             self.add_header_item('MNCH' + key + 'R', value,
-                                 CHECK_DATA[key]['name'] + 
+                                 CHECK_DATA[key]['name'] +
                                  ' checked since re-reduction')
             # Update the object
             self.check_recent[key] = value
@@ -4456,7 +4570,7 @@ class FITSFile:
         if self.check_ever[key] != value:
             # Update the FITS header
             self.add_header_item('MNCH' + key, value,
-                                 CHECK_DATA[key]['name'] + 
+                                 CHECK_DATA[key]['name'] +
                                  ' checked ever')
             # Update the object
             self.check_ever[key] = value
@@ -4472,16 +4586,16 @@ class FITSFile:
             path = self.source_path
         else:
             path = self.raw_path
-        old_header = pf.getheader(path)
+        # old_header = pf.getheader(path)
+        old_header = self.header
         # Only update if necessary
-        if (key not in old_header or
-            old_header[key] != value or
-            type(old_header[key]) != type(value) or
-            (comment is not None and old_header.comments[key] != comment)):
-            hdulist = pf.open(path, 'update',
-                              do_not_scale_image_data=True)
-            hdulist[0].header[key] = value_comment
-            hdulist.close()
+        if (key not in self.header or
+                self.header[key] != value or
+                type(self.header[key]) != type(value) or
+                (comment is not None and self.header.comments[key] != comment)):
+            with pf.open(path, 'update', do_not_scale_image_data=True) as hdulist:
+                hdulist[0].header[key] = value_comment
+                self.header = hdulist[0].header
         return
 
     def overwrite_ndf_class(self, new_ndf_class):
@@ -4512,13 +4626,13 @@ class FITSFile:
         }
         coverage = coverage_dict[self.grating]
         wavelength_range = (
-            self.header['LAMBDCR'] - 0.5*coverage,
-            self.header['LAMBDCR'] + 0.5*coverage
+            self.header['LAMBDCR'] - 0.5 * coverage,
+            self.header['LAMBDCR'] + 0.5 * coverage
         )
         # Highly incomplete list! May give incorrect results for high-res
         # red gratings
         useful_lines = (5577.338, 6300.309, 6553.626, 6949.066, 7401.862,
-            7889.680, 8382.402, 8867.605, 9337.874, 9799.827, 9972.357)
+                        7889.680, 8382.402, 8867.605, 9337.874, 9799.827, 9972.357)
         for line in useful_lines:
             if wavelength_range[0] < line < wavelength_range[1]:
                 # This sky line is within the observed wavelength range
@@ -4533,17 +4647,20 @@ def update_checks(key, file_iterable, value, force=False):
         fits.update_checks(key, value, force)
     return
 
+
 def safe_for_multiprocessing(function):
     @wraps(function)
     def safe_function(*args, **kwargs):
         try:
             result = function(*args, **kwargs)
         except KeyboardInterrupt:
-            print "Handling KeyboardInterrupt in worker process"
-            print "You many need to press Ctrl-C multiple times"
+            print("Handling KeyboardInterrupt in worker process")
+            print("You many need to press Ctrl-C multiple times")
             result = None
         return result
+
     return safe_function
+
 
 @safe_for_multiprocessing
 def derive_transfer_function_pair(inputs):
@@ -4552,22 +4669,23 @@ def derive_transfer_function_pair(inputs):
     n_trim = inputs['n_trim']
     model_name = inputs['model_name']
     smooth = inputs['smooth']
-    print ('Deriving transfer function for ' + 
-            os.path.basename(path_pair[0]) + ' and ' + 
-            os.path.basename(path_pair[1]))
+    print('Deriving transfer function for ' +
+          os.path.basename(path_pair[0]) + ' and ' +
+          os.path.basename(path_pair[1]))
     try:
         fluxcal2.derive_transfer_function(
             path_pair, n_trim=n_trim, model_name=model_name, smooth=smooth)
     except ValueError:
-        print ('Warning: No star found in dataframe, skipping ' + 
-               os.path.basename(path_pair[0]))
+        print('Warning: No star found in dataframe, skipping ' +
+              os.path.basename(path_pair[0]))
         return
     good_psf = pf.getval(path_pair[0], 'GOODPSF',
                          'FLUX_CALIBRATION')
     if not good_psf:
-        print ('Warning: Bad PSF fit in ' + os.path.basename(path_pair[0]) + 
-               '; will skip this one in combining.')
+        print('Warning: Bad PSF fit in ' + os.path.basename(path_pair[0]) +
+              '; will skip this one in combining.')
     return
+
 
 @safe_for_multiprocessing
 def telluric_correct_pair(inputs):
@@ -4580,50 +4698,49 @@ def telluric_correct_pair(inputs):
     PS_spec_file = inputs['PS_spec_file']
     model_name = inputs['model_name']
     if fits_1 is None or not os.path.exists(fits_1.fluxcal_path):
-        print ('Matching blue arm not found for ' + fits_2.filename +
-               '; skipping this file.')
+        print('Matching blue arm not found for ' + fits_2.filename +
+              '; skipping this file.')
         return
     path_pair = (fits_1.fluxcal_path, fits_2.fluxcal_path)
-    print ('Deriving telluric correction for ' + fits_1.filename +
-           ' and ' + fits_2.filename)
+    print('Deriving telluric correction for ' + fits_1.filename +
+          ' and ' + fits_2.filename)
     try:
         telluric.derive_transfer_function(
             path_pair, PS_spec_file=PS_spec_file, use_PS=use_PS, n_trim=n_trim,
             scale_PS_by_airmass=scale_PS_by_airmass, model_name=model_name)
     except ValueError as err:
-        if err.message.startswith('No star identified in file:'):
+        if err.args[0].startswith('No star identified in file:'):
             # No standard star found; probably a star field
-            print err.message
-            print 'Skipping telluric correction for file:', fits_2.filename
+            print(err.args[0])
+            print('Skipping telluric correction for file:', fits_2.filename)
             return False
         else:
             # Some other, unexpected error. Re-raise it.
             raise err
     for fits in (fits_1, fits_2):
-        print 'Telluric correcting file:', fits.filename
+        print('Telluric correcting file:', fits.filename)
         if os.path.exists(fits.telluric_path):
             os.remove(fits.telluric_path)
-        telluric.apply_correction(fits.fluxcal_path, 
+        telluric.apply_correction(fits.fluxcal_path,
                                   fits.telluric_path)
-    update_checks('TEL', [fits_2], False)
     return True
+
 
 @safe_for_multiprocessing
 def measure_offsets_group(group):
     """Measure offsets between a set of dithered observations."""
     field, fits_list, copy_to_other_arm, fits_list_other_arm = group
-    print 'Measuring offsets for field ID: {}'.format(field[0])
+    print('Measuring offsets for field ID: {}'.format(field[0]))
     path_list = [best_path(fits) for fits in fits_list]
-    print 'These are the files:'
+    print('These are the files:')
     for path in path_list:
-        print '  ', os.path.basename(path)
+        print('  ', os.path.basename(path))
     if len(path_list) < 2:
         # Can't measure offsets for a single file
-        print 'Only one file so no offsets to measure!'
+        print('Only one file so no offsets to measure!')
         return
     find_dither(path_list, path_list[0], centroid=True,
                 remove_files=True, do_dar_correct=True)
-    update_checks('ALI', fits_list, False)
     if copy_to_other_arm:
         for fits, fits_other_arm in zip(fits_list, fits_list_other_arm):
             hdulist_this_arm = pf.open(best_path(fits))
@@ -4639,15 +4756,16 @@ def measure_offsets_group(group):
             hdulist_this_arm.close()
     return
 
+
 @safe_for_multiprocessing
 def cube_group(group):
     """Cube a set of RSS files."""
     field, fits_list, root, overwrite, star_only = group
-    print 'Cubing field ID: {}, CCD: {}'.format(field[0], field[1])
+    print('Cubing field ID: {}, CCD: {}'.format(field[0], field[1]))
     path_list = [best_path(fits) for fits in fits_list]
-    print 'These are the files:'
+    print('These are the files:')
     for path in path_list:
-        print '  ', os.path.basename(path)
+        print('  ', os.path.basename(path))
     if star_only:
         objects = [pf.getval(path_list[0], 'STDNAME', 'FLUX_CALIBRATION')]
     else:
@@ -4658,27 +4776,29 @@ def cube_group(group):
     else:
         drop_factor = 0.5
     dithered_cubes_from_rss_list(
-        path_list, suffix='_'+field[0], size_of_grid=50, write=True,
+        path_list, suffix='_' + field[0], size_of_grid=50, write=True,
         nominal=True, root=root, overwrite=overwrite, do_dar_correct=True,
         objects=objects, clip=True, drop_factor=drop_factor)
     return
+
 
 @safe_for_multiprocessing
 def cube_object(inputs):
     """Cube a single object in a set of RSS files."""
     (field_id, ccd, path_list, name, cubed_root, drop_factor, tag,
      update_tol, size_of_grid, output_pix_size_arcsec, overwrite) = inputs
-    print 'Cubing {} in field ID: {}, CCD: {}'.format(name, field_id, ccd)
-    print '{} files available'.format(len(path_list))
-    suffix = '_'+field_id
+    print('Cubing {} in field ID: {}, CCD: {}'.format(name, field_id, ccd))
+    print('{} files available'.format(len(path_list)))
+    suffix = '_' + field_id
     if tag:
-        suffix += '_'+tag
+        suffix += '_' + tag
     return dithered_cube_from_rss_wrapper(
         path_list, name, suffix=suffix, write=True, nominal=True,
         root=cubed_root, overwrite=overwrite, do_dar_correct=True, clip=True,
         drop_factor=drop_factor, update_tol=update_tol,
         size_of_grid=size_of_grid,
         output_pix_size_arcsec=output_pix_size_arcsec)
+
 
 def best_path(fits):
     """Return the best (most calibrated) path for the given file."""
@@ -4688,32 +4808,29 @@ def best_path(fits):
         path = fits.fluxcal_path
     else:
         path = fits.reduced_path
-    return path    
+    return path
+
 
 @safe_for_multiprocessing
 def run_2dfdr_single_wrapper(group):
     """Run 2dfdr on a single file."""
-    fits, idx_file, options, cwd, imp_scratch, scratch_dir, check, debug = \
+    fits, idx_file, options = \
         group
     try:
-        tdfdr.run_2dfdr_single(
-            fits, idx_file, options=options, return_to=cwd, 
-            unique_imp_scratch=True, restore_to=imp_scratch, 
-            scratch_dir=scratch_dir, debug=debug)
+        tdfdr.run_2dfdr_single(fits, idx_file, options=options)
     except tdfdr.LockException:
-        message = ('Postponing ' + fits.filename + 
+        message = ('Postponing ' + fits.filename +
                    ' while other process has directory lock.')
-        print message
+        print(message)
         return False
-    if check:
-        update_checks(check, [fits], False)
     return True
+
 
 @safe_for_multiprocessing
 def scale_cubes_field(group):
     """Scale a field to the correct magnitude."""
     star_path_pair, object_path_pair_list, star = group
-    print 'Scaling field with star', star
+    print('Scaling field with star', star)
     stellar_mags_cube_pair(star_path_pair, save=True)
     # Copy the PSF data to the galaxy datacubes
     star_header = pf.getheader(star_path_pair[0])
@@ -4735,14 +4852,15 @@ def scale_cubes_field(group):
         for object_path_pair in object_path_pair_list:
             scale_cube_pair(object_path_pair, scale)
     else:
-        print 'No photometric data found for', star
+        print('No photometric data found for', star)
     return
+
 
 @safe_for_multiprocessing
 def scale_frame_pair(path_pair):
     """Scale a pair of RSS frames to the correct magnitude."""
-    print 'Scaling RSS files to give star correct magnitude:'
-    print os.path.basename(path_pair[0]), os.path.basename(path_pair[1])
+    print('Scaling RSS files to give star correct magnitude: %s' %
+          str((os.path.basename(path_pair[0]), os.path.basename(path_pair[1]))))
     stellar_mags_frame_pair(path_pair, save=True)
     star = pf.getval(path_pair[0], 'STDNAME', 'FLUX_CALIBRATION')
     # Previously tried reading the catalogue once and passing it, but for
@@ -4752,8 +4870,9 @@ def scale_frame_pair(path_pair):
     if found:
         scale_cube_pair_to_mag(path_pair, 1, hdu='FLUX_CALIBRATION')
     else:
-        print 'No photometric data found for', star
+        print('No photometric data found for', star)
     return
+
 
 @safe_for_multiprocessing
 def bin_cubes_pair(path_pair):
@@ -4761,8 +4880,8 @@ def bin_cubes_pair(path_pair):
     # TODO: Allow the user to specify name/kwargs pairs. Will require
     # coordination with Manager.bin_cubes() [JTA 23/9/2015]
     path_blue, path_red = path_pair
-    print 'Binning datacubes:'
-    print os.path.basename(path_blue), os.path.basename(path_red)
+    print('Binning datacubes:')
+    print(os.path.basename(path_blue), os.path.basename(path_red))
     binning_settings = (
         ('adaptive', {'mode': 'adaptive'}),
         ('annular', {'mode': 'prescriptive', 'sectors': 1}),
@@ -4771,48 +4890,71 @@ def bin_cubes_pair(path_pair):
         binning.bin_cube_pair(path_blue, path_red, name=name, **kwargs)
     return
 
+
+@safe_for_multiprocessing
+def aperture_spectra_pair(path_pair, overwrite=False):
+    """Create aperture spectra for a pair of data cubes using default apertures."""
+    path_blue, path_red = path_pair
+    global CATALOG_PATH
+    try:
+        print('Processing: ' + path_blue + ', ' + path_red)
+        binning.aperture_spectra_pair(path_blue, path_red, CATALOG_PATH, overwrite)
+    except Exception as e:
+        print("ERROR on pair %s, %s:\n %s" % (path_blue, path_red, e.message))
+        traceback.print_exc()
+    return
+
+
 @safe_for_multiprocessing
 def gzip_wrapper(path):
     """Gzip a single file."""
-    print 'Gzipping file: ' + path
+    print('Gzipping file: ' + path)
     gzip(path)
     return
+
 
 # @safe_for_multiprocessing
 # def test_function(variable):
 #     import time
-#     print "starting", variable
+#     print("starting", variable)
 #     start_time = time.time()
 #     current_time = time.time()
 #     while current_time < (start_time + 5):
-#         print "waiting..."
+#         print("waiting...")
 #         time.sleep(1); current_time = time.time()
-#     print "finishing", variable
+#     print("finishing", variable)
 
 def assign_true_mag(path_pair, name, catalogue=None, hdu=0):
     """Find the magnitudes in a catalogue and save them to the header."""
     if catalogue is None:
         catalogue = read_stellar_mags()
+        # in some cases the catalogue keys can end up at bytes, rather than as strings.
+        # this is due to a numpy bug that is fixed in later versions.  It is certainly
+        # fixed by numpy vesion 1.14.2.
+        # this bug can lead to a failure of matching in the lines below (matched against "name").
     if name not in catalogue:
         return False
     line = catalogue[name]
     for path in path_pair:
         hdulist = pf.open(path, 'update')
         for band in 'ugriz':
-            hdulist[hdu].header['CATMAG'+band.upper()] = (
-                line[band], band+' mag from catalogue')
+            hdulist[hdu].header['CATMAG' + band.upper()] = (
+                line[band], band + ' mag from catalogue')
         hdulist.flush()
         hdulist.close()
     return True
-    
+
 def read_stellar_mags():
-    """Read stellar magnitudes from the various catalogues available."""
+    """Read stellar magnitudes from the various catalogues available.  Note that
+    for python 3 some versions of numpy will have a problem with loadtxt() not
+    converting the strings from byte to str.  This is fixed in later versions of
+    numpy, so make sure to update your numpy."""
     data_dict = {}
     for (path, catalogue_type, extinction) in stellar_mags_files():
         if catalogue_type == 'ATLAS':
             names = ('PHOT_ID', 'ra', 'dec', 'u', 'g', 'r', 'i', 'z',
                      'sigma', 'radius')
-            formats = ('S20', 'f8', 'f8', 'f8', 'f8', 'f8', 'f8', 'f8',
+            formats = ('U20', 'f8', 'f8', 'f8', 'f8', 'f8', 'f8', 'f8',
                        'f8', 'f8')
             skiprows = 2
             delimiter = None
@@ -4820,14 +4962,14 @@ def read_stellar_mags():
         elif catalogue_type == 'SDSS_cluster':
             names = ('obj_id', 'ra', 'dec', 'u', 'g', 'r', 'i', 'z',
                      'priority')
-            formats = ('S30', 'f8', 'f8', 'f8', 'f8', 'f8', 'f8', 'f8', 'i')
+            formats = ('U30', 'f8', 'f8', 'f8', 'f8', 'f8', 'f8', 'f8', 'i')
             skiprows = 0
             delimiter = None
             name_func = lambda d: '888' + d['obj_id'][-9:]
         elif catalogue_type == 'SDSS_GAMA':
             names = ('name', 'obj_id', 'ra', 'dec', 'type', 'u', 'sig_u',
                      'g', 'sig_g', 'r', 'sig_r', 'i', 'sig_i', 'z', 'sig_z')
-            formats = ('S20', 'S30', 'f8', 'f8', 'S10', 'f8', 'f8',
+            formats = ('U20', 'U30', 'f8', 'f8', 'U10', 'f8', 'f8',
                        'f8', 'f8', 'f8', 'f8', 'f8', 'f8', 'f8', 'f8')
             skiprows = 1
             delimiter = ','
@@ -4852,142 +4994,6 @@ def read_stellar_mags():
         data_dict.update(new_data_dict)
     return data_dict
 
-def fake_run_2dfdr_single(demo_data_source):
-    """Return a function that pretends to reduce a data file."""
-    source = os.path.join(demo_data_source, 'tdfdr')
-    def inner(fits, *args, **kwargs):
-        """Pretend to reduce a data file."""
-        print 'Reducing file: ' + fits.filename
-        suffixes = ('im', 'tlm', 'ex', 'red')
-        filename_list = [
-            fits.filename.replace('.', suff+'.') for suff in suffixes]
-        for filename in filename_list:
-            copy_demo_data(filename, source, fits.reduced_dir)
-    return inner
-
-def fake_derive_transfer_function(demo_data_source):
-    """Return a function that pretends to derive a transfer function."""
-    source = os.path.join(demo_data_source, 'transfer_function')
-    def inner(path_pair, *args, **kwargs):
-        """Pretend to derive a transfer function."""
-        for path in path_pair:
-            filename = os.path.basename(path)
-            destination = os.path.dirname(path)
-            copy_demo_data(filename, source, destination)
-    return inner
-
-def fake_find_dither(demo_data_source):
-    """Return a function that pretends to find a dither pattern."""
-    source = os.path.join(demo_data_source, 'offset')
-    def inner(path_list, *args, **kwargs):
-        """Pretend to find a dither pattern."""
-        for path in path_list:
-            filename = os.path.basename(path)
-            destination = os.path.dirname(path)
-            copy_demo_data(filename, source, destination)
-    return inner
-
-def fake_dithered_cubes_from_rss_list(demo_data_source):
-    """Return a function that pretends to make datacubes."""
-    source = os.path.join(demo_data_source, 'cubes')
-    def inner(path_list, suffix='', root='', overwrite=True, *args, **kwargs):
-        """Pretend to make datacubes."""
-        object_names = get_object_names(path_list[0])
-        for name in object_names:
-            ifu_list = [IFU(path, name, flag_name=True) for path in path_list]
-            directory = os.path.join(root, name)
-            try:
-                os.makedirs(directory)
-            except OSError:
-                print "Directory Exists", directory
-                print "Writing files to the existing directory"
-            else:
-                print "Making directory", directory
-            # Filename to write to
-            arm = ifu_list[0].spectrograph_arm            
-            outfile_name = (
-                str(name)+'_'+str(arm)+'_'+str(len(path_list))+suffix+'.fits')
-            outfile_name_full = os.path.join(directory, outfile_name)
-            # Check if the filename already exists
-            if os.path.exists(outfile_name_full):
-                if overwrite:
-                    os.remove(outfile_name_full)
-                else:
-                    print 'Output file already exists:'
-                    print outfile_name_full
-                    print 'Skipping this object'
-                    continue
-            copy_demo_data(outfile_name, source, directory)
-    return inner
-
-def fake_dithered_cube_from_rss_wrapper(demo_data_source):
-    """Return a function that pretends to make cubes for 1 object."""
-    def inner(path_list, name, suffix='', root='', overwrite=True,
-              *args, **kwargs):
-        """Pretend to make datacubes."""
-        ifu_list = [IFU(path, name, flag_name=True) for path in path_list]
-        directory = os.path.join(root, name)
-        try:
-            os.makedirs(directory)
-        except OSError:
-            print "Directory Exists", directory
-            print "Writing files to the existing directory"
-        else:
-            print "Making directory", directory
-        # Filename to write to
-        arm = ifu_list[0].spectrograph_arm            
-        outfile_name = (
-            str(name)+'_'+str(arm)+'_'+str(len(path_list))+suffix+'.fits')
-        outfile_name_full = os.path.join(directory, outfile_name)
-        # Check if the filename already exists
-        if os.path.exists(outfile_name_full):
-            if overwrite:
-                os.remove(outfile_name_full)
-            else:
-                print 'Output file already exists:'
-                print outfile_name_full
-                print 'Skipping this object'
-                return False
-        copy_demo_data(outfile_name, source, directory)
-        return True
-    return inner    
-
-def fake_stellar_mags_cube_pair(demo_data_source):
-    """Return a function that pretends to measure and scale stellar mags."""
-    source = os.path.join(demo_data_source, 'scaled_cubes')
-    def inner(star_path_pair, *args, **kwargs):
-        """Pretend to measure and scale stellar magnitudes."""
-        for path in star_path_pair:
-            filename = os.path.basename(path)
-            destination = os.path.dirname(path)
-            copy_demo_data(filename, source, destination)
-    return inner
-
-def fake_gzip(demo_data_source):
-    """Return a function that pretends to gzip files."""
-    source = os.path.join(demo_data_source, 'gzipped_cubes')
-    def inner(path, *args, **kwargs):
-        """Pretend to gzip a file."""
-        filename = os.path.basename(path) + '.gz'
-        destination = os.path.dirname(path)
-        copy_demo_data(filename, source, destination)
-        os.remove(path)
-    return inner
-
-def copy_demo_data(filename, source, destination, skip_missing=True):
-    """Find and copy demo data from source dir to destination dir."""
-    for root, dirs, files in os.walk(source):
-        if filename in files:
-            path = os.path.join(root, filename)
-            if os.path.isfile(path) and not os.path.islink(path):
-                dest_path = os.path.join(destination, filename)
-                shutil.copy2(path, dest_path)
-                sleep(0.5)
-                break
-    else:
-        # No file found. Raise an error if skip_missing set to False
-        if not skip_missing:
-            raise IOError('File not found: ' + filename)
 
 class MatchException(Exception):
     """Exception raised when no matching calibrator is found."""

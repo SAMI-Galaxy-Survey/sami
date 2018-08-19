@@ -5,6 +5,8 @@ Each plotting function is described in its docstring. This module has quite
 a lot of fudges and magic numbers that work fine for the SAMI Galaxy Survey
 but may not always work for other data sets.
 """
+from __future__ import absolute_import, division, print_function, unicode_literals
+
 import pylab as py
 import numpy as np
 import scipy as sp
@@ -36,7 +38,7 @@ def display(infile, ifus='all', log=True):
 
     # Number of IFUs to display
     n=len(ifus)
-    print "I have received", len(ifus), 'IFU(s) to display.'
+    print(("I have received", len(ifus), 'IFU(s) to display.'))
 
     # Number of rows and columns needed in the final display box
     # This is a bit of a fudge...
@@ -105,7 +107,7 @@ def display(infile, ifus='all', log=True):
 
         fibres=[]
         # Iterate over the x, y positions making a circle patch for each fibre, with the appropriate color.
-        for xval, yval, dataval in itertools.izip(x_m, y_m, data_norm):
+        for xval, yval, dataval in zip(x_m, y_m, data_norm):
             #Add the fibre patch.
             fibre=Circle(xy=(xval,yval), radius=52.5)
             fibres.append(fibre)
@@ -148,7 +150,7 @@ def display_list(inlist, ifu, log=True):
     # Number of files 
     n=len(files)
 
-    print "I have received", n, "files to plot."
+    print(("I have received", n, "files to plot."))
 
     # Number of rows and columns needed in the final display box
     # This is a bit of a fudge...
@@ -213,7 +215,7 @@ def display_list(inlist, ifu, log=True):
         mycolormap=py.get_cmap('YlGnBu_r')
 
         # Iterate over the x, y positions making a circle patch for each fibre, with the appropriate color.
-        for xval, yval, dataval in itertools.izip(x_m, y_m, data_norm):
+        for xval, yval, dataval in zip(x_m, y_m, data_norm):
             #Add the fibre patch.
             fibre=Circle(xy=(xval,yval), radius=52.5)
             ax.add_artist(fibre)
@@ -246,7 +248,7 @@ def summed_spectrum(infile, ifu, overplot=False):
         py.close('all')
 
     if overplot==True:
-        print "Overplotting..."
+        print("Overplotting...")
 
     # Get the data.
     ifu_data=utils.IFU(infile, ifu, flag_name=False)
@@ -304,8 +306,8 @@ def field(infile, ifus='all', log=True):
         x_m_new=x_m0+x_m_delta
         y_m_new=y_m0+y_m_delta
         
-        print x_m_delta
-        print y_m_delta
+        print(x_m_delta)
+        print(y_m_delta)
 
         #x_lower=np.min(x_m)-100
         #x_upper=np.max(x_m)+100
@@ -332,7 +334,7 @@ def field(infile, ifus='all', log=True):
 
         fibres=[]
         # Iterate over the x, y positions making a circle patch for each fibre, with the appropriate color.
-        for xval, yval, dataval in itertools.izip(x_m_new, y_m_new, data_norm):
+        for xval, yval, dataval in zip(x_m_new, y_m_new, data_norm):
             #Add the fibre patch.
             fibre=Circle(xy=(xval,yval), radius=1500)
             fibres.append(fibre)
@@ -355,8 +357,9 @@ def field(infile, ifus='all', log=True):
 
         
 
-def raw(flat_file, object_file, IFU="unknown", sigma_clip=False, log=True, pix_waveband=100, pix_start="unknown"):
-    
+def raw(flat_file, object_file, IFU="unknown", sigma_clip=False, log=True,
+        pix_waveband=100, pix_start="unknown",
+        old_plot_style=False):
     """
     #
     # "raw"
@@ -408,16 +411,15 @@ def raw(flat_file, object_file, IFU="unknown", sigma_clip=False, log=True, pix_w
     #
     """
     
-    print "---> START"
-    print "--->"
-    print "---> Object frame: "+str(object_file)
-    print "--->"
+    print("---> START")
+    print("--->")
+    print(("---> Object frame: "+str(object_file)))
+    print("--->")
     
     # Import flat field frame
     flat = pf.open(flat_file)
     flat_data = flat['Primary'].data
-    flat_fibtab = flat['MORE.FIBRES_IFU'].data
-    
+
     # Range to find spatial cut
     if pix_start != "unknown":
         cut_loc_start = np.float(pix_start+5)/np.float(2048)
@@ -425,7 +427,7 @@ def raw(flat_file, object_file, IFU="unknown", sigma_clip=False, log=True, pix_w
     else:
         cut_locs = np.linspace(0.25,0.75,201)
     
-    print "---> Finding suitable cut along spatial dimension..."
+    print("---> Finding suitable cut along spatial dimension...")
     # Check each spatial slice until 819 fibres (peaks) have been found
     for cut_loc in cut_locs:
         # perform cut along spatial direction
@@ -440,16 +442,16 @@ def raw(flat_file, object_file, IFU="unknown", sigma_clip=False, log=True, pix_w
         else:
             continue
     
-    print "--->"
+    print("--->")
     
     # If 819 fibres can't be found then exit script. At the moment this script can't cope with broken or missing fibres.
     if Npeaks != 819:
-        raise SystemExit("---> Can't find 819 fibres. Check [1] Flat Field is correct [2] Flat Field is supplied as the first variable in the function. If 1+2 are ok then use the 'pix_start' variable and set it at least 10 pix beyond the previous value (see terminal for value)")
+        raise ValueError("---> Can't find 819 fibres. Check [1] Flat Field is correct [2] Flat Field is supplied as the first variable in the function. If 1+2 are ok then use the 'pix_start' variable and set it at least 10 pix beyond the previous value (see terminal for value)")
     
-    print "---> Spatial cut at pixel number: ",int(cut_loc*2048)
-    print "---> Number of waveband pixels: ",pix_waveband
-    print "---> Number of fibres found: ",np.shape(peaks[0])[0]
-    print "--->"
+    print(("---> Spatial cut at pixel number: ",int(cut_loc*2048)))
+    print(("---> Number of waveband pixels: ",pix_waveband))
+    print(("---> Number of fibres found: ",np.shape(peaks[0])[0]))
+    print("--->")
     
     # Location of fibre peaks for linear tramline
     tram_loc=[]
@@ -459,20 +461,23 @@ def raw(flat_file, object_file, IFU="unknown", sigma_clip=False, log=True, pix_w
     # Import object frame
     object = pf.open(object_file)
     object_data = object['Primary'].data
-    
+    object_fibtab = object['MORE.FIBRES_IFU'].data
+    object_guidetab = object['MORE.FIBRES_GUIDE'].data
+    object_guidetab = object_guidetab[object_guidetab['TYPE']=='G']
+
     # Perform cut along spatial direction at same position as cut_loc
     object_cut = object_data[:,(np.shape(object_data)[1]*cut_loc)-pix_waveband/2:(np.shape(object_data)[1]*cut_loc)+pix_waveband/2]
     
     # "Sigma clip" to get set bad pixels as row median value
     if sigma_clip == True:
-        print "---> Performing 'Sigma-clip'... (~20s)"
+        print("---> Performing 'Sigma-clip'... (~20s)")
         for i in np.arange(np.shape(object_cut)[0]):
             for j in np.arange(np.shape(object_cut)[1]):
                 med = np.median(object_cut[i,:])
                 err = np.absolute((object_cut[i,j]-med)/med)
                 if err > 0.25:
                     object_cut[i,j] = med
-        print "--->"
+        print("--->")
     
     # Collapse spectral dimension
     object_cut_sum = np.nansum(object_cut,axis=1)
@@ -483,46 +488,22 @@ def raw(flat_file, object_file, IFU="unknown", sigma_clip=False, log=True, pix_w
     Probe_list = [1,2,3,4,5,6,7,8,9,10,11,12,13]
     
     # Plot the data
-    print "---> Plotting..."
-    print "--->"
-    
-    fig = py.figure()
-    if IFU != "unknown":
-        fig.suptitle("SAMI Display of raw frame: "+str(object_file),fontsize=15)
-        ax = fig.add_subplot(1,1,1)
-        ax.set_aspect('equal')
-        Probe_data = object_spec[np.where(flat_fibtab.field('TYPE')=="P") and np.where(flat_fibtab.field('PROBENUM')==IFU)]
-        x = flat_fibtab.field('FIB_PX')[np.where(flat_fibtab.field('TYPE')=="P") and np.where(flat_fibtab.field('PROBENUM')==IFU)] - flat_fibtab.field('FIB_PX')[np.where(flat_fibtab.field('TYPE')=="P") and np.where(flat_fibtab.field('PROBENUM')==IFU) and np.where(flat_fibtab.field('FIBNUM')==1)][3*(-IFU+14) - 2]
-        y = -(flat_fibtab.field('FIB_PY')[np.where(flat_fibtab.field('TYPE')=="P") and np.where(flat_fibtab.field('PROBENUM')==IFU)] - flat_fibtab.field('FIB_PY')[np.where(flat_fibtab.field('TYPE')=="P") and np.where(flat_fibtab.field('PROBENUM')==IFU) and np.where(flat_fibtab.field('FIBNUM')==1)][3*(-IFU+14) - 2])
-        radii = np.zeros(len(x)) + 52.5
-        patches = []
-        for x1,y1,r in zip(x[0:len(x)-1], y[0:len(y)-1], radii):
-            circle = Circle((x1,y1), r)
-            patches.append(circle)
-        if log:
-            colors = np.log(Probe_data)
-        else:
-            colors = Probe_data
-        pa = PatchCollection(patches, cmap=py.cm.YlGnBu_r)
-        pa.set_array(colors)
-        ax.add_collection(pa)
-        py.axis([-600, 600, -600, 600])
-        py.setp(ax.get_xticklabels(), visible=False)
-        py.setp(ax.get_yticklabels(), visible=False)
-        py.title("Probe "+str(IFU), fontsize=10)
-    
-    else:
-        fig.suptitle("SAMI Display of raw frame: "+str(object_file),fontsize=15)
-        for Probe in Probe_list:
-            ax = fig.add_subplot(4,4,Probe)
+    print("---> Plotting...")
+    print("--->")
+
+    if old_plot_style:
+        fig = py.figure()
+        if IFU != "unknown":
+            fig.suptitle("SAMI Display of raw frame: "+str(object_file),fontsize=15)
+            ax = fig.add_subplot(1,1,1)
             ax.set_aspect('equal')
-            Probe_data = object_spec[np.where(flat_fibtab.field('TYPE')=="P") and np.where(flat_fibtab.field('PROBENUM')==Probe)]
-            x = flat_fibtab.field('FIB_PX')[np.where(flat_fibtab.field('TYPE')=="P") and np.where(flat_fibtab.field('PROBENUM')==Probe)] - flat_fibtab.field('FIB_PX')[np.where(flat_fibtab.field('TYPE')=="P") and np.where(flat_fibtab.field('PROBENUM')==Probe) and np.where(flat_fibtab.field('FIBNUM')==1)][3*(-Probe+14) - 2]
-            y = -(flat_fibtab.field('FIB_PY')[np.where(flat_fibtab.field('TYPE')=="P") and np.where(flat_fibtab.field('PROBENUM')==Probe)] - flat_fibtab.field('FIB_PY')[np.where(flat_fibtab.field('TYPE')=="P") and np.where(flat_fibtab.field('PROBENUM')==Probe) and np.where(flat_fibtab.field('FIBNUM')==1)][3*(-Probe+14) - 2])
+            Probe_data = object_spec[np.where(object_fibtab.field('TYPE')=="P") and np.where(object_fibtab.field('PROBENUM')==IFU)]
+            x = object_fibtab.field('FIB_PX')[np.where(object_fibtab.field('TYPE')=="P") and np.where(object_fibtab.field('PROBENUM')==IFU)] - object_fibtab.field('FIB_PX')[np.where(object_fibtab.field('TYPE')=="P") and np.where(object_fibtab.field('PROBENUM')==IFU) and np.where(object_fibtab.field('FIBNUM')==1)][3*(-IFU+14) - 2]
+            y = -(object_fibtab.field('FIB_PY')[np.where(object_fibtab.field('TYPE')=="P") and np.where(object_fibtab.field('PROBENUM')==IFU)] - object_fibtab.field('FIB_PY')[np.where(object_fibtab.field('TYPE')=="P") and np.where(object_fibtab.field('PROBENUM')==IFU) and np.where(object_fibtab.field('FIBNUM')==1)][3*(-IFU+14) - 2])
             radii = np.zeros(len(x)) + 52.5
             patches = []
             for x1,y1,r in zip(x[0:len(x)-1], y[0:len(y)-1], radii):
-                circle = Circle((x1,y1),r)
+                circle = Circle((x1,y1), r)
                 patches.append(circle)
             if log:
                 colors = np.log(Probe_data)
@@ -534,9 +515,89 @@ def raw(flat_file, object_file, IFU="unknown", sigma_clip=False, log=True, pix_w
             py.axis([-600, 600, -600, 600])
             py.setp(ax.get_xticklabels(), visible=False)
             py.setp(ax.get_yticklabels(), visible=False)
-            py.title("Probe "+str(Probe), fontsize=10)
-    
-    print "---> END"
+            py.title("Probe "+str(IFU), fontsize=10)
+
+        else:
+            fig.suptitle("SAMI Display of raw frame: "+str(object_file),fontsize=15)
+            for Probe in Probe_list:
+                ax = fig.add_subplot(4,4,Probe)
+                ax.set_aspect('equal')
+                Probe_data = object_spec[np.where(object_fibtab.field('TYPE')=="P") and np.where(object_fibtab.field('PROBENUM')==Probe)]
+                x = object_fibtab.field('FIB_PX')[np.where(object_fibtab.field('TYPE')=="P") and np.where(object_fibtab.field('PROBENUM')==Probe)] - object_fibtab.field('FIB_PX')[np.where(object_fibtab.field('TYPE')=="P") and np.where(object_fibtab.field('PROBENUM')==Probe) and np.where(object_fibtab.field('FIBNUM')==1)][3*(-Probe+14) - 2]
+                y = -(object_fibtab.field('FIB_PY')[np.where(object_fibtab.field('TYPE')=="P") and np.where(object_fibtab.field('PROBENUM')==Probe)] - object_fibtab.field('FIB_PY')[np.where(object_fibtab.field('TYPE')=="P") and np.where(object_fibtab.field('PROBENUM')==Probe) and np.where(object_fibtab.field('FIBNUM')==1)][3*(-Probe+14) - 2])
+                radii = np.zeros(len(x)) + 52.5
+                patches = []
+                for x1,y1,r in zip(x[0:len(x)-1], y[0:len(y)-1], radii):
+                    circle = Circle((x1,y1),r)
+                    patches.append(circle)
+                if log:
+                    colors = np.log(Probe_data)
+                else:
+                    colors = Probe_data
+                pa = PatchCollection(patches, cmap=py.cm.YlGnBu_r)
+                pa.set_array(colors)
+                ax.add_collection(pa)
+                py.axis([-600, 600, -600, 600])
+                py.setp(ax.get_xticklabels(), visible=False)
+                py.setp(ax.get_yticklabels(), visible=False)
+                py.title("Probe "+str(Probe), fontsize=10)
+    else:
+
+        scale_factor = 18
+
+        def display_ifu(x_coords, y_coords, xcen, ycen, scaling, values):
+            bundle_patches = []
+            for x1,y1 in zip(x_coords, y_coords):
+                circle = Circle((x1*scaling+xcen,y1*scaling+ycen), 52.5*scaling)
+                bundle_patches.append(circle)
+            pcol = PatchCollection(bundle_patches, cmap=py.get_cmap('afmhot'))
+            pcol.set_array(values)
+            pcol.set_edgecolors('none')
+            return pcol
+
+        fig = py.figure(figsize=(10,10))
+        fig.suptitle("SAMI Display of raw frame: "+str(object_file),fontsize=15)
+
+        ax = fig.add_subplot(1,1,1)
+        ax.set_aspect('equal')
+
+        ax.add_patch(Circle((0,0), 264/2*1000, facecolor="#cccccc", edgecolor='#000000', zorder=-1))
+
+        for Probe in Probe_list:
+            Probe_data = object_spec[np.where(object_fibtab.field('TYPE')=="P") and np.where(object_fibtab.field('PROBENUM')==Probe)]
+
+            mask = np.logical_and(object_fibtab.field('TYPE')=="P",
+                                  object_fibtab['PROBENUM']==Probe)
+
+            mean_x = np.mean(object_fibtab.field('FIBPOS_X')[mask])
+            mean_y = np.mean(object_fibtab.field('FIBPOS_Y')[mask])
+
+            x = object_fibtab.field('FIBPOS_X')[mask] - mean_x
+            y = object_fibtab.field('FIBPOS_Y')[mask] - mean_y
+
+            ax.add_collection(display_ifu(x, y, mean_x, mean_y, scale_factor, Probe_data))
+            ax.axis([-140000, 140000, -140000, 140000])
+            py.setp(ax.get_xticklabels(), visible=False)
+            py.setp(ax.get_yticklabels(), visible=False)
+            ax.text(mean_x, mean_y - scale_factor*750, "Probe " + str(Probe),
+                    verticalalignment="bottom", horizontalalignment='center')
+
+        for probe_number, x, y in zip(
+                object_guidetab['PROBENUM'], object_guidetab['CENX'], object_guidetab['CENY']):
+            ax.add_patch(Circle((x,y), scale_factor*250, edgecolor='#009900', facecolor='none'))
+            ax.text(x, y, "G" + str(probe_number),
+                    verticalalignment='center', horizontalalignment='center')
+
+        ax.arrow(100000,100000,0,15000, color="#aa0000", edgecolor='#aa0000', width=100)
+        ax.text(101000,116000, 'North', verticalalignment="bottom", horizontalalignment='left')
+
+        ax.arrow(100000,100000,15000,0, color="#aa0000", edgecolor='#aa0000', width=0)
+        ax.text(116000,101000, 'East', verticalalignment="bottom", horizontalalignment='left')
+
+        py.tight_layout()
+        fig.show()
+
+    print("---> END")
 
 #########################################################################################
 
@@ -597,9 +658,9 @@ def peakdetect(y_axis, x_axis = None, lookahead = 300, delta=0):
     
     #perform some checks
     if lookahead < 1:
-        raise ValueError, "Lookahead must be '1' or above in value"
+        raise ValueError("Lookahead must be '1' or above in value")
     if not (np.isscalar(delta) and delta >= 0):
-        raise ValueError, "delta must be a positive number"
+        raise ValueError("delta must be a positive number")
     
     #maxima and minima candidates are temporarily stored in
     #mx and mn respectively
@@ -662,9 +723,8 @@ def _datacheck_peakdetect(x_axis, y_axis):
         x_axis = range(len(y_axis))
     
     if len(y_axis) != len(x_axis):
-        raise (ValueError,
-               "Input vectors y_axis and x_axis must have same length")
-    
+        raise ValueError("Input vectors y_axis and x_axis must have same length")
+
     #needs to be a numpy array
     y_axis = np.array(y_axis)
     x_axis = np.array(x_axis)
