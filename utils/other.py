@@ -13,6 +13,7 @@ from astropy import coordinates
 import os
 import subprocess
 import gzip as gz
+import warnings
 
 from collections import namedtuple
 
@@ -24,10 +25,18 @@ except:
     from numpy import nanmedian
     print("Not Using bottleneck: Speed will be improved if you install bottleneck")
 
-from sami import update_csv
+from .. import update_csv
 
 # import constants defined in the config file.
-from sami.config import *
+from ..config import *
+
+
+# Set up logging
+from .. import slogging
+log = slogging.getLogger(__name__)
+log.setLevel(slogging.WARNING)
+# log.enable_console_logging()
+
 
 """
 This file is the utilities script for SAMI data. See below for description of functions.
@@ -61,25 +70,33 @@ def offset_hexa(csvfile, guide=None, obj=None, linear=False,
         else:
             offset_direction_y = 'S'
 
-        print('Move the telescope {0:,.2f} arcsec {1} and {2:,.2f} arcsec {3}'.format(
+        print('Move the telescope {0:,.1f} arcsec {1} and {2:,.1f} arcsec {3}'.format(
             abs(offset_x), offset_direction_x, 
             abs(offset_y), offset_direction_y))
-        print 'The star will move from the central hole'
-        print '    to', name
+        print('The star will move from the central hole')
+        print('    to {}'.format(name))
         if with_apoff:
-            print '    (alternately, set the APOFF to X:{0:0.1f}, Y:{1:0.1f})'.format(
+            print('    (alternately, set the APOFF to X:{0:0.1f}, Y:{1:0.1f})'.format(
                     -offset_y, -offset_x
-                )
+                ))
 
 
 
-    print '-' * 70
+    print('-' * 70)
 
     csv = update_csv.CSV(csvfile)
-    guide_probe = np.array(csv.get_values('Probe', 'guide'))
+
+    # guide probe can be converted to integer if there are no missing probes,
+    # but if not, it will be a string. So we force it to be a string for
+    # consistency.
+    guide_probe = np.array(list(map(str, csv.get_values('Probe', 'guide'))))
+
     guide_x = np.array(csv.get_values('Probe X', 'guide'))
     guide_y = np.array(csv.get_values('Probe Y', 'guide'))
-    object_probe = np.array(csv.get_values('Probe', 'object'))
+
+    # same as for guide_probe above.
+    object_probe = np.array(list(map(str, csv.get_values('Probe', 'object'))))
+
     object_x = np.array(csv.get_values('Probe X', 'object'))
     object_y = np.array(csv.get_values('Probe Y', 'object'))
 
@@ -87,15 +104,16 @@ def offset_hexa(csvfile, guide=None, obj=None, linear=False,
         valid_guides = np.arange(guide_probe.size)
         invalid_guides = np.array([])
     else:
-        valid_guides = np.where(guide_probe != '')[0]
-        invalid_guides = np.where(guide_probe == '')[0]
-    n_valid_guides = valid_guides.size
-    n_invalid_guides = invalid_guides.size
+        valid_guides = guide_probe != ''
+        invalid_guides = guide_probe == np.array([''])
+
+    n_valid_guides = valid_guides.sum()
+    n_invalid_guides = invalid_guides.sum()
         
     if guide is None:
         if n_valid_guides == 0:
             # Asked to find a guide but there aren't any to find!
-            print 'No guide probes found! Skipping that step'
+            print('No guide probes found! Skipping that step')
             guide = 'skip'
         else:
             # Find the closest valid guide to the centre
@@ -114,35 +132,32 @@ def offset_hexa(csvfile, guide=None, obj=None, linear=False,
     else:
         # Make the 1-indexed guide number 0-indexed
         guide = guide - 1
-        guide_name = 'G' + str(guide+1) + ' on plate'
-        try:
-            guide_name = ('guider ' + str(int(guide_probe[guide])) +
-                          ' (' + guide_name + ')')
-        except ValueError:
-            # No guider was assigned to this hole
-            guide_name = guide_name + ' (no guide probe assigned!)'
+        if guide_probe[guide] != "":
+            guide_name = "guide bundle {bundle:.0f} (nG{hole} on plate)".format(
+                hole=guide + 1, bundle=float(guide_probe[guide]))
+        else:
+            guide_name = "hole nG{hole} on plate (no guide bundle assigned)".format(
+                hole=guide + 1)
         guide_x = guide_x[guide]
         guide_y = guide_y[guide]
 
         guide_offset_x, guide_offset_y = plate2sky(
             guide_x, guide_y, linear=linear)
 
-        print_offsets(guide_offset_x, guide_offset_y, guide_name, 
-            with_apoff=True)
-
+        print_offsets(guide_offset_x, guide_offset_y, guide_name, with_apoff=True)
 
     if ignore_allocations:
         valid_objects = np.arange(object_probe.size)
         invalid_objects = np.array([])
     else:
-        valid_objects = np.where(object_probe != '')[0]
-        invalid_objects = np.where(object_probe == '')[0]
-        if valid_objects.size == 0:
-            print 'No allocated object probes found! Using closest hole.'
-            valid_objects = np.arange(object_probe.size)
+        valid_objects = object_probe != ''
+        invalid_objects = object_probe == ''
+        if valid_objects.sum() == 0:
+            print('No allocated object probes found! Using closest hole.')
+            valid_objects = np.arange(object_probe.sum())
             invalid_objects = np.array([])
-    n_valid_objects = valid_objects.size
-    n_invalid_objects = invalid_objects.size
+    n_valid_objects = valid_objects.sum()
+    n_invalid_objects = invalid_objects.sum()
         
     if obj is None:
         # Find the closest valid object to the guide
@@ -153,13 +168,13 @@ def offset_hexa(csvfile, guide=None, obj=None, linear=False,
         obj = dist2.argmin() + 1
 
     obj = obj - 1
-    object_name = 'P' + str(obj+1) + ' on plate'
-    try:
-        object_name = ('object probe ' + str(int(object_probe[obj])) +
-                      ' (' + object_name + ')')
-    except ValueError:
-        # No object was assigned to this hole
-        object_name = object_name + ' (no object probe assigned!)'
+    if object_probe[obj] != "":
+        object_name = "hexabundle {bundle:.0f} (nP{hole} on plate)".format(
+            hole=obj + 1, bundle=float(object_probe[obj]))
+    else:
+        object_name = "hole nP{hole} on plate (no hexabundle assigned)".format(
+            hole=obj + 1)
+
     object_x = object_x[obj]
     object_y = object_y[obj]
 
@@ -170,7 +185,7 @@ def offset_hexa(csvfile, guide=None, obj=None, linear=False,
     
     print_offsets(offset_x, offset_y, object_name, with_apoff=False)
 
-    print '-' * 70
+    print('-' * 70)
 
     return None
     
@@ -279,16 +294,16 @@ def smooth(x ,window_len=11, window='hanning'):
     """
     
     if x.ndim != 1:
-        raise ValueError, "smooth only accepts 1 dimension arrays."
+        raise ValueError("smooth only accepts 1 dimension arrays.")
 
     if x.size < window_len:
-        raise ValueError, "Input vector needs to be bigger than window size."
+        raise ValueError("Input vector needs to be bigger than window size.")
 
     if window_len<3:
         return x
 
     if not window in ['flat', 'hanning', 'hamming', 'bartlett', 'blackman']:
-        raise ValueError, "Window is one of 'flat', 'hanning', 'hamming', 'bartlett', 'blackman'"
+        raise ValueError("Window is one of 'flat', 'hanning', 'hamming', 'bartlett', 'blackman'")
 
     s=np.r_[2*x[0]-x[window_len:1:-1],x,2*x[-1]-x[-1:-window_len:-1]]
 
@@ -352,8 +367,8 @@ def domewindscreenflat_pos(coords_string, *args):
         success = False
 
     if not success:
-        print 'domewindscreenflat_pos now takes a single string as input, e.g.:'
-        print "sami.utils.domewindscreenflat_pos('-00h23m00s +00d14m03s')"
+        print('domewindscreenflat_pos now takes a single string as input, e.g.:')
+        print("sami.utils.domewindscreenflat_pos('-00h23m00s +00d14m03s')")
         return
 
     DomeCoords=namedtuple('DomeCoords', ['azimuth', 'zd'])
@@ -367,12 +382,12 @@ def domewindscreenflat_pos(coords_string, *args):
         ha -= 360.0
     dec = coords.dec.value
 
-    print
-    print "---------------------------------------------------------------------------"
-    print "INPUT"
-    print "Hour Angle:", ha
-    print "Declination:", dec
-    print "---------------------------------------------------------------------------"
+    print()
+    print("---------------------------------------------------------------------------")
+    print("INPUT")
+    print("Hour Angle:", ha)
+    print("Declination:", dec)
+    print("---------------------------------------------------------------------------")
     
     # Convert to radians
     ha = ha * degree
@@ -420,11 +435,11 @@ def domewindscreenflat_pos(coords_string, *args):
 
     output=DomeCoords(a,z) # output is a named tuple
 
-    print
-    print "---------------------------------------------------------------------------"
-    print "OUTPUT"
-    print output
-    print "---------------------------------------------------------------------------"
+    print()
+    print("---------------------------------------------------------------------------")
+    print("OUTPUT")
+    print(output)
+    print("---------------------------------------------------------------------------")
 
 def decimal_to_degree(ha_h, ha_m, ha_s, dec_d, dec_m, dec_s):
 
@@ -451,19 +466,19 @@ def get_probes_objects(infile, ifus='all'):
     else:
         ifus=ifus
  
-    print "Probe   Object"
-    print "-----------------------------------"
+    print("Probe   Object")
+    print("-----------------------------------")
     for ifu in ifus:
 
         ifu_data=IFU(infile, ifu, flag_name=False)
-        print ifu,"\t", ifu_data.name
+        print(ifu,"\t", ifu_data.name)
 
 def hg_changeset(path=__file__):
     """Return the changeset ID for the current version of the code."""
     try:
         changeset = subprocess.check_output(['hg', '-q', 'id'],
                                             cwd=os.path.dirname(path))
-        changeset = changeset[:-1]
+        changeset = changeset.strip().decode('ascii')
     except (subprocess.CalledProcessError, OSError):
         changeset = ''
     return changeset
@@ -607,10 +622,13 @@ def clip_spectrum(flux, noise, wavelength, limit_noise=0.35, limit_flux=10.0,
     # This is mostly to get rid of very bad pixels at edges of good regions
     # The presence of NaNs is screwing up the median filter in theses places
     median_noise = np.nanmedian(noise)
-    good = (np.isfinite(flux) &
-            np.isfinite(noise) &
-            (noise_ratio < limit_noise) &
-            (flux_ratio < limit_flux) &
-            (noise < (limit_noise_abs * median_noise)))
+    with warnings.catch_warnings():
+        # We get lots of invalid value warnings arising because of divide by zero errors.
+        warnings.filterwarnings('ignore', r'invalid value', RuntimeWarning)
+        good = (np.isfinite(flux) &
+                np.isfinite(noise) &
+                (noise_ratio < limit_noise) &
+                (flux_ratio < limit_flux) &
+                (noise < (limit_noise_abs * median_noise)))
     return good
 

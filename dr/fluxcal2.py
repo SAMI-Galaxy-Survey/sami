@@ -48,6 +48,7 @@ Other than the functions for reading parameters in and out, the
 functionality for doing the actual fitting is the same for all models,
 so can be extended for further models quite straightforwardly.
 """
+from __future__ import absolute_import, division, print_function, unicode_literals
 
 import os
 import warnings
@@ -59,6 +60,7 @@ from scipy.ndimage.filters import median_filter, gaussian_filter1d
 
 from astropy import coordinates as coord
 from astropy import units
+from astropy import table
 from astropy.io import fits as pf
 from astropy import __version__ as ASTROPY_VERSION
 
@@ -401,7 +403,7 @@ def parameters_vector_to_dict(parameters_vector, model_name):
     """Convert a parameters vector to a dictionary."""
     parameters_dict = {}
     if model_name == 'ref_centre_alpha_angle':
-        n_slice = (len(parameters_vector) - 8) / 2
+        n_slice = np.int((len(parameters_vector) - 8) // 2)
         parameters_dict['flux'] = parameters_vector[0:n_slice]
         parameters_dict['background'] = parameters_vector[n_slice:2*n_slice]
         parameters_dict['xcen_ref'] = parameters_vector[-8]
@@ -413,7 +415,7 @@ def parameters_vector_to_dict(parameters_vector, model_name):
         parameters_dict['beta'] = parameters_vector[-2]
         parameters_dict['rho'] = parameters_vector[-1]
     elif model_name == 'ref_centre_alpha_angle_circ':
-        n_slice = (len(parameters_vector) - 6) / 2
+        n_slice = np.int((len(parameters_vector) - 6) // 2)
         parameters_dict['flux'] = parameters_vector[0:n_slice]
         parameters_dict['background'] = parameters_vector[n_slice:2*n_slice]
         parameters_dict['xcen_ref'] = parameters_vector[-6]
@@ -424,7 +426,7 @@ def parameters_vector_to_dict(parameters_vector, model_name):
         parameters_dict['beta'] = parameters_vector[-1]
     elif (model_name == 'ref_centre_alpha_dist_circ' or
           model_name == 'ref_centre_alpha_dist_circ_hdratm'):
-        n_slice = (len(parameters_vector) - 5) / 2
+        n_slice = np.int((len(parameters_vector) - 5) // 2)
         parameters_dict['flux'] = parameters_vector[0:n_slice]
         parameters_dict['background'] = parameters_vector[n_slice:2*n_slice]
         parameters_dict['xcen_ref'] = parameters_vector[-5]
@@ -433,7 +435,7 @@ def parameters_vector_to_dict(parameters_vector, model_name):
         parameters_dict['alpha_ref'] = parameters_vector[-2]
         parameters_dict['beta'] = parameters_vector[-1]
     elif model_name == 'ref_centre_alpha_angle_circ_atm':
-        n_slice = (len(parameters_vector) - 9) / 2
+        n_slice = np.int((len(parameters_vector) - 9) // 2)
         parameters_dict['flux'] = parameters_vector[0:n_slice]
         parameters_dict['background'] = parameters_vector[n_slice:2*n_slice]
         parameters_dict['temperature'] = parameters_vector[-9]
@@ -446,7 +448,7 @@ def parameters_vector_to_dict(parameters_vector, model_name):
         parameters_dict['alpha_ref'] = parameters_vector[-2]
         parameters_dict['beta'] = parameters_vector[-1]
     elif model_name == 'ref_centre_alpha_circ_hdratm':
-        n_slice = (len(parameters_vector) - 4) / 2
+        n_slice = np.int((len(parameters_vector) - 4) // 2)
         parameters_dict['flux'] = parameters_vector[0:n_slice]
         parameters_dict['background'] = parameters_vector[n_slice:2*n_slice]
         parameters_dict['xcen_ref'] = parameters_vector[-4]
@@ -657,38 +659,22 @@ def match_star_coordinates(ra, dec, max_sep_arcsec=60.0,
                            catalogues=STANDARD_CATALOGUES):
     """Return details of the star nearest to the supplied coordinates."""
     for index_path in catalogues:
-        index = np.loadtxt(index_path, dtype='S')
+        #index = np.loadtxt(index_path, dtype='S')
+        index = table.Table.read(index_path, format='ascii.no_header')
         for star in index:
-            RAstring = '%sh%sm%ss' % (star[2], star[3], star[4])
-            Decstring = '%sd%sm%ss' % (star[5], star[6], star[7])
-            if ASTROPY_VERSION[:2] == (0, 2):
-                coords_star = coord.ICRSCoordinates(RAstring, Decstring)
-                ra_star = coords_star.ra.degrees
-                dec_star = coords_star.dec.degrees
-                ### BUG IN ASTROPY.COORDINATES ###
-                if ASTROPY_VERSION == (0, 2, 0):
-                    print 'Upgrade your version of astropy!!!!'
-                    print 'Version 0.2.0 has a major bug in coordinates!!!!'
-                    if star[5] == '-' and dec_star > 0:
-                        dec_star *= -1.0
-                sep = coord.angles.AngularSeparation(
-                    ra, dec, ra_star, dec_star, units.degree).arcsecs
-            elif (ASTROPY_VERSION[0]<=1) and (ASTROPY_VERSION[1]<=1):
-                coords_star = coord.ICRS(RAstring, Decstring)
-                coords = coord.ICRS(
-                    str(ra)+' degree',str(dec)+' degree')
-                sep = coords.separation(coords_star).arcsec
-            else: # Astropy version >= 1.2.x
-                ra_star = coord.Angle(RAstring, unit=units.hour) 
-                dec_star = coord.Angle(Decstring, unit=units.degree)
-                coords_star = coord.ICRS(ra_star, dec_star)
+            RAstring = '%sh%sm%ss' % (star['col3'], star['col4'], star['col5'])
+            Decstring = '%sd%sm%ss' % (star['col6'], star['col7'], star['col8'])
 
-                ra_tgt = coord.Angle(ra, unit=units.degree)
-                dec_tgt = coord.Angle(dec, unit=units.degree)
+            ra_star = coord.Angle(RAstring, unit=units.hour) 
+            dec_star = coord.Angle(Decstring, unit=units.degree)
+            coords_star = coord.ICRS(ra_star, dec_star)
 
-                coords = coord.ICRS(ra_tgt, dec_tgt)
+            ra_tgt = coord.Angle(ra, unit=units.degree)
+            dec_tgt = coord.Angle(dec, unit=units.degree)
 
-                sep = coords.separation(coords_star).arcsec
+            coords = coord.ICRS(ra_tgt, dec_tgt)
+
+            sep = coords.separation(coords_star).arcsec
 
             if sep < max_sep_arcsec:
                 star_match = {
@@ -975,13 +961,16 @@ def rebin_flux_noise(target_wavelength, source_wavelength, source_flux,
     good = np.isfinite(source_flux) & np.isfinite(source_noise)
     if clip:
         # Clip points that are a long way from a narrow median filter
-        good = good & ((np.abs(source_flux - median_filter(source_flux, 7)) /
-                        source_noise) < 10.0)
-        # Also clip points where the noise value spikes (changes by more than
-        # 35% relative to the baseline)
-        filtered_noise = median_filter(source_noise, 21)
-        good = good & ((np.abs(source_noise - filtered_noise) / 
-                        filtered_noise) < 0.35)
+        with warnings.catch_warnings():
+            # We get lots of invalid value warnings arising because of divide by zero errors.
+            warnings.filterwarnings('ignore', r'invalid value', RuntimeWarning)
+            good = good & ((np.abs(source_flux - median_filter(source_flux, 7)) /
+                            source_noise) < 10.0)
+            # Also clip points where the noise value spikes (changes by more than
+            # 35% relative to the baseline)
+            filtered_noise = median_filter(source_noise, 21)
+            good = good & ((np.abs(source_noise - filtered_noise) /
+                            filtered_noise) < 0.35)
     interp_flux, interp_noise = interpolate_flux_noise(
         source_flux, source_noise, good)
     interp_good = np.isfinite(interp_flux)
@@ -1079,12 +1068,15 @@ def rebin_flux_noise(target_wavelength, source_wavelength, source_flux,
         end_pix[incomplete],
         weights=(1 - frac_low[incomplete]),
         bins=bins)[0]
-    flux_out /= count_out
-    variance_out /= count_out ** 2
-    zero_input = (count_out == 0)
-    flux_out[zero_input] = np.nan
-    variance_out[zero_input] = np.nan
-    noise_out = np.sqrt(variance_out)
+    with warnings.catch_warnings():
+        # We get lots of invalid value warnings arising because of divide by zero errors.
+        warnings.filterwarnings('ignore', r'invalid value', RuntimeWarning)
+        flux_out /= count_out
+        variance_out /= count_out ** 2
+        zero_input = (count_out == 0)
+        flux_out[zero_input] = np.nan
+        variance_out[zero_input] = np.nan
+        noise_out = np.sqrt(variance_out)
     return flux_out, noise_out, count_out
 
 def interpolate_flux_noise(flux, noise, good):
@@ -1096,11 +1088,14 @@ def interpolate_flux_noise(flux, noise, good):
         np.where(bad)[0], np.where(good)[0], flux[good])
     start_bad = np.where(good[:-1] & bad[1:])[0] + 1
     end_bad = np.where(bad[:-1] & good[1:])[0] + 1
-    for begin, finish in zip(start_bad, end_bad):
-        n_bad = finish - begin
-        interp_noise[begin:finish] = np.sqrt(
-            ((((1 + 0.5*n_bad)**2) - 1) / n_bad) * 
-            (noise[begin-1]**2 + noise[finish]**2))
+    with warnings.catch_warnings():
+        # We get lots of invalid value warnings arising because of divide by zero errors.
+        warnings.filterwarnings('ignore', r'invalid value', RuntimeWarning)
+        for begin, finish in zip(start_bad, end_bad):
+            n_bad = finish - begin
+            interp_noise[begin:finish] = np.sqrt(
+                ((((1 + 0.5*n_bad)**2) - 1) / n_bad) *
+                (noise[begin-1]**2 + noise[finish]**2))
     # Set any bad pixels at the start and end of the spectrum back to nan
     still_bad = ~np.isfinite(interp_noise)
     interp_flux[still_bad] = np.nan
@@ -1235,7 +1230,8 @@ def zd2am( zenithdistance ):
 
 def read_atmospheric_extinction(sso_extinction_table=SSO_EXTINCTION_TABLE):
     wl, ext = [], []
-    for entry in open( sso_extinction_table, 'r' ).xreadlines() :
+    #for entry in open( sso_extinction_table, 'r' ).xreadlines() :
+    for entry in open( sso_extinction_table, 'r' ):
         line = entry.rstrip( '\n' )
         if not line.count( '*' ) and not line.count( '=' ):
             values = line.split()

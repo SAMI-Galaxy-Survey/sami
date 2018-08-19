@@ -8,6 +8,7 @@ extrapolate to a full covariance array, and do simple binning of the data
 compare_variance() calculates the binned variance with and without
 covariance, to see how strong its effect is.
 """
+from __future__ import absolute_import, division, print_function, unicode_literals
 
 import numpy as np
 import astropy.io.fits as pf
@@ -21,11 +22,11 @@ def read_norm_covariance(hdulist):
     n_wave_out = hdulist[0].header['NAXIS3']
     wave_out = np.arange(n_wave_out)
     n_covar = header['COVAR_N']
-    covar_loc = [header['COVARLOC_{}'.format(i+1)] for i in xrange(n_covar)]
+    covar_loc = [header['COVARLOC_{}'.format(i+1)] for i in range(n_covar)]
     dim = [n_wave_out]
-    dim.extend(header['NAXIS{}'.format(i)] for i in xrange(4, 0, -1))
+    dim.extend(header['NAXIS{}'.format(i)] for i in range(4, 0, -1))
     covar = np.zeros(dim)
-    product_args = [xrange(n) for n in dim[1:]]
+    product_args = [range(n) for n in dim[1:]]
     for i, j, k, l in itertools.product(*product_args):
         covar[:, i, j, k, l] = np.interp(
             wave_out, covar_loc, covar_cut[:, i, j, k, l])
@@ -44,7 +45,7 @@ def read_norm_covariance(hdulist):
 #     variance_out = np.zeros(variance.shape[0])
 #     for (x_i, y_i) in coords:
 #         for (delta_x, delta_y) in itertools.product(
-#                 xrange(-2, 3), xrange(-2, 3)):
+#                 range(-2, 3), range(-2, 3)):
 #             if (x_i + delta_x, y_i + delta_y) in coords:
 #                 covar_rel = covariance[:, delta_x + 2, delta_y + 2, x_i, y_i]
 #                 variance_extra = variance[:, x_i, y_i] * covar_rel
@@ -132,9 +133,9 @@ def full_covar(hdulist):
     weight = hdulist['WEIGHT'].data
     covar = np.zeros(norm_covar.shape)
     header = hdulist[0].header
-    for i in xrange(header['NAXIS3']):
-        for j in xrange(header['NAXIS2']):
-            for k in xrange(header['NAXIS1']):
+    for i in range(header['NAXIS3']):
+        for j in range(header['NAXIS2']):
+            for k in range(header['NAXIS1']):
                 covar[i,:,:,j,k] = (var[i,j,k] * norm_covar[i,:,:,j,k] *
                                     weight[i,j,k]**2)
     return covar

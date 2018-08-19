@@ -21,7 +21,7 @@ import numpy
 from scipy import integrate
 
 from ..config import latitude_degrees, millibar_to_mmHg
-from other import saturated_partial_pressure_water
+from .other import saturated_partial_pressure_water
 
 from astropy import __version__ as astropy_version
 
