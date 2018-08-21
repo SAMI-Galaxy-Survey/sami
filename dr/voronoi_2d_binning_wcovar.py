@@ -214,7 +214,8 @@ class bin2D :
         """ 
         Check consistency of input data
         """
-        if self.noise == None :
+
+        if self.noise is None:
             if any(self.data < 0) :
                 self._error("No Noise given, and some pixels have negative data value")
             ## If noise is not there then just use SQRT(data)
@@ -447,7 +448,7 @@ class bin2D :
         Assign the bins when the nodes are derived With Scaling factor
         """
         if scale is not None: self.scale = scale
-        if sel_pixels == None : sel_pixels = range(self.xin.size)
+        if sel_pixels is None : sel_pixels = range(self.xin.size)
         for i in sel_pixels :
             minind = argmin(dist2(self.xin[i], self.yin[i], self.xnode, self.ynode, scale=self.scale))
             self.status[i] = self.statusnode[minind]
