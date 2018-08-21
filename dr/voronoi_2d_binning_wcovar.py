@@ -6,7 +6,7 @@ The following code was originally written by Eric Emsellem, following an
 IDL version by Michele Cappellari, and was extended to include covariance
 information (needed for SAMI data) by Nic Scott.
 """
-from __future__ import absolute_import, division, print_function, unicode_literals
+from __future__ import absolute_import, division, print_function#, unicode_literals
 
 #
 ########################################################################
