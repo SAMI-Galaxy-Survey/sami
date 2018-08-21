@@ -48,7 +48,7 @@ Other than the functions for reading parameters in and out, the
 functionality for doing the actual fitting is the same for all models,
 so can be extended for further models quite straightforwardly.
 """
-from __future__ import absolute_import, division, print_function, unicode_literals
+from __future__ import absolute_import, division, print_function#, unicode_literals
 
 import os
 import warnings
@@ -662,8 +662,8 @@ def match_star_coordinates(ra, dec, max_sep_arcsec=60.0,
         #index = np.loadtxt(index_path, dtype='S')
         index = table.Table.read(index_path, format='ascii.no_header')
         for star in index:
-            RAstring = '%sh%sm%ss' % (star['col3'], star['col4'], star['col5'])
-            Decstring = '%sd%sm%ss' % (star['col6'], star['col7'], star['col8'])
+            RAstring = '%ih%im%ss' % (star['col3'], star['col4'], star['col5'])
+            Decstring = '%id%im%ss' % (star['col6'], star['col7'], star['col8'])
 
             ra_star = coord.Angle(RAstring, unit=units.hour) 
             dec_star = coord.Angle(Decstring, unit=units.degree)
