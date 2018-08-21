@@ -112,7 +112,7 @@ dithered_cubes_from_rss_list.
 ############################################################################################
 
 """
-from __future__ import absolute_import, division, print_function, unicode_literals
+from __future__ import absolute_import, division, print_function#, unicode_literals
 
 import pylab as py
 import numpy as np

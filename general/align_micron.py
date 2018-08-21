@@ -122,7 +122,7 @@ You should not touch this one, as it is called automatically, in case needed.
 
 
 """
-from __future__ import absolute_import, division, print_function, unicode_literals
+from __future__ import absolute_import, division, print_function#, unicode_literals
 
 from .. import utils
 from ..observing import centroid
@@ -134,7 +134,6 @@ import matplotlib.pyplot as plt
 from matplotlib import cm
 import astropy.io.fits as pf
 from scipy.optimize import leastsq
-
 
 HG_CHANGESET = utils.hg_changeset(__file__)
 
@@ -583,10 +582,11 @@ def save_results(results):
                                 array=results['yref_median'])
     good_col = pf.Column(name='GOOD', format='B', array=results['good'])
     hdu = pf.BinTableHDU.from_columns(
-        pf.ColDefs([ifus_col, xin_col, yin_col, xref_col, 
-                    yref_col, xshift_col, yshift_col, 
-                    xref_median_col, yref_median_col,
-                    good_col]))
+                pf.ColDefs([ifus_col, xin_col, yin_col, xref_col, 
+                yref_col, xshift_col, yshift_col, 
+                xref_median_col, yref_median_col,
+                good_col]))
+
     hdu.header['X_RMS'] = (results['xrms'], 'RMS of X_SHIFT')
     hdu.header['Y_RMS'] = (results['yrms'], 'RMS of Y_SHIFT')
     hdu.header['SIGMA'] = (results['sigma'], 'Sigma clipping used in the fit')
