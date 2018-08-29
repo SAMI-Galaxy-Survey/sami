@@ -34,7 +34,7 @@ def remove_outdirs():
             shutil.rmtree(dir)
             counter = counter+1
 
-    red_dir = glob.glob('*/reduced/*/*/*/*/*/*_outdir')
+    red_dirs = glob.glob('*/reduced/*/*/*/*/*/*_outdir')
     if len(red_dirs) > 0:
         for dir in red_dirs:
             shutil.rmtree(dir)
