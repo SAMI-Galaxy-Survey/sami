@@ -835,7 +835,7 @@ class DataFuse3D():
         # set gamma to half of fwhm as function of wavelength, which has been shown to maximise likleihood
         # eventually include S/N ratio as well.
         self.gamma = 0.5 * np.nanmean(fwhm, axis=0)
-        print("Average Hyperparameter gamma:", self.gamma.mean())
+        #print("Average Hyperparameter gamma:", self.gamma.mean())
 
 
     def fuseimage(self, wavenumber, wavenumber2 = None, Lpix = 50, plot = False, show = False, covar = False, nresponse = 32):
@@ -962,9 +962,9 @@ class DataFuse3D():
         # loop over wavelength, treat each bin independent from adjacent wavelength bins!
         # replace evtl loop with map function and enable multiprocessing option
         # map(self.fuseimage, range(Nbins))
-        print("Looping over wavelength range...")
+        #print("Looping over wavelength range...")
         for l in range(Nbins):
-            print("wavelength slice:", self.wlow_vec[l], ' - ', self.wup_vec[l])
+            #print("wavelength slice:", self.wlow_vec[l], ' - ', self.wup_vec[l])
             if binsize > 1:
                 data_l, var_l, resp_l, covar_l = self.fuseimage(self.wlow_vec[l], wavenumber2 = self.wup_vec[l], Lpix = Lpix, plot = False, covar = False, nresponse = nresponse)
             elif binsize == 1:
@@ -1168,7 +1168,7 @@ def sami_create_primary_header(ifu_list,name,files,WCS_pos,WCS_flag):
     # Need to implement a global version number for the database
     
     # Put the RSS files into the header
-    for num in ange(len(files)):
+    for num in range(len(files)):
         rss_key='HIERARCH RSS_FILE '+str(num+1)
         rss_string='Input RSS file '+str(num+1)
         hdr_new[rss_key] = (os.path.basename(files[num]), rss_string)

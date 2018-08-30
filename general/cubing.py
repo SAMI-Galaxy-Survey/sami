@@ -434,7 +434,7 @@ def cube_wrapper(inputs):
             output_pix_size_arcsec=output_pix_size_arcsec)
     elif cubing_method == 'gp':
         (path_list, name, cubed_root, overwrite, output_pix_size_arcsec, 
-         size_of_rid, suffix, ccd) = (inputs['path_list'], inputs['name'], 
+         size_of_grid, suffix, ccd) = (inputs['path_list'], inputs['name'], 
                                   inputs['cubed_root'], inputs['overwrite'], 
                                   inputs['output_pix_size_arcsec'], inputs['size_of_grid'], 
                                   inputs['suffix'],inputs['ccd'])
