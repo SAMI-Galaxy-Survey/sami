@@ -133,7 +133,7 @@ warnings.simplefilter('always', ImportWarning)
 from glob import glob
 
 try:
-    import run_datafuse_r2
+    from  sami.gpcubing import run_datafuse_r2
 except ImportError:
     warn_message = ('Could not import run_datafuse_r2.py, the Gaussian Process'
                     +' cubing implementation. "gp" cubing_method unavailable.')
@@ -200,8 +200,6 @@ from . import wcs
 
 # Function for reading a filter response
 from ..qc.fluxcal import read_filter, get_coords
-
-import code
 
 from pdb import set_trace
 
@@ -436,7 +434,7 @@ def cube_wrapper(inputs):
             output_pix_size_arcsec=output_pix_size_arcsec)
     elif cubing_method == 'gp':
         (path_list, name, cubed_root, overwrite, output_pix_size_arcsec, 
-         size_of_grid, suffix, ccd) = (inputs['path_list'], inputs['name'], 
+         size_of_rid, suffix, ccd) = (inputs['path_list'], inputs['name'], 
                                   inputs['cubed_root'], inputs['overwrite'], 
                                   inputs['output_pix_size_arcsec'], inputs['size_of_grid'], 
                                   inputs['suffix'],inputs['ccd'])
