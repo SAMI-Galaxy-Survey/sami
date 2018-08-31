@@ -51,7 +51,7 @@ described below.
 > sami.general.cubing.dithered_cubes_from_rss_files("testfiles1.txt",write=True,clip=True,drop_factor=0.5,suffix="_Clip",covar_mode="none",nominal=True,root="testing_small/",overwrite=True,objects=["36894","47286"])
 > sami.general.cubing.dithered_cubes_from_rss_files("testfiles1.txt",write=True,clip=True,drop_factor=0.5,suffix="_FullClip",covar_mode="none",nominal=True,root="testing_small/",overwrite=True,objects=["36894","47286"])
 
-> sami.general.cubing.dithered_cubes_from_rss_files("testfiles1blue.txt",write=True,clip=False,drop_factor=0.5,suffix="_ReducedDrop_NoClip",covar_mode="none",nominal=True,root="testing_small/",overwrite=True,objects=["36894","47286"])
+> sami.general.cubing.dithered_cubes_from_rss_files("testfiles1bluetxt",write=True,clip=False,drop_factor=0.5,suffix="_ReducedDrop_NoClip",covar_mode="none",nominal=True,root="testing_small/",overwrite=True,objects=["36894","47286"])
 > sami.general.cubing.dithered_cubes_from_rss_files("testfiles1blue.txt",write=True,clip=True,drop_factor=0.5,suffix="_ReducedDrop_ClipWithReducedDrop",covar_mode="none",nominal=True,root="testing_small/",overwrite=True,objects=["36894","47286"])
 > sami.general.cubing.dithered_cubes_from_rss_files("testfiles1blue.txt",write=True,clip=True,drop_factor=0.5,suffix="_ReducedDrop_ClipWithFullDrop",covar_mode="none",nominal=True,root="testing_small/",overwrite=True,objects=["36894","47286"])
 
@@ -438,9 +438,15 @@ def cube_wrapper(inputs):
                                   inputs['cubed_root'], inputs['overwrite'], 
                                   inputs['output_pix_size_arcsec'], inputs['size_of_grid'], 
                                   inputs['suffix'],inputs['ccd'])
+        
+        path_out = os.path.join(cube_root,name)
+        if ccd == 'ccd_1':
+            ccd = 'blue'
+        elif ccd == 'ccd_2':
+            ccd = 'red'
         return run_datafuse_r2.new_cube(path_list, name, ccdband=ccd, Lpix=size_of_grid,
                                         pixscale=output_pix_size_arcsec,
-                                        path_out=cubed_root,filename_ext=suffix,
+                                        path_out=path_out,filename_ext=suffix,
                                         write_fits=True)
     else:
         print('{} is not a supported cubing method'.format(cubing_method))
