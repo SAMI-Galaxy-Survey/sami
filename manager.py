@@ -2731,7 +2731,8 @@ class Manager:
         options = []
 
         # Define what the best choice is for a TLM:
-        if (self.use_twilight_tlm_blue and (fits.ccd == 'ccd_1')):
+        if (self.use_twilight_tlm_blue and (fits.ccd == 'ccd_1') and
+            (fits.field_id is not 'Y14SAR4_P007_12T069')):
             best_tlm = 'tlmap_mfsky'
         else:
             best_tlm = 'tlmap'
