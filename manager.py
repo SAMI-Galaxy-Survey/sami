@@ -2732,7 +2732,7 @@ class Manager:
 
         # Define what the best choice is for a TLM:
         if (self.use_twilight_tlm_blue and (fits.ccd == 'ccd_1') and
-            (fits.field_id is not 'Y14SAR4_P007_12T069')):
+            (fits.plate_id_short is not 'Y14SAR4_P007')):
             best_tlm = 'tlmap_mfsky'
         else:
             best_tlm = 'tlmap'
@@ -2899,7 +2899,7 @@ class Manager:
                     # back to the normal tlmap route.
                     found = 0
                     if (self.use_twilight_tlm_blue and (fits.ccd == 'ccd_1') and 
-                        (fits.field_id is not 'Y14SAR4_P007_12T069')):
+                        (fits.plate_id_short is not 'Y14SAR4_P007')):
                         filename_match = self.match_link(fits, 'tlmap_mfsky')
                         if filename_match is None:
                             filename_match = self.match_link(fits, 'tlmap_mfsky_loose')
