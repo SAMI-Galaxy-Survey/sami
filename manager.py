@@ -2898,7 +2898,8 @@ class Manager:
                     # twilight options first.  If they are not found, then default
                     # back to the normal tlmap route.
                     found = 0
-                    if (self.use_twilight_tlm_blue and (fits.ccd == 'ccd_1')):
+                    if (self.use_twilight_tlm_blue and (fits.ccd == 'ccd_1') and 
+                        (fits.field_id is not 'Y14SAR4_P007_12T069')):
                         filename_match = self.match_link(fits, 'tlmap_mfsky')
                         if filename_match is None:
                             filename_match = self.match_link(fits, 'tlmap_mfsky_loose')
