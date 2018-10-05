@@ -62,6 +62,7 @@ from astropy import coordinates as coord
 from astropy import units
 from astropy import table
 from astropy.io import fits as pf
+from astropy.io import ascii
 from astropy import __version__ as ASTROPY_VERSION
 
 from ..utils import hg_changeset
@@ -660,7 +661,9 @@ def match_star_coordinates(ra, dec, max_sep_arcsec=60.0,
     """Return details of the star nearest to the supplied coordinates."""
     for index_path in catalogues:
         #index = np.loadtxt(index_path, dtype='S')
-        index = table.Table.read(index_path, format='ascii.no_header')
+        converters = {'col6':[ascii.convert_numpy(np.str)]}
+        index = table.Table.read(index_path, format='ascii.no_header'
+                                 ,converters=converters)
         for star in index:
             RAstring = '%sh%sm%ss' % (star['col3'], star['col4'], star['col5'])
             Decstring = '%sd%sm%ss' % (star['col6'], star['col7'], star['col8'])

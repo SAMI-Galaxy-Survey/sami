@@ -2735,7 +2735,8 @@ class Manager:
         options = []
 
         # Define what the best choice is for a TLM:
-        if (self.use_twilight_tlm_blue and (fits.ccd == 'ccd_1')):
+        if (self.use_twilight_tlm_blue and (fits.ccd == 'ccd_1') and
+            (fits.plate_id_short is not 'Y14SAR4_P007')):
             best_tlm = 'tlmap_mfsky'
         else:
             best_tlm = 'tlmap'
@@ -2755,11 +2756,15 @@ class Manager:
             else:
                 options.extend(['-SKYSCRUNCH', '0'])
             # Turn off bias and dark subtraction
-            options.extend(['-USEBIASIM', '0', '-USEDARKIM', '0'])
+            if fits.detector == 'E2V3':
+                options.extend(['-USEBIASIM', '0', '-USEDARKIM', '0'])
+            elif fits.detector == 'E2V3A':
+                options.extend(['-USEBIASIM', '0'])
+
         # turn off bias and dark for new CCD. These are named
         # E2V2A (blue) and E2V3A (red).  The old ones are E2V2 (blue
         # and E2V3 (red).
-        if ((fits.detector == 'E2V2A') or (fits.detector == 'E2V3A')):
+        if fits.detector == 'E2V2A':
             options.extend(['-USEBIASIM', '0', '-USEDARKIM', '0'])
 
         if fits.ndf_class == 'BIAS':
@@ -2897,7 +2902,8 @@ class Manager:
                     # twilight options first.  If they are not found, then default
                     # back to the normal tlmap route.
                     found = 0
-                    if (self.use_twilight_tlm_blue and (fits.ccd == 'ccd_1')):
+                    if (self.use_twilight_tlm_blue and (fits.ccd == 'ccd_1') and 
+                        (fits.plate_id_short is not 'Y14SAR4_P007')):
                         filename_match = self.match_link(fits, 'tlmap_mfsky')
                         if filename_match is None:
                             filename_match = self.match_link(fits, 'tlmap_mfsky_loose')
