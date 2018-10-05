@@ -285,7 +285,7 @@ STELLAR_MAGS_FILES = [
     ('standards/secondary/fornax_stellar_mags.txt', 'FORNAX',
         (0.0, 0.0, 0.0, 0.0, 0.0)),
     ('standards/secondary/fornax_stellar_mags2.txt','FORNAX',
-        (0.0, 0.0, 0.0, 0.0, 0.0))
+        (0.0, 0.0, 0.0, 0.0, 0.0)),
     ('standards/secondary/fornax_stellar_mags3.txt','FORNAX',
         (0.0, 0.0, 0.0, 0.0, 0.0))]
 
