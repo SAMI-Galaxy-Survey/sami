@@ -135,7 +135,7 @@ else:
 
 
 IDX_FILES_SLOW = {'580V': 'sami580V_v1_6.idx',
-                  '1500V': 'sami1500V_v1_5.idx',
+                  '1500V': 'sami1500V_v1_6.idx',
                   '1000R': 'sami1000R_v1_6.idx'}
 
 IDX_FILES_FAST = {'580V': 'sami580V.idx',
@@ -285,6 +285,8 @@ STELLAR_MAGS_FILES = [
     ('standards/secondary/fornax_stellar_mags.txt', 'FORNAX',
         (0.0, 0.0, 0.0, 0.0, 0.0)),
     ('standards/secondary/fornax_stellar_mags2.txt','FORNAX',
+        (0.0, 0.0, 0.0, 0.0, 0.0))
+    ('standards/secondary/fornax_stellar_mags3.txt','FORNAX',
         (0.0, 0.0, 0.0, 0.0, 0.0))]
 
 def stellar_mags_files():
