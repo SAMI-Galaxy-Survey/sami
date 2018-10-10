@@ -291,7 +291,7 @@ def is_star(name):
     cluster_star = '(((999)|(888))[0-9]{9})'
     fornax_star1 = r'((?<!\-)\b(\d\d|\d)\b)'
     fornax_star2 = r'(100[0-9]{3})'
-    fornax_star3 = r'(888[0-0]{3})'
+    fornax_star3 = r'(99[0-0]{3})'
     star_re = '|'.join((pilot_star, gama_star, abell_star, cluster_star,fornax_star1,fornax_star2,fornax_star3))
     return bool(re.match(star_re, name))
 
