@@ -3203,7 +3203,7 @@ class Manager:
         if require_this_manager:
             # Check that at least one of the files from each group has come
             # from this manager
-            for combined_key, fits_list in groups.items():
+            for combined_key, fits_list in list(groups.items()):
                 for fits in fits_list:
                     if fits in self.file_list:
                         break
