@@ -2393,7 +2393,7 @@ class Manager:
         """Record information about dust in the output datacubes."""
         groups = self.group_files_by(
             'field_id', ccd='ccd_1', ndf_class='MFOBJECT', do_not_use=False,
-            reduced=True, name=name, **kwargs)
+            reduced=True, name=name, include_linked_managers=True, **kwargs)
         for (field_id,), fits_list in groups.items():
             table = pf.getdata(fits_list[0].reduced_path, 'FIBRES_IFU')
             objects = table['NAME'][table['TYPE'] == 'P']
