@@ -145,7 +145,7 @@ IDX_FILES = {'fast': IDX_FILES_FAST,
              'slow': IDX_FILES_SLOW}
 
 GRATLPMM = {'580V': 582.0,
-            '1500V': 1500.0,
+            '1500V': 1502.0,
             '1000R': 1001.0}
 
 CATALOG_PATH = "./gama_catalogues/"
