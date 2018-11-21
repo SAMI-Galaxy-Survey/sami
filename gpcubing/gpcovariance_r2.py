@@ -35,6 +35,11 @@ class Covariance():
 	    self.Lpix = hdr['LPIX']
 	    self.pixscale = hdr['PIXSCALE']
 	    self.gpkernel_method = hdr['GPMETHOD']
+	    try:
+	    	self.gpmarginalized = hdr['GPMARGINAL']
+	    except:
+	    	print('WARNING: NO GPMARGINAL KEYWORD IN HEADER')
+	    	self.gpmarginalized = 'notdefined'
 	    self._cache_square_distances()
 	    self.hdr = hdr
 
@@ -131,47 +136,77 @@ class Covariance():
 
 
 	def calc_covar(self, resp, var, gamma, wavenumber):
-	    """ Calculating covariance matrix from response matrix cube, fibre variance, and GP gamma 
-	    input must be obtained from read_response_cube()
-	    :param resp: response matrix or cube, shape = (Nfibre*Nexposure,Npix*Npix,Nwavelenth/Nresponse)
-	    :param var: variance of fibre data, shape= (Nexposure, Nfibre, Nwavelenth)
-	    :param gamma: GP lengthscale hyperparameter, shape= (Nwavelenth)
-	    :param wavenumber: number of element on spectral axis for which to calculate covariance
-	    """
-	    print('Calculating reconstructed covariance matrix at spectral slice', wavenumber, '...')
-	    gamma = np.asarray(gamma)
-	    Nresponse = len(gamma)/resp.shape[2]
-	    if len(gamma) % resp.shape[2] != 0:
-	    	raise ValueError("length of gamma array is not multiple of binned spectral lenght of response cube!")
-	    if len(gamma) > wavenumber:
-	    	gamma_l = gamma[wavenumber]
-	    else:
-	    	raise ValueError("Wavenumber element must be smaller than length of gamma vector")
-	    # Nresponse is the integer number of steps that the response matrix has been calculated, default should be 32
-	    if self.gpkernel_method == 'squared_exp':
-	    	self.Kxx = self._gpkernel(self.D2, gamma_l)
-	    elif self.gpkernel_method == 'sparse':
-	    	self.Kxx = self._gpkernel_sparse(self.D2, gamma_l)
-	    elif self.gpkernel_method == 'wide':
-	    	self.Kxx = self._gpkernel_wide(self.D2, gamma_l)
-	    elif self.gpkernel_method == 'moffat':
-	    	self.Kxx = self._gpkernel_moffat(self.D2, gamma_l)
-	    elif self.gpkernel_method == 'matern32':
-	    	self.Kxx = self._gpkernel_matern32(self.D2, gamma_l)
-	    elif self.gpkernel_method == 'matern52':
-	    	self.Kxx = self._gpkernel_matern52(self.D2, gamma_l)
-	    else:
-	    	print("Kernel method not supported, take default squared exponential!")
-	    	self.Kxx = self._gpkernel(self.D2, gamma_l)
-	    # calculate relative position of response matrix 
-	    nresp = wavenumber // Nresponse
-	    A = resp[:,:,nresp]
-	    var_l = var[:,:,wavenumber]
-	    var_l = var_l.reshape(self.Nexp * self.Nfib)
-	    Ky = np.dot(A, np.dot(self.Kxx, A.T)) + np.diag(var_l**2)
-	    Ky_chol = linalg.cholesky(Ky, lower=True)
-	    V = linalg.solve_triangular(Ky_chol, np.dot(A, self.Kxx), lower=True)
-	    return self.Kxx - np.dot(V.T, V)
+		""" Calculating covariance matrix from response matrix cube, fibre variance, and GP gamma 
+		input must be obtained from read_response_cube()
+		:param resp: response matrix or cube, shape = (Nfibre*Nexposure,Npix*Npix,Nwavelenth/Nresponse)
+		:param var: variance of fibre data, shape= (Nexposure, Nfibre, Nwavelenth)
+		:param gamma: GP lengthscale hyperparameter, shape= (Nwavelenth)
+		:param wavenumber: number of element on spectral axis for which to calculate covariance
+		"""
+		print('Calculating reconstructed covariance matrix at spectral slice', wavenumber, '...')
+		gamma = np.asarray(gamma)
+		Nresponse = len(gamma)/resp.shape[2]
+		if len(gamma) % resp.shape[2] != 0:
+			raise ValueError("length of gamma array is not multiple of binned spectral lenght of response cube!")
+		if len(gamma) > wavenumber:
+			gamma_l = gamma[wavenumber]
+		else:
+			raise ValueError("Wavenumber element must be smaller than length of gamma vector")
+		# Nresponse is the integer number of steps that the response matrix has been calculated, default should be 32
+		method_hash = { 'squared_exp': self._gpkernel,
+		        'rational':    self._gpkernel_rational,
+		        'sparse':      self._gpkernel_sparse,
+		        'wide':        self._gpkernel_wide,
+		        'moffat':      self._gpkernel_moffat,
+		        'matern32':    self._gpkernel_matern32,
+		        'matern52':    self._gpkernel_matern52,
+		        'exp':         self._gpkernel_exp,
+		        'mix':         self._gpkernel_mix, }
+		if self.gpkernel_method in method_hash:
+		    gpKfunc = method_hash[self.gpkernel_method]
+		else:
+		    print("Kernel method not supported, now taking default squared exponential!")
+		    gpKfunc = self._gpkernel
+		Kxx = gpKfunc(self.D2, gamma_l)
+		# calculate relative position of response matrix 
+		nresp = wavenumber // Nresponse
+		A = resp[:,:,nresp]
+		var_l = var[:,:,wavenumber]
+		var_l = var_l.reshape(self.Nexp * self.Nfib)
+		scene_cov = np.zeros((self.Lpix**2, self.Lpix**2))
+		if self.gpmarginalized == 'yes':
+			print('Marginalizing over GP lengthscale ... ')
+			self._gamvals = np.linspace(gamma_l * 0.2, 2.* gamma_l, 10)
+			w = 1./self._gamvals.shape[0]
+			self.scene_cov = np.zeros((self.Lpix**2, self.Lpix**2))
+			for g in self._gamvals:
+				K = gpKfunc(self.D2, g)
+				AK = np.dot(A, K)
+				AKA = np.dot(AK, A.T)
+				self._S = np.sqrt(np.mean(np.diag(AKA)))
+				err = var_l * self._S
+				Ky = AKA + np.diag(var_l**2)
+				Ky_chol = linalg.cholesky(Ky, lower=True)
+				V = linalg.solve_triangular(Ky_chol, AK, lower=True)
+				scene_cov += w**2 * (K - np.dot(V.T, V)) / self._S**2
+		elif self.gpmarginalized == 'no':
+			K = Kxx
+			AK = np.dot(A, K)
+			AKA = np.dot(AK, A.T)
+			self._S = np.sqrt(np.mean(np.diag(AKA)))
+			yerr = var_l * self._S
+			Ky = AKA + np.diag(yerr**2)
+			Ky_chol = linalg.cholesky(Ky, lower=True)
+			V = linalg.solve_triangular(Ky_chol, AK, lower=True)
+			scene_cov += w**2 * (K - np.dot(V.T, V)) / self._S**2
+		else:
+			print('No marginalisation keyword in header, instead using previous version')
+			Ky = np.dot(A, np.dot(Kxx, A.T)) + np.diag(var_l**2)
+			Ky_chol = linalg.cholesky(Ky, lower=True)
+			V = linalg.solve_triangular(Ky_chol, np.dot(A, Kxx), lower=True)
+			scene_cov = Kxx - np.dot(V.T, V)
+		return scene_cov
+
 
 	def calc_covar_pixel(self, resp, var, gamma, wavenumber, xypixel = None, reduced = False):
 		""" Calculating covariance matrix from response matrix cube, fibre variance, and GP gamma

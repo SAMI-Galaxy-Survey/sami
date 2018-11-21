@@ -73,6 +73,7 @@ def new_cube(fitslist,name,ccdband='blue',Lpix=50,pixscale=0.5,wavebin=1,respons
     # star_only: run only on star image for testing, specify identifier of star below
 
     gpmethod = 'squared_exp' #specify GP kernel used: 'squared_exp', or 'sparse', or 'wide', or 'moffat'
+    marginalize = True # Uniform marginalisation over GP length scale
     zoom2 = False # Interpolate pixelsize of final cube by a factor of two
     avgpsf = False # Use average PSF of all exposures, change to False to include all
     gcovar = False # stores covariance cube, only possible for low resolution, probably don't set to True
@@ -115,7 +116,7 @@ def new_cube(fitslist,name,ccdband='blue',Lpix=50,pixscale=0.5,wavebin=1,respons
             df.sami_write_file(fitslist, identifier, data_cube, var_cube, 
 				path_out = path_out, filename_out = filename_out, overwrite = True, covar_mode = None, pixscale = pixscale)
             filename_out_covar=identifier + ccdband+ filename_ext +'_covar_compressed.fits'
-            df.write_response_cube(identifier, resp_cube, variance, fuse.gamma, pixscale, Lpix, gpmethod, 
+            df.write_response_cube(identifier, resp_cube, variance, fuse.gamma, pixscale, Lpix, gpmethod,marginalize, 
                                    path_out = path_out, filename_out = filename_out_covar, 
                                    overwrite = True, _Nexp = _Nexp)
 
