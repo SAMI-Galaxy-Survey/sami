@@ -746,7 +746,7 @@ class DataFuse3D():
     as function of wavelength and number of independent observations.
     """
     def __init__(self, data, psf_params, coord, data_sigma = None , psf_params_sigma = None, 
-        coord_sigma = None, name = None, dar_cor = None, pixscale = 0.25, avgpsf = False, gcovar = False, gpmethod = 'squared_exp', _Nexp = 7):
+        coord_sigma = None, name = None, dar_cor = None, pixscale = 0.25, avgpsf = False, gcovar = False, gpmethod = 'squared_exp', _Nexp = 7,marginalize=False):
         """
         :param data: callable accepting ndarrays of shape (N_obs, N_datapoints, N_wavelength)
         :param psf_params: Moffat parameters (alpha,beta) for each wavelength and observation. 
@@ -837,8 +837,15 @@ class DataFuse3D():
         self.gamma = 0.5 * np.nanmean(fwhm, axis=0)
         #print("Average Hyperparameter gamma:", self.gamma.mean())
 
+        if not marginalize:
+            self.gamma = 0.5*np.nanmean(fwhm,axis=0)
+            print("Average Hyperparameter gamma:",self.gamma.mean())
+        else:
+            print("Marginalizing over hyperparameter gamma")
 
-    def fuseimage(self, wavenumber, wavenumber2 = None, Lpix = 50, plot = False, show = False, covar = False, nresponse = 32):
+
+    def fuseimage(self, wavenumber, wavenumber2 = None, Lpix = 50, plot = False, 
+                  show = False, covar = False, nresponse = 32, marginalize = False):
         """Function for transformation of fiber to image 
         : param wavenumber: spectral axis number, or lower end for binnning if wavenumber2 > 1
         : param wavenumber: upper end of spectral axis for binning, if None. no binning over data
@@ -850,6 +857,7 @@ class DataFuse3D():
                     Default method is to store only matrix components to reconstruct covariance matrix later.
         : param nresponse: number of steps along spectral axis to repeat calculation of response matrix; 
              nresponse should be a number = 2^n (2^n <= spectral axis), Default = 32
+        : param marginalize: if True, marginalize gamma and scale factor out of posterior cube prediction
         """
         if wavenumber2 is not None:
             fibflux = np.sum(self.data[:, :, wavenumber:wavenumber2], axis = 2).flatten()
@@ -872,6 +880,7 @@ class DataFuse3D():
         fibflux[~np.isfinite(fibflux)] = 0.
         fibfluxerr[(~np.isfinite(fibfluxerr)) | (~np.isfinite(fibflux))] = 1e9
         # Calculate response matrix only every nresponse step:
+        kl_approx = False
         if wavenumber % nresponse == 0:
             self.response = cs.ResponseMatrix(coord, dar_cor, cs.moffat_psf, Lpix, self.pixscale, fft=True, 
                                               avgpsf=self.avgpsf,_Nexp = self._Nexp)
@@ -879,15 +888,29 @@ class DataFuse3D():
         else: 
             model = cs.GPModel(self.response, fibflux, fibfluxerr, calcresponse = False, gpmethod = self.gpmethod)
             model._A = self.resp0
+            model._K_gv = self.K0
+            model._AK_gv = self.AK0
+            model._AKA_gv = self.AKA0
+
         if self.avgpsf:
             #print('mean/std alpha , beta:', alpha.mean(), alpha.std(), beta.mean(), beta.std())
-            logL = model.logL(hp = [alpha.mean(), beta.mean(), gamma]) 
+            if marginalize:
+                logL = model.logL_margsimple(hp = [alpha.mean(), beta.mean(), gamma], verbose=True) 
+                #logL = model.logL_marg(hp = [alpha.mean(), beta.mean(), gamma], verbose=True)
+            else:
+                logL = model.logL(hp = [alpha.mean(), beta.mean(), gamma]) 
         else:
-            logL = model.logL(hp = [alpha, beta, gamma])
+            if marginalize:
+                logL = model.logL_margsimple(hp = [alpha, beta, gamma], verbose=True)
+                #logL = model.logL_marg(hp = [alpha, beta, gamma], verbose=True)
+            else:
+                logL = model.logL(hp = [alpha, beta, gamma])
        # print("Mean FWHM of seeing:", 2*alpha.mean()  * np.sqrt(np.power(2.,1/beta.mean()) - 1))
        # print("Std FWHM of seeing:", np.std(2*alpha  * np.sqrt(np.power(2.,1/beta) - 1)))
        # model._Kxx = model._gpkernel(model.D2, gamma)
-        model.predict(gcovar = self.gcovar)
+       # RS: if we're marginalizing then we already have posterior predictions
+        if not marginalize:
+            model.predict(gcovar = self.gcovar)
         if not self.gcovar:
             model.covariance = 0.
 
@@ -904,10 +927,10 @@ class DataFuse3D():
             plt.savefig('image_' + self.name + '_ew' + wavenumber +'.png')
             if show: plt.show()    
 
-        return model.scene, model.variance, model._A, model.covariance
+        return model.scene, model.variance, model._A, model.covariance, model._K_gv, model._AK_gv, model._AKA_gv
 
     
-    def fusecube(self, Lpix = 50, binsize = 1, nresponse = 32,  silent = True):
+    def fusecube(self, Lpix = 50, binsize = 1, nresponse = 32,  silent = True, marginalize=True):
         """ Build cube by looping over all wavelength slides
         : param Lpix: Number of pixels in x/y direction
         : param binsize: number of wavelength slices to combine in one bin; 
@@ -964,11 +987,14 @@ class DataFuse3D():
         # map(self.fuseimage, range(Nbins))
         #print("Looping over wavelength range...")
         for l in range(Nbins):
-            #print("wavelength slice:", self.wlow_vec[l], ' - ', self.wup_vec[l])
+            print("wavelength slide:", self.wlow_vec[l], ' - ', self.wup_vec[l])
             if binsize > 1:
-                data_l, var_l, resp_l, covar_l = self.fuseimage(self.wlow_vec[l], wavenumber2 = self.wup_vec[l], Lpix = Lpix, plot = False, covar = False, nresponse = nresponse)
+                data_l, var_l, resp_l, covar_l, K_l, AK_l, AKA_l = self.fuseimage(self.wlow_vec[l], wavenumber2 = self.wup_vec[l], 
+                                                                                  Lpix = Lpix, plot = False, covar = False, 
+                                                                                  nresponse = nresponse, marginalize=marginalize)
             elif binsize == 1:
-                data_l, var_l, resp_l, covar_l = self.fuseimage(self.wlow_vec[l], Lpix = Lpix, plot = False, covar = False, nresponse = nresponse)
+                data_l, var_l, resp_l, covar_l, K_l, AK_l, AKA_l = self.fuseimage(self.wlow_vec[l], Lpix = Lpix, plot = False, 
+                                                                                  covar = False, nresponse = nresponse, marginalize=marginalize)
             ### optionally shift image in cube for additonal correction, comment out:
             #xdar_l = (self.coord[0, :, :, self.wlow_vec[l]:self.wup_vec[l]].mean() - self.RA_cen) / self.pixscale
             #ydar_l = (self.coord[1, :, :, self.wlow_vec[l]:self.wup_vec[l]].mean() - self.DEC_cen) / self.pixscale
@@ -978,8 +1004,11 @@ class DataFuse3D():
             flux_cube[:, :, l] = data_l 
             var_cube[:, :, l] = var_l 
             if l * binsize % nresponse == 0:
-                resp_cube[:,:,l*binsize//nresponse] = resp_l
+                resp_cube[:,:,l*binsize/nresponse] = resp_l
                 self.resp0 = resp_l # use repsone matrix for runs till next interval
+                self.K0 = K_l
+                self.AK0 = AK_l
+                self.AKA0 = AKA_l
             if self.gcovar:
                 covar_cube[:,:,l] =  covar_l #imshift(var_l, (xdar_l,ydar_l), order=1)
 
@@ -1347,6 +1376,11 @@ def write_response_cube(identifier, resp_cube, var_fibre, gamma, pixscale, Lpix,
     wcs_new = pw.WCS(naxis=3)
     hdr_new = wcs_new.to_header(relax=True)
 
+   if marginalize:
+        gpmarginalized = 'yes'
+    else:
+        gpmarginalized = 'no'
+
     # Putting in the units by hand, because otherwise astropy converts
     # 'Angstrom' to 'm'. Note 2dfdr uses 'Angstroms', which is non-standard.
     hdr_new['CUNIT3'] = 'Angstrom'       
@@ -1357,6 +1391,7 @@ def write_response_cube(identifier, resp_cube, var_fibre, gamma, pixscale, Lpix,
     hdr_new['NFIB'] = _Nfib
     hdr_new['LPIX'] = Lpix
     hdr_new['GPMETHOD'] = gpmethod
+    hdr_new['GPMARGINAL'] = gpmarginalized
 
     # @NOTE: PyFITS writes axes to FITS files in the reverse of the sense
     # of the axes in Numpy/Python.
