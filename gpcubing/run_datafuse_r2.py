@@ -112,10 +112,10 @@ def new_cube(fitslist,name,ccdband='blue',Lpix=50,pixscale=0.5,wavebin=1,respons
 
         ######## Write fits files for data+variance cube and one fits file for components to reconstruct covaraince :
         if write_fits:
-            filename_out=identifier + ccdband + filename_ext +'_cube.fits'
+            filename_out=identifier +'_' + ccdband + filename_ext +'_gp.fits'
             df.sami_write_file(fitslist, identifier, data_cube, var_cube, 
 				path_out = path_out, filename_out = filename_out, overwrite = True, covar_mode = None, pixscale = pixscale)
-            filename_out_covar=identifier + ccdband+ filename_ext +'_covar_compressed.fits'
+            filename_out_covar=identifier +'_' + ccdband+ filename_ext +'_gp_covar.fits'
             df.write_response_cube(identifier, resp_cube, variance, fuse.gamma, pixscale, Lpix, gpmethod,marginalize, 
                                    path_out = path_out, filename_out = filename_out_covar, 
                                    overwrite = True, _Nexp = _Nexp)

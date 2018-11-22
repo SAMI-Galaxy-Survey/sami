@@ -439,7 +439,7 @@ def cube_wrapper(inputs):
                                   inputs['output_pix_size_arcsec'], inputs['size_of_grid'], 
                                   inputs['suffix'],inputs['ccd'])
         
-        path_out = os.path.join(cube_root,name)
+        path_out = os.path.join(inputs['cubed_root'],name)
         if ccd == 'ccd_1':
             ccd = 'blue'
         elif ccd == 'ccd_2':

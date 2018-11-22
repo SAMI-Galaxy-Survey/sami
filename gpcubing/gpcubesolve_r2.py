@@ -526,7 +526,7 @@ class GPModel(SliceView):
             self.fibfluxerr = fibfluxerr
         self._cache_square_distances()
         self.calcresponse = calcresponse
-        self.gpmethod = gpmethod
+        self._gpmethod = gpmethod
 
     def _cache_square_distances(self):
         """
@@ -581,6 +581,14 @@ class GPModel(SliceView):
         return np.exp(-0.25 * D2/gamma**2) * 1./ (1 + np.exp((4./gamma**2 *(np.sqrt(D2) - 0.5*gamma)**2)))
         #return np.exp(-0.25 * D2**1.0/gamma**2)
 
+    def _gpkernel_rational(self, D2, gamma):
+        ''' use rational quadratic, change alpha (currently set at at 2)
+        :param D2: pairwise square distances
+        :param gamma: kernel length scale
+        '''
+        alpha = 2.
+        return (1 + 0.25*D2/gamma**2/alpha)**(-alpha)
+
     def _gpkernel_moffat(self, D2, gamma):
         ''' use sersic profile
         :param D2: pairwise square distances
@@ -614,6 +622,17 @@ class GPModel(SliceView):
         '''    
         return np.exp(-0.5 * np.sqrt(D2)/gamma)
 
+    def _gpkernel_mix(self, D2, gamma):
+        ''' user specific mix of gp kernels
+        :param D2: pairwise square distances
+        :param gamma: kernel length scale
+        '''    
+        #beta = 4.7
+        #alpha = 4* 2/2.335 * gamma # 2* 2.335 * gamma
+        #norm = (beta - 1.0)/(np.pi * alpha**2)
+        #moffat = norm * (1.0 + (D2)/alpha**2)**(-beta)
+        return  np.exp(-0.125 * np.sqrt(D2)/gamma) * np.exp(-0.125 * D2/gamma**2)  # * np.exp(-(np.sin(np.pi*np.sqrt(D2)/gamma))**2/gamma**2)
+
 
     def logL(self, hp):
         """
@@ -623,20 +642,18 @@ class GPModel(SliceView):
         # Generate covariances and other relevant parameters and cache them,
         # since we'll need them again for prediction.
         psf_pars, gamma = hp[:-1], hp[-1]
-        if self.gpmethod == 'squared_exp':
-            self._Kxx = self._gpkernel(self.D2, gamma)
-        elif self.gpmethod == 'sparse':
-            self._Kxx = self._gpkernel_sparse(self.D2, gamma)
-        elif self.gpmethod == 'wide':
-            self._Kxx = self._gpkernel_wide(self.D2, gamma)
-        elif self.gpmethod == 'moffat':
-            self._Kxx = self._gpkernel_moffat(self.D2, gamma)
-        elif self.gpmethod == 'matern32':
-            self._Kxx = self._gpkernel_matern32(self.D2, gamma)
-        elif self.gpmethod == 'matern52':
-            self._Kxx = self._gpkernel_matern52(self.D2, gamma)
-        elif self.gpmethod == 'exp':
-            self._Kxx = self._gpkernel_exp(self.D2, gamma)
+
+        method_hash = { 'squared_exp': self._gpkernel,
+                'rational':    self._gpkernel_rational,
+                'sparse':      self._gpkernel_sparse,
+                'wide':        self._gpkernel_wide,
+                'moffat':      self._gpkernel_moffat,
+                'matern32':    self._gpkernel_matern32,
+                'matern52':    self._gpkernel_matern52,
+                'exp':         self._gpkernel_exp,
+                'mix':         self._gpkernel_mix, }
+        if self._gpmethod in method_hash:
+            gpKfunc = method_hash[self._gpmethod]
         else:
             print("Kernel method not supported, now taking default squared exponential!")
             self._Kxx = self._gpkernel(self.D2, gamma)

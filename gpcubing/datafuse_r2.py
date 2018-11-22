@@ -28,6 +28,8 @@ from sami.utils.mc_adr import adr_r, DARCorrector, parallactic_angle, zenith_dis
 from sami.gpcubing import gpcubesolve_r2 as cs
 from sami.gpcubing.settings_sami import _Nfib, _Rfib_arcsec, _plate_scale, _fov_arcsec
 
+import code
+
 cubing_method = 'GP_prior'
 wavelength_ref = 5000.0
 
@@ -1004,7 +1006,8 @@ class DataFuse3D():
             flux_cube[:, :, l] = data_l 
             var_cube[:, :, l] = var_l 
             if l * binsize % nresponse == 0:
-                resp_cube[:,:,l*binsize/nresponse] = resp_l
+                #code.interact(local=dict(globals(),**locals()))
+                resp_cube[:,:,l*binsize//nresponse] = resp_l
                 self.resp0 = resp_l # use repsone matrix for runs till next interval
                 self.K0 = K_l
                 self.AK0 = AK_l
@@ -1331,7 +1334,7 @@ def read_cube(fullname):
     return data, variance
 
 
-def write_response_cube(identifier, resp_cube, var_fibre, gamma, pixscale, Lpix, gpmethod, 
+def write_response_cube(identifier, resp_cube, var_fibre, gamma, pixscale, Lpix, gpmethod, marginalize, 
                         path_out, filename_out, overwrite = True, _Nexp = 7):
     """ Writes response matrix, fibre data variance, and gama in fits file to calculate covariance later    
     :param identifier: String of identifier or object ID
@@ -1376,7 +1379,7 @@ def write_response_cube(identifier, resp_cube, var_fibre, gamma, pixscale, Lpix,
     wcs_new = pw.WCS(naxis=3)
     hdr_new = wcs_new.to_header(relax=True)
 
-   if marginalize:
+    if marginalize:
         gpmarginalized = 'yes'
     else:
         gpmarginalized = 'no'
