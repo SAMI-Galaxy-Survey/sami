@@ -135,11 +135,11 @@ from matplotlib import cm
 import astropy.io.fits as pf
 from scipy.optimize import leastsq
 
-
 HG_CHANGESET = utils.hg_changeset(__file__)
 
 # Multiply by this value to convert arcseconds to microns
 ARCSEC_TO_MICRON = 1000.0 / 15.2
+
 
 ifus=[1,2,3,4,5,6,7,8,9,10,11,12,13]
 
@@ -152,10 +152,10 @@ def find_dither(RSSname,reference,centroid=True,inter=False,plot=False,remove_fi
 
       if centroid:
           for name in RSSname:
-              get_centroid(name, do_dar_correct=do_dar_correct)
-            
+              print(name)
+              get_centroid(name, reference, do_dar_correct=do_dar_correct) #**reference added
+
       nRSS=len(RSSname)
-      
       
       ### For the reference frame extracts the position in micron for the central fibers of each IFU
       ### These positions are stored into "central_data" and saved int the file "file_centralfib" to 
@@ -164,7 +164,7 @@ def find_dither(RSSname,reference,centroid=True,inter=False,plot=False,remove_fi
       ### plane will remain exactly the same in the various exposures!  
       
       file_centralfib=''.join([reference.strip('.fits'), "ref_centrFIB.txt"]) 
-      f=open(file_centralfib,'w')
+      f=open('..'+file_centralfib,'w')
       
     
       galname=[] #name of the target galaxy
@@ -211,7 +211,7 @@ def find_dither(RSSname,reference,centroid=True,inter=False,plot=False,remove_fi
       xshcol=[]  # xshift in micron
       yshcol=[]  # yshif in micron
       n=0
-      for line in open(file_ref):
+      for line in open('..'+file_ref):
          n=n+1
          cols=line.split()
          index = object_order[cols[0]]
@@ -267,7 +267,7 @@ def find_dither(RSSname,reference,centroid=True,inter=False,plot=False,remove_fi
              ifu_good = np.zeros(n_ifu, dtype=int)
              xin = np.zeros(n_ifu)
              yin = np.zeros(n_ifu)
-             for line in open(file_centroid):
+             for line in open('..'+file_centroid):
                  cols=line.split()
                  # xin.append(float(cols[2]))
                  # yin.append(float(cols[3]))
@@ -277,7 +277,7 @@ def find_dither(RSSname,reference,centroid=True,inter=False,plot=False,remove_fi
                  yin[index] = float(cols[3])
   
             
-             f=open(file_geoin, 'w')
+             f=open('..'+file_geoin, 'w')
              good = []
              for j in range(n_ifu):
                  # Immediately censor any point that's moved by more than max_shift
@@ -416,6 +416,7 @@ def find_dither(RSSname,reference,centroid=True,inter=False,plot=False,remove_fi
                           'xref_median': results[0]['xref_median'],
                           'yref_median': results[0]['yref_median']}
       save_results(ref_results_dict)
+      print(ref_results_dict)
       
       ## Save final dither solution
       #file_results=''.join([reference.strip('.fits'), "_dither_solution.txt"])
@@ -522,32 +523,32 @@ def fit_transform(p0, coords_in, coords_ref, sigma_clip=None, good=None):
             break
     return fit, good, n_good
 
-def get_centroid(infile, do_dar_correct=True):
+def get_centroid(infile,reference=None, do_dar_correct=True): #** reference added
 
     ## Create name of the file where centroid coordinates are stored 
     
     out_txt=''.join([infile.strip('.fits'), "_centroid"])
 
     f=open(out_txt, 'w')
-    
+ 
     ## Run centroid fit on each IFU
-    
-    for i, ifu in enumerate(ifus):
 
+    for i, ifu in enumerate(ifus):
             try:
                 ifu_data=utils.IFU(infile, ifu, flag_name=False)
             except IndexError:
                 # Probably a broken hexabundle
                 continue
-                
-            p_mic, data_mic, xlin_mic, ylin_mic, model_mic=centroid.centroid_fit(ifu_data.x_microns, ifu_data.y_microns,
-                                                                                    ifu_data.data, circular=True)
+
+
+            p_mic, data_mic, xlin_mic, ylin_mic, model_mic=centroid.centroid_fit(ifu_data.x_microns, ifu_data.y_microns, ifu_data.data, reference,infile,ifu_data.name, circular=True) #**reference,infile,ifu_data.name added
+
+
             amplitude_mic, xout_mic, yout_mic, sig_mic, bias_mic=p_mic
-            
             ##Get coordinates in micron. 
             ##Since centroid_fit currently inverts the x coordinates to have 'on-sky' coordinates, here 
             ##I need to re-multiply x coordinates by -1 to have them in the focal plane reference 
-             
+                
             x_out= -1*xout_mic
             y_out= yout_mic
             
