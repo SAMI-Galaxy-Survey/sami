@@ -249,7 +249,7 @@ def model_flux(parameters_dict, xfibre, yfibre, wavelength, model_name):
     return moffat_flux(parameters_array, xfibre, yfibre)
 
 def residual(parameters_vector, datatube, vartube, xfibre, yfibre,
-             wavelength, model_name, fixed_parameters=None):
+             wavelength, model_name, fixed_parameters=None, secondary=False):
     """Return the residual in each fibre for the given model."""
     parameters_dict = parameters_vector_to_dict(parameters_vector, model_name)
     parameters_dict = insert_fixed_parameters(parameters_dict, 
@@ -257,9 +257,10 @@ def residual(parameters_vector, datatube, vartube, xfibre, yfibre,
     model = model_flux(parameters_dict, xfibre, yfibre, wavelength, model_name)
     # 2dfdr variance is just plain wrong for fibres with little or no flux!
     # Try replacing with something like sqrt(flux), but with a floor
-    vartube = datatube.copy()
-    cutoff = 0.05 * datatube.max()
-    vartube[datatube < cutoff] = cutoff
+    if (secondary):
+        vartube = datatube.copy()
+        cutoff = 0.05 * datatube.max()
+        vartube[datatube < cutoff] = cutoff
     res = np.ravel((model - datatube) / np.sqrt(vartube))
     # Really crude way of putting bounds on the value of alpha
     if 'alpha_ref' in parameters_dict:
@@ -270,13 +271,13 @@ def residual(parameters_vector, datatube, vartube, xfibre, yfibre,
     return res
 
 def fit_model_flux(datatube, vartube, xfibre, yfibre, wavelength, model_name,
-                   fixed_parameters=None):
+                   fixed_parameters=None, secondary=False):
     """Fit a model to the given datatube."""
     par_0_dict = first_guess_parameters(datatube, vartube, xfibre, yfibre, 
                                         wavelength, model_name)
     par_0_vector = parameters_dict_to_vector(par_0_dict, model_name)
     args = (datatube, vartube, xfibre, yfibre, wavelength, model_name,
-            fixed_parameters)
+            fixed_parameters, secondary)
     parameters_vector = leastsq(residual, par_0_vector, args=args)[0]
     parameters_dict = parameters_vector_to_dict(parameters_vector, model_name)
     return parameters_dict

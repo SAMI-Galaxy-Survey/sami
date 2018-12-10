@@ -251,7 +251,8 @@ def extract_secondary_standard(path_list,model_name='ref_centre_alpha_dist_circ_
         chunked_data['yfibre'],
         chunked_data['wavelength'],
         model_name,
-        fixed_parameters=fixed_parameters)
+        fixed_parameters=fixed_parameters,
+		secondary=True)
     psf_parameters = insert_fixed_parameters(psf_parameters, fixed_parameters)
     good_psf = check_psf_parameters(psf_parameters, chunked_data)
     for path in path_list:
