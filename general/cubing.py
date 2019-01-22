@@ -727,6 +727,15 @@ def dithered_cube_from_rss(ifu_list, size_of_grid=50, output_pix_size_arcsec=0.5
     fibre_area_pix = np.pi * (fibre_diameter_arcsec/2.0)**2 / output_pix_size_arcsec**2
     data_all = data_all / fibre_area_pix
     var_all = var_all / (fibre_area_pix)**2
+
+    # alternative bad pixel clipping. At the moment, set the default to be not using
+    # this, but allow clipping by changing the paramete do_clip_by_fibre:
+    do_clip_by_fibre = False
+    if (do_clip_by_fibre):
+        clip_by_fibre(xfibre_all,yfibre_all,data_all,var_all,doplot=True)
+
+ 
+
     
     # We must renormalise the spectra in order to sigma_clip the data.
     #
@@ -1432,3 +1441,276 @@ def create_qc_hdu(file_list, name):
         columns.append(pf.Column(name=key, format='E', array=qc_data[key]))
     hdu = pf.BinTableHDU.from_columns(columns, name='QC')
     return hdu
+
+
+###################
+# function to clip cosmics etc from the spectra based on comparisons between spectra
+# at similar locations.  Written by Scott Croom, 2018.
+
+def clip_by_fibre(xpos,ypos,data_all,var_all,nnear=7,doplot=True,testplot=True):
+    """Compare fibre spectra and find outlying pixels.  Relies on adjacent spectra
+    being relatively similar.  The key issues with this approach are:
+    1) how do we adjust for the median spectrum not quite being the same as the
+       individual spectra?  Simple methods are either division or addition.  For division 
+       the problem is divide by zero problems when close to zero flux.  For addition
+       this could cause problems if the spectra are just scaled versions of each other
+       as the addtion could cause differences in strong features.
+    2) How do we define the variance?  Based on individual spectra variances, or from
+       scatter between spectra.  the second of these is probably safer."""
+
+
+    # approach:
+    # 1) find NNEAR closest spectra.
+    # 2) median filter (in spectral direction) the spectra and subtract median.
+    # 3) derive median spectrum of all subtracted spectra.
+    # 4) estimate the rms around the continuum subtracted median.
+    # 5) flag bad pixels as those more than N*rms from the continuum subtracted median version.
+
+    # get specific sizes:
+    (n_spec,n_slices) = np.shape(data_all)
+    diff_arr = np.zeros(n_spec)
+    print('shape of xpos:',np.shape(xpos))
+    print('shape of data_all:',np.shape(data_all))
+    xpix=np.arange(n_slices)
+    
+    # the xpos,ypos values are taken are as a function of wavelength, so need to take a median
+    # value to do a fibre-to-fibre comparison:
+    xpos_med = np.nanmedian(xpos,axis=1)
+    ypos_med = np.nanmedian(ypos,axis=1)
+    
+    print('shape of xpos_med:',np.shape(xpos_med))
+
+    # define arrays:
+    near_spec = np.zeros((nnear,n_slices))
+    near_var = np.zeros((nnear,n_slices))
+    near_spec_sub = np.zeros((nnear,n_slices))
+    near_var_sub = np.zeros((nnear,n_slices))
+    normalized_spec = np.zeros((nnear,n_slices))
+    normalized_sigma = np.zeros((nnear,n_slices))
+    med_scale = np.zeros(nnear)
+    near_ind = np.zeros(nnear,dtype=int)
+    near_diff = np.zeros(nnear)
+    
+    if (testplot):
+        py.figure(1)
+        
+    # loop through each spectrum and identify all  the spectra that are close to it
+    for i in range(n_spec):
+        print('spectrum :',i,xpos_med[i],ypos_med[i])
+
+        # Calculate the separation of fibres:
+        diff = np.sqrt((xpos_med-xpos_med[i])**2 + (ypos_med-ypos_med[i])**2)
+
+        print(diff)
+
+        # find the nnear nearest spectra
+        near_ind = np.argpartition(diff, nnear)[:nnear]
+
+        print(near_ind)
+        
+        dd = np.zeros(nnear)
+        # now plot the spectra of the nearest nnear spectra to see a visual comparison:
+        inear = 0
+
+        if (testplot):
+            py.figure(1)
+            py.clf()
+            py.figure(2)
+            py.clf()
+            
+        for ind in near_ind:
+
+            #
+            print(inear,ind,diff[ind])
+            # store the spectra in the near_spec array:
+            near_spec[inear,:] = data_all[ind,:]
+            near_var[inear,:] = var_all[ind,:]
+
+            med_filt_spec = nd.filters.generic_filter(near_spec[inear,:],np.nanmedian,size=25)
+            #med_filt_spec = np.zeros(n_slices)
+
+            if (diff[ind] == 0.0):
+                near_data0 = data_all[ind,:]
+                near_var0 = var_all[ind,:]
+            
+            near_spec_sub[inear,:] = data_all[ind,:]-med_filt_spec
+            
+            if (testplot):
+                py.figure(2)
+                py.subplot(4,2,np.mod(inear,8)+1)
+                py.plot(xpix,near_spec[inear,:],label='fibre '+str(inear)+' '+str(diff[ind]))
+                py.plot(xpix,med_filt_spec)
+                #py.plot(xpix,med_filt_spec2)
+                #py.plot(xpix,med_filt_spec3)
+        
+#            med_scale[inear] = np.nanmedian(near_spec[inear,:])
+
+            
+            # scale by median:
+#            near_spec[inear,:] = near_spec[inear,:]/med_scale[inear]
+#            near_var[inear,:] = near_var[inear,:]/(med_scale[inear]*med_scale[inear])
+
+            near_ind[inear] = ind
+            near_diff[inear] = diff[ind]
+
+#            print(med_scale[inear])
+            # plot the individual spectra:
+            if (testplot):
+                py.figure(1)
+                py.subplot(4,1,1)
+                py.plot(xpix,near_spec[inear,:],label='fibre '+str(inear)+' '+str(diff[ind]))
+                
+                py.subplot(4,1,2)
+                py.plot(xpix,near_spec_sub[inear,:],label='fibre '+str(inear)+' '+str(diff[ind]))
+
+                
+                # plot the sqrt(variance):
+                #if (diff[ind] == 0):
+                #    py.subplot(3,1,2)
+                #    py.plot(xpix,np.sqrt(near_var[inear,:]),label='sigma from variance')
+                    
+            inear = inear +1
+
+        # calculate the median spectrum, and the median variance and sigma:
+        med_spec_sub = np.nanmedian(near_spec_sub,axis=0)
+        med_var =  np.nanmedian(near_var,axis=0)
+        med_sigma = np.sqrt(med_var)
+        # estimate the rms of the spectra.  For this we really want to remove outliers, as otherwise
+        # then will make the error small
+        rms_spec_sub = np.nanstd(near_spec_sub,axis=0)  
+        #print('med_spec shape:',np.shape(med_spec))
+
+        if (testplot):
+            py.subplot(4,1,2)
+            
+            py.plot(xpix,med_spec_sub,label='Median')
+            # plot the measured rms spec:
+            py.subplot(4,1,3)
+            py.plot(xpix,rms_spec_sub,label='RMS')
+            #py.plot(xpix,med_sigma,label='Median sigma from variance')
+
+
+
+            
+        # Now for the fibre in question, flag the bad pixels:
+        for ind in range(inear):
+            if (near_diff[ind] == 0):
+
+                # this is the difference spectrum between the spectrum of interest
+                if (testplot):
+                    py.subplot(4,1,4)
+                    py.plot(xpix,(near_spec_sub[ind,:]-med_spec_sub)/rms_spec_sub,label='rms')
+                    py.plot(xpix,(near_spec_sub[ind,:]-med_spec_sub)/np.sqrt(near_var0),label='sigma')
+                    py.plot(xpix,(near_spec_sub[ind,:]-med_spec_sub)/med_sigma,label='median sigma')
+
+                    py.subplot(4,1,3)
+                    py.plot(xpix,np.sqrt(near_var[ind,:]),label='sigma')
+                    py.plot(xpix,med_sigma,label='median sigma')
+                    
+                #bad_ind = np.where(np.abs(near_spec_sub[ind,:]-med_spec_sub)>5.0*rms_spec_sub)
+                bad_ind = np.where(np.abs(near_spec_sub[ind,:]-med_spec_sub)>5.0*np.sqrt(near_var0))
+
+                print('number of bad pixels:',np.size(bad_ind))
+                print('bad_ind:',bad_ind)
+                if (testplot):
+                    py.subplot(4,1,1)
+                    py.plot(xpix[bad_ind],np.ravel(near_spec[ind,bad_ind]),'x',color='red')
+                    
+        if (testplot):
+            py.subplot(4,1,1)
+            py.legend(loc=2,prop={'size':8})
+            py.subplot(4,1,2)
+            py.legend(loc=2,prop={'size':8})
+            py.subplot(4,1,3)
+            py.legend(loc=2,prop={'size':8})
+            py.subplot(4,1,4)
+            py.legend(loc=2,prop={'size':8})
+            
+        if (testplot):
+            py.show()
+            py.pause(0.01)
+            # pause code so we can look at spectra:
+            yn = input('Continue? (y/n):')
+            
+
+#                if (inear > 0):
+#                    py.subplot(4,1,2)
+#                    ratio = data_all[ind,:]/med_spec/(data_all[ind0,:]/med_spec0)
+#                    py.plot(xpix,ratio)
+#                    py.xlim(xmin=xpix[0],xmax=xpix[-1])
+#                    med_ratio = nanmedian_filter(ratio,size=101)
+#                    py.plot(xpix,med_ratio)
+                    
+#                    py.xlabel('Wavelength (pixels)')
+#                    py.ylabel('Ratio')
+
+#                    normalized_spec[inear,:] = (data_all[ind,:]/med_spec)/med_ratio
+#                    normalized_sigma[inear:,] = (np.sqrt(var_all[ind,:])/med_spec)/med_ratio
+
+#                if (inear == 0):
+#                    ind0 = ind
+#                    med_spec0 = med_spec
+#                    normalized_spec[inear,:] = data_all[ind0,:]/med_spec0
+#                    normalized_sigma[inear:,] = np.sqrt(var_all[ind0,:])/med_spec0
+
+#               dd[inear] = diff[ind]
+                # steps for filtering...
+                # 1) normalize all spectra by their median filtered version
+                # 2) Calculate the median spectrum from this
+                # 3) Calculate the MAD from this.
+                # 4) Find pixels in the first spectrum that are more that N*MAD from the median
+
+                
+                    
+#                inear = inear +1
+
+#            py.subplot(4,1,1)
+#            py.legend(loc=2,prop={'size':8})
+
+#            py.subplot(4,1,3)
+#            for j in range(inear):
+#                py.plot(xpix,normalized_spec[j,:])
+#                py.xlim(xmin=xpix[0],xmax=xpix[-1])
+                
+#            py.subplot(4,1,4)
+#            med_spectrum = np.nanmedian(normalized_spec,axis=0)
+#            print('size',np.shape(np.tile(med_spectrum,(inear,1))))
+#            delta_spectrum = normalized_spec - np.tile(med_spectrum,(inear,1))
+#            print(delta_spectrum[:,1000])
+#            print(delta_spectrum[:,1001])
+#            print(delta_spectrum[:,1002])
+#            mad_spectrum = np.nanmedian(np.abs(delta_spectrum),axis=0)
+#            py.plot(xpix,med_spectrum)
+#            #py.plot(xpix,med_spectrum+5.0*mad_spectrum,':')
+#            #py.plot(xpix,med_spectrum-5.0*mad_spectrum,':')
+#            
+#            py.plot(xpix,mad_spectrum)
+#            py.xlim(xmin=xpix[0],xmax=xpix[-1]) ##
+#
+#           # now identify pixels that are outliers:
+#            for j in range(inear):
+#                # get the actual fibre in question (with separation zero):
+#                if (dd[j] == 0.0):
+#                    #bad_ind = np.where(np.abs(normalized_spec[j,:]-med_spectrum)>5.0*mad_spectrum)
+#                    bad_ind = np.where(np.abs(normalized_spec[j,:]-med_spectrum)>5.0*normalized_sigma[j])
+#                    py.subplot(4,1,4)
+#                    
+#                    py.plot(xpix,normalized_spec[j,:])
+#                    py.plot(xpix,normalized_spec[j,:]+5.0*normalized_sigma[j],':')
+#                    py.plot(xpix,normalized_spec[j,:]-5.0*normalized_sigma[j],':')
+#                    
+#                    print(bad_ind)
+#                    py.subplot(4,1,1)
+#                    py.plot(xpix[bad_ind],np.ravel(data_all[i,bad_ind]),'x',color='red')
+#            
+            
+        print(near_ind)
+        
+    sys.exit()
+        
+    # find the nnear nearest spectra to make comparisons.  First find scaling
+    # to get them to match, including a wavelength dependence.  Then determine the
+    # scatter between the spectra per pixel.  Finally, use this to test for outliers
+    # in the nominated spectrum.
+        
+
