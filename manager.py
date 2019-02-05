@@ -51,6 +51,8 @@ from __future__ import absolute_import, division, print_function, unicode_litera
 
 from typing import List, Tuple, Dict, Sequence
 
+import code
+
 import shutil
 import os
 import re
@@ -2365,6 +2367,7 @@ class Manager:
             table = pf.getdata(fits_list[0].reduced_path, 'FIBRES_IFU')
             objects = table['NAME'][table['TYPE'] == 'P']
             objects = np.unique(objects)
+            objects = [obj.strip() for obj in objects]
             for name in objects:
                 path_pair = [
                     self.cubed_path(name.strip(), arm, fits_list, field_id,
@@ -2375,10 +2378,12 @@ class Manager:
                 if path_pair[0] and path_pair[1]:
                     path_pair_list.append(path_pair)
 
-        inputs_list = []
+        input_list = []
+
         for path_pair in path_pair_list:
-            inputs_list.append(overwrite)
-        self.map(aperture_spectra_pair, path_pair_list)
+            input_list.append((path_pair,overwrite))
+        
+        self.map(aperture_spectra_pair, input_list)
 
         return
 
@@ -4894,15 +4899,18 @@ def bin_cubes_pair(path_pair):
 
 
 @safe_for_multiprocessing
-def aperture_spectra_pair(path_pair, overwrite=False):
+def aperture_spectra_pair(inputs):
     """Create aperture spectra for a pair of data cubes using default apertures."""
-    path_blue, path_red = path_pair
+
+    path_pair,overwrite = inputs
+    path_blue,path_red = path_pair
     global CATALOG_PATH
+
     try:
         print('Processing: ' + path_blue + ', ' + path_red)
         binning.aperture_spectra_pair(path_blue, path_red, CATALOG_PATH, overwrite)
     except Exception as e:
-        print("ERROR on pair %s, %s:\n %s" % (path_blue, path_red, e.message))
+        print("ERROR on pair {path_blue}, {path_red}:\n {err}".format(path_blue=path_blue, path_red=path_red, err=str(e)))
         traceback.print_exc()
     return
 
