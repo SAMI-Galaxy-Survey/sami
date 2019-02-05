@@ -30,7 +30,7 @@ from glob import glob
 
 from .. import slogging
 log = slogging.getLogger(__name__)
-log.setLevel(slogging.INFO)
+log.setLevel(slogging.ERROR)
 
 import astropy.io.fits as pf
 import numpy as np
@@ -45,9 +45,9 @@ def bin_cube_pair(path_blue, path_red, name=None, **kwargs):
     """Calculate bins, do binning and save results for a pair of cubes."""
     hdulist_blue = pf.open(path_blue, 'update')
     hdulist_red = pf.open(path_red, 'update')
-    bin_mask = return_bin_mask(hdulist_blue, **kwargs)
-    bin_and_save(hdulist_blue, bin_mask, name=name, **kwargs)
-    bin_and_save(hdulist_red, bin_mask, name=name, **kwargs)
+    bin_mask,bin_params = return_bin_mask(hdulist_blue, **kwargs)
+    bin_and_save(hdulist_blue, bin_mask, bin_params,name=name, **kwargs)
+    bin_and_save(hdulist_red, bin_mask, bin_params, name=name, **kwargs)
     hdulist_blue.close()
     hdulist_red.close()
 
@@ -55,7 +55,7 @@ def is_id_in_catalogs(sami_id, catalogs):
     sami_id = int(sami_id)
     for cat in catalogs:
         if sami_id not in catalogs[cat]['CATAID']:
-            print("SAMI ID %s not in GAMA catalog %s" % (sami_id, cat))
+            #print("SAMI ID %s not in GAMA catalog %s" % (sami_id, cat))
             return False
     # Found in all catalogs
     return True
@@ -95,7 +95,7 @@ class CatalogAccessor(object):
                 for col in self.catalog_descriptions[cat]:
                     assert col in self.catalogs[cat].columns.dtype.names
             except Exception as e:
-                print("Original error: %s" % e.message)
+                print("Original error: %s" % str(e))
                 raise ValueError("Invalid or missing GAMA Catalog %s in directory %s" %
                                  (cat, os.path.abspath(self.path_to_catalogs)))
 
@@ -104,7 +104,7 @@ class CatalogAccessor(object):
         found = []
         for cat in self.catalog_names:
             if sami_id not in self.catalogs[cat]['CATAID']:
-                print("SAMI ID %s not in catalog %s" % (sami_id, cat))
+                #print("SAMI ID %s not in catalog %s" % (sami_id, cat))
                 found.append(0)
             else:
                 found.append(1)
@@ -121,7 +121,7 @@ class CatalogAccessor(object):
         catalog = self.catalogs[catalog_name]
         if cataid not in catalog['CATAID']:
             # print "SAMI ID %s not in GAMA catalogs - no aperture spectra produced" % cataid
-            raise ValueError("CATAID %s not in GAMA Catalog" % cataid)
+            raise ValueError("CATAID {} not in catalog {}".format(cataid,catalog_name))
         else:
             # Cut down the catalog to only contain the row for this SAMI ID.
             return catalog[catalog['CATAID'] == cataid][column][0]
@@ -129,18 +129,18 @@ class CatalogAccessor(object):
 def aperture_spectra_pair(path_blue, path_red, path_to_catalogs,overwrite=True):
     """Calculate binned spectra and save as new file for each pair of cubes."""
 
-    if log.isEnabledFor(slogging.INFO):
-        log.info("Running aperture_spectra_pair HG version %s", hg_changeset(__file__))
-    log.debug("Starting aperture_spectra_pair: %s, %s, %s", path_blue, path_red, path_to_catalogs)
+    #if log.isEnabledFor(slogging.INFO):
+    #    log.info("Running aperture_spectra_pair HG version %s", hg_changeset(__file__))
+    #log.debug("Starting aperture_spectra_pair: %s, %s, %s", path_blue, path_red, path_to_catalogs)
 
     # A dictionary of required catalogs and the columns required in each catalog.
     catalogs_required = {
         'ApMatchedCat': ['THETA_J2000', 'THETA_IMAGE'],
         'SersicCatAll': [
-            'GALRE_r',
-            'GALPA_r',
-            'GALR90_r',
-            'GALELLIP_r'],
+            'GAL_RE_R',
+            'GAL_PA_R',
+            'GAL_R90_R',
+            'GAL_ELLIP_R'],
         # Note spelling of Distance(s)Frames different from that used by GAMA
         'DistanceFrames': ['Z_TONRY_2'],
         'MGEPhotom': ['ReMGE_r','PAMGE_r','epsMGE_r'],
@@ -156,7 +156,6 @@ def aperture_spectra_pair(path_blue, path_red, path_to_catalogs,overwrite=True):
     out_file_base = os.path.basename(path).split(".")[0]
     output_filename = out_dir + "/" + out_file_base + "_aperture_spec_test.fits"
     
-    overwrite = True
     if (os.path.exists(output_filename)) & (overwrite == False):
         return
 
@@ -213,9 +212,9 @@ def aperture_spectra_pair(path_blue, path_red, path_to_catalogs,overwrite=True):
                             gama_catalogs.retrieve('ApMatchedCat', 'THETA_IMAGE', sami_id))
 
             standard_apertures['re'] = {
-                'aperture_radius': gama_catalogs.retrieve('SersicCatAll', 'GALRE_r', sami_id)/pix_size,
-                'pa': gama_catalogs.retrieve('SersicCatAll', 'GALPA_r', sami_id) + pos_angle_adjust,
-                'ellipticity': gama_catalogs.retrieve('SersicCatAll', 'GALELLIP_r', sami_id)
+                'aperture_radius': gama_catalogs.retrieve('SersicCatAll', 'GAL_RE_r', sami_id)/pix_size,
+                'pa': gama_catalogs.retrieve('SersicCatAll', 'GAL_PA_r', sami_id) + pos_angle_adjust,
+                'ellipticity': gama_catalogs.retrieve('SersicCatAll', 'GAL_ELLIP_r', sami_id)
                 }
         except:
             print('%s not found in GAMA catalogue. No GAMA Re spectrum produced for %s' % (sami_id,sami_id))
@@ -283,7 +282,7 @@ def aperture_spectra_pair(path_blue, path_red, path_to_catalogs,overwrite=True):
             if out_dir == "":
                 out_dir = '.'
             out_file_base = os.path.basename(path).split(".")[0]
-            output_filename = out_dir + "/" + out_file_base + "_aperture_spec_test.fits"
+            output_filename = out_dir + "/" + out_file_base + "_apspec.fits"
 
             # Create a new output FITS file:
             aperture_hdulist = pf.HDUList([pf.PrimaryHDU()])
@@ -312,7 +311,7 @@ def aperture_spectra_pair(path_blue, path_red, path_to_catalogs,overwrite=True):
                     bin_mask[aper] = aperture_bin_sami(hdulist, **standard_apertures[aper])
                     standard_apertures[aper]['mask'] = (bin_mask[aper] == 1)
                     standard_apertures[aper]['n_pix_included'] = int(np.sum(standard_apertures[aper]['mask']))
-                log_aperture_data(standard_apertures, sami_id)
+                #log_aperture_data(standard_apertures, sami_id)
 
             for aper in standard_apertures:
                 aperture_data = standard_apertures[aper]
@@ -396,11 +395,11 @@ def aperture_spectra_pair(path_blue, path_red, path_to_catalogs,overwrite=True):
 
                 log.debug("Aperture %s completed", aper)
 
-            aperture_hdulist.writeto(output_filename, clobber=True)
+            aperture_hdulist.writeto(output_filename, overwrite=True)
             log.info("Aperture spectra written to %s", output_filename)
 
 
-def bin_and_save(hdulist, bin_mask, name=None, **kwargs):
+def bin_and_save(hdulist, bin_mask, bin_params, name=None, **kwargs):
     """Do binning and save results for an HDUList."""
     # TODO: Check if the extensions already exist. In most cases you would
     # want to either overwrite or just return without doing anything, but
@@ -427,6 +426,9 @@ def bin_and_save(hdulist, bin_mask, name=None, **kwargs):
         del hdulist[ext]
 
     hdu_mask = pf.ImageHDU(bin_mask, name='BIN_MASK'+suffix)
+    if len(bin_params == 2):
+        hdu_mask.header['BIN_EPS'] = (bin_params[0],'Ellipticity of bins')
+        hdu_mask.header['BIN_PA'] = (bin_params[1],'Position angle of bins')
     hdu_flux = pf.ImageHDU(binned_cube, name='BINNED_FLUX'+suffix)
     hdu_var = pf.ImageHDU(binned_var, name='BINNED_VARIANCE'+suffix)
     hdulist.append(hdu_mask)
@@ -439,14 +441,14 @@ def return_bin_mask(hdu, mode='adaptive', targetSN=10, minSN=None, sectors=8,rad
     
     if mode == 'adaptive':
         bin_mask = adaptive_bin_sami(hdu,targetSN=targetSN, minSN=minSN)
-        
+        params = []
     elif mode == 'prescriptive':
-        bin_mask = prescribed_bin_sami(hdu,sectors=sectors,radial=radial,log=log)
+        bin_mask,params = prescribed_bin_sami(hdu,sectors=sectors,radial=radial,log=log)
 
     else:
         raise Exception('Invalid binning mode requested')
 
-    return bin_mask
+    return bin_mask,params
 
 def bin_cube(hdu,bin_mask, mode='', **kwargs):
     """
@@ -855,7 +857,9 @@ def prescribed_bin_sami(hdu,sectors=8,radial=5,log=False,
         bin_mask[ind] = i+1
     bin_mask[np.isfinite(image) == False] = 0
 
-    return bin_mask
+    params = [eps,pa]
+
+    return bin_mask,params
 
 def aperture_bin_sami(hdu, aperture_radius=1, ellipticity=0, pa=0):
     """Produce an aperture bin (inside and outside) for the aperture given."""
