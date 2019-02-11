@@ -97,6 +97,13 @@ try:
 except ImportError:
     PATCH_AVAILABLE = False
 
+MF_BIN_DIR = '/Users/nscott/Reduction/molecfit/bin' # directory for molecfit binary files
+if not os.path.exists(os.join(MF_BIN_DIR,'molecfit'):
+	warnings.warn('molecfit not found in {}. Disabling improved telluric subtraction'.format(MF_BIN_DIR))
+	MOLECFIT_AVAILABLE = False
+else:
+	MOLECFIT_AVAILABLE = True
+
 from .utils.other import find_fibre_table, gzip
 from .utils import IFU
 from .general.cubing import dithered_cubes_from_rss_list, get_object_names
@@ -4709,7 +4716,8 @@ def telluric_correct_pair(inputs):
     try:
         telluric.derive_transfer_function(
             path_pair, PS_spec_file=PS_spec_file, use_PS=use_PS, n_trim=n_trim,
-            scale_PS_by_airmass=scale_PS_by_airmass, model_name=model_name)
+            scale_PS_by_airmass=scale_PS_by_airmass, model_name=model_name,
+            molecfit_available = MOLECFIT_AVAILABLE, molecfit_dir = MF_BIN_DIR)
     except ValueError as err:
         if err.args[0].startswith('No star identified in file:'):
             # No standard star found; probably a star field

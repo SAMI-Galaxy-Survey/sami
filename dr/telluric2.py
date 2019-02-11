@@ -4,7 +4,7 @@ from astropy.io    import fits, ascii as ap_ascii
 from astropy.table import Table
 
 
-def TelluricCorrect(fcal_fname, wrange_include='none', delete_files=True):
+def TelluricCorrect(fcal_fname, star_flux, star_flux_err, wave, mf_bin_dir = '', wrange_include='none', delete_files=True):
 
 	""" Perform a telluric correction for every each fiber spectum using ESO's molecfit software """
 	# Using the model correction determined by the molecfit software for the secondary standard 
@@ -19,7 +19,7 @@ def TelluricCorrect(fcal_fname, wrange_include='none', delete_files=True):
 	star_spec_fname = obs_name + '/star.dat'        # ascii table containing star spectrum
 	mf_output_dir   = obs_name + '/molecfit_output/'# molecfit output directory name
 	mf_script_fname = obs_name + '/molecfit.sh'     # script name which calls molecfit 
-	mf_bin_dir      = '/Users/nscott/Reduction/molecfit/bin' # directory for molecfit binary files
+	#mf_bin_dir      = '/Users/nscott/Reduction/molecfit/bin' # directory for molecfit binary files
 	
 	# Check that the above directories exists, making them if they arent
 	for dir in [gal_spec_dir, mf_output_dir]:
@@ -33,20 +33,21 @@ def TelluricCorrect(fcal_fname, wrange_include='none', delete_files=True):
 		# extract headers
 		h0 	       = hdu['PRIMARY'].header 	
 		h1         = hdu['FIBRES_IFU'].header	
-		# extract tables
-		primary    = hdu['PRIMARY'].data
-		variance   = hdu['VARIANCE'].data
-		fibers_ifu = hdu['FIBRES_IFU'].data
+		# extract tables - not needed when getting flux from parent function
+		#primary    = hdu['PRIMARY'].data
+		#variance   = hdu['VARIANCE'].data
+		#fibers_ifu = hdu['FIBRES_IFU'].data
 		# extract name of secondary standard star
 		star_name  = hdu['FLUX_CALIBRATION'].header['STDNAME']
 		
 	# Air wavelength in microns
-	wave           = (h0['CRVAL1'] + h0['CDELT1'] * (np.arange(h0['NAXIS1']) - h0['CRPIX1']))*10**-4	
+	#wave           = (h0['CRVAL1'] + h0['CDELT1'] * (np.arange(h0['NAXIS1']) - h0['CRPIX1']))*10**-4	
+	
 	# identify rows of central 19 fibers in star fiber bundle
-	centrals 	   = np.where((fibers_ifu['NAME'] == star_name) & (fibers_ifu['FIBNUM'] <= 19))[0]
+	#centrals 	   = np.where((fibers_ifu['NAME'] == star_name) & (fibers_ifu['FIBNUM'] <= 19))[0]
 	# extract star flux and flux error
-	star_flux      = np.nansum([primary[i]          for i in centrals], axis=0)
-	star_flux_err  = np.sqrt(np.nansum([variance[i] for i in centrals], axis=0))	
+	#star_flux      = np.nansum([primary[i]          for i in centrals], axis=0)
+	#star_flux_err  = np.sqrt(np.nansum([variance[i] for i in centrals], axis=0))	
 	
 	# convert 0.0 flux error to np.inf ? and 0.0 flux to np.nan
 	star_flux[np.where(star_flux         == 0.0)] = np.nan
@@ -56,39 +57,39 @@ def TelluricCorrect(fcal_fname, wrange_include='none', delete_files=True):
 	star_table     = Table([wave, star_flux, star_flux_err, np.isfinite(star_flux)],
 					  				names=[r'#Wavelength', 'Flux', 'Flux_Err', 'Mask'])
 	star_table.write(star_spec_fname, format='ascii', overwrite=True)
-	gal_fnames 	   = [None] * h0['NAXIS2'] # initialise list of galaxy parameter filenames
+	#gal_fnames 	   = [None] * h0['NAXIS2'] # initialise list of galaxy parameter filenames
 
 	# Need to arrange all galaxy spectra into individual files, and then provide a list of these 
 	# filenames to the dictionary below. For now, include ALL fiber spectra, including the secondary
 	# standard fibers and the sky fibers
 	
-	for i in range(h0['NAXIS2']): # iterate through rows
-		gal_name      = fibers_ifu['NAME'][i]	# name
-		gal_fiber_id  = fibers_ifu['FIBNUM'][i] # fiber number
-		gal_flux      = primary[i]			    # flux
+	#for i in range(h0['NAXIS2']): # iterate through rows
+	#	gal_name      = fibers_ifu['NAME'][i]	# name
+	#	gal_fiber_id  = fibers_ifu['FIBNUM'][i] # fiber number
+	#	gal_flux      = primary[i]			    # flux
 	
-		with np.errstate(invalid='ignore'): 	# ignore RuntimeWarning in sqrt for NaNs
-			gal_flux_err = np.sqrt(variance[i]) # flux_error (noise spectrum)
+	#	with np.errstate(invalid='ignore'): 	# ignore RuntimeWarning in sqrt for NaNs
+	#		gal_flux_err = np.sqrt(variance[i]) # flux_error (noise spectrum)
 	
-		gal_fnames[i] = f"{gal_spec_dir}{gal_name}_{gal_fiber_id}.dat"		
-		gal_table     = Table([wave, gal_flux, gal_flux_err, ~np.isnan(gal_flux)], 
-									names=[r'#Wavelength', 'Flux', 'Flux_Err', 'Mask'])
-	
-		gal_table.write(gal_fnames[i], format='ascii', overwrite=True)  # write table to file
+	#	gal_fnames[i] = f"{gal_spec_dir}{gal_name}_{gal_fiber_id}.dat"		
+	#	gal_table     = Table([wave, gal_flux, gal_flux_err, ~np.isnan(gal_flux)], 
+	#								names=[r'#Wavelength', 'Flux', 'Flux_Err', 'Mask'])
+	#
+	#	gal_table.write(gal_fnames[i], format='ascii', overwrite=True)  # write table to file
    
 	#----------------------------------------------------------------------------------------------#
 	#___________________________ WRITE LIST OF FILENAMES TO A TXT FILE ____________________________#
-	# write the list of all the galaxy paramters filenames to a .txt file 	
+	# write the list of all the galaxy parameters filenames to a .txt file 	
 	
-	with open(gal_list_fname, 'w') as file:
-		[file.write(f + '\n') for f in gal_fnames]
+	#with open(gal_list_fname, 'w') as file:
+	#	[file.write(f + '\n') for f in gal_fnames]
 	
 	#----------------------------------------------------------------------------------------------#
 	#________________________ WRITE DICTIONARY OF PARAMATER FILE KEYWORDS _________________________#
 
 	dic = {	## INPUT DATA
 	   'filename' 		: star_spec_fname,
-	   'listname' 		: gal_list_fname, # List of additional files to be corrected
+	   #'listname' 		: gal_list_fname, # List of additional files to be corrected
 	   'trans'    		: 1, 			  # type of input spectrum (transmission=1, emission=0)
 	   'columns'  		: 'Wavelength Flux Flux_Err Mask', # input table column names
 	   'default_error' 	: '',
@@ -176,28 +177,37 @@ def TelluricCorrect(fcal_fname, wrange_include='none', delete_files=True):
 	#__________________________ EXECUTE BASH COMMANDS TO CALL MOLECFIT  ___________________________#
 	
 	[subprocess.run([f"{mf_bin_dir}/{func}", f"{param_fname}"])
-							for func in ['molecfit', 'calctrans', 'corrfilelist']]	
+							for func in ['molecfit', 'calctrans']]#, 'corrfilelist']]	
 				
 	#----------------------------------------------------------------------------------------------#
 	#_______________________ SAVE TELLURIC CORRECTED SPECTRUM TO SCI.FITS  ________________________#
 		
-	with fits.open(fcal_fname) as hdu:
-		for i in range(hdu['PRIMARY'].header['NAXIS2']):	
-			gal_name     = hdu['FIBRES_IFU'].data['NAME'][i]   # name
-			gal_fiber_id = hdu['FIBRES_IFU'].data['FIBNUM'][i] # fiber number			
-			filename     = f"{mf_output_dir}{gal_name}_{gal_fiber_id}_TAC.dat"	
+	#with fits.open(fcal_fname) as hdu:
+	#	for i in range(hdu['PRIMARY'].header['NAXIS2']):	
+	#		gal_name     = hdu['FIBRES_IFU'].data['NAME'][i]   # name
+	#		gal_fiber_id = hdu['FIBRES_IFU'].data['FIBNUM'][i] # fiber number			
+	#		filename     = f"{mf_output_dir}{gal_name}_{gal_fiber_id}_TAC.dat"	
 			# extract the telluric corrected flux from the appropriate _TAC.dat file
-			hdu['PRIMARY'].data[i] = ap_ascii.read(filename)['tacflux']
+	#		hdu['PRIMARY'].data[i] = ap_ascii.read(filename)['tacflux']
 		
 		# add a line to the fits primary header to indicate Molecfit has done the correction
-		hdu['PRIMARY'].header['TELLURIC'] = ('Molecfit', 'ESO molecfit software used')
-		hdu.writeto(fcal_fname.replace('fcal', 'sci'), overwrite=True) # save to sci file.		
+	#	hdu['PRIMARY'].header['TELLURIC'] = ('Molecfit', 'ESO molecfit software used')
+	#	hdu.writeto(fcal_fname.replace('fcal', 'sci'), overwrite=True) # save to sci file.		
 			
 	#----------------------------------------------------------------------------------------------#
 	#_________________________ CLEANUP! DELETE INTERMEDIARY FILES  ________________________________#		
 	# Need to delete all the intermediary files (i.e all the Molecfit specific input and output).
 	# They are all found in the directory called obs_name. The sci.fits file is saved above this 
 	# directory, so the whole directory can be removed	
+	
+	transfer_table = fits.open(f"{mf_output_dir}{}_tac.fits")
+	transfer_data = transfer_table[1].data
+	model_flux = transfer_data['cflux']
+	transfer_function = 1./transfer_data['mtrans']
+	sigma_transfer = np.zeros(len(transfer_function))
+	
+	return transfer_function, sigma_transfer, model_flux
+	
 	
 	if delete_files:
 		shutil.rmtree(obs_name)
