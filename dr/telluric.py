@@ -99,11 +99,11 @@ def derive_transfer_function(frame_list, PS_spec_file=None, use_PS=False,
         
         # create transfer function for secondary standard
         if molecfit_available:
-        	SS_transfer_function, SS_sigma_transfer, corrected_flux = molecfit_telluric(frame_list[1],SS_flux_data,
-        		SS_sigma_flux,SS_wave_axis,mf_bin_dir=molecfit_dir)
+            SS_transfer_function, SS_sigma_transfer, corrected_flux = molecfit_telluric(frame_list[1],SS_flux_data,
+                SS_sigma_flux,SS_wave_axis,mf_bin_dir=molecfit_dir)
         else:
-        	SS_transfer_function, SS_sigma_transfer, corrected_flux = create_transfer_function(SS_flux_data,
-        		SS_sigma_flux,SS_wave_axis,naxis1)
+            SS_transfer_function, SS_sigma_transfer, corrected_flux = create_transfer_function(SS_flux_data,
+                SS_sigma_flux,SS_wave_axis,naxis1)
     
         transfer_function = SS_transfer_function
         sigma_transfer = SS_sigma_transfer
@@ -111,7 +111,7 @@ def derive_transfer_function(frame_list, PS_spec_file=None, use_PS=False,
     # Require that all corrections are > 1, as expected for absorption
     transfer_function = np.maximum(transfer_function, 1.0)
     
-	model_flux = corrected_flux / transfer_function
+    model_flux = corrected_flux / transfer_function
 
     # Update the files to include telluric correction factor
     n_pix = len(transfer_function)
