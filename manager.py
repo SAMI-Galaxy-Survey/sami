@@ -98,7 +98,7 @@ except ImportError:
     PATCH_AVAILABLE = False
 
 MF_BIN_DIR = '/Users/nscott/Reduction/molecfit/bin' # directory for molecfit binary files
-if not os.path.exists(os.join(MF_BIN_DIR,'molecfit'):
+if not os.path.exists(os.path.join(MF_BIN_DIR,'molecfit')):
 	warnings.warn('molecfit not found in {}. Disabling improved telluric subtraction'.format(MF_BIN_DIR))
 	MOLECFIT_AVAILABLE = False
 else:
