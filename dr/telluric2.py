@@ -200,7 +200,7 @@ def TelluricCorrect(fcal_fname, star_flux, star_flux_err, wave, mf_bin_dir = '',
 	# They are all found in the directory called obs_name. The sci.fits file is saved above this 
 	# directory, so the whole directory can be removed	
 	
-	transfer_table = fits.open(f"{mf_output_dir}{}_tac.fits")
+	transfer_table = fits.open(f"{mf_output_dir}{obsname}_tac.fits")
 	transfer_data = transfer_table[1].data
 	model_flux = transfer_data['cflux']
 	transfer_function = 1./transfer_data['mtrans']
