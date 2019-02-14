@@ -37,7 +37,7 @@ def derive_transfer_function(frame_list, PS_spec_file=None, use_PS=False,
                              scale_PS_by_airmass=False, 
                              model_name='ref_centre_alpha_dist_circ_hdratm',
                              n_trim=0, use_probe=None, hdu_name='FLUX_CALIBRATION',
-                             molecfit_available = False, molecfit_dir =''):
+                             molecfit_available = False, molecfit_dir ='',speed=''):
     """
     Finds the telluric correction factor to multiply object data by. The factor 
     as a function of wavelength is saved into the red frame under the extension 
@@ -98,7 +98,7 @@ def derive_transfer_function(frame_list, PS_spec_file=None, use_PS=False,
         hdulist.close()
         
         # create transfer function for secondary standard
-        if molecfit_available:
+        if molecfit_available & (speed == 'slow'):
             SS_transfer_function, SS_sigma_transfer, corrected_flux = molecfit_telluric(frame_list[1],SS_flux_data,
                 SS_sigma_flux,SS_wave_axis,mf_bin_dir=molecfit_dir)
         else:

@@ -4,7 +4,7 @@ from astropy.io    import fits, ascii as ap_ascii
 from astropy.table import Table
 
 
-def TelluricCorrect(fcal_fname, star_flux, star_flux_err, wave, mf_bin_dir = '', wrange_include='none', delete_files=True):
+def TelluricCorrect(fcal_fname, star_flux, star_flux_err, wave, mf_bin_dir = '', wrange_include='none', delete_files=True, quiet=True):
 
 	""" Perform a telluric correction for every each fiber spectum using ESO's molecfit software """
 	# Using the model correction determined by the molecfit software for the secondary standard 
@@ -13,6 +13,7 @@ def TelluricCorrect(fcal_fname, star_flux, star_flux_err, wave, mf_bin_dir = '',
 	#_______________________________________ OUTPUT FILES _________________________________________#
 	
 	obs_name        = fcal_fname.replace('fcal.fits', '') # Name of observation (i.e "06mar20040")
+	obs_name_root = os.path.basename(obs_name)
 	gal_list_fname  = obs_name + '/galaxy_list.txt' # File containing list of fnames of gal spec
 	gal_spec_dir    = obs_name + '/spec_files/'     # directory to hold galaxy spectra table files
 	param_fname     = obs_name + '/param_file.par'  # parameter file (Molecfit Input file)
@@ -22,8 +23,9 @@ def TelluricCorrect(fcal_fname, star_flux, star_flux_err, wave, mf_bin_dir = '',
 	#mf_bin_dir      = '/Users/nscott/Reduction/molecfit/bin' # directory for molecfit binary files
 	
 	# Check that the above directories exists, making them if they arent
-	for dir in [gal_spec_dir, mf_output_dir]:
-		os.makedirs(os.path.dirname(dir), exist_ok=True)
+	for directory in [gal_spec_dir, mf_output_dir]:
+		if not os.path.isdir(directory):
+			os.makedirs(os.path.dirname(directory))
 
 	#----------------------------------------------------------------------------------------------#		
 	#_________________________ EXTRACT SPECTRAL INFO FROM FCAL.FITS FILE __________________________#
@@ -41,7 +43,8 @@ def TelluricCorrect(fcal_fname, star_flux, star_flux_err, wave, mf_bin_dir = '',
 		star_name  = hdu['FLUX_CALIBRATION'].header['STDNAME']
 		
 	# Air wavelength in microns
-	#wave           = (h0['CRVAL1'] + h0['CDELT1'] * (np.arange(h0['NAXIS1']) - h0['CRPIX1']))*10**-4	
+	#wave           = (h0['CRVAL1'] + h0['CDELT1'] * (np.arange(h0['NAXIS1']) - h0['CRPIX1']))*10**-4
+	wave = wave*(10**-4)
 	
 	# identify rows of central 19 fibers in star fiber bundle
 	#centrals 	   = np.where((fibers_ifu['NAME'] == star_name) & (fibers_ifu['FIBNUM'] <= 19))[0]
@@ -101,7 +104,7 @@ def TelluricCorrect(fcal_fname, star_flux, star_flux_err, wave, mf_bin_dir = '',
 
 	   ## RESULTS
 	   'output_dir'   	: mf_output_dir,  # directory of molecfit output files
-	   'output_name'  	: obs_name,       # use observation name to label molecfit output files
+	   'output_name'  	: obs_name_root,       # use observation name to label molecfit output files
 	   'plot_creation'	: 'P',            # create postscript plots
 	   'plot_range'   	: 0,              # create plots for fit ranges (0 = nah dont)
 
@@ -175,10 +178,13 @@ def TelluricCorrect(fcal_fname, star_flux, star_flux_err, wave, mf_bin_dir = '',
 	
 	#----------------------------------------------------------------------------------------------#
 	#__________________________ EXECUTE BASH COMMANDS TO CALL MOLECFIT  ___________________________#
-	
-	[subprocess.run([f"{mf_bin_dir}/{func}", f"{param_fname}"])
-							for func in ['molecfit', 'calctrans']]#, 'corrfilelist']]	
-				
+	if quiet == True:
+		with open(os.devnull,'w') as devnull:
+			[subprocess.run([f"{mf_bin_dir}/{func}", f"{param_fname}"],stdout=devnull)
+			 for func in ['molecfit', 'calctrans']]#, 'corrfilelist']]	
+	else:
+		[subprocess.run([f"{mf_bin_dir}/{func}", f"{param_fname}"],stdout=devnull)
+			 for func in ['molecfit', 'calctrans']]
 	#----------------------------------------------------------------------------------------------#
 	#_______________________ SAVE TELLURIC CORRECTED SPECTRUM TO SCI.FITS  ________________________#
 		
@@ -200,19 +206,16 @@ def TelluricCorrect(fcal_fname, star_flux, star_flux_err, wave, mf_bin_dir = '',
 	# They are all found in the directory called obs_name. The sci.fits file is saved above this 
 	# directory, so the whole directory can be removed	
 	
-	transfer_table = fits.open(f"{mf_output_dir}{obsname}_tac.fits")
+	transfer_table = fits.open(f"{mf_output_dir}{obs_name_root}_tac.fits")
 	transfer_data = transfer_table[1].data
 	model_flux = transfer_data['cflux']
 	transfer_function = 1./transfer_data['mtrans']
 	sigma_transfer = np.zeros(len(transfer_function))
 	
-	return transfer_function, sigma_transfer, model_flux
-	
-	
 	if delete_files:
 		shutil.rmtree(obs_name)
 	
-
+	return transfer_function, sigma_transfer, model_flux
 
 
 
