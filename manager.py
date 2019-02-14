@@ -97,7 +97,7 @@ try:
 except ImportError:
     PATCH_AVAILABLE = False
 
-MF_BIN_DIR = '/Users/nscott/Reduction/molecfit/bin' # directory for molecfit binary files
+MF_BIN_DIR = '/suphys/nscott/molecfit_install/bin' # directory for molecfit binary files
 if not os.path.exists(os.path.join(MF_BIN_DIR,'molecfit')):
 	warnings.warn('molecfit not found in {}. Disabling improved telluric subtraction'.format(MF_BIN_DIR))
 	MOLECFIT_AVAILABLE = False
@@ -2042,7 +2042,8 @@ class Manager:
                 'use_PS': use_PS,
                 'scale_PS_by_airmass': scale_PS_by_airmass,
                 'PS_spec_file': PS_spec_file,
-                'model_name': model_name_out})
+                'model_name': model_name_out},
+                'speed':self.speed)
         # Now send this list to as many cores as we are using
         # Limit this to 10, because of semaphore issues I don't understand
         old_n_cpu = self.n_cpu
@@ -4717,7 +4718,7 @@ def telluric_correct_pair(inputs):
         telluric.derive_transfer_function(
             path_pair, PS_spec_file=PS_spec_file, use_PS=use_PS, n_trim=n_trim,
             scale_PS_by_airmass=scale_PS_by_airmass, model_name=model_name,
-            molecfit_available = MOLECFIT_AVAILABLE, molecfit_dir = MF_BIN_DIR)
+            molecfit_available = MOLECFIT_AVAILABLE, molecfit_dir = MF_BIN_DIR,speed=inputs['speed'])
     except ValueError as err:
         if err.args[0].startswith('No star identified in file:'):
             # No standard star found; probably a star field
