@@ -164,7 +164,7 @@ def find_dither(RSSname,reference,centroid=True,inter=False,plot=False,remove_fi
       ### plane will remain exactly the same in the various exposures!  
       
       file_centralfib=''.join([reference.strip('.fits'), "ref_centrFIB.txt"]) 
-      f=open('..'+file_centralfib,'w')
+      f=open(file_centralfib,'w')
       
     
       galname=[] #name of the target galaxy
@@ -211,7 +211,7 @@ def find_dither(RSSname,reference,centroid=True,inter=False,plot=False,remove_fi
       xshcol=[]  # xshift in micron
       yshcol=[]  # yshif in micron
       n=0
-      for line in open('..'+file_ref):
+      for line in open(file_ref):
          n=n+1
          cols=line.split()
          index = object_order[cols[0]]
@@ -267,7 +267,7 @@ def find_dither(RSSname,reference,centroid=True,inter=False,plot=False,remove_fi
              ifu_good = np.zeros(n_ifu, dtype=int)
              xin = np.zeros(n_ifu)
              yin = np.zeros(n_ifu)
-             for line in open('..'+file_centroid):
+             for line in open(file_centroid):
                  cols=line.split()
                  # xin.append(float(cols[2]))
                  # yin.append(float(cols[3]))
@@ -277,7 +277,7 @@ def find_dither(RSSname,reference,centroid=True,inter=False,plot=False,remove_fi
                  yin[index] = float(cols[3])
   
             
-             f=open('..'+file_geoin, 'w')
+             f=open(file_geoin, 'w')
              good = []
              for j in range(n_ifu):
                  # Immediately censor any point that's moved by more than max_shift
@@ -416,7 +416,7 @@ def find_dither(RSSname,reference,centroid=True,inter=False,plot=False,remove_fi
                           'xref_median': results[0]['xref_median'],
                           'yref_median': results[0]['yref_median']}
       save_results(ref_results_dict)
-      print(ref_results_dict)
+      #print(ref_results_dict)
       
       ## Save final dither solution
       #file_results=''.join([reference.strip('.fits'), "_dither_solution.txt"])
