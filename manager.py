@@ -2042,8 +2042,8 @@ class Manager:
                 'use_PS': use_PS,
                 'scale_PS_by_airmass': scale_PS_by_airmass,
                 'PS_spec_file': PS_spec_file,
-                'model_name': model_name_out},
-                'speed':self.speed)
+                'model_name': model_name_out,
+                'speed':self.speed})
         # Now send this list to as many cores as we are using
         # Limit this to 10, because of semaphore issues I don't understand
         old_n_cpu = self.n_cpu
