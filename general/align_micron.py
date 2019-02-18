@@ -152,7 +152,7 @@ def find_dither(RSSname,reference,centroid=True,inter=False,plot=False,remove_fi
 
       if centroid:
           for name in RSSname:
-              print(name)
+              #print(name)
               get_centroid(name, reference, do_dar_correct=do_dar_correct) #**reference added
 
       nRSS=len(RSSname)
