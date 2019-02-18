@@ -99,7 +99,7 @@ except ImportError:
 
 MF_BIN_DIR = '/suphys/nscott/molecfit_install/bin' # directory for molecfit binary files
 if not os.path.exists(os.path.join(MF_BIN_DIR,'molecfit')):
-	warnings.warn('molecfit not found in {}. Disabling improved telluric subtraction'.format(MF_BIN_DIR))
+	warnings.warn('molecfit not found. Disabling improved telluric subtraction')
 	MOLECFIT_AVAILABLE = False
 else:
 	MOLECFIT_AVAILABLE = True
