@@ -671,7 +671,7 @@ def centroid_fit(x,y,data,reference=None,rssframe=None,galaxyid=None,microns=Tru
         checkind = 'single'
         dist = (tbl['y_peak']+np.min(x)-xc)**2+(tbl['x_peak']+np.min(y)-yc)**2    # separation between a peak and centre 
         if(dist < (310)**2): # Single peak near the centre
-            tx,ty,trad = tbl['y_peak']+np.min(x), tbl['x_peak']+np.min(y),105*2.5  # y_peak is x. yes. it's right.
+            tx,ty,trad = tbl['y_peak']+np.min(x), tbl['x_peak']+np.min(y),105*1.5  # y_peak is x. yes. it's right.
         else:  # When a peak is near the edge. High possibility that our target is not detected due to low brightness
             for k in range(1,100):  # repeat until it finds multiple peaks with reduced filtering box
                 width = width*0.98
@@ -706,8 +706,8 @@ def centroid_fit(x,y,data,reference=None,rssframe=None,galaxyid=None,microns=Tru
         xx, yy = xx[np.where(xx*yy != tx*ty)], yy[np.where(xx*yy != tx*ty)]
         osub = np.where(((xx-tx)**2+(yy-ty)**2 - np.min((xx-tx)**2+(yy-ty)**2)) < 0.1)   # the 2nd closest object
         trad = np.sqrt((xx[osub]-tx)**2+(yy[osub]-ty)**2)/2.   # masking radius = (a separation btw the target and 2nd closest object)/2.
-        if(trad > 105*2.5): # when masking radius is too big
-            trad = 105*2.5
+        if(trad > 105*2): # when masking radius is too big
+            trad = 105*2
         if(trad < 105*1.5): # when masking radius is too small
             trad = 105*1.5
 
