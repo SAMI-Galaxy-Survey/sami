@@ -1614,11 +1614,16 @@ class Manager:
             file_list.extend(files)
         self.reduce_file_iterable(
             file_list, overwrite=overwrite, check='SKY')
+        
         # Average the throughput values in each group
         for files in groups.values():
             path_list = [fits.reduced_path for fits in files]
             make_clipped_thput_files(
                 path_list, overwrite=overwrite, edit_all=True, median=True)
+                
+        # Send all the sky frames to the imprpved
+        if  self.improve_blue_wavecorr:
+            self.map(derive_blue_wavecorr,file_list)
         if fake_skies:
             no_sky_list = self.fields_without_skies(**kwargs)
             # Certain parameters will already have been set so don't need
