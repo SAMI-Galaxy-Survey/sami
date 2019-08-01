@@ -117,6 +117,7 @@ from .qc.fluxcal import throughput, get_sdss_stellar_mags, identify_secondary_st
 from .qc.sky import sky_residuals
 from .qc.arc import bad_fibres
 from .dr.fflat import correct_bad_fibres
+from .dr.twilight_wavecal import wavecorr_frame, wavecorr_av, apply_wavecorr
 
 # Temporary edit. Prevent bottleneck 1.0.0 being used.
 try:
@@ -361,6 +362,19 @@ class Manager:
 
     For the on site data reduction, it might be advisable to use `False`
     (default), because this requires less time.
+    
+    Improving the blue arm wavelength calibration using twilight sky frames
+    =======================================================================
+    
+    The keyword 'improve_blue_wavecorr' instructs the manager to determine
+    an improved blue arm wavelength solution from the twilight sky frames.
+    
+    When this keyword is set to true, the reduced twilight sky frame spectra
+    are compared to a high-resolution solar spectrum (supplied as part of the
+    SAMI package) to determine residual wavelength shifts. An overall
+    fibre-to-fibre wavelength offset is derived by averaging over all twilight
+    sky frames in a run. This average offset is stored in a calibration file in
+    the root directory of the run. These shifts are then applied to all arc frames.    
 
     Continuing a previous session
     =============================
@@ -796,7 +810,7 @@ class Manager:
     def __init__(self, root, copy_files=False, move_files=False, fast=False,
                  gratlpmm=GRATLPMM, n_cpu=1,
                  demo_data_source='demo', use_twilight_tlm_blue=False, use_twilight_flat_blue=False,
-                 debug=False):
+                 improve_blue_wavecorr=False, debug=False):
         if fast:
             self.speed = 'fast'
         else:
@@ -808,6 +822,9 @@ class Manager:
         # define the internal flag that allows twilights to be used for
         # fibre flat fielding:
         self.use_twilight_flat_blue = use_twilight_flat_blue
+        # define the internal flag that specifies the improved twlight wavelength
+        # calibration step should be applied
+        self.improve_blue_wavecorr = improve_blue_wavecorr
         # Internal flag to allow for greater output during processing.
         # this is not actively used at present, but show be at some point
         # so we can easily get output for testing
@@ -852,6 +869,11 @@ class Manager:
             print('Using twilight frames for fibre flat field')
         else:
             print('NOT using twilight frames for fibre flat field')
+
+        if improve_blue_wavecorr:
+            print('Applying additional twilight-based wavelength calibration step')
+        else:
+            print('NOT applying additional twilight-based wavelength calibration step')
 
         self._debug = False
         self.debug = debug
@@ -1621,9 +1643,21 @@ class Manager:
             make_clipped_thput_files(
                 path_list, overwrite=overwrite, edit_all=True, median=True)
                 
-        # Send all the sky frames to the imprpved
+        # Send all the sky frames to the improved wavecal routine then
+        # apply correction to all the blue arcs
         if  self.improve_blue_wavecorr:
-            self.map(derive_blue_wavecorr,file_list)
+            self.map(wavecorr_frame,file_list)
+            
+            wavecorr_av(file_list,self.root)
+            
+            arc_file_iterable = self.files(ndf_class='MFARC', ccd = 'ccd_1',
+                                    do_not_use=False, **kwargs)
+            
+            arc_paths = [fits.reduced_path for fits in arc_file_iterable]
+            for arc_path in arc_paths:
+                apply_wavecorr(arc_path,self.root)
+            
+            
         if fake_skies:
             no_sky_list = self.fields_without_skies(**kwargs)
             # Certain parameters will already have been set so don't need
