@@ -23,7 +23,7 @@ NB This is most successful when an additional wavecal refinement step based on t
 
 import astropy.io.fits as pf
 import numpy as np
-from astrop.io import Table
+from astropy.table import Table
 import os
 
 def wavecorr_frame(fits):
@@ -113,7 +113,7 @@ def record_wavelength_offsets(twilight_hdulist,offsets):
     twilight_hdulist.append(h)
     twilight_hdulist.flush()
     
-def wavecorr_av(path_list,root_dir,overwrite=True)
+def wavecorr_av(path_list,root_dir,overwrite=True):
 
     # For all reduced twilight sky frames with 'WAVECORR' extensions:
     # 1) Read in their 'WAVECORR' offsets array
