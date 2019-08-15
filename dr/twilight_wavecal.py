@@ -35,18 +35,23 @@ def wavecorr_frame(fits):
         record_wavelength_offsets(twilight_hdulist,offsets)
     
 def remove_slope(offsets):
+    # Remove the linear shape of the wavelength offset function, leaving the
+    # fibre-to-fibre variation and the mean offset
 
     x = np.arange(len(offsets))
     p = np.poly1d(np.polyfit(x,offsets,1))
     
-    offsets_flat = offsets - p(x) + 0.1
+    offsets_flat = offsets - p(x) + offsets[int((len(offsets)+1)/2)]
     
     return offsets_flat
         
     
 def calculate_wavelength_offsets(twilight_hdu):
+    # Wrapper function to apply the offset measurement to all fibres in a frame
+    
+    # Offset is determined wrt a high-resolution solar spectrum, and has unit Angstoms
 
-	hdulist_solar = pt.open('/Users/nscott/Data/fts-atlas-interp-sami.fits')
+	hdulist_solar = pf.open('/Users/nscott/Data/fts-atlas-interp-sami.fits')
 	solar_flux = hdulist_solar[0].data
 	sh = hdulist_solar[0].header
 	solar_wav = np.arange(sh['NAXIS1'])*sh['CDELT1'] + sh['CRVAL1']
@@ -68,6 +73,10 @@ def calculate_wavelength_offsets(twilight_hdu):
 	return offsets
 	
 def calculate_wavelength_offset_fibre(fib,sol):
+    # Determine the offset in pixels (of the high-res spectrum) between an input
+    # single-fibre spectrum and a high resolution solar spectrum
+    
+    # Currently assumes the offset is less than 100 pixels
 	
 	diffs = []
 	for i in range(201):
@@ -123,12 +132,12 @@ def wavecorr_av(path_list,root_dir,overwrite=True):
     #   wavelength variation
     # 4) Write this to a new file in relevant calibration folders (CHECK THIS)
     
-    hdu = fits.open(path_list[0])
+    hdu = pf.open(path_list[0])
     
     offsets = np.zeros((len(hdu['WAVECORR'].data),len(path_list)))
     hdu.close()
     for i,path in enumerate(path_list):
-        offset = fits.getdata(path,'WAVECORR')
+        offset = pf.getdata(path,'WAVECORR')
         offsets[:,i] = offset
     
     offsets_av = np.nanmedian(offsets,axis=1)
@@ -138,6 +147,11 @@ def wavecorr_av(path_list,root_dir,overwrite=True):
     
 def apply_wavecorr(path,root_dir):
 
+    # Uses a stored average wavelength offset derived from multiple twilight sky frames
+    # and corrects all blue arc frames by adjusting the 'SHIFTS' array
+    
+    # Offsets are ADDED I think (NS)
+
     if not os.path.isfile(os.path.join(root_dir,'average_blue_wavelength_offset.dat')):
         print('No average wavelength correction file found.') 
         print('Wavelength correction not applied')
@@ -146,7 +160,7 @@ def apply_wavecorr(path,root_dir):
     tb = Table.read(os.path.join(root_dir,'average_blue_wavelength_offset.dat'))
     offsets = tb['Offset'].data
     
-    hdulist = fits.open(path,'update')
+    hdulist = pf.open(path,'update')
     if 'MNGRTWCR' in hdu[0].header:
         if hdulist[0].header['MNGRTWCR'] != 'T':
             hdulist['SHIFTS'].data[0] = hdulist['SHIFTS'].data[0] + offsets
