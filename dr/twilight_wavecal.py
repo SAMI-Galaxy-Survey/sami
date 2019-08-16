@@ -51,7 +51,7 @@ def calculate_wavelength_offsets(twilight_hdu):
     
     # Offset is determined wrt a high-resolution solar spectrum, and has unit Angstoms
 
-	hdulist_solar = pf.open('/Users/nscott/Data/fts-atlas-interp-sami.fits')
+	hdulist_solar = pf.open('./standards/solar/fts-atlas-interp-sami.fits')
 	solar_flux = hdulist_solar[0].data
 	sh = hdulist_solar[0].header
 	solar_wav = np.arange(sh['NAXIS1'])*sh['CDELT1'] + sh['CRVAL1']
