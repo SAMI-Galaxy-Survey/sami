@@ -24,7 +24,9 @@ NB This is most successful when an additional wavecal refinement step based on t
 import astropy.io.fits as pf
 import numpy as np
 from astropy.table import Table
-import os,code
+import os,code,warnings
+
+warnings.simplefilter('ignore',np.RankWarning)
 
 def wavecorr_frame(fits):
 
