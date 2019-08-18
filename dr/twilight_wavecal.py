@@ -24,7 +24,7 @@ NB This is most successful when an additional wavecal refinement step based on t
 import astropy.io.fits as pf
 import numpy as np
 from astropy.table import Table
-import os
+import os,code
 
 def wavecorr_frame(fits):
 
@@ -119,10 +119,11 @@ def record_wavelength_offsets(twilight_hdulist,offsets):
         h.header['CUNIT1'] = ('Angstroms','Units for axis 1')
         h.header['CTYPE1'] = ('Delta Wavelength','Wavelength offset for fibre')
 
-    twilight_hdulist.append(h)
+        twilight_hdulist.append(h)
+
     twilight_hdulist.flush()
     
-def wavecorr_av(path_list,root_dir,overwrite=True):
+def wavecorr_av(file_list,root_dir,overwrite=True):
 
     # For all reduced twilight sky frames with 'WAVECORR' extensions:
     # 1) Read in their 'WAVECORR' offsets array
@@ -132,17 +133,21 @@ def wavecorr_av(path_list,root_dir,overwrite=True):
     #   wavelength variation
     # 4) Write this to a new file in relevant calibration folders (CHECK THIS)
     
-    hdu = pf.open(path_list[0])
+    hdu = pf.open(file_list[0].reduced_path)
+
+    #code.interact(local=dict(globals(),**locals()))
     
-    offsets = np.zeros((len(hdu['WAVECORR'].data),len(path_list)))
+    offsets = np.zeros((len(hdu['WAVECORR'].data),len(file_list)))
     hdu.close()
-    for i,path in enumerate(path_list):
-        offset = pf.getdata(path,'WAVECORR')
+    for i,file in enumerate(file_list):
+        offset = pf.getdata(file.reduced_path,'WAVECORR')
         offsets[:,i] = offset
     
     offsets_av = np.nanmedian(offsets,axis=1)
-    
-    tb = Table(offsets_av,names='Offset')
+    print(np.shape(offsets_av))
+    offsets_av = np.reshape(len(offsets_av),1)    
+
+    tb = Table(offsets_av,names=['Offset'])
     tb.write(os.path.join(root_dir,'average_blue_wavelength_offset.dat'),format='ascii.commented_header')
     
 def apply_wavecorr(path,root_dir):
@@ -157,11 +162,11 @@ def apply_wavecorr(path,root_dir):
         print('Wavelength correction not applied')
         return
         
-    tb = Table.read(os.path.join(root_dir,'average_blue_wavelength_offset.dat'))
+    tb = Table.read(os.path.join(root_dir,'average_blue_wavelength_offset.dat'),format='ascii.commented_header')
     offsets = tb['Offset'].data
     
     hdulist = pf.open(path,'update')
-    if 'MNGRTWCR' in hdu[0].header:
+    if 'MNGRTWCR' in hdulist[0].header:
         if hdulist[0].header['MNGRTWCR'] != 'T':
             hdulist['SHIFTS'].data[0] = hdulist['SHIFTS'].data[0] + offsets
             hdulist[0].header['MNGRTWCR'] = 'T'

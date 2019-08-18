@@ -1647,7 +1647,6 @@ class Manager:
         # apply correction to all the blue arcs
         if  self.improve_blue_wavecorr:
             self.map(wavecorr_frame,file_list)
-            
             wavecorr_av(file_list,self.root)
             
             arc_file_iterable = self.files(ndf_class='MFARC', ccd = 'ccd_1',
@@ -1655,8 +1654,7 @@ class Manager:
             
             arc_paths = [fits.reduced_path for fits in arc_file_iterable]
             for arc_path in arc_paths:
-                apply_wavecorr(arc_path,self.root)
-            
+                apply_wavecorr(arc_path,self.root)           
             
         if fake_skies:
             no_sky_list = self.fields_without_skies(**kwargs)
