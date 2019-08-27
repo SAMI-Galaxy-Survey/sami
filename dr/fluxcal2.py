@@ -71,6 +71,7 @@ from ..utils.mc_adr import parallactic_angle, adr_r
 from ..utils.other import saturated_partial_pressure_water
 from ..config import millibar_to_mmHg
 from ..utils.fluxcal2_io import read_model_parameters, save_extracted_flux
+from .telluric2 import TelluricCorrectPrimary as telluric_correct_primary
 
 try:
     from bottleneck import nansum, nanmean
@@ -594,6 +595,12 @@ def derive_transfer_function(path_list, max_sep_arcsec=60.0,
     if star_match is None:
         raise ValueError('No standard star found in the data.')
     standard_data = read_standard_data(star_match)
+    
+    # Apply telluric correction to primary standards and write to new file, returning
+    # the paths to those files.
+    if molec_fit_available & (speed == 'slow'):
+        path_list = telluric_correct_primary(path_list,star_match['probenum'])
+    
     # Read the observed data, in chunks
     chunked_data = read_chunked_data(path_list, star_match['probenum'])
     trim_chunked_data(chunked_data, n_trim)
@@ -610,7 +617,7 @@ def derive_transfer_function(path_list, max_sep_arcsec=60.0,
         fixed_parameters=fixed_parameters)
     psf_parameters = insert_fixed_parameters(psf_parameters, fixed_parameters)
     good_psf = check_psf_parameters(psf_parameters, chunked_data)
-    for path in path_list:
+    for path in path_list):
         ifu = IFU(path, star_match['probenum'], flag_name=False)
         remove_atmosphere(ifu)
         observed_flux, observed_background, sigma_flux, sigma_background = \
