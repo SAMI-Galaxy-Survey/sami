@@ -1952,7 +1952,7 @@ class Manager:
             else:
                 n_trim = 0
             inputs_list.append({'path_pair': path_pair, 'n_trim': n_trim,
-                                'model_name': model_name, 'smooth': smooth})
+                                'model_name': model_name, 'smooth': smooth,'speed':self.speed})
 
         self.map(derive_transfer_function_pair, inputs_list)
         self.next_step('derive_transfer_function', print_message=True)
@@ -4721,7 +4721,8 @@ def derive_transfer_function_pair(inputs):
           os.path.basename(path_pair[1]))
     try:
         fluxcal2.derive_transfer_function(
-            path_pair, n_trim=n_trim, model_name=model_name, smooth=smooth)
+            path_pair, n_trim=n_trim, model_name=model_name, smooth=smooth,
+            molecfit_available = MOLECFIT_AVAILABLE, molecfit_dir = MF_BIN_DIR,speed=inputs['speed'])
     except ValueError:
         print('Warning: No star found in dataframe, skipping ' +
               os.path.basename(path_pair[0]))
