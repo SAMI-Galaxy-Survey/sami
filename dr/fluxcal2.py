@@ -587,7 +587,8 @@ def dar(wavelength, zenith_distance, temperature=None, pressure=None,
 def derive_transfer_function(path_list, max_sep_arcsec=60.0,
                              catalogues=STANDARD_CATALOGUES,
                              model_name='ref_centre_alpha_dist_circ_hdratm',
-                             n_trim=0, smooth='spline'):
+                             n_trim=0, smooth='spline',molecfit_available=False,
+                             molecfit_dir='',speed=''):
     """Derive transfer function and save it in each FITS file."""
     # First work out which star we're looking at, and which hexabundle it's in
     star_match = match_standard_star(
