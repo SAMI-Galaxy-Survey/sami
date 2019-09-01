@@ -617,7 +617,7 @@ def derive_transfer_function(path_list, max_sep_arcsec=60.0,
         fixed_parameters=fixed_parameters)
     psf_parameters = insert_fixed_parameters(psf_parameters, fixed_parameters)
     good_psf = check_psf_parameters(psf_parameters, chunked_data)
-    for path in path_list):
+    for path in path_list:
         ifu = IFU(path, star_match['probenum'], flag_name=False)
         remove_atmosphere(ifu)
         observed_flux, observed_background, sigma_flux, sigma_background = \
