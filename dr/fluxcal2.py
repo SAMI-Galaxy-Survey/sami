@@ -599,7 +599,7 @@ def derive_transfer_function(path_list, max_sep_arcsec=60.0,
     
     # Apply telluric correction to primary standards and write to new file, returning
     # the paths to those files.
-    if molec_fit_available & (speed == 'slow'):
+    if molecfit_available & (speed == 'slow'):
         path_list = telluric_correct_primary(path_list,star_match['probenum'])
     
     # Read the observed data, in chunks
@@ -633,7 +633,7 @@ def derive_transfer_function(path_list, max_sep_arcsec=60.0,
             observed_flux,
             sigma_flux,
             ifu.lambda_range,
-            smooth=smooth)
+            smooth=smooth,mf_av=molecfit_available)
         save_transfer_function(path, transfer_function)
     return
 
@@ -879,7 +879,7 @@ def read_standard_data(star):
     return standard_data
 
 def take_ratio(standard_flux, standard_wavelength, observed_flux, 
-               sigma_flux, observed_wavelength, smooth='spline'):
+               sigma_flux, observed_wavelength, smooth='spline',mf_av=False):
     """Return the ratio of two spectra, after rebinning."""
     # Rebin the observed spectrum onto the (coarser) scale of the standard
     observed_flux_rebinned, sigma_flux_rebinned, count_rebinned = \
@@ -889,9 +889,9 @@ def take_ratio(standard_flux, standard_wavelength, observed_flux,
     if smooth == 'gauss':
         ratio = smooth_ratio(ratio)
     elif smooth == 'chebyshev':
-        ratio = fit_chebyshev(standard_wavelength, ratio)
+        ratio = fit_chebyshev(standard_wavelength, ratio, mf_av=mf_av)
     elif smooth == 'spline':
-        ratio = fit_spline(standard_wavelength, ratio)
+        ratio = fit_spline(standard_wavelength, ratio, mf_av=mf_av)
     # Put the ratio back onto the observed wavelength scale
     ratio = 1.0 / np.interp(observed_wavelength, standard_wavelength, 
                             1.0 / ratio)
@@ -927,10 +927,13 @@ def smooth_ratio(ratio, width=10.0):
     smoothed = 1.0 / inverse
     return smoothed
 
-def fit_chebyshev(wavelength, ratio, deg=None):
+def fit_chebyshev(wavelength, ratio, deg=None, mf_av=False):
     """Fit a Chebyshev polynomial, and return the fit."""
     # Do the fit in terms of 1.0 / ratio, because observed flux can go to 0.
-    good = np.where(np.isfinite(ratio) & ~(in_telluric_band(wavelength)))[0]
+    if mf_av:
+        good = np.where(np.isfinite(ratio))[0]
+    else:
+        good = np.where(np.isfinite(ratio) & ~(in_telluric_band(wavelength)))[0]
     if deg is None:
         # Choose default degree based on which arm this data is for.
         if wavelength[good[0]] >= 6000.0:
@@ -945,11 +948,14 @@ def fit_chebyshev(wavelength, ratio, deg=None):
     fit[good[-1]+1:] = np.nan
     return fit
 
-def fit_spline(wavelength, ratio):
+def fit_spline(wavelength, ratio, mf_av=False):
     """Fit a smoothing spline to the data, and return the fit."""
     # Do the fit in terms of 1.0 / ratio, because it seems to give better
     # results.
-    good = np.where(np.isfinite(ratio) & ~(in_telluric_band(wavelength)))[0]
+    if mf_av:
+        good = np.where(np.isfinite(ratio))[0]
+    else:
+        good = np.where(np.isfinite(ratio) & ~(in_telluric_band(wavelength)))[0]
     knots = np.linspace(wavelength[good][0], wavelength[good][-1], 8)
     # Add extra knots around 5500A, where there's a sharp turn
     extra = knots[(knots > 5000) & (knots < 6000)]
