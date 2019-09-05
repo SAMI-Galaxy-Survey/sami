@@ -374,7 +374,18 @@ class Manager:
     SAMI package) to determine residual wavelength shifts. An overall
     fibre-to-fibre wavelength offset is derived by averaging over all twilight
     sky frames in a run. This average offset is stored in a calibration file in
-    the root directory of the run. These shifts are then applied to all arc frames.    
+    the root directory of the run. These shifts are then applied to all arc frames. 
+
+    Applying telluric correction to primary standards before flux calibration
+    =========================================================================
+
+    The keyword 'telluric_correct_primary' instructs the manager to use molecfit
+    to telluric correct the primary standard stars before determining the flux
+    calibration transfer function. This is only applied if molecfit is installed.
+
+    This keyword should only be set if the reference spectra for the primary
+    standard stars have themselves been telluric corrected. If they have not this
+    will result in highly unphysical transfer functions.
 
     Continuing a previous session
     =============================
@@ -808,9 +819,9 @@ class Manager:
     )
 
     def __init__(self, root, copy_files=False, move_files=False, fast=False,
-                 gratlpmm=GRATLPMM, n_cpu=1,
-                 demo_data_source='demo', use_twilight_tlm_blue=False, use_twilight_flat_blue=False,
-                 improve_blue_wavecorr=False, debug=False):
+                 gratlpmm=GRATLPMM, n_cpu=1,demo_data_source='demo',
+                 use_twilight_tlm_blue=False, use_twilight_flat_blue=False,
+                 improve_blue_wavecorr=False, telluric_correct_primary=False, debug=False):
         if fast:
             self.speed = 'fast'
         else:
@@ -825,9 +836,8 @@ class Manager:
         # define the internal flag that specifies the improved twlight wavelength
         # calibration step should be applied
         self.improve_blue_wavecorr = improve_blue_wavecorr
-        # Internal flag to allow for greater output during processing.
-        # this is not actively used at present, but show be at some point
-        # so we can easily get output for testing
+        # Internal flag to set telluric correction for primary standards
+        self.telluric_correct_primary = telluric_correct_primary
         self.gratlpmm = gratlpmm
         self.n_cpu = n_cpu
         self.root = root
@@ -874,6 +884,12 @@ class Manager:
             print('Applying additional twilight-based wavelength calibration step')
         else:
             print('NOT applying additional twilight-based wavelength calibration step')
+
+        if telluric_correct_primary:
+            print('Applying telluric correction to primary standard stars before flux calibration')
+            print('WARNING: Only do this if the reference spectra for the primary standards have good telluric correction')
+        else:
+            print('NOT applying telluric correction to primary standard stars')
 
         self._debug = False
         self.debug = debug
@@ -1952,7 +1968,8 @@ class Manager:
             else:
                 n_trim = 0
             inputs_list.append({'path_pair': path_pair, 'n_trim': n_trim,
-                                'model_name': model_name, 'smooth': smooth,'speed':self.speed})
+                                'model_name': model_name, 'smooth': smooth,
+                                'speed':self.speed,'tellcorprim':self.telluric_correct_primary})
 
         self.map(derive_transfer_function_pair, inputs_list)
         self.next_step('derive_transfer_function', print_message=True)
@@ -4722,7 +4739,8 @@ def derive_transfer_function_pair(inputs):
     try:
         fluxcal2.derive_transfer_function(
             path_pair, n_trim=n_trim, model_name=model_name, smooth=smooth,
-            molecfit_available = MOLECFIT_AVAILABLE, molecfit_dir = MF_BIN_DIR,speed=inputs['speed'])
+            molecfit_available = MOLECFIT_AVAILABLE, molecfit_dir = MF_BIN_DIR,
+            speed=inputs['speed'],tell_corr_primary=inputs['tellcorprim'])
     except ValueError:
         print('Warning: No star found in dataframe, skipping ' +
               os.path.basename(path_pair[0]))
