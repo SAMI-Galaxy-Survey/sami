@@ -588,7 +588,7 @@ def derive_transfer_function(path_list, max_sep_arcsec=60.0,
                              catalogues=STANDARD_CATALOGUES,
                              model_name='ref_centre_alpha_dist_circ_hdratm',
                              n_trim=0, smooth='spline',molecfit_available=False,
-                             molecfit_dir='',speed=''):
+                             molecfit_dir='',speed='',tell_corr_primary=False):
     """Derive transfer function and save it in each FITS file."""
     # First work out which star we're looking at, and which hexabundle it's in
     star_match = match_standard_star(
@@ -599,15 +599,18 @@ def derive_transfer_function(path_list, max_sep_arcsec=60.0,
     
     # Apply telluric correction to primary standards and write to new file, returning
     # the paths to those files.
-    if molecfit_available & (speed == 'slow'):
-        path_list = telluric_correct_primary(path_list,star_match['probenum'])
-    
+    if molecfit_available & (speed == 'slow') & tell_corr_primary:
+        path_list_tel = telluric_correct_primary(path_list,star_match['probenum'],
+                                            molecfit_dir=molecfit_dir)
+    else:
+        path_list_tel = path_list
+
     # Read the observed data, in chunks
-    chunked_data = read_chunked_data(path_list, star_match['probenum'])
+    chunked_data = read_chunked_data(path_list_tel, star_match['probenum'])
     trim_chunked_data(chunked_data, n_trim)
     # Fit the PSF
     fixed_parameters = set_fixed_parameters(
-        path_list, model_name, probenum=star_match['probenum'])
+        path_list_tel, model_name, probenum=star_match['probenum'])
     psf_parameters = fit_model_flux(
         chunked_data['data'], 
         chunked_data['variance'],
@@ -618,12 +621,12 @@ def derive_transfer_function(path_list, max_sep_arcsec=60.0,
         fixed_parameters=fixed_parameters)
     psf_parameters = insert_fixed_parameters(psf_parameters, fixed_parameters)
     good_psf = check_psf_parameters(psf_parameters, chunked_data)
-    for path in path_list:
+    for path,path2 in zip(path_list_tel,path_list):
         ifu = IFU(path, star_match['probenum'], flag_name=False)
         remove_atmosphere(ifu)
         observed_flux, observed_background, sigma_flux, sigma_background = \
             extract_total_flux(ifu, psf_parameters, model_name)
-        save_extracted_flux(path, observed_flux, observed_background,
+        save_extracted_flux(path2, observed_flux, observed_background,
                             sigma_flux, sigma_background,
                             star_match, psf_parameters, model_name,
                             good_psf, HG_CHANGESET)
@@ -633,8 +636,10 @@ def derive_transfer_function(path_list, max_sep_arcsec=60.0,
             observed_flux,
             sigma_flux,
             ifu.lambda_range,
-            smooth=smooth,mf_av=molecfit_available)
-        save_transfer_function(path, transfer_function)
+            smooth=smooth,
+            mf_av=molecfit_available,
+            tell_corr_primary=tell_corr_primary)
+        save_transfer_function(path2, transfer_function)
     return
 
 def match_standard_star(filename, max_sep_arcsec=60.0, 
@@ -879,7 +884,8 @@ def read_standard_data(star):
     return standard_data
 
 def take_ratio(standard_flux, standard_wavelength, observed_flux, 
-               sigma_flux, observed_wavelength, smooth='spline',mf_av=False):
+               sigma_flux, observed_wavelength, smooth='spline',
+               mf_av=False, tell_corr_primary=False):
     """Return the ratio of two spectra, after rebinning."""
     # Rebin the observed spectrum onto the (coarser) scale of the standard
     observed_flux_rebinned, sigma_flux_rebinned, count_rebinned = \
@@ -889,9 +895,11 @@ def take_ratio(standard_flux, standard_wavelength, observed_flux,
     if smooth == 'gauss':
         ratio = smooth_ratio(ratio)
     elif smooth == 'chebyshev':
-        ratio = fit_chebyshev(standard_wavelength, ratio, mf_av=mf_av)
+        ratio = fit_chebyshev(standard_wavelength, ratio, mf_av=mf_av,
+                              tell_corr_primary=tell_corr_primary)
     elif smooth == 'spline':
-        ratio = fit_spline(standard_wavelength, ratio, mf_av=mf_av)
+        ratio = fit_spline(standard_wavelength, ratio, mf_av=mf_av,
+                           tell_corr_primary=tell_corr_primary)
     # Put the ratio back onto the observed wavelength scale
     ratio = 1.0 / np.interp(observed_wavelength, standard_wavelength, 
                             1.0 / ratio)
@@ -927,10 +935,10 @@ def smooth_ratio(ratio, width=10.0):
     smoothed = 1.0 / inverse
     return smoothed
 
-def fit_chebyshev(wavelength, ratio, deg=None, mf_av=False):
+def fit_chebyshev(wavelength, ratio, deg=None, mf_av=False,tell_corr_primary=False):
     """Fit a Chebyshev polynomial, and return the fit."""
     # Do the fit in terms of 1.0 / ratio, because observed flux can go to 0.
-    if mf_av:
+    if mf_av & tell_corr_primary:
         good = np.where(np.isfinite(ratio))[0]
     else:
         good = np.where(np.isfinite(ratio) & ~(in_telluric_band(wavelength)))[0]
@@ -948,11 +956,11 @@ def fit_chebyshev(wavelength, ratio, deg=None, mf_av=False):
     fit[good[-1]+1:] = np.nan
     return fit
 
-def fit_spline(wavelength, ratio, mf_av=False):
+def fit_spline(wavelength, ratio, mf_av=False,tell_corr_primary=False):
     """Fit a smoothing spline to the data, and return the fit."""
     # Do the fit in terms of 1.0 / ratio, because it seems to give better
     # results.
-    if mf_av:
+    if mf_av & tell_corr_primary:
         good = np.where(np.isfinite(ratio))[0]
     else:
         good = np.where(np.isfinite(ratio) & ~(in_telluric_band(wavelength)))[0]

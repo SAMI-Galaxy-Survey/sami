@@ -10,10 +10,10 @@ def TelluricCorrectPrimary(path_list,probenum,molecfit_dir=''):
        
     # Load in SS flux data
     ww = np.where((fibre.data['PROBENUM'] == probenum) & (fibre.data['TYPE'] == 'P'))
-    flux_data_raw = np.sum(hdu[0].data[ww,:].squeeze(),axis=0)
-    sigma_flux = np.sqrt(np.sum(hdu[1].data[ww,:].squeeze(),axis=0))
+    flux_data_raw = np.sum(hdulist[0].data[ww,:].squeeze(),axis=0)
+    sigma_flux = np.sqrt(np.sum(hdulist[1].data[ww,:].squeeze(),axis=0))
     # Might put in an interpolation over NaNs; for now just taking a straight copy
-    flux_data = SS_flux_data_raw.copy()
+    flux_data = flux_data_raw.copy()
     header = hdulist[0].header
     crval1 = header['CRVAL1']
     cdelt1 = header['CDELT1']
@@ -21,16 +21,16 @@ def TelluricCorrectPrimary(path_list,probenum,molecfit_dir=''):
     crpix1 = header['CRPIX1']
     wave_axis = crval1 + cdelt1 * (np.arange(naxis1) + 1 - crpix1)
     
-    transfer_function, sigma_transfer, corrected_flux = molecfit_telluric(path_list[1],flux_data,
-                sigma_flux,wave_axis,mf_bin_dir=molecfit_dir)
+    transfer_function, sigma_transfer, corrected_flux = TelluricCorrect(path_list[1],flux_data,
+                sigma_flux,wave_axis,mf_bin_dir=molecfit_dir,primary=True)
                 
     uncorrected_flux = hdulist[0].data.copy()
     hdulist[0].data*= transfer_function
     hdulist[1].data = hdulist[0].data**2 * ((sigma_transfer/transfer_function)**2 +
                                             hdulist[1].data/uncorrected_flux**2)    
     
-    path_telluric_corrected = path_list[1].replace('red','fcal')
-    hdulist.writeto(path_telluric_corrected)
+    path_telluric_corrected = path_list[1].replace('red.fits','fcal.fits')
+    hdulist.writeto(path_telluric_corrected,overwrite=True)
     
     return [path_list[0],path_telluric_corrected]
 
