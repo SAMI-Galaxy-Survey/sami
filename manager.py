@@ -1662,11 +1662,16 @@ class Manager:
         # Send all the sky frames to the improved wavecal routine then
         # apply correction to all the blue arcs
         if  self.improve_blue_wavecorr:
-            self.map(wavecorr_frame,file_list)
+            input_list = zip(file_list,[overwrite]*len(file_list))
+            self.map(wavecorr_frame,input_list)
             wavecorr_av(file_list,self.root)
             
+            kwargs_tmp = kwargs.copy()
+            if 'ccd' in kwargs_tmp:
+                del kwargs_tmp['ccd']
+
             arc_file_iterable = self.files(ndf_class='MFARC', ccd = 'ccd_1',
-                                    do_not_use=False, **kwargs)
+                                    do_not_use=False, **kwargs_tmp)
             
             arc_paths = [fits.reduced_path for fits in arc_file_iterable]
             for arc_path in arc_paths:
