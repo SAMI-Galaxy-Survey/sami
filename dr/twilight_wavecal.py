@@ -69,11 +69,13 @@ def calculate_wavelength_offsets(twilight_hdu):
 	
 	offsets = []
 	for i in range(twilight_frame.shape[0]):
-		fibre_spec, fibre_wav = prepare_fibre_spectrum(twilight_hdu[0].data[i,:],twi_wav,solar_wav)
-		offset = calculate_wavelength_offset_fibre(fibre_spec,np.copy(solar_shifted))
-		offset = offset*(solar_wav[1]-solar_wav[0])
-		offsets.append(offset)
-		
+            try:
+                fibre_spec, fibre_wav = prepare_fibre_spectrum(twilight_hdu[0].data[i,:],twi_wav,solar_wav)
+                offset = calculate_wavelength_offset_fibre(fibre_spec,np.copy(solar_shifted))
+                offset = offset*(solar_wav[1]-solar_wav[0])
+                offsets.append(offset)
+            except:
+                code.interact(local=dict(globals(),**locals()))
 	return offsets
 	
 def calculate_wavelength_offset_fibre(fib,sol):
@@ -135,11 +137,9 @@ def wavecorr_av(file_list,root_dir):
     #   leave only the fibre-to-fibre variations
     # 3) Median over all offset arrays to derive the median fibre-to-fibre 
     #   wavelength variation
-    # 4) Write this to a new file in relevant calibration folders (CHECK THIS)
+    # 4) Write this to a new file in relevant calibration folders
     
     hdu = pf.open(file_list[0].reduced_path)
-
-    #code.interact(local=dict(globals(),**locals()))
     
     offsets = np.zeros((len(hdu['WAVECORR'].data),len(file_list)))
     hdu.close()
@@ -148,7 +148,7 @@ def wavecorr_av(file_list,root_dir):
         offsets[:,i] = offset
     
     offsets_av = np.nanmedian(offsets,axis=1)
-    offsets_av = np.reshape(len(offsets_av),1)    
+    offsets_av = np.reshape(offsets_av,(len(offsets_av),1))
 
     tb = Table(offsets_av,names=['Offset'])
     tb.write(os.path.join(root_dir,'average_blue_wavelength_offset.dat'),format='ascii.commented_header',overwrite=True)
