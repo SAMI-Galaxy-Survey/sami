@@ -28,13 +28,15 @@ import os,code,warnings
 
 warnings.simplefilter('ignore',np.RankWarning)
 
-def wavecorr_frame(fits):
+def wavecorr_frame(inputs):
 
+    fits,overwrite = inputs
     reduced_path = fits.reduced_path
     with pf.open(reduced_path,mode='update') as twilight_hdulist:
-        offsets = calculate_wavelength_offsets(twilight_hdulist)
-        offsets = remove_slope(offsets)
-        record_wavelength_offsets(twilight_hdulist,offsets)
+        if ('WAVECORR' not in twilight_hdulist) | (overwrite == True):
+            offsets = calculate_wavelength_offsets(twilight_hdulist)
+            offsets = remove_slope(offsets)
+            record_wavelength_offsets(twilight_hdulist,offsets)
     
 def remove_slope(offsets):
     # Remove the linear shape of the wavelength offset function, leaving the
@@ -125,7 +127,7 @@ def record_wavelength_offsets(twilight_hdulist,offsets):
 
     twilight_hdulist.flush()
     
-def wavecorr_av(file_list,root_dir,overwrite=True):
+def wavecorr_av(file_list,root_dir):
 
     # For all reduced twilight sky frames with 'WAVECORR' extensions:
     # 1) Read in their 'WAVECORR' offsets array
@@ -146,11 +148,10 @@ def wavecorr_av(file_list,root_dir,overwrite=True):
         offsets[:,i] = offset
     
     offsets_av = np.nanmedian(offsets,axis=1)
-    print(np.shape(offsets_av))
     offsets_av = np.reshape(len(offsets_av),1)    
 
     tb = Table(offsets_av,names=['Offset'])
-    tb.write(os.path.join(root_dir,'average_blue_wavelength_offset.dat'),format='ascii.commented_header')
+    tb.write(os.path.join(root_dir,'average_blue_wavelength_offset.dat'),format='ascii.commented_header',overwrite=True)
     
 def apply_wavecorr(path,root_dir):
 
