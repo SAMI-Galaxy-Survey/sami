@@ -48,8 +48,16 @@ def remove_slope(offsets):
     offsets_flat = offsets - p(x) + offsets[int((len(offsets)+1)/2)]
     
     return offsets_flat
-        
+
+def vac_to_air(wav):
     
+    wav = np.asarray(wav)
+    sigma2 = (1e4/wav)**2
+    fact = 1 + 5.792105e-2/(238.0185 - sigma2) + 1.67917e-3/(57.362 - sigma2)
+    
+    return wav/fact
+        
+
 def calculate_wavelength_offsets(twilight_hdu):
     # Wrapper function to apply the offset measurement to all fibres in a frame
     
@@ -59,6 +67,7 @@ def calculate_wavelength_offsets(twilight_hdu):
     solar_flux = hdulist_solar[0].data
     sh = hdulist_solar[0].header
     solar_wav = np.arange(sh['NAXIS1'])*sh['CDELT1'] + sh['CRVAL1']
+    solar_wav = vac_to_air(solar_wav)
 	
     twi_head = twilight_hdu[0].header
     twi_wav = (np.arange(twi_head['NAXIS1']) - twi_head['CRPIX1'])*twi_head['CDELT1'] + twi_head['CRVAL1']
