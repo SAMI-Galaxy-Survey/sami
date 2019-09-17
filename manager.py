@@ -1662,9 +1662,13 @@ class Manager:
         # Send all the sky frames to the improved wavecal routine then
         # apply correction to all the blue arcs
         if  self.improve_blue_wavecorr:
-            input_list = zip(file_list,[overwrite]*len(file_list))
+            file_list_tw = []
+            for f in file_list:
+                if f.ccd == 'ccd_1':
+                    file_list_tw.append(f)
+            input_list = zip(file_list_tw,[overwrite]*len(file_list_tw))
             self.map(wavecorr_frame,input_list)
-            wavecorr_av(file_list,self.root)
+            wavecorr_av(file_list_tw,self.root)
             
             kwargs_tmp = kwargs.copy()
             if 'ccd' in kwargs_tmp:

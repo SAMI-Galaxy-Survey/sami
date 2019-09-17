@@ -55,44 +55,68 @@ def calculate_wavelength_offsets(twilight_hdu):
     
     # Offset is determined wrt a high-resolution solar spectrum, and has unit Angstoms
 
-	hdulist_solar = pf.open('./standards/solar/fts-atlas-interp-sami.fits')
-	solar_flux = hdulist_solar[0].data
-	sh = hdulist_solar[0].header
-	solar_wav = np.arange(sh['NAXIS1'])*sh['CDELT1'] + sh['CRVAL1']
+    hdulist_solar = pf.open('./standards/solar/fts-atlas-interp-sami.fits')
+    solar_flux = hdulist_solar[0].data
+    sh = hdulist_solar[0].header
+    solar_wav = np.arange(sh['NAXIS1'])*sh['CDELT1'] + sh['CRVAL1']
 	
-	twi_head = twilight_hdu[0].header
-	twi_wav = (np.arange(twi_head['NAXIS1']) - twi_head['CRPIX1'])*twi_head['CDELT1'] + twi_head['CRVAL1']
+    twi_head = twilight_hdu[0].header
+    twi_wav = (np.arange(twi_head['NAXIS1']) - twi_head['CRPIX1'])*twi_head['CDELT1'] + twi_head['CRVAL1']
 	
-	solar_shifted = np.roll(solar_flux,-100)
+    solar_shifted = np.roll(solar_flux,-500)
 	
-	twilight_frame = twilight_hdu[0].data
-	
-	offsets = []
-	for i in range(twilight_frame.shape[0]):
-            try:
-                fibre_spec, fibre_wav = prepare_fibre_spectrum(twilight_hdu[0].data[i,:],twi_wav,solar_wav)
-                offset = calculate_wavelength_offset_fibre(fibre_spec,np.copy(solar_shifted))
-                offset = offset*(solar_wav[1]-solar_wav[0])
-                offsets.append(offset)
-            except:
-                code.interact(local=dict(globals(),**locals()))
-	return offsets
+    twilight_frame = twilight_hdu[0].data
+
+    good_range = [4500,5700]
+    good_sol = np.where((solar_wav > good_range[0]) & (solar_wav < good_range[1]))  
+
+    offsets = []
+    for i in range(twilight_frame.shape[0]):
+        fibre_spec, fibre_wav = prepare_fibre_spectrum(twilight_hdu[0].data[i,:],twi_wav,solar_wav)
+        good_fib = np.where((fibre_wav > good_range[0]) & (fibre_wav < good_range[1]))
+        offset = calculate_wavelength_offset_fibre(fibre_spec[good_fib],np.copy(solar_shifted)[good_sol])
+        offset = offset*(solar_wav[1]-solar_wav[0])
+        offsets.append(offset)
+    return offsets
 	
 def calculate_wavelength_offset_fibre(fib,sol):
     # Determine the offset in pixels (of the high-res spectrum) between an input
     # single-fibre spectrum and a high resolution solar spectrum
     
-    # Currently assumes the offset is less than 100 pixels
+    fib = fib/np.nanmedian(fib)
+    sol = sol/np.nanmedian(sol)
+    
+    #diffs = []
+    #for i in range(1001):
+    #    diff = fib - sol
+    #    sol = np.roll(sol,1)
+    #    diffs.append(np.sqrt(np.nanmean(diff**2)))
+        
+    #best_diff = np.argmin(diffs)
+    #best_diff = best_diff - 500
+    
+    sol_new = np.roll(sol,50)
+    diffs = []
+    for i in range(10):
+        diff = fib - sol_new
+        sol_new = np.roll(sol_new,100)
+        diffs.append(np.sqrt(np.nanmean(diff**2)))
+        
+    best_diff0 = np.argmin(diffs)
+    
+    sol_new = np.roll(sol,best_diff0*100)
+    diffs = []
+    for i in range(101):
+        diff = fib-sol_new
+        sol_new = np.roll(sol_new,1)
+        diffs.append(np.sqrt(np.nanmean(diff**2)))
+        
+    best_diff = np.argmin(diffs)
+    best_diff = best_diff + best_diff0*100 - 500
+
+    return best_diff
 	
-	diffs = []
-	for i in range(201):
-		diff = fib - sol
-		sol = np.roll(sol,1)
-		diffs.append(np.sqrt(np.nanmean(diff**2)))
-		
-	best_diff = np.argmin(diffs)
-	best_diff = best_diff - 100
-	return best_diff
+
 	
 def prepare_fibre_spectrum(fibre_spec, fibre_wav, solar_wav):
 	# Pre-process a SAMI twilight sky fibre spectrum. This involves
@@ -175,7 +199,9 @@ def apply_wavecorr(path,root_dir):
             hdulist[0].header['MNGRTWCR'] = 'T'
     else:
         hdulist['SHIFTS'].data[0] = hdulist['SHIFTS'].data[0] + offsets
-        hdulist[0].header['MNGRTWCR'] = 'T'        
+        hdulist[0].header['MNGRTWCR'] = 'T'
+
+    hdulist.close()
     
     
     
