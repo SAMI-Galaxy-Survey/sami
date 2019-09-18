@@ -141,9 +141,9 @@ else:
         return coord.SkyCoord(*args, frame='icrs', **kwargs)
 
 
-IDX_FILES_SLOW = {'580V': 'sami580V_v1_6.idx',
+IDX_FILES_SLOW = {'580V': 'sami580V_v1_7.idx',
                   '1500V': 'sami1500V_v1_5.idx',
-                  '1000R': 'sami1000R_v1_6.idx'}
+                  '1000R': 'sami1000R_v1_7.idx'}
 
 IDX_FILES_FAST = {'580V': 'sami580V.idx',
                   '1500V': 'sami1500V.idx',
