@@ -204,10 +204,10 @@ def apply_wavecorr(path,root_dir):
     hdulist = pf.open(path,'update')
     if 'MNGRTWCR' in hdulist[0].header:
         if hdulist[0].header['MNGRTWCR'] != 'T':
-            hdulist['SHIFTS'].data[0] = hdulist['SHIFTS'].data[0] + offsets
+            hdulist['SHIFTS'].data[0] = hdulist['SHIFTS'].data[0] - offsets
             hdulist[0].header['MNGRTWCR'] = 'T'
     else:
-        hdulist['SHIFTS'].data[0] = hdulist['SHIFTS'].data[0] + offsets
+        hdulist['SHIFTS'].data[0] = hdulist['SHIFTS'].data[0] - offsets
         hdulist[0].header['MNGRTWCR'] = 'T'
 
     hdulist.close()
