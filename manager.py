@@ -2990,6 +2990,21 @@ class Manager:
                                       'Using a twilight frame from the same night'
                                       'for ' + fits.filename)
                                 found = 1
+                            if found == 1:
+                                print('Identifying flat TLM to verify twilight TLM')
+                                comparison_match = self.match_link(fits, 'tlmap')
+                                if comparison_match is None:
+                                    comparison_match = self.match_link(fits, 'tlmap_loose')
+                                    if comparison_match is not None:
+                                        found_comp = 1
+                                    else:
+                                        found_comp = 0
+                                else:
+                                    found_comp = 1
+                                if found_comp == 1:
+                                    print(filename_match,comparison_match)
+                                    tlm_offset = self.determine_tlm_shift(fits,filename_match,comparison_match)
+                                    options.extend(['-TLM_INIT_SHIFT',str(tlm_offset)])
                         else:
                             print('Found matching twilight for TLM '
                                   'for ' + fits.filename)
@@ -3171,6 +3186,19 @@ class Manager:
                 options.extend(['-' + match_class.upper() + '_FILENAME',
                                 filename_match])
         return options
+
+    def determine_tlm_shift(self,fits,twilight_fits,flat_fits):
+
+        twilight_fits = os.path.join(fits.reduced_dir,twilight_fits)
+        flat_fits = os.path.join(fits.reduced_dir,flat_fits)
+
+        print(twilight_fits,flat_fits)
+        
+        twilight_tlm = pf.getdata(twilight_fits,'PRIMARY')
+        flat_tlm = pf.getdata(flat_fits,'PRIMARY')
+        
+        tlm_offset = np.mean(twilight_tlm-flat_tlm)
+        return tlm_offset
 
     def run_2dfdr_combine(self, file_iterable, output_path):
         """Use 2dfdr to combine the specified FITS files."""
