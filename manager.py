@@ -814,8 +814,11 @@ class Manager:
         ('scale_frames', True),
         ('measure_offsets', True),
         ('cube', True),
-        ('scale_cubes', True),
+        #('scale_cubes', True),
         ('bin_cubes', True),
+        ('record_dust', True),
+        ('bin_aperture_spectra', True),
+        ('gzip_cubes', True)
     )
 
     def __init__(self, root, copy_files=False, move_files=False, fast=False,
@@ -2450,6 +2453,7 @@ class Manager:
         for path_pair in path_pair_list:
             inputs_list.append(overwrite)
         self.map(aperture_spectra_pair, path_pair_list)
+        self.next_step('bin_aperture_spectra', print_message=True)
 
         return
 
@@ -2473,6 +2477,8 @@ class Manager:
                         max_seeing=max_seeing, tag=tag)
                     if path:
                         dust.dustCorrectSAMICube(path, overwrite=overwrite)
+
+        self.next_step('record_dust',print_message=True)
         return
 
     def gzip_cubes(self, overwrite=False, min_exposure=599.0, name='main',
@@ -2512,6 +2518,7 @@ class Manager:
                     if not os.path.exists(output_path):
                         input_list.append(input_path)
         self.map(gzip_wrapper, input_list)
+        self.next_step('gzip_cubes', print_message=True)
         return
 
     def reduce_all(self, start=None, finish=None, overwrite=False, **kwargs):
@@ -3191,8 +3198,6 @@ class Manager:
 
         twilight_fits = os.path.join(fits.reduced_dir,twilight_fits)
         flat_fits = os.path.join(fits.reduced_dir,flat_fits)
-
-        print(twilight_fits,flat_fits)
         
         twilight_tlm = pf.getdata(twilight_fits,'PRIMARY')
         flat_tlm = pf.getdata(flat_fits,'PRIMARY')
@@ -5004,7 +5009,7 @@ def aperture_spectra_pair(path_pair, overwrite=False):
         print('Processing: ' + path_blue + ', ' + path_red)
         binning.aperture_spectra_pair(path_blue, path_red, CATALOG_PATH, overwrite)
     except Exception as e:
-        print("ERROR on pair %s, %s:\n %s" % (path_blue, path_red, e.message))
+        print("ERROR on pair %s, %s:\n %s" % (path_blue, path_red, e))
         traceback.print_exc()
     return
 
