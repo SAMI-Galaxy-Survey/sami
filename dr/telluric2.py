@@ -148,7 +148,7 @@ def TelluricCorrect(fcal_fname, star_flux, star_flux_err, wave, mf_bin_dir = '',
        ## RESULTS
        'output_dir'     : mf_output_dir,  # directory of molecfit output files
        'output_name'    : obs_name_root,       # use observation name to label molecfit output files
-       'plot_creation'  : 'P',            # create postscript plots
+       'plot_creation'  : ' ',            # create postscript plots
        'plot_range'     : 0,              # create plots for fit ranges (0 = nah dont)
 
        ## FIT PRECISION
