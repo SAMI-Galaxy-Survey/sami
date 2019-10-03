@@ -1207,7 +1207,10 @@ def remove_atmosphere(ifu):
     extinction_mags = np.interp(ifu.lambda_range, wavelength_extinction, 
                                 extinction_mags)
     # Scale for observed airmass
-    airmass = calculate_airmass(ifu.zdstart, ifu.zdend)
+    #airmass = calculate_airmass(ifu.zdstart, ifu.zdend)
+    # no longer calculate airmass here, do it in the ifu class and put into
+    # ifu.airmass_eff  This calculates the effective airmass.
+    airmass = ifu.airmass_eff
     extinction_mags *= airmass
     # Turn into multiplicative flux scaling
     extinction = 10.0 ** (-0.4 * extinction_mags)
