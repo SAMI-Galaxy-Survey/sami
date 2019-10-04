@@ -64,6 +64,10 @@ from astropy import table
 from astropy.io import fits as pf
 from astropy.io import ascii
 from astropy import __version__ as ASTROPY_VERSION
+# extra astropy bits to calculate airmass
+import astropy.units as u
+from astropy.time import Time
+from astropy.coordinates import SkyCoord, EarthLocation, AltAz
 
 from ..utils import hg_changeset
 from ..utils.ifu import IFU
@@ -1199,6 +1203,90 @@ def rebin_flux(target_wavelength, source_wavelength, source_flux):
 
     return rebinneddata
 
+
+def calc_eff_airmass(header):
+    """Calculate the effective airmass using observatory location, coordinates 
+    and time.  This makes use of various astropy functions.  The input is 
+    a primary FITS header for a standard frame.
+    """
+    # this should really go into fluxcal, but there seems to be problems with
+    # imports as this is also called from the ifu class that is within utils.
+    # not sure why, but putting this in utils.other is a solution that seems to work.
+    
+    # get all the relevant header keywords:
+    meanra = header['MEANRA']
+    meandec = header['MEANDEC']
+    utdate = header['UTDATE']
+    utstart = header['UTSTART']
+    utend = header['UTEND']
+    lat_obs = header['LAT_OBS']
+    long_obs = header['LONG_OBS']
+    alt_obs = header['ALT_OBS']
+    zdstart = header['ZDSTART']
+
+    # define observatory location:
+    obs_loc = EarthLocation(lat=lat_obs*u.deg, lon=long_obs*u.deg, height=alt_obs*u.m)
+
+    # Convert to the correct time format:
+    date_formatted = utdate.replace(':','-')
+    time_start = date_formatted+' '+utstart
+    # note that here we assume UT date start is the same as UT date end.  This works for
+    # the AAT, given the time difference from UT at night, but will not for other observatories.
+    time_end = date_formatted+' '+utend
+    time1 = Time(time_start) 
+    time2 = Time(time_end) 
+    time_diff = time2-time1
+    time_mid = time1 + time_diff/2.0
+
+    # define coordinates using astropy coordinates object:
+    coords = SkyCoord(meanra*u.deg,meandec*u.deg) 
+
+    # calculate alt/az using astropy coordinate transformations:
+    altazpos1 = coords.transform_to(AltAz(obstime=time1,location=obs_loc))   
+    altazpos2 = coords.transform_to(AltAz(obstime=time2,location=obs_loc))
+    altazpos_mid = coords.transform_to(AltAz(obstime=time_mid,location=obs_loc))   
+
+    # get altitude and remove units put in by astropy.  We need the float(), as
+    # even when divided by the units, we get back a dimensionless object, not an actual
+    # float.
+    alt1 = float(altazpos1.alt/u.deg)
+    alt2 = float(altazpos2.alt/u.deg)
+    alt_mid = float(altazpos_mid.alt/u.deg)
+    
+    # convert to ZD:
+    zd1 = 90.0-alt1
+    zd2 = 90.0-alt2
+    zd_mid = 90.0-alt_mid
+
+    # calc airmass at the start, end and midpoint:
+    airmass1 = 1./ ( np.sin( ( alt1 + 244. / ( 165. + 47 * alt1**1.1 )
+                    ) / 180. * np.pi ) )
+    airmass2 = 1./ ( np.sin( ( alt2 + 244. / ( 165. + 47 * alt2**1.1 )
+                    ) / 180. * np.pi ) )
+    airmass_mid = 1./ ( np.sin( ( alt_mid + 244. / ( 165. + 47 * alt_mid**1.1 )
+                    ) / 180. * np.pi ) )
+
+    # get effective airmass by simpsons rule integration:
+    airmass_eff = ( airmass1 + 4. * airmass_mid + airmass2 ) / 6.
+
+    #print('effective airmass:',airmass_eff)
+    #print('ZD start:',zdstart)
+    #print('ZD start (calculated):',zd1)
+        
+    # check that the ZD calculated actually agrees with the ZDSTART in the header
+    d_zd = abs(zd1-zdstart)
+    if (d_zd>0.1):
+        print('WARNING: calculated ZD different from ZDSTART.  Difference:',d_zd)
+        # if we have this problem, assume that the ZDSTART header keyword is correct
+        # and that one or more of the other keywords has a problem.  Then set
+        # the effective airmass to be based on ZDSTART:
+        alt1 = 90.0-zdstart
+        airmass_eff = 1./ ( np.sin( ( alt1 + 244. / ( 165. + 47 * alt1**1.1 )
+                                ) / 180. * np.pi ) )
+
+    return airmass_eff
+
+
 def remove_atmosphere(ifu):
     """Remove atmospheric extinction (not tellurics) from ifu data."""
     # Read extinction curve (in magnitudes)
@@ -1208,9 +1296,9 @@ def remove_atmosphere(ifu):
                                 extinction_mags)
     # Scale for observed airmass
     #airmass = calculate_airmass(ifu.zdstart, ifu.zdend)
-    # no longer calculate airmass here, do it in the ifu class and put into
-    # ifu.airmass_eff  This calculates the effective airmass.
-    airmass = ifu.airmass_eff
+    # no longer calculate airmass here,  instead take the value from the ifu
+    # class that uses calc_eff_airmass()
+    airmass = calc_eff_airmass(ifu.primary_header)
     extinction_mags *= airmass
     # Turn into multiplicative flux scaling
     extinction = 10.0 ** (-0.4 * extinction_mags)
@@ -1230,7 +1318,11 @@ def remove_atmosphere_rss(hdulist):
     extinction_mags = np.interp(wavelength, wavelength_extinction, 
                                 extinction_mags)
     # Scale for observed airmass
-    airmass = calculate_airmass(header['ZDSTART'], header['ZDEND'])
+    #airmass = calculate_airmass(header['ZDSTART'], header['ZDEND'])
+    # calculate effective airmass using header keywords, not just the
+    # ZDSTART.  Note that the old code calculate_airmass() just sets
+    # ZDSTART=ZDEND, which is not very good in some cases.
+    airmass = calc_eff_airmass(header)
     extinction_mags *= airmass
     # Turn into multiplicative flux scaling
     extinction = 10.0 ** (-0.4 * extinction_mags)

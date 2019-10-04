@@ -21,6 +21,7 @@ from astropy.coordinates import SkyCoord, EarthLocation, AltAz
 
 from .fluxcal2_io import read_model_parameters
 
+
 class IFU:
 
     def __init__(self, rss_filename, probe_identifier, flag_name=True):
@@ -72,79 +73,6 @@ class IFU:
         self.zdstart=self.primary_header['ZDSTART']
         self.zdend=self.primary_header['ZDEND']
 
-        # get header keywords needed to calculate airmass, seperately from ZD in header.
-        # this is because ZDEND is sometimes not present, or not correct.  The current
-        # airmass calc (3/10/19) later in the pipeline assumes ZDEND=ZDSTART.  Instead,
-        # here we will calc the ZD and airmass based on times and coords.
-        self.utdate = self.primary_header['UTDATE']
-        self.utstart = self.primary_header['UTSTART']
-        self.utend = self.primary_header['UTEND']
-        self.lat_obs = self.primary_header['LAT_OBS']
-        self.long_obs = self.primary_header['LONG_OBS']
-        self.alt_obs = self.primary_header['ALT_OBS']
-
-        # define observatory location:
-        obs_loc = EarthLocation(lat=self.lat_obs*u.deg, lon=self.long_obs*u.deg, height=self.alt_obs*u.m)
-
-        # Convert to the correct time format:
-        date_formatted = self.utdate.replace(':','-')
-        time_start = date_formatted+' '+self.utstart
-        # note that here we assume UT date start is the same as UT date end.  This works for
-        # the AAT, given the time difference from UT at night, but will not for other observatories.
-        time_end = date_formatted+' '+self.utend
-        time1 = Time(time_start) 
-        time2 = Time(time_end) 
-        time_diff = time2-time1
-        time_mid = time1 + time_diff/2.0
-
-        # define coordinates using astropy coordinates object:
-        coords = SkyCoord(self.meanra*u.deg,self.meandec*u.deg) 
-
-        # calculate alt/az using astropy coordinate transformations:
-        altazpos1 = coords.transform_to(AltAz(obstime=time1,location=obs_loc))   
-        altazpos2 = coords.transform_to(AltAz(obstime=time2,location=obs_loc))
-        altazpos_mid = coords.transform_to(AltAz(obstime=time_mid,location=obs_loc))   
-
-        # convert to ZD at start, end and midpoint, removing the degrees units
-        # put in by astropy:
-        zd1 = 90.0-altazpos1.alt/u.deg
-        zd2 = 90.0-altazpos2.alt/u.deg
-        zd_mid = 90.0-altazpos_mid.alt/u.deg
-
-        # convert back to altitude and use float() so that this is not an object with
-        # (dimensionless units), but actually a simple float:
-        alt1 = float(90.0 - zd1) 
-        alt2 = float(90.0 - zd2)
-        alt_mid = float(90.0 - zd_mid)
-
-        # calc airmass at the start, end and midpoint:
-        airmass1 = 1./ ( np.sin( ( alt1 + 244. / ( 165. + 47 * alt1**1.1 )
-                            ) / 180. * np.pi ) )
-        airmass2 = 1./ ( np.sin( ( alt2 + 244. / ( 165. + 47 * alt2**1.1 )
-                            ) / 180. * np.pi ) )
-        airmass_mid = 1./ ( np.sin( ( alt_mid + 244. / ( 165. + 47 * alt_mid**1.1 )
-                            ) / 180. * np.pi ) )
-
-        # get effective airmass by simpsons rule integration:
-        self.airmass_eff = ( airmass1 + 4. * airmass_mid + airmass2 ) / 6.
-
-        #print('effective airmass:',self.airmass_eff)
-        #print('ZD start:',self.zdstart)
-        #print('ZD start (calculated):',zd1)
-        
-        # check that the ZD calculated actually agrees with the ZDSTART in the header
-        d_zd = abs(zd1-self.zdstart)
-        if (d_zd>0.1):
-            print('WARNING: calculated ZD different from ZDSTART.  Difference:',d_zd)
-            # if we have this problem, assume that the ZDSTART header keyword is correct
-            # and that one or more of the other keywords has a problem.  Then set
-            # the effective airmass to be based on ZDSTART:
-            alt1 = 90.0-self.zdstart
-            self.airmass_eff = 1./ ( np.sin( ( alt1 + 244. / ( 165. + 47 * alt1**1.1 )
-                                ) / 180. * np.pi ) )
-            
-            
-        
         # Wavelength range
         x=np.arange(self.naxis1)+1
         
