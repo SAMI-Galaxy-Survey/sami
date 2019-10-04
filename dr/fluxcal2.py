@@ -269,6 +269,9 @@ def residual(parameters_vector, datatube, vartube, xfibre, yfibre,
             res *= 1e10 * (0.5 - parameters_dict['alpha_ref'])
         elif parameters_dict['alpha_ref'] > 5.0:
             res *= 1e10 * (parameters_dict['alpha_ref'] - 5.0)
+    if 'beta' in parameters_dict:
+        if parameters_dict['beta'] <= 1.0:
+            res *= 1e10*(1.01 - parameters_dict['beta'])
     return res
 
 def fit_model_flux(datatube, vartube, xfibre, yfibre, wavelength, model_name,
