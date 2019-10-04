@@ -2997,21 +2997,6 @@ class Manager:
                                       'Using a twilight frame from the same night'
                                       'for ' + fits.filename)
                                 found = 1
-                            if found == 1:
-                                print('Identifying flat TLM to verify twilight TLM')
-                                comparison_match = self.match_link(fits, 'tlmap')
-                                if comparison_match is None:
-                                    comparison_match = self.match_link(fits, 'tlmap_loose')
-                                    if comparison_match is not None:
-                                        found_comp = 1
-                                    else:
-                                        found_comp = 0
-                                else:
-                                    found_comp = 1
-                                if found_comp == 1:
-                                    print(filename_match,comparison_match)
-                                    tlm_offset = self.determine_tlm_shift(fits,filename_match,comparison_match)
-                                    options.extend(['-TLM_INIT_SHIFT',str(tlm_offset)])
                         else:
                             print('Found matching twilight for TLM '
                                   'for ' + fits.filename)
@@ -3505,6 +3490,22 @@ class Manager:
 
             return retfunc
 
+        def determine_tlm_shift_fits(twilight_fits,flat_fits):
+
+            twilight_tlm = pf.getdata(twilight_fits.tlm_path,'PRIMARY')
+            flat_tlm = pf.getdata(flat_fits.tlm_path,'PRIMARY')
+
+            tlm_offset = np.mean(twilight_tlm-flat_tlm)
+            return tlm_offset
+
+        def flux_level_shift(fits,fits_test):
+            fits_comp = self.matchmaker(fits_test,'tlmap_loose')
+            shift = determine_tlm_shift_fits(fits_test,fits_comp)
+            if np.abs(shift) >= 1:
+                    return np.inf
+            else:
+                return flux_level(fits, fits_test)
+
         # Determine what actually needs to be matched, depending on match_class
         #
         # this case is where we want to use a twilight sky frame to derive the
@@ -3537,7 +3538,7 @@ class Manager:
             max_fluxlev = 40000.0  # use a max_fluxlev to reduce the chance of saturated twilights
             ccd = fits.ccd
             tlm_created = True
-            fom = flux_level
+            fom = flux_level_shift
         elif match_class.lower() == 'tlmap_mfsky_any':
             # in this case find the best (brightest) twilight frame from anywhere
             # during the run.
@@ -3546,7 +3547,7 @@ class Manager:
             max_fluxlev = 40000.0  # use a max_fluxlev to reduce the chance of saturated twilights
             ccd = fits.ccd
             tlm_created = True
-            fom = flux_level
+            fom = flux_level_shift
         elif match_class.lower() == 'tlmap':
             ndf_class = 'MFFFF'
             date = fits.date
