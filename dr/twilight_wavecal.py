@@ -211,6 +211,7 @@ def apply_wavecorr(path,root_dir):
         hdulist[0].header['MNGRTWCR'] = 'T'
 
     hdulist.close()
+    print('Written wavelength shifts to {}.'.format(path))
     
     
     
