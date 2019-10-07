@@ -3501,7 +3501,7 @@ class Manager:
             return tlm_offset
 
         def flux_level_shift(fits,fits_test):
-            fits_comp = self.matchmaker(fits_test,'tlmap_loose')
+            fits_comp = self.matchmaker(fits,'tlmap')
             shift = determine_tlm_shift_fits(fits_test,fits_comp)
             if np.abs(shift) >= 1:
                     return np.inf
@@ -3619,7 +3619,7 @@ class Manager:
             max_fluxlev = 40000.0  # use a max_fluxlev to reduce the chance of saturated twilights
             ccd = fits.ccd
             copy_reduced = True
-            fom = flux_level
+            fom = flux_level_shift
         elif match_class.lower() == 'fflat_mfsky_any':
             # in this case find the best (brightest) twilight frame from anywhere
             # during the run.
@@ -3628,7 +3628,7 @@ class Manager:
             max_fluxlev = 40000.0  # use a max_fluxlev to reduce the chance of saturated twilights
             ccd = fits.ccd
             copy_reduced = True
-            fom = flux_level
+            fom = flux_level_shift
         elif match_class.lower() == 'fflat':
             # Find a reduced fibre flat field from the dome lamp
             ndf_class = 'MFFFF'
@@ -3767,12 +3767,12 @@ class Manager:
                 do_not_use=False,
         ):
             test_fom = fom(fits, fits_test)
-            # output match testing stuff:
-            #            print 'match test (fom):',fits,fits_test,test_fom
             if test_fom < best_fom:
                 fits_match = fits_test
                 best_fom = test_fom
         #        exit()
+        if (best_fom == np.inf) & (('tlmap_mfsky' in match_class.lower()) | ('fflat_mfsky' in match_class.lower())):
+            return None
         return fits_match
 
     def match_link(self, fits, match_class):
