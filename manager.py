@@ -2822,13 +2822,15 @@ class Manager:
         else:
             best_fflat = 'fflat'
 
+        # only do skyscrunch for longer exposures (both CCDs):
+        if fits.exposure >= self.min_exposure_for_sky_wave:
+                # Adjust wavelength calibration of red frames using sky lines
+            options.extend(['-SKYSCRUNCH', '1'])
+        else:
+            options.extend(['-SKYSCRUNCH', '0'])
+                
         # add options for just CCD_2:
         if fits.ccd == 'ccd_2':
-            if fits.exposure >= self.min_exposure_for_sky_wave:
-                # Adjust wavelength calibration of red frames using sky lines
-                options.extend(['-SKYSCRUNCH', '1'])
-            else:
-                options.extend(['-SKYSCRUNCH', '0'])
             # Turn off bias and dark subtraction
             if fits.detector == 'E2V3':
                 options.extend(['-USEBIASIM', '0', '-USEDARKIM', '0'])
