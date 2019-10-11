@@ -283,7 +283,7 @@ def aperture_spectra_pair(path_blue, path_red, path_to_catalogs,overwrite=True):
             if out_dir == "":
                 out_dir = '.'
             out_file_base = os.path.basename(path).split(".")[0]
-            output_filename = out_dir + "/" + out_file_base + "_aperture_spec_test.fits"
+            output_filename = out_dir + "/" + out_file_base + "_apspec.fits"
 
             # Create a new output FITS file:
             aperture_hdulist = pf.HDUList([pf.PrimaryHDU()])

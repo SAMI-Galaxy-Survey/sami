@@ -1804,7 +1804,12 @@ class Manager:
                     reduced_files.append(fits)
         # Now reduce the short exposures, which might need the long
         # exposure reduced above
-        upper_limit = (self.min_exposure_for_throughput -
+        if 'max_exposure' in kwargs:
+            upper_limit = (1.*kwargs['max_exposure'] - 
+                           np.finfo(1.*kwargs['max_exposure']).epsneg)
+            del kwargs['max_exposure']
+        else:
+            upper_limit = (self.min_exposure_for_throughput -
                        np.finfo(self.min_exposure_for_throughput).epsneg)
         file_iterable_short = self.files(
             ndf_class='MFOBJECT', do_not_use=False,
@@ -2462,7 +2467,7 @@ class Manager:
         """Record information about dust in the output datacubes."""
         groups = self.group_files_by(
             'field_id', ccd='ccd_1', ndf_class='MFOBJECT', do_not_use=False,
-            reduced=True, name=name, **kwargs)
+            reduced=True, name=name, include_linked_managers = True, **kwargs)
         for (field_id,), fits_list in groups.items():
             table = pf.getdata(fits_list[0].reduced_path, 'FIBRES_IFU')
             objects = table['NAME'][table['TYPE'] == 'P']
@@ -2487,7 +2492,7 @@ class Manager:
         """Gzip the final datacubes."""
         groups = self.group_files_by(
             ['field_id', 'ccd'], ndf_class='MFOBJECT', do_not_use=False,
-            reduced=True, name=name, **kwargs)
+            reduced=True, name=name, include_linked_managers = True, **kwargs)
         input_list = []
         for (field_id, ccd), fits_list in groups.items():
             if ccd == 'ccd_1':
