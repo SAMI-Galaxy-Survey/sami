@@ -95,6 +95,7 @@ from .. import samifitting as fitting
 from ..config import *
 
 
+
 def centroid(infile, ifus='all', savefile=True, plot=True):
     """Fits to positions of the stars in ifus for infile. Primary purpose is to produce the files needed as imput for
     Tony's code."""
@@ -782,7 +783,6 @@ def centroid_fit(x,y,data,reference=None,rssframe=None,galaxyid=None,microns=Tru
 
     fitting.fibre_integrator(gf, core_diam) # fibre integrator
     gf.fit() #### gaussian fitting
-
     # Make a linear grid to reconstruct the fitted Gaussian over.
     x_0=np.min(x) 
     y_0=np.min(y)
