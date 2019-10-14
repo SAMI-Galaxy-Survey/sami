@@ -95,7 +95,6 @@ from .. import samifitting as fitting
 from ..config import *
 
 
-
 def centroid(infile, ifus='all', savefile=True, plot=True):
     """Fits to positions of the stars in ifus for infile. Primary purpose is to produce the files needed as imput for
     Tony's code."""
@@ -714,6 +713,10 @@ def centroid_fit(x,y,data,reference=None,rssframe=None,galaxyid=None,microns=Tru
 
     # Use fibres only within masking radius
     gsub = np.where(np.sqrt((x-tx)**2+(y-ty)**2) < trad)
+    if len(gsub) < 5:
+        tdist = np.sqrt((x-tx)**2+(y-ty)**2)
+        inds = np.argsort(tdist)
+        gsub = inds[:5]
     x_good, y_good, data_sum_good = x[gsub], y[gsub], data_sum[gsub]
 
     # Save the target centre of reference frame

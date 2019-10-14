@@ -2311,7 +2311,8 @@ class Manager:
                     fits = self.fits_file(os.path.basename(path)[:10])
                     if fits:
                         break
-                update_checks('CUB', [fits], False)
+                if fits:
+                    update_checks('CUB', [fits], False)
         self.next_step('cube', print_message=True)
         return
 
