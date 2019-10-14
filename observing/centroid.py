@@ -624,6 +624,8 @@ def centroid_fit(x,y,data,reference=None,rssframe=None,galaxyid=None,microns=Tru
 
     """Fit the x,y,data values, regardless of what they are and return some useful stuff. Data is an array of spectra"""
 
+    working_dir = rssframe.strip('.fits')
+
     # Smooth the data spectrally to get rid of cosmics
     data_smooth=np.zeros_like(data)
     for q in range(np.shape(data)[0]):
@@ -647,8 +649,8 @@ def centroid_fit(x,y,data,reference=None,rssframe=None,galaxyid=None,microns=Tru
     img = np.zeros((np.max(x0)+1,np.max(y0)+1)) # rss image
     x_good, y_good, data_sum_good = x, y, data_sum  # good fibres to use
     tx,ty,trad = xc,yc,1000     #target x,y centre and masking radius (1000 means no masking)
-    if not os.path.exists('./centroid_fit_reference'): # path to save centre of reference frame & checklist
-        os.makedirs('./centroid_fit_reference')
+    if not os.path.exists(working_dir+'/centroid_fit_reference'): # path to save centre of reference frame & checklist
+        os.makedirs(working_dir+'/centroid_fit_reference')
 
    # Load fibre flux to image
     for i in range(len(x0)):
@@ -695,8 +697,8 @@ def centroid_fit(x,y,data,reference=None,rssframe=None,galaxyid=None,microns=Tru
         xx,yy = tbl['y_peak']+np.min(x), tbl['x_peak']+np.min(y) # y_peak is x. yes. it's right.
 
         # The assumption is that dithering is relatively small, and our target is near the target centre from the (1st) reference frame
-        if reference is not None and rssframe != reference and os.path.exists('./centroid_fit_reference/centre_'+galaxyid+'_ref.txt') != False:
-            fileref = open('./centroid_fit_reference/centre_'+galaxyid+'_ref.txt','r')
+        if reference is not None and rssframe != reference and os.path.exists(working_dir+'/centroid_fit_reference/centre_'+galaxyid+'_ref.txt') != False:
+            fileref = open(working_dir+'/centroid_fit_reference/centre_'+galaxyid+'_ref.txt','r')
             rx,ry=np.loadtxt(fileref, usecols=(0,1))
             coff = (xx-rx)**2+(yy-ry)**2  # If not reference frame, the closest object from the reference
         else:
@@ -721,36 +723,9 @@ def centroid_fit(x,y,data,reference=None,rssframe=None,galaxyid=None,microns=Tru
 
     # Save the target centre of reference frame
     if reference is not None and rssframe == reference:
-        ref=open('./centroid_fit_reference/centre_'+galaxyid+'_ref.txt','w')
+        ref=open(working_dir+'/centroid_fit_reference/centre_'+galaxyid+'_ref.txt','w')
         ref.write(str(tx.data[0])+' '+str(ty.data[0]))
         ref.close()
-
-    # Save the check list
-    if checkind is not 'single':
-        if not os.path.exists('./centroid_fit_reference/check_centre.txt'):
-            newcheck = open('./centroid_fit_reference/check_centre.txt','w')
-            newcheck.write('#SAMI_ID rss_frame issue (nopeak, single_edge, multi_faint need to be checked.)\n')
-            newcheck.write(galaxyid+' '+rssframe+' '+checkind+'\n')
-            newcheck.close()
-        else:
-            newid = 'yes'
-            newcheck = open('./centroid_fit_reference/check_centre_new.txt','w')
-            newcheck.write('#SAMI_ID rss_frame issue (nopeak, single_edge, multi_faint need to be checked.)\n')
-
-            with open('./centroid_fit_reference/check_centre.txt', 'r') as oldcheck:
-                for line in oldcheck:
-                    if(list(line)[0] is not '#'):
-                        oldgalaxyid,oldrssframe,oldcheckind = line.split(' ');
-                        if galaxyid == oldgalaxyid and rssframe == oldrssframe:
-                            newcheck.write(galaxyid+' '+rssframe+' '+checkind+'\n')
-                            newid = 'no'
-                        else:
-                            newcheck.write(oldgalaxyid+' '+oldrssframe+' '+oldcheckind)
-            if newid is 'yes':
-                newcheck.write(galaxyid+' '+rssframe+' '+checkind+'\n')
-
-            newcheck.close()
-            os.rename('./centroid_fit_reference/check_centre_new.txt','./centroid_fit_reference/check_centre.txt')
 
 #** New masking method ends ————————————————————————————————————————————————
 
