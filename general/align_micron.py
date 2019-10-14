@@ -390,6 +390,9 @@ def find_dither(RSSname,reference,centroid=True,inter=False,plot=False,remove_fi
           for filename in [file_geodb, file_centralfib, ''.join([reference.strip('.fits'), "_centroid"])]:
               if os.path.exists(filename):
                 os.remove(filename)
+          ref_dir = ''.join([reference.strip('.fits'),'_centroid_fit_reference/'])
+          if os.path.exists(ref_dir):
+                shutil.rmtree(ref_dir)
 
       # Re-calculate the reference X and Y values
       recalculate_ref(results, central_data)
