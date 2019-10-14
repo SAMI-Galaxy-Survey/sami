@@ -129,7 +129,7 @@ from ..observing import centroid
 from ..utils.mc_adr import DARCorrector
 
 import numpy as np
-import os
+import os, shutil
 import matplotlib.pyplot as plt
 from matplotlib import cm
 import astropy.io.fits as pf
@@ -151,6 +151,10 @@ def find_dither(RSSname,reference,centroid=True,inter=False,plot=False,remove_fi
       ## into a txt file.  
 
       if centroid:
+          # Clean up any existing centroiding files
+          centroid_dir = ''.join([reference.strip('.fits'),'/centroid_fit_reference'])
+          if os.path.exists(centroid_dir):
+                shutil.rmtree(centroid_dir)
           for name in RSSname:
               #print(name)
               get_centroid(name, reference, do_dar_correct=do_dar_correct) #**reference added

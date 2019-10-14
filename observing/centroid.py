@@ -649,7 +649,7 @@ def centroid_fit(x,y,data,reference=None,rssframe=None,galaxyid=None,microns=Tru
     img = np.zeros((np.max(x0)+1,np.max(y0)+1)) # rss image
     x_good, y_good, data_sum_good = x, y, data_sum  # good fibres to use
     tx,ty,trad = xc,yc,1000     #target x,y centre and masking radius (1000 means no masking)
-    if not os.path.exists(working_dir+'/centroid_fit_reference'): # path to save centre of reference frame & checklist
+    if not os.path.exists(working_dir+'/centroid_fit_reference/'): # path to save centre of reference frame & checklist
         os.makedirs(working_dir+'/centroid_fit_reference')
 
    # Load fibre flux to image
