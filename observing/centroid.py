@@ -624,7 +624,7 @@ def centroid_fit(x,y,data,reference=None,rssframe=None,galaxyid=None,microns=Tru
 
     """Fit the x,y,data values, regardless of what they are and return some useful stuff. Data is an array of spectra"""
 
-    working_dir = rssframe.strip('.fits')
+    working_dir = rssframe.strip('sci.fits')
 
     # Smooth the data spectrally to get rid of cosmics
     data_smooth=np.zeros_like(data)
@@ -649,8 +649,8 @@ def centroid_fit(x,y,data,reference=None,rssframe=None,galaxyid=None,microns=Tru
     img = np.zeros((np.max(x0)+1,np.max(y0)+1)) # rss image
     x_good, y_good, data_sum_good = x, y, data_sum  # good fibres to use
     tx,ty,trad = xc,yc,1000     #target x,y centre and masking radius (1000 means no masking)
-    if not os.path.exists(working_dir+'/centroid_fit_reference/'): # path to save centre of reference frame & checklist
-        os.makedirs(working_dir+'/centroid_fit_reference')
+    if not os.path.exists(working_dir+'_centroid_fit_reference/'): # path to save centre of reference frame & checklist
+        os.makedirs(working_dir+'_centroid_fit_reference')
 
    # Load fibre flux to image
     for i in range(len(x0)):
@@ -697,14 +697,14 @@ def centroid_fit(x,y,data,reference=None,rssframe=None,galaxyid=None,microns=Tru
         xx,yy = tbl['y_peak']+np.min(x), tbl['x_peak']+np.min(y) # y_peak is x. yes. it's right.
 
         # The assumption is that dithering is relatively small, and our target is near the target centre from the (1st) reference frame
-        if reference is not None and rssframe != reference and os.path.exists(working_dir+'/centroid_fit_reference/centre_'+galaxyid+'_ref.txt') != False:
-            fileref = open(working_dir+'/centroid_fit_reference/centre_'+galaxyid+'_ref.txt','r')
+        if reference is not None and rssframe != reference and os.path.exists(working_dir+'_centroid_fit_reference/centre_'+galaxyid+'_ref.txt') != False:
+            fileref = open(working_dir+'_centroid_fit_reference/centre_'+galaxyid+'_ref.txt','r')
             rx,ry=np.loadtxt(fileref, usecols=(0,1))
             coff = (xx-rx)**2+(yy-ry)**2  # If not reference frame, the closest object from the reference
         else:
             coff = (xx-xc)**2+(yy-yc)**2  # If reference frame, the closest object from the centre
-
-        tx, ty = xx[np.where(coff == np.min(coff))], yy[np.where(coff == np.min(coff))]  # target centre 
+        
+        tx, ty = xx[np.where(coff == np.min(coff))[0][0]], yy[np.where(coff == np.min(coff))[0][0]]  # target centre 
         xx, yy = xx[np.where(xx*yy != tx*ty)], yy[np.where(xx*yy != tx*ty)]
         osub = np.where(((xx-tx)**2+(yy-ty)**2 - np.min((xx-tx)**2+(yy-ty)**2)) < 0.1)   # the 2nd closest object
         trad = np.sqrt((xx[osub]-tx)**2+(yy[osub]-ty)**2)/2.   # masking radius = (a separation btw the target and 2nd closest object)/2.
@@ -723,7 +723,7 @@ def centroid_fit(x,y,data,reference=None,rssframe=None,galaxyid=None,microns=Tru
 
     # Save the target centre of reference frame
     if reference is not None and rssframe == reference:
-        ref=open(working_dir+'/centroid_fit_reference/centre_'+galaxyid+'_ref.txt','w')
+        ref=open(working_dir+'_centroid_fit_reference/centre_'+galaxyid+'_ref.txt','w')
         ref.write(str(tx.data[0])+' '+str(ty.data[0]))
         ref.close()
 
