@@ -152,7 +152,7 @@ def find_dither(RSSname,reference,centroid=True,inter=False,plot=False,remove_fi
 
       if centroid:
           # Clean up any existing centroiding files
-          centroid_dir = ''.join([reference.strip('.fits'),'/centroid_fit_reference'])
+          centroid_dir = ''.join([os.path.splitext(reference)[0],'/centroid_fit_reference'])
           if os.path.exists(centroid_dir):
                 shutil.rmtree(centroid_dir)
           for name in RSSname:
@@ -167,7 +167,7 @@ def find_dither(RSSname,reference,centroid=True,inter=False,plot=False,remove_fi
       ### N.B. The huge assumption here is that the coordinates in micron of each central fibers on the focal 
       ### plane will remain exactly the same in the various exposures!  
       
-      file_centralfib=''.join([reference.strip('.fits'), "ref_centrFIB.txt"]) 
+      file_centralfib=''.join([os.path.splitext(reference)[0], "ref_centrFIB.txt"]) 
       f=open(file_centralfib,'w')
       
     
@@ -200,7 +200,7 @@ def find_dither(RSSname,reference,centroid=True,inter=False,plot=False,remove_fi
       ycent = np.array([data['ycent'] for data in central_data])
       
       
-      file_ref=''.join([reference.strip('.fits'), "_centroid"]) # Name of the file containing the centroid coordinates for the RSS used as a reference
+      file_ref=''.join([os.path.splitext(reference)[0], "_centroid"]) # Name of the file containing the centroid coordinates for the RSS used as a reference
       
       xref=np.zeros(n_ifu)   #x coordinates of centroid in each ifu of the reference RSS
       yref=np.zeros(n_ifu)   #y coordinates of centroid in each ifu of the reference RSS
@@ -235,7 +235,7 @@ def find_dither(RSSname,reference,centroid=True,inter=False,plot=False,remove_fi
       
       ## Check if IRAF output db already exist. If yes, delete it
       
-      file_geodb=''.join([reference.strip('.fits'), "_dbsolution"]) # File where the 2D solution of geomap is stored 
+      file_geodb=''.join([os.path.splitext(reference)[0], "_dbsolution"]) # File where the 2D solution of geomap is stored 
       if os.path.isfile(file_geodb):
                 os.remove(file_geodb)
 
@@ -250,7 +250,7 @@ def find_dither(RSSname,reference,centroid=True,inter=False,plot=False,remove_fi
          
              ## Define names of all the files used in this part of the module 
              
-             name=RSSmatch[i].strip('.fits')
+             name=os.path.splitext(RSSmatch[i])[0]
              file_centroid=''.join([name, "_centroid"]) # File containing the centroid coordinates. Produce by get_centroid
              file_geoin=''.join([name, "_mapin.txt"]) # This is the input file of geomap. It includes 4 columns having the x,y coordinates of the centroid in the inupt RSS and the ones in the reference RSS
              file_stats=''.join([name, "_fit"]) # File containing the detailed statistics for each fit. The content of each file is shown on the terminal.
@@ -391,10 +391,10 @@ def find_dither(RSSname,reference,centroid=True,inter=False,plot=False,remove_fi
 
       if remove_files:
           # Remove more text files
-          for filename in [file_geodb, file_centralfib, ''.join([reference.strip('.fits'), "_centroid"])]:
+          for filename in [file_geodb, file_centralfib, ''.join([os.path.splitext(reference)[0], "_centroid"])]:
               if os.path.exists(filename):
                 os.remove(filename)
-          ref_dir = ''.join([reference.strip('.fits'),'_centroid_fit_reference/'])
+          ref_dir = ''.join([os.path.splitext(reference)[0],'/centroid_fit_reference/'])
           if os.path.exists(ref_dir):
                 shutil.rmtree(ref_dir)
 
@@ -534,7 +534,7 @@ def get_centroid(infile,reference=None, do_dar_correct=True): #** reference adde
 
     ## Create name of the file where centroid coordinates are stored 
     
-    out_txt=''.join([infile.strip('.fits'), "_centroid"])
+    out_txt=''.join([os.path.splitext(infile)[0], "_centroid"])
 
     f=open(out_txt, 'w')
  
