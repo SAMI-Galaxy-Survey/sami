@@ -977,14 +977,22 @@ def fit_spline(wavelength, ratio, mf_av=False,tell_corr_primary=False):
     if len(extra) > 1:
         extra = 0.5 * (extra[1:] + extra[:-1])
         knots = np.sort(np.hstack((knots, extra)))
-    # Remove any knots sitting in a telluric band
-    knots = knots[~in_telluric_band(knots)]
+    # Remove any knots sitting in a telluric band, but only if not using tell_corr_primary:
+    if (not tell_corr_primary):
+        knots = knots[~in_telluric_band(knots)]
+        
     spline = LSQUnivariateSpline(
         wavelength[good], 1.0/ratio[good], knots[1:-1])
     fit = 1.0 / spline(wavelength)
     # Mark with NaNs anything outside the fitted wavelength range
-    fit[:good[0]] = np.nan
-    fit[good[-1]+1:] = np.nan
+    #fit[:good[0]] = np.nan
+    #fit[good[-1]+1:] = np.nan
+    # don't flag as Nan.  indead allow the spline function to extrapolate
+    # beyond the end points.  This means the that TF does not suddenly
+    # stop at the end of the particular spectrum , which is good because the
+    # wavelength coverage can vary between bundles and fibres.  The extrapolation is
+    # low order and well behaved.
+
     return fit
 
 def rebin_flux_noise(target_wavelength, source_wavelength, source_flux,
@@ -1365,7 +1373,7 @@ def read_atmospheric_extinction(sso_extinction_table=SSO_EXTINCTION_TABLE):
     ext= np.array( ext ).astype( 'f' )   
     return wl, ext
 
-def combine_transfer_functions(path_list, path_out, use_all=False):
+def combine_transfer_functions(path_list, path_out, use_all=False, sn_weight=True):
     """Read a set of transfer functions, combine them, and save to file."""
     # Make an empty array to hold all the individual transfer functions
     if use_all:
@@ -1384,18 +1392,42 @@ def combine_transfer_functions(path_list, path_out, use_all=False):
     n_file = len(path_list_good)
     n_pixel = pf.getval(path_list_good[0], 'NAXIS1')
     tf_array = np.zeros((n_file, n_pixel))
+    med_sn = np.zeros(n_file)
     # Read the individual transfer functions
     for index, path in enumerate(path_list_good):
         tf_array[index, :] = pf.getdata(path, 'FLUX_CALIBRATION')[-1, :]
-    # Make sure the overall scaling for each TF matches the others
+        # get the flux and sigma of spectrum and create a S/N spectrum:
+        sn_spec = pf.getdata(path, 'FLUX_CALIBRATION')[0, :]/pf.getdata(path, 'FLUX_CALIBRATION')[2, :]
+        # calculate a median S/N:
+        med_sn[index] = np.nanmedian(sn_spec)
+        # outout if needed:
+        # print(index,path,med_sn[index],percent10,percent90)
+
+    # Make sure the overall scaling for each TF matches the others.
+    # the scale is chosen to be the midpoint of the TF array (at index npix/2):
     scale = tf_array[:, n_pixel//2].copy()
+    # dividing scale of each TF by the median scale.  This gives a value
+    # to correct the TF to the median and align all the TFs vertically.
     scale /= np.median(scale)
     tf_array = (tf_array.T / scale).T
     # Combine them.
-    # For now, just take the mean. Maybe implement Ned's weighted combination
-    # later, preferably when proper variance propagation is in place.
+    # Here we take the mean, but we weight by (S/N)**2.  This assumes that
+    # the variance is well propagated to the extracted std spectrum.
+    # we could possibly place an upper limit on S/N, but looking at a
+    # representative sample, the range seems to be median S/N~100 to 500.
+    #  This is not a large dynamic range.
     # Using inverse because it's more stable when observed flux is low
-    tf_combined = 1.0 / nanmean(1.0 / tf_array, axis=0)
+    if (sn_weight):
+        for i in range(n_file):
+            tf_array[i,:] = med_sn[i]**2 * 1.0/tf_array[i,:]
+
+        wtsum = nanmean(med_sn**2)
+        tf_combined = 1.0 / (nanmean(tf_array, axis=0)/wtsum)
+
+        
+    else:
+        tf_combined = 1.0 / nanmean(1.0 / tf_array, axis=0)
+
     save_combined_transfer_function(path_out, tf_combined, path_list_good)
     return
 

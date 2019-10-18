@@ -98,6 +98,7 @@ except ImportError:
     PATCH_AVAILABLE = False
 
 MF_BIN_DIR = '/suphys/nscott/molecfit_install/bin' # directory for molecfit binary files
+#MF_BIN_DIR = '/Users/scroom/code/molecfit/bin/' # directory for molecfit binary files
 if not os.path.exists(os.path.join(MF_BIN_DIR,'molecfit')):
 	warnings.warn('molecfit not found. Disabling improved telluric subtraction')
 	MOLECFIT_AVAILABLE = False
@@ -1999,9 +2000,19 @@ class Manager:
         # groups. Grouping by name is not strictly necessary and could be
         # removed, which would cause results from different stars to be
         # combined.
-        groups = self.group_files_by(('date', 'field_id', 'ccd', 'name'),
+        #groups = self.group_files_by(('date', 'field_id', 'ccd', 'name'),
+        #                             ndf_class='MFOBJECT', do_not_use=False,
+        #                             spectrophotometric=True, **kwargs)
+        # revise grouping of standards, so that we average over all the
+        # standard star observations in the run.  Only group based on ccd.
+        # (SMC 17/10/2019)
+        groups = self.group_files_by(('ccd'),
                                      ndf_class='MFOBJECT', do_not_use=False,
                                      spectrophotometric=True, **kwargs)
+
+
+
+        
 
         # Now combine the files within each group
         for fits_list in groups.values():
