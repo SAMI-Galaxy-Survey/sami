@@ -1403,6 +1403,8 @@ def combine_transfer_functions(path_list, path_out, use_all=False, sn_weight=Tru
         # outout if needed:
         # print(index,path,med_sn[index],percent10,percent90)
 
+    # print the S/N values so we have an idea of the range used:
+    print('median S/N values for different std observations:',med_sn)
     # Make sure the overall scaling for each TF matches the others.
     # the scale is chosen to be the midpoint of the TF array (at index npix/2):
     scale = tf_array[:, n_pixel//2].copy()
