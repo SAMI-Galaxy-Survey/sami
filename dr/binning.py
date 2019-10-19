@@ -333,7 +333,8 @@ def aperture_spectra_pair(path_blue, path_red, path_to_catalogs,overwrite=True):
                 #     aperture spectra will not introduce any systematics.
                 spaxel_area = n_spax_included * pix_size**2
                 # (remember aperture_radius is in pix_size, so the ellipse is initially pix_size)
-                aperture_area = (2 * np.pi *
+                # previous extra factor of 2 here removed by SMC (19/10/2019):
+                aperture_area = (np.pi *
                                  (aperture_data['aperture_radius'])**2 *
                                  (1 - aperture_data['ellipticity'])) * pix_size**2
                 area_correction = aperture_area / spaxel_area
