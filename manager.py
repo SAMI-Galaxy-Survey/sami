@@ -108,6 +108,7 @@ else:
 from .utils.other import find_fibre_table, gzip
 from .utils import IFU
 from .general.cubing import dithered_cubes_from_rss_list, get_object_names
+from .general.cubing import cube_wrapper
 from .general.cubing import dithered_cube_from_rss_wrapper
 from .general.cubing import scale_cube_pair, scale_cube_pair_to_mag
 from .general.align_micron import find_dither
@@ -825,7 +826,9 @@ class Manager:
     def __init__(self, root, copy_files=False, move_files=False, fast=False,
                  gratlpmm=GRATLPMM, n_cpu=1,demo_data_source='demo',
                  use_twilight_tlm_blue=False, use_twilight_flat_blue=False,
-                 improve_blue_wavecorr=False, telluric_correct_primary=False, debug=False):
+                 improve_blue_wavecorr=False, telluric_correct_primary=False, debug=False,
+				 cubing_method='original'):
+
         if fast:
             self.speed = 'fast'
         else:
@@ -847,6 +850,7 @@ class Manager:
         self.root = root
         self.abs_root = os.path.abspath(root)
         self.tmp_dir = os.path.join(self.abs_root, 'tmp')
+        self.cubing_method = cubing_method
         # Match objects within 1'
         if ASTROPY_VERSION[0] == 0 and ASTROPY_VERSION[1] == 2:
             self.matching_radius = coord.AngularSeparation(
@@ -2263,7 +2267,8 @@ class Manager:
     def cube(self, overwrite=False, min_exposure=599.0, name='main',
              star_only=False, drop_factor=None, tag='', update_tol=0.02,
              size_of_grid=50, output_pix_size_arcsec=0.5,
-             min_transmission=0.333, max_seeing=4.0, min_frames=6, **kwargs):
+             min_transmission=0.333, max_seeing=4.0, min_frames=6,
+             cubing_method='', **kwargs):
         """Make datacubes from the given RSS files."""
         groups = self.group_files_by(
             ['field_id', 'ccd'], ndf_class='MFOBJECT', do_not_use=False,
@@ -2271,6 +2276,8 @@ class Manager:
         # Add in the root path as well, so that cubing puts things in the 
         # right place
         cubed_root = os.path.join(self.root, 'cubed')
+        if cubing_method == '':
+            cubing_method = self.cubing_method
         inputs_list = []
 
         failed_qc_file = os.path.join(self.root, 'failed_qc_fields.txt')
@@ -2301,13 +2308,16 @@ class Manager:
                         drop_factor = 0.5
 
                 for name in objects:
-                    inputs_list.append(
-                        (field_id, ccd, path_list, name, cubed_root, drop_factor,
-                         tag, update_tol, size_of_grid, output_pix_size_arcsec,
-                         overwrite))
+                    inputs = {'field_id': field_id, 'ccd': ccd, 'path_list': path_list, 'name': name,
+                    'cubed_root': cubed_root, 'drop_factor': drop_factor, 'tag': tag,
+                    'update_tol': update_tol, 'size_of_grid': size_of_grid,
+                    'output_pix_size_arcsec': output_pix_size_arcsec, 'overwrite': overwrite,
+                    'cubing_method': cubing_method}
+                    inputs_list.append(inputs)       
+ 
+        with open(failed_qc_file,"w") as outfile:
+            failed_fields = [field+'\n' for field in failed_fields]
 
-        with open(failed_qc_file, "w") as outfile:
-            failed_fields = [field + '\n' for field in failed_fields]
             outfile.writelines(failed_fields)
 
         # Send the cubing tasks off to multiple CPUs
@@ -4914,19 +4924,25 @@ def cube_group(group):
 @safe_for_multiprocessing
 def cube_object(inputs):
     """Cube a single object in a set of RSS files."""
-    (field_id, ccd, path_list, name, cubed_root, drop_factor, tag,
-     update_tol, size_of_grid, output_pix_size_arcsec, overwrite) = inputs
-    print('Cubing {} in field ID: {}, CCD: {}'.format(name, field_id, ccd))
-    print('{} files available'.format(len(path_list)))
-    suffix = '_' + field_id
-    if tag:
-        suffix += '_' + tag
-    return dithered_cube_from_rss_wrapper(
-        path_list, name, suffix=suffix, write=True, nominal=True,
-        root=cubed_root, overwrite=overwrite, do_dar_correct=True, clip=True,
-        drop_factor=drop_factor, update_tol=update_tol,
-        size_of_grid=size_of_grid,
-        output_pix_size_arcsec=output_pix_size_arcsec)
+
+    #(field_id, ccd, path_list, name, cubed_root, drop_factor, tag,
+    # update_tol, size_of_grid, output_pix_size_arcsec, overwrite) = inputs
+    print('Cubing {} in field ID: {}, CCD: {}'.format(inputs['name'], 
+                                   inputs['field_id'], inputs['ccd']))
+    print('{} files available'.format(len(inputs['path_list'])))
+    suffix = '_'+inputs['field_id']
+    if inputs['tag']:
+        suffix += '_'+inputs['tag']
+    inputs['suffix'] = suffix
+
+    return cube_wrapper(inputs)
+
+    #return dithered_cube_from_rss_wrapper(
+    #    path_list, name, suffix=suffix, write=True, nominal=True,
+    #    root=cubed_root, overwrite=overwrite, do_dar_correct=True, clip=True,
+    #    drop_factor=drop_factor, update_tol=update_tol,
+    #    size_of_grid=size_of_grid,
+    #    output_pix_size_arcsec=output_pix_size_arcsec)
 
 
 def best_path(fits):
