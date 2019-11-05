@@ -95,7 +95,7 @@ class CatalogAccessor(object):
                 for col in self.catalog_descriptions[cat]:
                     assert col in self.catalogs[cat].columns.dtype.names
             except Exception as e:
-                print("Original error: %s" % e.message)
+                print("Original error: %s" % e)
                 raise ValueError("Invalid or missing GAMA Catalog %s in directory %s" %
                                  (cat, os.path.abspath(self.path_to_catalogs)))
 
@@ -137,10 +137,10 @@ def aperture_spectra_pair(path_blue, path_red, path_to_catalogs,overwrite=True):
     catalogs_required = {
         'ApMatchedCat': ['THETA_J2000', 'THETA_IMAGE'],
         'SersicCatAll': [
-            'GALRE_r',
-            'GALPA_r',
-            'GALR90_r',
-            'GALELLIP_r'],
+            'GAL_RE_R',
+            'GAL_PA_R',
+            'GAL_R90_R',
+            'GAL_ELLIP_R'],
         # Note spelling of Distance(s)Frames different from that used by GAMA
         'DistanceFrames': ['Z_TONRY_2'],
         'MGEPhotom': ['ReMGE_r','PAMGE_r','epsMGE_r'],
@@ -154,7 +154,7 @@ def aperture_spectra_pair(path_blue, path_red, path_to_catalogs,overwrite=True):
     if out_dir == "":
         out_dir = '.'
     out_file_base = os.path.basename(path).split(".")[0]
-    output_filename = out_dir + "/" + out_file_base + "_aperture_spec_test.fits"
+    output_filename = out_dir + "/" + out_file_base + "_aperture_spec.fits"
     
     overwrite = True
     if (os.path.exists(output_filename)) & (overwrite == False):
@@ -213,9 +213,9 @@ def aperture_spectra_pair(path_blue, path_red, path_to_catalogs,overwrite=True):
                             gama_catalogs.retrieve('ApMatchedCat', 'THETA_IMAGE', sami_id))
 
             standard_apertures['re'] = {
-                'aperture_radius': gama_catalogs.retrieve('SersicCatAll', 'GALRE_r', sami_id)/pix_size,
-                'pa': gama_catalogs.retrieve('SersicCatAll', 'GALPA_r', sami_id) + pos_angle_adjust,
-                'ellipticity': gama_catalogs.retrieve('SersicCatAll', 'GALELLIP_r', sami_id)
+                'aperture_radius': gama_catalogs.retrieve('SersicCatAll', 'GAL_RE_R', sami_id)/pix_size,
+                'pa': gama_catalogs.retrieve('SersicCatAll', 'GAL_PA_R', sami_id) + pos_angle_adjust,
+                'ellipticity': gama_catalogs.retrieve('SersicCatAll', 'GAL_ELLIP_R', sami_id)
                 }
         except:
             print('%s not found in GAMA catalogue. No GAMA Re spectrum produced for %s' % (sami_id,sami_id))
@@ -283,7 +283,7 @@ def aperture_spectra_pair(path_blue, path_red, path_to_catalogs,overwrite=True):
             if out_dir == "":
                 out_dir = '.'
             out_file_base = os.path.basename(path).split(".")[0]
-            output_filename = out_dir + "/" + out_file_base + "_aperture_spec_test.fits"
+            output_filename = out_dir + "/" + out_file_base + "_apspec.fits"
 
             # Create a new output FITS file:
             aperture_hdulist = pf.HDUList([pf.PrimaryHDU()])
@@ -333,7 +333,8 @@ def aperture_spectra_pair(path_blue, path_red, path_to_catalogs,overwrite=True):
                 #     aperture spectra will not introduce any systematics.
                 spaxel_area = n_spax_included * pix_size**2
                 # (remember aperture_radius is in pix_size, so the ellipse is initially pix_size)
-                aperture_area = (2 * np.pi *
+                # previous extra factor of 2 here removed by SMC (19/10/2019):
+                aperture_area = (np.pi *
                                  (aperture_data['aperture_radius'])**2 *
                                  (1 - aperture_data['ellipticity'])) * pix_size**2
                 area_correction = aperture_area / spaxel_area
@@ -396,7 +397,7 @@ def aperture_spectra_pair(path_blue, path_red, path_to_catalogs,overwrite=True):
 
                 log.debug("Aperture %s completed", aper)
 
-            aperture_hdulist.writeto(output_filename, clobber=True)
+            aperture_hdulist.writeto(output_filename, overwrite=True)
             log.info("Aperture spectra written to %s", output_filename)
 
 

@@ -97,6 +97,14 @@ try:
 except ImportError:
     PATCH_AVAILABLE = False
 
+MF_BIN_DIR = '/suphys/nscott/molecfit_install/bin' # directory for molecfit binary files
+#MF_BIN_DIR = '/Users/scroom/code/molecfit/bin/' # directory for molecfit binary files
+if not os.path.exists(os.path.join(MF_BIN_DIR,'molecfit')):
+	warnings.warn('molecfit not found. Disabling improved telluric subtraction')
+	MOLECFIT_AVAILABLE = False
+else:
+	MOLECFIT_AVAILABLE = True
+
 from .utils.other import find_fibre_table, gzip
 from .utils import IFU
 from .general.cubing import dithered_cubes_from_rss_list, get_object_names
@@ -111,6 +119,7 @@ from .qc.fluxcal import throughput, get_sdss_stellar_mags, identify_secondary_st
 from .qc.sky import sky_residuals
 from .qc.arc import bad_fibres
 from .dr.fflat import correct_bad_fibres
+from .dr.twilight_wavecal import wavecorr_frame, wavecorr_av, apply_wavecorr
 
 # Temporary edit. Prevent bottleneck 1.0.0 being used.
 try:
@@ -134,9 +143,9 @@ else:
         return coord.SkyCoord(*args, frame='icrs', **kwargs)
 
 
-IDX_FILES_SLOW = {'580V': 'sami580V_v1_6.idx',
+IDX_FILES_SLOW = {'580V': 'sami580V_v1_7.idx',
                   '1500V': 'sami1500V_v1_5.idx',
-                  '1000R': 'sami1000R_v1_6.idx'}
+                  '1000R': 'sami1000R_v1_7.idx'}
 
 IDX_FILES_FAST = {'580V': 'sami580V.idx',
                   '1500V': 'sami1500V.idx',
@@ -355,6 +364,30 @@ class Manager:
 
     For the on site data reduction, it might be advisable to use `False`
     (default), because this requires less time.
+    
+    Improving the blue arm wavelength calibration using twilight sky frames
+    =======================================================================
+    
+    The keyword 'improve_blue_wavecorr' instructs the manager to determine
+    an improved blue arm wavelength solution from the twilight sky frames.
+    
+    When this keyword is set to true, the reduced twilight sky frame spectra
+    are compared to a high-resolution solar spectrum (supplied as part of the
+    SAMI package) to determine residual wavelength shifts. An overall
+    fibre-to-fibre wavelength offset is derived by averaging over all twilight
+    sky frames in a run. This average offset is stored in a calibration file in
+    the root directory of the run. These shifts are then applied to all arc frames. 
+
+    Applying telluric correction to primary standards before flux calibration
+    =========================================================================
+
+    The keyword 'telluric_correct_primary' instructs the manager to use molecfit
+    to telluric correct the primary standard stars before determining the flux
+    calibration transfer function. This is only applied if molecfit is installed.
+
+    This keyword should only be set if the reference spectra for the primary
+    standard stars have themselves been telluric corrected. If they have not this
+    will result in highly unphysical transfer functions.
 
     Continuing a previous session
     =============================
@@ -783,14 +816,18 @@ class Manager:
         ('scale_frames', True),
         ('measure_offsets', True),
         ('cube', True),
-        ('scale_cubes', True),
+        #('scale_cubes', True),
         ('bin_cubes', True),
+        ('record_dust', True),
+        ('bin_aperture_spectra', True),
+        ('gzip_cubes', True)
     )
 
     def __init__(self, root, copy_files=False, move_files=False, fast=False,
-                 gratlpmm=GRATLPMM, n_cpu=1, demo=False, demo_data_source='demo',
+                 gratlpmm=GRATLPMM, n_cpu=1,demo_data_source='demo',
                  use_twilight_tlm_blue=False, use_twilight_flat_blue=False,
-                 debug=False, cubing_method='original'):
+                 improve_blue_wavecorr=False, telluric_correct_primary=False, debug=False,
+				 cubing_method='original'):
 
         if fast:
             self.speed = 'fast'
@@ -803,9 +840,11 @@ class Manager:
         # define the internal flag that allows twilights to be used for
         # fibre flat fielding:
         self.use_twilight_flat_blue = use_twilight_flat_blue
-        # Internal flag to allow for greater output during processing.
-        # this is not actively used at present, but show be at some point
-        # so we can easily get output for testing
+        # define the internal flag that specifies the improved twlight wavelength
+        # calibration step should be applied
+        self.improve_blue_wavecorr = improve_blue_wavecorr
+        # Internal flag to set telluric correction for primary standards
+        self.telluric_correct_primary = telluric_correct_primary
         self.gratlpmm = gratlpmm
         self.n_cpu = n_cpu
         self.root = root
@@ -848,6 +887,17 @@ class Manager:
             print('Using twilight frames for fibre flat field')
         else:
             print('NOT using twilight frames for fibre flat field')
+
+        if improve_blue_wavecorr:
+            print('Applying additional twilight-based wavelength calibration step')
+        else:
+            print('NOT applying additional twilight-based wavelength calibration step')
+
+        if telluric_correct_primary:
+            print('Applying telluric correction to primary standard stars before flux calibration')
+            print('WARNING: Only do this if the reference spectra for the primary standards have good telluric correction')
+        else:
+            print('NOT applying telluric correction to primary standard stars')
 
         self._debug = False
         self.debug = debug
@@ -1610,11 +1660,35 @@ class Manager:
             file_list.extend(files)
         self.reduce_file_iterable(
             file_list, overwrite=overwrite, check='SKY')
+        
         # Average the throughput values in each group
         for files in groups.values():
             path_list = [fits.reduced_path for fits in files]
             make_clipped_thput_files(
                 path_list, overwrite=overwrite, edit_all=True, median=True)
+                
+        # Send all the sky frames to the improved wavecal routine then
+        # apply correction to all the blue arcs
+        if  self.improve_blue_wavecorr:
+            file_list_tw = []
+            for f in file_list:
+                if f.ccd == 'ccd_1':
+                    file_list_tw.append(f)
+            input_list = zip(file_list_tw,[overwrite]*len(file_list_tw))
+            self.map(wavecorr_frame,input_list)
+            wavecorr_av(file_list_tw,self.root)
+            
+            kwargs_tmp = kwargs.copy()
+            if 'ccd' in kwargs_tmp:
+                del kwargs_tmp['ccd']
+
+            arc_file_iterable = self.files(ndf_class='MFARC', ccd = 'ccd_1',
+                                    do_not_use=False, **kwargs_tmp)
+            
+            arc_paths = [fits.reduced_path for fits in arc_file_iterable]
+            for arc_path in arc_paths:
+                apply_wavecorr(arc_path,self.root)           
+            
         if fake_skies:
             no_sky_list = self.fields_without_skies(**kwargs)
             # Certain parameters will already have been set so don't need
@@ -1735,7 +1809,12 @@ class Manager:
                     reduced_files.append(fits)
         # Now reduce the short exposures, which might need the long
         # exposure reduced above
-        upper_limit = (self.min_exposure_for_throughput -
+        if 'max_exposure' in kwargs:
+            upper_limit = (1.*kwargs['max_exposure'] - 
+                           np.finfo(1.*kwargs['max_exposure']).epsneg)
+            del kwargs['max_exposure']
+        else:
+            upper_limit = (self.min_exposure_for_throughput -
                        np.finfo(self.min_exposure_for_throughput).epsneg)
         file_iterable_short = self.files(
             ndf_class='MFOBJECT', do_not_use=False,
@@ -1911,7 +1990,8 @@ class Manager:
             else:
                 n_trim = 0
             inputs_list.append({'path_pair': path_pair, 'n_trim': n_trim,
-                                'model_name': model_name, 'smooth': smooth})
+                                'model_name': model_name, 'smooth': smooth,
+                                'speed':self.speed,'tellcorprim':self.telluric_correct_primary})
 
         self.map(derive_transfer_function_pair, inputs_list)
         self.next_step('derive_transfer_function', print_message=True)
@@ -1924,9 +2004,19 @@ class Manager:
         # groups. Grouping by name is not strictly necessary and could be
         # removed, which would cause results from different stars to be
         # combined.
-        groups = self.group_files_by(('date', 'field_id', 'ccd', 'name'),
+        #groups = self.group_files_by(('date', 'field_id', 'ccd', 'name'),
+        #                             ndf_class='MFOBJECT', do_not_use=False,
+        #                             spectrophotometric=True, **kwargs)
+        # revise grouping of standards, so that we average over all the
+        # standard star observations in the run.  Only group based on ccd.
+        # (SMC 17/10/2019)
+        groups = self.group_files_by(('ccd'),
                                      ndf_class='MFOBJECT', do_not_use=False,
                                      spectrophotometric=True, **kwargs)
+
+
+
+        
 
         # Now combine the files within each group
         for fits_list in groups.values():
@@ -2038,7 +2128,8 @@ class Manager:
                 'use_PS': use_PS,
                 'scale_PS_by_airmass': scale_PS_by_airmass,
                 'PS_spec_file': PS_spec_file,
-                'model_name': model_name_out})
+                'model_name': model_name_out,
+                'speed':self.speed})
         # Now send this list to as many cores as we are using
         # Limit this to 10, because of semaphore issues I don't understand
         old_n_cpu = self.n_cpu
@@ -2241,7 +2332,8 @@ class Manager:
                     fits = self.fits_file(os.path.basename(path)[:10])
                     if fits:
                         break
-                update_checks('CUB', [fits], False)
+                if fits:
+                    update_checks('CUB', [fits], False)
         self.next_step('cube', print_message=True)
         return
 
@@ -2388,6 +2480,7 @@ class Manager:
         for path_pair in path_pair_list:
             inputs_list.append(overwrite)
         self.map(aperture_spectra_pair, path_pair_list)
+        self.next_step('bin_aperture_spectra', print_message=True)
 
         return
 
@@ -2396,7 +2489,7 @@ class Manager:
         """Record information about dust in the output datacubes."""
         groups = self.group_files_by(
             'field_id', ccd='ccd_1', ndf_class='MFOBJECT', do_not_use=False,
-            reduced=True, name=name, **kwargs)
+            reduced=True, name=name, include_linked_managers = True, **kwargs)
         for (field_id,), fits_list in groups.items():
             table = pf.getdata(fits_list[0].reduced_path, 'FIBRES_IFU')
             objects = table['NAME'][table['TYPE'] == 'P']
@@ -2411,6 +2504,8 @@ class Manager:
                         max_seeing=max_seeing, tag=tag)
                     if path:
                         dust.dustCorrectSAMICube(path, overwrite=overwrite)
+
+        self.next_step('record_dust',print_message=True)
         return
 
     def gzip_cubes(self, overwrite=False, min_exposure=599.0, name='main',
@@ -2419,7 +2514,7 @@ class Manager:
         """Gzip the final datacubes."""
         groups = self.group_files_by(
             ['field_id', 'ccd'], ndf_class='MFOBJECT', do_not_use=False,
-            reduced=True, name=name, **kwargs)
+            reduced=True, name=name, include_linked_managers = True, **kwargs)
         input_list = []
         for (field_id, ccd), fits_list in groups.items():
             if ccd == 'ccd_1':
@@ -2450,6 +2545,7 @@ class Manager:
                     if not os.path.exists(output_path):
                         input_list.append(input_path)
         self.map(gzip_wrapper, input_list)
+        self.next_step('gzip_cubes', print_message=True)
         return
 
     def reduce_all(self, start=None, finish=None, overwrite=False, **kwargs):
@@ -2740,7 +2836,8 @@ class Manager:
         options = []
 
         # Define what the best choice is for a TLM:
-        if (self.use_twilight_tlm_blue and (fits.ccd == 'ccd_1')):
+        if (self.use_twilight_tlm_blue and (fits.ccd == 'ccd_1') and
+            (fits.plate_id_short is not 'Y14SAR4_P007')):
             best_tlm = 'tlmap_mfsky'
         else:
             best_tlm = 'tlmap'
@@ -2752,13 +2849,15 @@ class Manager:
         else:
             best_fflat = 'fflat'
 
+        # only do skyscrunch for longer exposures (both CCDs):
+        if fits.exposure >= self.min_exposure_for_sky_wave:
+                # Adjust wavelength calibration of red frames using sky lines
+            options.extend(['-SKYSCRUNCH', '1'])
+        else:
+            options.extend(['-SKYSCRUNCH', '0'])
+                
         # add options for just CCD_2:
         if fits.ccd == 'ccd_2':
-            if fits.exposure >= self.min_exposure_for_sky_wave:
-                # Adjust wavelength calibration of red frames using sky lines
-                options.extend(['-SKYSCRUNCH', '1'])
-            else:
-                options.extend(['-SKYSCRUNCH', '0'])
             # Turn off bias and dark subtraction
             if fits.detector == 'E2V3':
                 options.extend(['-USEBIASIM', '0', '-USEDARKIM', '0'])
@@ -2906,7 +3005,8 @@ class Manager:
                     # twilight options first.  If they are not found, then default
                     # back to the normal tlmap route.
                     found = 0
-                    if (self.use_twilight_tlm_blue and (fits.ccd == 'ccd_1')):
+                    if (self.use_twilight_tlm_blue and (fits.ccd == 'ccd_1') and 
+                        (fits.plate_id_short is not 'Y14SAR4_P007')):
                         filename_match = self.match_link(fits, 'tlmap_mfsky')
                         if filename_match is None:
                             filename_match = self.match_link(fits, 'tlmap_mfsky_loose')
@@ -3108,6 +3208,17 @@ class Manager:
                                 filename_match])
         return options
 
+    def determine_tlm_shift(self,fits,twilight_fits,flat_fits):
+
+        twilight_fits = os.path.join(fits.reduced_dir,twilight_fits)
+        flat_fits = os.path.join(fits.reduced_dir,flat_fits)
+        
+        twilight_tlm = pf.getdata(twilight_fits,'PRIMARY')
+        flat_tlm = pf.getdata(flat_fits,'PRIMARY')
+        
+        tlm_offset = np.mean(twilight_tlm-flat_tlm)
+        return tlm_offset
+
     def run_2dfdr_combine(self, file_iterable, output_path):
         """Use 2dfdr to combine the specified FITS files."""
         file_iterable, file_iterable_copy = itertools.tee(file_iterable)
@@ -3210,7 +3321,7 @@ class Manager:
         if require_this_manager:
             # Check that at least one of the files from each group has come
             # from this manager
-            for combined_key, fits_list in groups.items():
+            for combined_key, fits_list in list(groups.items()):
                 for fits in fits_list:
                     if fits in self.file_list:
                         break
@@ -3408,6 +3519,22 @@ class Manager:
 
             return retfunc
 
+        def determine_tlm_shift_fits(twilight_fits,flat_fits):
+
+            twilight_tlm = pf.getdata(twilight_fits.tlm_path,'PRIMARY')
+            flat_tlm = pf.getdata(flat_fits.tlm_path,'PRIMARY')
+
+            tlm_offset = np.mean(twilight_tlm-flat_tlm)
+            return tlm_offset
+
+        def flux_level_shift(fits,fits_test):
+            fits_comp = self.matchmaker(fits,'tlmap')
+            shift = determine_tlm_shift_fits(fits_test,fits_comp)
+            if np.abs(shift) >= 1:
+                    return np.inf
+            else:
+                return flux_level(fits, fits_test)
+
         # Determine what actually needs to be matched, depending on match_class
         #
         # this case is where we want to use a twilight sky frame to derive the
@@ -3440,7 +3567,7 @@ class Manager:
             max_fluxlev = 40000.0  # use a max_fluxlev to reduce the chance of saturated twilights
             ccd = fits.ccd
             tlm_created = True
-            fom = flux_level
+            fom = flux_level_shift
         elif match_class.lower() == 'tlmap_mfsky_any':
             # in this case find the best (brightest) twilight frame from anywhere
             # during the run.
@@ -3449,7 +3576,7 @@ class Manager:
             max_fluxlev = 40000.0  # use a max_fluxlev to reduce the chance of saturated twilights
             ccd = fits.ccd
             tlm_created = True
-            fom = flux_level
+            fom = flux_level_shift
         elif match_class.lower() == 'tlmap':
             ndf_class = 'MFFFF'
             date = fits.date
@@ -3519,7 +3646,7 @@ class Manager:
             max_fluxlev = 40000.0  # use a max_fluxlev to reduce the chance of saturated twilights
             ccd = fits.ccd
             copy_reduced = True
-            fom = flux_level
+            fom = flux_level_shift
         elif match_class.lower() == 'fflat_mfsky_any':
             # in this case find the best (brightest) twilight frame from anywhere
             # during the run.
@@ -3528,7 +3655,7 @@ class Manager:
             max_fluxlev = 40000.0  # use a max_fluxlev to reduce the chance of saturated twilights
             ccd = fits.ccd
             copy_reduced = True
-            fom = flux_level
+            fom = flux_level_shift
         elif match_class.lower() == 'fflat':
             # Find a reduced fibre flat field from the dome lamp
             ndf_class = 'MFFFF'
@@ -3667,12 +3794,12 @@ class Manager:
                 do_not_use=False,
         ):
             test_fom = fom(fits, fits_test)
-            # output match testing stuff:
-            #            print 'match test (fom):',fits,fits_test,test_fom
             if test_fom < best_fom:
                 fits_match = fits_test
                 best_fom = test_fom
         #        exit()
+        if (best_fom == np.inf) & (('tlmap_mfsky' in match_class.lower()) | ('fflat_mfsky' in match_class.lower())):
+            return None
         return fits_match
 
     def match_link(self, fits, match_class):
@@ -4683,7 +4810,9 @@ def derive_transfer_function_pair(inputs):
           os.path.basename(path_pair[1]))
     try:
         fluxcal2.derive_transfer_function(
-            path_pair, n_trim=n_trim, model_name=model_name, smooth=smooth)
+            path_pair, n_trim=n_trim, model_name=model_name, smooth=smooth,
+            molecfit_available = MOLECFIT_AVAILABLE, molecfit_dir = MF_BIN_DIR,
+            speed=inputs['speed'],tell_corr_primary=inputs['tellcorprim'])
     except ValueError:
         print('Warning: No star found in dataframe, skipping ' +
               os.path.basename(path_pair[0]))
@@ -4716,7 +4845,8 @@ def telluric_correct_pair(inputs):
     try:
         telluric.derive_transfer_function(
             path_pair, PS_spec_file=PS_spec_file, use_PS=use_PS, n_trim=n_trim,
-            scale_PS_by_airmass=scale_PS_by_airmass, model_name=model_name)
+            scale_PS_by_airmass=scale_PS_by_airmass, model_name=model_name,
+            molecfit_available = MOLECFIT_AVAILABLE, molecfit_dir = MF_BIN_DIR,speed=inputs['speed'])
     except ValueError as err:
         if err.args[0].startswith('No star identified in file:'):
             # No standard star found; probably a star field
@@ -4915,7 +5045,7 @@ def aperture_spectra_pair(path_pair, overwrite=False):
         print('Processing: ' + path_blue + ', ' + path_red)
         binning.aperture_spectra_pair(path_blue, path_red, CATALOG_PATH, overwrite)
     except Exception as e:
-        print("ERROR on pair %s, %s:\n %s" % (path_blue, path_red, e.message))
+        print("ERROR on pair %s, %s:\n %s" % (path_blue, path_red, e))
         traceback.print_exc()
     return
 
