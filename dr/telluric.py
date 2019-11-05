@@ -17,6 +17,7 @@ import warnings
 from .fluxcal2 import read_chunked_data, set_fixed_parameters, fit_model_flux
 from .fluxcal2 import insert_fixed_parameters, check_psf_parameters
 from .fluxcal2 import extract_total_flux, save_extracted_flux, trim_chunked_data
+from .telluric2 import TelluricCorrect as molecfit_telluric
 
 from .. import utils
 from ..utils.ifu import IFU
@@ -35,7 +36,8 @@ HG_CHANGESET = utils.hg_changeset(__file__)
 def derive_transfer_function(frame_list, PS_spec_file=None, use_PS=False,
                              scale_PS_by_airmass=False, 
                              model_name='ref_centre_alpha_dist_circ_hdratm',
-                             n_trim=0, use_probe=None, hdu_name='FLUX_CALIBRATION'):
+                             n_trim=0, use_probe=None, hdu_name='FLUX_CALIBRATION',
+                             molecfit_available = False, molecfit_dir ='',speed=''):
     """
     Finds the telluric correction factor to multiply object data by. The factor 
     as a function of wavelength is saved into the red frame under the extension 
@@ -57,7 +59,7 @@ def derive_transfer_function(frame_list, PS_spec_file=None, use_PS=False,
     # if user defines, use a scaled primary standard telluric correction
     if use_PS:
         # get primary standard transfer function
-        PS_transfer_function, PS_sigma_transfer, linear_fit, PS_wave_axis = primary_standard_transfer_function(PS_spec_file)
+        PS_transfer_function, PS_sigma_transfer, corrected_flux, PS_wave_axis = primary_standard_transfer_function(PS_spec_file)
 
         if scale_PS_by_airmass:
             # Use the theoretical scaling based on airmass
@@ -96,7 +98,12 @@ def derive_transfer_function(frame_list, PS_spec_file=None, use_PS=False,
         hdulist.close()
         
         # create transfer function for secondary standard
-        SS_transfer_function, SS_sigma_transfer, linear_fit = create_transfer_function(SS_flux_data,SS_sigma_flux,SS_wave_axis,naxis1)
+        if molecfit_available & (speed == 'slow'):
+            SS_transfer_function, SS_sigma_transfer, corrected_flux = molecfit_telluric(frame_list[1],SS_flux_data,
+                SS_sigma_flux,SS_wave_axis,mf_bin_dir=molecfit_dir)
+        else:
+            SS_transfer_function, SS_sigma_transfer, corrected_flux = create_transfer_function(SS_flux_data,
+                SS_sigma_flux,SS_wave_axis,naxis1)
     
         transfer_function = SS_transfer_function
         sigma_transfer = SS_sigma_transfer
@@ -104,7 +111,7 @@ def derive_transfer_function(frame_list, PS_spec_file=None, use_PS=False,
     # Require that all corrections are > 1, as expected for absorption
     transfer_function = np.maximum(transfer_function, 1.0)
     
-    model_flux = linear_fit / transfer_function
+    model_flux = corrected_flux / transfer_function
 
     # Update the files to include telluric correction factor
     n_pix = len(transfer_function)
@@ -251,7 +258,8 @@ def extract_secondary_standard(path_list,model_name='ref_centre_alpha_dist_circ_
         chunked_data['yfibre'],
         chunked_data['wavelength'],
         model_name,
-        fixed_parameters=fixed_parameters)
+        fixed_parameters=fixed_parameters,
+		secondary=True)
     psf_parameters = insert_fixed_parameters(psf_parameters, fixed_parameters)
     good_psf = check_psf_parameters(psf_parameters, chunked_data)
     for path in path_list:

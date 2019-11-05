@@ -62,7 +62,12 @@ from astropy import coordinates as coord
 from astropy import units
 from astropy import table
 from astropy.io import fits as pf
+from astropy.io import ascii
 from astropy import __version__ as ASTROPY_VERSION
+# extra astropy bits to calculate airmass
+import astropy.units as u
+from astropy.time import Time
+from astropy.coordinates import SkyCoord, EarthLocation, AltAz
 
 from ..utils import hg_changeset
 from ..utils.ifu import IFU
@@ -70,6 +75,7 @@ from ..utils.mc_adr import parallactic_angle, adr_r
 from ..utils.other import saturated_partial_pressure_water
 from ..config import millibar_to_mmHg
 from ..utils.fluxcal2_io import read_model_parameters, save_extracted_flux
+from .telluric2 import TelluricCorrectPrimary as telluric_correct_primary
 
 try:
     from bottleneck import nansum, nanmean
@@ -248,7 +254,7 @@ def model_flux(parameters_dict, xfibre, yfibre, wavelength, model_name):
     return moffat_flux(parameters_array, xfibre, yfibre)
 
 def residual(parameters_vector, datatube, vartube, xfibre, yfibre,
-             wavelength, model_name, fixed_parameters=None):
+             wavelength, model_name, fixed_parameters=None, secondary=False):
     """Return the residual in each fibre for the given model."""
     parameters_dict = parameters_vector_to_dict(parameters_vector, model_name)
     parameters_dict = insert_fixed_parameters(parameters_dict, 
@@ -256,9 +262,10 @@ def residual(parameters_vector, datatube, vartube, xfibre, yfibre,
     model = model_flux(parameters_dict, xfibre, yfibre, wavelength, model_name)
     # 2dfdr variance is just plain wrong for fibres with little or no flux!
     # Try replacing with something like sqrt(flux), but with a floor
-    vartube = datatube.copy()
-    cutoff = 0.05 * datatube.max()
-    vartube[datatube < cutoff] = cutoff
+    if (secondary):
+        vartube = datatube.copy()
+        cutoff = 0.05 * datatube.max()
+        vartube[datatube < cutoff] = cutoff
     res = np.ravel((model - datatube) / np.sqrt(vartube))
     # Really crude way of putting bounds on the value of alpha
     if 'alpha_ref' in parameters_dict:
@@ -266,16 +273,19 @@ def residual(parameters_vector, datatube, vartube, xfibre, yfibre,
             res *= 1e10 * (0.5 - parameters_dict['alpha_ref'])
         elif parameters_dict['alpha_ref'] > 5.0:
             res *= 1e10 * (parameters_dict['alpha_ref'] - 5.0)
+    if 'beta' in parameters_dict:
+        if parameters_dict['beta'] <= 1.0:
+            res *= 1e10*(1.01 - parameters_dict['beta'])
     return res
 
 def fit_model_flux(datatube, vartube, xfibre, yfibre, wavelength, model_name,
-                   fixed_parameters=None):
+                   fixed_parameters=None, secondary=False):
     """Fit a model to the given datatube."""
     par_0_dict = first_guess_parameters(datatube, vartube, xfibre, yfibre, 
                                         wavelength, model_name)
     par_0_vector = parameters_dict_to_vector(par_0_dict, model_name)
     args = (datatube, vartube, xfibre, yfibre, wavelength, model_name,
-            fixed_parameters)
+            fixed_parameters, secondary)
     parameters_vector = leastsq(residual, par_0_vector, args=args)[0]
     parameters_dict = parameters_vector_to_dict(parameters_vector, model_name)
     return parameters_dict
@@ -584,7 +594,8 @@ def dar(wavelength, zenith_distance, temperature=None, pressure=None,
 def derive_transfer_function(path_list, max_sep_arcsec=60.0,
                              catalogues=STANDARD_CATALOGUES,
                              model_name='ref_centre_alpha_dist_circ_hdratm',
-                             n_trim=0, smooth='spline'):
+                             n_trim=0, smooth='spline',molecfit_available=False,
+                             molecfit_dir='',speed='',tell_corr_primary=False):
     """Derive transfer function and save it in each FITS file."""
     # First work out which star we're looking at, and which hexabundle it's in
     star_match = match_standard_star(
@@ -592,12 +603,21 @@ def derive_transfer_function(path_list, max_sep_arcsec=60.0,
     if star_match is None:
         raise ValueError('No standard star found in the data.')
     standard_data = read_standard_data(star_match)
+    
+    # Apply telluric correction to primary standards and write to new file, returning
+    # the paths to those files.
+    if molecfit_available & (speed == 'slow') & tell_corr_primary:
+        path_list_tel = telluric_correct_primary(path_list,star_match['probenum'],
+                                            molecfit_dir=molecfit_dir)
+    else:
+        path_list_tel = path_list
+
     # Read the observed data, in chunks
-    chunked_data = read_chunked_data(path_list, star_match['probenum'])
+    chunked_data = read_chunked_data(path_list_tel, star_match['probenum'])
     trim_chunked_data(chunked_data, n_trim)
     # Fit the PSF
     fixed_parameters = set_fixed_parameters(
-        path_list, model_name, probenum=star_match['probenum'])
+        path_list_tel, model_name, probenum=star_match['probenum'])
     psf_parameters = fit_model_flux(
         chunked_data['data'], 
         chunked_data['variance'],
@@ -608,12 +628,12 @@ def derive_transfer_function(path_list, max_sep_arcsec=60.0,
         fixed_parameters=fixed_parameters)
     psf_parameters = insert_fixed_parameters(psf_parameters, fixed_parameters)
     good_psf = check_psf_parameters(psf_parameters, chunked_data)
-    for path in path_list:
+    for path,path2 in zip(path_list_tel,path_list):
         ifu = IFU(path, star_match['probenum'], flag_name=False)
         remove_atmosphere(ifu)
         observed_flux, observed_background, sigma_flux, sigma_background = \
             extract_total_flux(ifu, psf_parameters, model_name)
-        save_extracted_flux(path, observed_flux, observed_background,
+        save_extracted_flux(path2, observed_flux, observed_background,
                             sigma_flux, sigma_background,
                             star_match, psf_parameters, model_name,
                             good_psf, HG_CHANGESET)
@@ -623,8 +643,10 @@ def derive_transfer_function(path_list, max_sep_arcsec=60.0,
             observed_flux,
             sigma_flux,
             ifu.lambda_range,
-            smooth=smooth)
-        save_transfer_function(path, transfer_function)
+            smooth=smooth,
+            mf_av=molecfit_available,
+            tell_corr_primary=tell_corr_primary)
+        save_transfer_function(path2, transfer_function)
     return
 
 def match_standard_star(filename, max_sep_arcsec=60.0, 
@@ -660,7 +682,9 @@ def match_star_coordinates(ra, dec, max_sep_arcsec=60.0,
     """Return details of the star nearest to the supplied coordinates."""
     for index_path in catalogues:
         #index = np.loadtxt(index_path, dtype='S')
-        index = table.Table.read(index_path, format='ascii.no_header')
+        converters = {'col6':[ascii.convert_numpy(np.str)]}
+        index = table.Table.read(index_path, format='ascii.no_header'
+                                 ,converters=converters)
         for star in index:
             RAstring = '%sh%sm%ss' % (star['col3'], star['col4'], star['col5'])
             Decstring = '%sd%sm%ss' % (star['col6'], star['col7'], star['col8'])
@@ -867,7 +891,8 @@ def read_standard_data(star):
     return standard_data
 
 def take_ratio(standard_flux, standard_wavelength, observed_flux, 
-               sigma_flux, observed_wavelength, smooth='spline'):
+               sigma_flux, observed_wavelength, smooth='spline',
+               mf_av=False, tell_corr_primary=False):
     """Return the ratio of two spectra, after rebinning."""
     # Rebin the observed spectrum onto the (coarser) scale of the standard
     observed_flux_rebinned, sigma_flux_rebinned, count_rebinned = \
@@ -877,9 +902,11 @@ def take_ratio(standard_flux, standard_wavelength, observed_flux,
     if smooth == 'gauss':
         ratio = smooth_ratio(ratio)
     elif smooth == 'chebyshev':
-        ratio = fit_chebyshev(standard_wavelength, ratio)
+        ratio = fit_chebyshev(standard_wavelength, ratio, mf_av=mf_av,
+                              tell_corr_primary=tell_corr_primary)
     elif smooth == 'spline':
-        ratio = fit_spline(standard_wavelength, ratio)
+        ratio = fit_spline(standard_wavelength, ratio, mf_av=mf_av,
+                           tell_corr_primary=tell_corr_primary)
     # Put the ratio back onto the observed wavelength scale
     ratio = 1.0 / np.interp(observed_wavelength, standard_wavelength, 
                             1.0 / ratio)
@@ -915,10 +942,13 @@ def smooth_ratio(ratio, width=10.0):
     smoothed = 1.0 / inverse
     return smoothed
 
-def fit_chebyshev(wavelength, ratio, deg=None):
+def fit_chebyshev(wavelength, ratio, deg=None, mf_av=False,tell_corr_primary=False):
     """Fit a Chebyshev polynomial, and return the fit."""
     # Do the fit in terms of 1.0 / ratio, because observed flux can go to 0.
-    good = np.where(np.isfinite(ratio) & ~(in_telluric_band(wavelength)))[0]
+    if mf_av & tell_corr_primary:
+        good = np.where(np.isfinite(ratio))[0]
+    else:
+        good = np.where(np.isfinite(ratio) & ~(in_telluric_band(wavelength)))[0]
     if deg is None:
         # Choose default degree based on which arm this data is for.
         if wavelength[good[0]] >= 6000.0:
@@ -933,25 +963,36 @@ def fit_chebyshev(wavelength, ratio, deg=None):
     fit[good[-1]+1:] = np.nan
     return fit
 
-def fit_spline(wavelength, ratio):
+def fit_spline(wavelength, ratio, mf_av=False,tell_corr_primary=False):
     """Fit a smoothing spline to the data, and return the fit."""
     # Do the fit in terms of 1.0 / ratio, because it seems to give better
     # results.
-    good = np.where(np.isfinite(ratio) & ~(in_telluric_band(wavelength)))[0]
+    if mf_av & tell_corr_primary:
+        good = np.where(np.isfinite(ratio))[0]
+    else:
+        good = np.where(np.isfinite(ratio) & ~(in_telluric_band(wavelength)))[0]
     knots = np.linspace(wavelength[good][0], wavelength[good][-1], 8)
     # Add extra knots around 5500A, where there's a sharp turn
     extra = knots[(knots > 5000) & (knots < 6000)]
     if len(extra) > 1:
         extra = 0.5 * (extra[1:] + extra[:-1])
         knots = np.sort(np.hstack((knots, extra)))
-    # Remove any knots sitting in a telluric band
-    knots = knots[~in_telluric_band(knots)]
+    # Remove any knots sitting in a telluric band, but only if not using tell_corr_primary:
+    if (not tell_corr_primary):
+        knots = knots[~in_telluric_band(knots)]
+        
     spline = LSQUnivariateSpline(
         wavelength[good], 1.0/ratio[good], knots[1:-1])
     fit = 1.0 / spline(wavelength)
     # Mark with NaNs anything outside the fitted wavelength range
-    fit[:good[0]] = np.nan
-    fit[good[-1]+1:] = np.nan
+    #fit[:good[0]] = np.nan
+    #fit[good[-1]+1:] = np.nan
+    # don't flag as Nan.  indead allow the spline function to extrapolate
+    # beyond the end points.  This means the that TF does not suddenly
+    # stop at the end of the particular spectrum , which is good because the
+    # wavelength coverage can vary between bundles and fibres.  The extrapolation is
+    # low order and well behaved.
+
     return fit
 
 def rebin_flux_noise(target_wavelength, source_wavelength, source_flux,
@@ -1173,6 +1214,90 @@ def rebin_flux(target_wavelength, source_wavelength, source_flux):
 
     return rebinneddata
 
+
+def calc_eff_airmass(header):
+    """Calculate the effective airmass using observatory location, coordinates 
+    and time.  This makes use of various astropy functions.  The input is 
+    a primary FITS header for a standard frame.
+    """
+    # this should really go into fluxcal, but there seems to be problems with
+    # imports as this is also called from the ifu class that is within utils.
+    # not sure why, but putting this in utils.other is a solution that seems to work.
+    
+    # get all the relevant header keywords:
+    meanra = header['MEANRA']
+    meandec = header['MEANDEC']
+    utdate = header['UTDATE']
+    utstart = header['UTSTART']
+    utend = header['UTEND']
+    lat_obs = header['LAT_OBS']
+    long_obs = header['LONG_OBS']
+    alt_obs = header['ALT_OBS']
+    zdstart = header['ZDSTART']
+
+    # define observatory location:
+    obs_loc = EarthLocation(lat=lat_obs*u.deg, lon=long_obs*u.deg, height=alt_obs*u.m)
+
+    # Convert to the correct time format:
+    date_formatted = utdate.replace(':','-')
+    time_start = date_formatted+' '+utstart
+    # note that here we assume UT date start is the same as UT date end.  This works for
+    # the AAT, given the time difference from UT at night, but will not for other observatories.
+    time_end = date_formatted+' '+utend
+    time1 = Time(time_start) 
+    time2 = Time(time_end) 
+    time_diff = time2-time1
+    time_mid = time1 + time_diff/2.0
+
+    # define coordinates using astropy coordinates object:
+    coords = SkyCoord(meanra*u.deg,meandec*u.deg) 
+
+    # calculate alt/az using astropy coordinate transformations:
+    altazpos1 = coords.transform_to(AltAz(obstime=time1,location=obs_loc))   
+    altazpos2 = coords.transform_to(AltAz(obstime=time2,location=obs_loc))
+    altazpos_mid = coords.transform_to(AltAz(obstime=time_mid,location=obs_loc))   
+
+    # get altitude and remove units put in by astropy.  We need the float(), as
+    # even when divided by the units, we get back a dimensionless object, not an actual
+    # float.
+    alt1 = float(altazpos1.alt/u.deg)
+    alt2 = float(altazpos2.alt/u.deg)
+    alt_mid = float(altazpos_mid.alt/u.deg)
+    
+    # convert to ZD:
+    zd1 = 90.0-alt1
+    zd2 = 90.0-alt2
+    zd_mid = 90.0-alt_mid
+
+    # calc airmass at the start, end and midpoint:
+    airmass1 = 1./ ( np.sin( ( alt1 + 244. / ( 165. + 47 * alt1**1.1 )
+                    ) / 180. * np.pi ) )
+    airmass2 = 1./ ( np.sin( ( alt2 + 244. / ( 165. + 47 * alt2**1.1 )
+                    ) / 180. * np.pi ) )
+    airmass_mid = 1./ ( np.sin( ( alt_mid + 244. / ( 165. + 47 * alt_mid**1.1 )
+                    ) / 180. * np.pi ) )
+
+    # get effective airmass by simpsons rule integration:
+    airmass_eff = ( airmass1 + 4. * airmass_mid + airmass2 ) / 6.
+
+    #print('effective airmass:',airmass_eff)
+    #print('ZD start:',zdstart)
+    #print('ZD start (calculated):',zd1)
+        
+    # check that the ZD calculated actually agrees with the ZDSTART in the header
+    d_zd = abs(zd1-zdstart)
+    if (d_zd>0.1):
+        print('WARNING: calculated ZD different from ZDSTART.  Difference:',d_zd)
+        # if we have this problem, assume that the ZDSTART header keyword is correct
+        # and that one or more of the other keywords has a problem.  Then set
+        # the effective airmass to be based on ZDSTART:
+        alt1 = 90.0-zdstart
+        airmass_eff = 1./ ( np.sin( ( alt1 + 244. / ( 165. + 47 * alt1**1.1 )
+                                ) / 180. * np.pi ) )
+
+    return airmass_eff
+
+
 def remove_atmosphere(ifu):
     """Remove atmospheric extinction (not tellurics) from ifu data."""
     # Read extinction curve (in magnitudes)
@@ -1181,7 +1306,10 @@ def remove_atmosphere(ifu):
     extinction_mags = np.interp(ifu.lambda_range, wavelength_extinction, 
                                 extinction_mags)
     # Scale for observed airmass
-    airmass = calculate_airmass(ifu.zdstart, ifu.zdend)
+    #airmass = calculate_airmass(ifu.zdstart, ifu.zdend)
+    # no longer calculate airmass here,  instead take the value from the ifu
+    # class that uses calc_eff_airmass()
+    airmass = calc_eff_airmass(ifu.primary_header)
     extinction_mags *= airmass
     # Turn into multiplicative flux scaling
     extinction = 10.0 ** (-0.4 * extinction_mags)
@@ -1201,7 +1329,11 @@ def remove_atmosphere_rss(hdulist):
     extinction_mags = np.interp(wavelength, wavelength_extinction, 
                                 extinction_mags)
     # Scale for observed airmass
-    airmass = calculate_airmass(header['ZDSTART'], header['ZDEND'])
+    #airmass = calculate_airmass(header['ZDSTART'], header['ZDEND'])
+    # calculate effective airmass using header keywords, not just the
+    # ZDSTART.  Note that the old code calculate_airmass() just sets
+    # ZDSTART=ZDEND, which is not very good in some cases.
+    airmass = calc_eff_airmass(header)
     extinction_mags *= airmass
     # Turn into multiplicative flux scaling
     extinction = 10.0 ** (-0.4 * extinction_mags)
@@ -1241,7 +1373,7 @@ def read_atmospheric_extinction(sso_extinction_table=SSO_EXTINCTION_TABLE):
     ext= np.array( ext ).astype( 'f' )   
     return wl, ext
 
-def combine_transfer_functions(path_list, path_out, use_all=False):
+def combine_transfer_functions(path_list, path_out, use_all=False, sn_weight=True):
     """Read a set of transfer functions, combine them, and save to file."""
     # Make an empty array to hold all the individual transfer functions
     if use_all:
@@ -1260,18 +1392,44 @@ def combine_transfer_functions(path_list, path_out, use_all=False):
     n_file = len(path_list_good)
     n_pixel = pf.getval(path_list_good[0], 'NAXIS1')
     tf_array = np.zeros((n_file, n_pixel))
+    med_sn = np.zeros(n_file)
     # Read the individual transfer functions
     for index, path in enumerate(path_list_good):
         tf_array[index, :] = pf.getdata(path, 'FLUX_CALIBRATION')[-1, :]
-    # Make sure the overall scaling for each TF matches the others
+        # get the flux and sigma of spectrum and create a S/N spectrum:
+        sn_spec = pf.getdata(path, 'FLUX_CALIBRATION')[0, :]/pf.getdata(path, 'FLUX_CALIBRATION')[2, :]
+        # calculate a median S/N:
+        med_sn[index] = np.nanmedian(sn_spec)
+        # outout if needed:
+        # print(index,path,med_sn[index],percent10,percent90)
+
+    # print the S/N values so we have an idea of the range used:
+    print('median S/N values for different std observations:',med_sn)
+    # Make sure the overall scaling for each TF matches the others.
+    # the scale is chosen to be the midpoint of the TF array (at index npix/2):
     scale = tf_array[:, n_pixel//2].copy()
+    # dividing scale of each TF by the median scale.  This gives a value
+    # to correct the TF to the median and align all the TFs vertically.
     scale /= np.median(scale)
     tf_array = (tf_array.T / scale).T
     # Combine them.
-    # For now, just take the mean. Maybe implement Ned's weighted combination
-    # later, preferably when proper variance propagation is in place.
+    # Here we take the mean, but we weight by (S/N)**2.  This assumes that
+    # the variance is well propagated to the extracted std spectrum.
+    # we could possibly place an upper limit on S/N, but looking at a
+    # representative sample, the range seems to be median S/N~100 to 500.
+    #  This is not a large dynamic range.
     # Using inverse because it's more stable when observed flux is low
-    tf_combined = 1.0 / nanmean(1.0 / tf_array, axis=0)
+    if (sn_weight):
+        for i in range(n_file):
+            tf_array[i,:] = med_sn[i]**2 * 1.0/tf_array[i,:]
+
+        wtsum = nanmean(med_sn**2)
+        tf_combined = 1.0 / (nanmean(tf_array, axis=0)/wtsum)
+
+        
+    else:
+        tf_combined = 1.0 / nanmean(1.0 / tf_array, axis=0)
+
     save_combined_transfer_function(path_out, tf_combined, path_list_good)
     return
 
