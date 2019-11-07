@@ -6,8 +6,8 @@ Seb Haan, 21 March 2018
 
 Main Input: reduced fibre data in form of '...sci.fits' file list
 Main Return: 1) Fits for Data + Variance Cube, 
-			 2) Fits file of components for reconstructing coariance matrix
-			 3) Some preliminay diagnostic and evaluation plots
+             2) Fits file of components for reconstructing coariance matrix
+             3) Some preliminay diagnostic and evaluation plots
 
 Currently required files in same directory (in addition to SAMI pipeline modules):
 datafuse_...py, gpcubesolve_....py, gpcovariance_...py
@@ -28,23 +28,23 @@ and more accurate evaluation of reconstructed FWHM. If 0.5 arcsec required, one 
  at pixelsize = 0.25 arcsec and then enable set zoom2 = True to smooth cube to 0.5 arcsec
 
 Note on GP kernel: Default is a squared exponential kernel which works reasonable well, other kernel options possible 
-	but could increase computational time and have only limited testing. 
-	The lengthscale parameter gamma is currently set to half the FWHM of the PSF (Moffat), which is dependent on wavelength.
-	We have tested the optimal lengthscale by calculating log probabilities as function of gamma, PSF, and S/N. Best range 
-	for gamma/ seeing is 0.3-0.5. May add in future option to run for multile gammas, and then marginalize over results.  
-	(Gamma setting on line 837 in datafuse_r2.py)
+    but could increase computational time and have only limited testing. 
+    The lengthscale parameter gamma is currently set to half the FWHM of the PSF (Moffat), which is dependent on wavelength.
+    We have tested the optimal lengthscale by calculating log probabilities as function of gamma, PSF, and S/N. Best range 
+    for gamma/ seeing is 0.3-0.5. May add in future option to run for multile gammas, and then marginalize over results.  
+    (Gamma setting on line 837 in datafuse_r2.py)
 
 
-TODO: 	1) enable multiprocessing (split along spectral axis not simple, use pool for working on different cubes instead, align with manager.py)
+TODO:   1) enable multiprocessing (split along spectral axis not simple, use pool for working on different cubes instead, align with manager.py)
         2) optional: Add function to approxiate FWHM from S/N and PSF
-		3) optional: add adaptive Signal-to-Noise in order to stabilize reconstructed FWHM along spectral axis 
-			and suppress sidelobes/rings in covariance/reconstrcuted image. Potentially add 
-			cleaning deconvolution algorithm for rings.
-		4) Build Test-Suite python library for collecting tools to evaluate product quality 
-		(DAR, spatial resolution, velcoity fields etc. )
-		5) If more computational power available, use calculated log-probability and posterior for optimization of 
-		GP parameter, spatial offsets, and PSF on subset of cube (perhaps with SGD) 
-		6) marginalize over GP lengthscale.
+        3) optional: add adaptive Signal-to-Noise in order to stabilize reconstructed FWHM along spectral axis 
+            and suppress sidelobes/rings in covariance/reconstrcuted image. Potentially add 
+            cleaning deconvolution algorithm for rings.
+        4) Build Test-Suite python library for collecting tools to evaluate product quality 
+        (DAR, spatial resolution, velcoity fields etc. )
+        5) If more computational power available, use calculated log-probability and posterior for optimization of 
+        GP parameter, spatial offsets, and PSF on subset of cube (perhaps with SGD) 
+        6) marginalize over GP lengthscale.
  """
 from __future__ import print_function, division
 import sys
@@ -79,8 +79,8 @@ def new_cube(fitslist,name,ccdband='blue',Lpix=50,pixscale=0.5,wavebin=1,respons
     gcovar = False # stores covariance cube, only possible for low resolution, probably don't set to True
     avgvar = False # averages variance  for all fibres and wavelengths (exposures can stib  be differnt) to make S2N and resolution stable
     test_reconstuct_covar = False # old option has been only use for internal testing 
-							#to reconstruct covariance at certain wavelength use gpcovariance_r...py
-	simulate = False
+                            #to reconstruct covariance at certain wavelength use gpcovariance_r...py
+    simulate = False
 
     names = [name]
 
@@ -92,12 +92,12 @@ def new_cube(fitslist,name,ccdband='blue',Lpix=50,pixscale=0.5,wavebin=1,respons
         ####### First read and combine data
         data, variance, psf_alpha, psf_beta, xfibre, yfibre, xdar, ydar = df.sami_combine(fitslist,
                                                                   identifier, do_dar_correct = True)
-		
+        
         ####### Plot fibre data DAR offset as scatterplot:
         # df.sami_plotfibre(data, xfibre, yfibre, identifier, path_out = path_out)
 
-		if simulate:
-			data, variance, data_true, noise2 = df.simulate_data(data, xfibre, yfibre)
+        if simulate:
+            data, variance, data_true, noise2 = df.simulate_data(data, xfibre, yfibre)
 
         ### Just for testing
         if avgvar:
@@ -112,26 +112,26 @@ def new_cube(fitslist,name,ccdband='blue',Lpix=50,pixscale=0.5,wavebin=1,respons
                              avgpsf = avgpsf, gcovar= gcovar, gpmethod=gpmethod, gamma2psf=gamma2psf, logtrans=logtrans)
 
         ######## Return reconstructed cubes (covar_cube is zero if not explicitly called, see above):
-		data_cube, var_cube, resp_cube, covar_cube = fuse.fusecube(Lpix = Lpix, binsize=wavebin, nresponse = responsebin, marginalize=marginalize)
+        data_cube, var_cube, resp_cube, covar_cube = fuse.fusecube(Lpix = Lpix, binsize=wavebin, nresponse = responsebin, marginalize=marginalize)
 
         ######## Write fits files for data+variance cube and one fits file for components to reconstruct covaraince :
         if write_fits:
             filename_out=identifier +'_' + ccdband + filename_ext +'_gp.fits'
             df.sami_write_file(fitslist, identifier, data_cube, var_cube, 
-				path_out = path_out, filename_out = filename_out, overwrite = True, covar_mode = None, pixscale = pixscale)
-		if write_covar:
+                path_out = path_out, filename_out = filename_out, overwrite = True, covar_mode = None, pixscale = pixscale)
+        if write_covar:
             filename_out_covar=identifier +'_' + ccdband + filename_ext +'_gp_covar.fits'
             if logtrans:
-				offset = np.nanstd(data, axis=(0,1)) # may need fixed standard deviation of entire data cube
-				offset[~np.isfinite(offset) | (offset ==0)] = 0.1
-				y_temp = np.zeros_like(data)
-				for i in range(data.shape[2]):
-					y_sel = data[:,:,i]
-					y_sel[y_sel<=-offset[i]/2.] = -offset[i]/2.
-					y_temp[:,:,i] = y_sel
-				variance2 =  variance/(y_temp + offset)**2
-			else:
-				variance2 = variance
+                offset = np.nanstd(data, axis=(0,1)) # may need fixed standard deviation of entire data cube
+                offset[~np.isfinite(offset) | (offset ==0)] = 0.1
+                y_temp = np.zeros_like(data)
+                for i in range(data.shape[2]):
+                    y_sel = data[:,:,i]
+                    y_sel[y_sel<=-offset[i]/2.] = -offset[i]/2.
+                    y_temp[:,:,i] = y_sel
+                variance2 =  variance/(y_temp + offset)**2
+            else:
+                variance2 = variance
             df.write_response_cube(identifier, resp_cube, variance2, fuse.gamma, fuse.gp0, 
                                     pixscale, Lpix, gpmethod,marginalize, 
                                    path_out = path_out, filename_out = filename_out_covar, 
