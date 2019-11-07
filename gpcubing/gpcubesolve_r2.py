@@ -1,12 +1,13 @@
 """ Main functions for calculating respoinse matrix, GP, and cubing
 Seb Haan 21 March 2018, still experimental
 """
-from __future__ import print_function
+from __future__ import print_function, division
 import sys
 import time
 import numpy as np
 import matplotlib.pyplot as plt
 from scipy import fftpack, interpolate, linalg, signal, optimize
+from scipy.special import erf
 from .settings_sami import _Nfib, _Rfib_arcsec, _plate_scale
 
 fwhm_2_std = 1. / (2.*np.sqrt(2*np.log(2.)))
@@ -69,9 +70,9 @@ def rebin(A, rb):
             raise CubeError("rb doesn't evenly divide axis {} of array"
                             .format(i))
         new_shape = list(A.shape[:i])
-        new_shape.extend([dim//rb, rb])
+        new_shape.extend([int(dim/rb), rb])
         new_shape.extend(list(A.shape[i+1:]))
-        A = A.reshape(new_shape).sum(axis=i+1)
+        A = A.reshape(new_shape).sum(axis=int(i+1))
     return A
 
 def gaussian_psf(dx, dy, sigma):
@@ -247,7 +248,7 @@ class ResponseMatrix(object):
         Lfft = fftpack.next_fast_len(int(2.5*rc/gridscale))
         while Lfft % rb != 0:
             Lfft = fftpack.next_fast_len(Lfft + 1)
-        ifft = (Lgrid - Lfft)//2
+        ifft = int((Lgrid - Lfft)/2)
         xg = xg[ifft:ifft+Lfft, ifft:ifft+Lfft]
         yg = yg[ifft:ifft+Lfft, ifft:ifft+Lfft]
         if self.avgpsf:
@@ -288,9 +289,12 @@ class ResponseMatrix(object):
         #fibre_subsamp = 1./(1 + np.exp((4./_Rfib_rebin)**2 *(xg**2 + yg**2 - (0.75*_Rfib_rebin)**2)))
         fibre_subsamp = rebin(fibre_subsamp, rb)
         fibre_accept = np.zeros((Lfft, Lfft))
-        Lgrb, igrb = Lfft//rb, (Lfft - Lfft//rb)//2
+        Lgrb, igrb = int(Lfft/rb), int((Lfft - Lfft/rb)/2)
         fibre_accept[igrb:igrb+Lgrb, igrb:igrb+Lgrb] = fibre_subsamp
-        fibre_accept /= fibre_accept.sum()
+        #fibre_accept /= fibre_accept.sum() 
+        fibre_accept /= rb**2
+        psf_image /= psf_image.sum()
+        
         t3 = time.time()
         vmsg("time to calculate fibre acceptance:  {:.3f} sec".format(t3-t2))
 
@@ -498,7 +502,7 @@ class GPModel(SliceView):
     process, using the instrument response to transform the GP prior.
     """
 
-    def __init__(self, response, fibflux, fibfluxerr, calcresponse, gpmethod = 'squared_exp'):
+    def __init__(self, response, fibflux, fibfluxerr, calcresponse, gpmethod = 'squared_exp', logtrans = True):
         """
         :param response: response matrix
         :param fibflux: fibre fluxes (np.array of shape (_Nexp, _Nfib))
@@ -512,21 +516,30 @@ class GPModel(SliceView):
                                             'matern32',
                                             'matern52'
                 Warning: Most tests done with squared_exp kernel, for other kernels only limited testing done.
+        :param logtrans: if True, apply log-normal transform to input data
         """
         # Explicitly call superclass constructor to make sure it gets done
         super(GPModel, self).__init__(response)
         # Initialize other class stuff
         # Assume zero mean function for now
-        self._fmean, self._fstd = 0.0, fibflux.std()
+        self._fmean, self._fstd = np.nanmean(fibflux), np.nanstd(fibflux)
+        # Estimate GP amplitude based on average of data weighted with signal-to-noise
+        s2n = fibflux / fibfluxerr
+        selindices = ~np.isnan(s2n)
+        if selindices.any() & (s2n > 0.).any():
+            self._favg = np.average(fibflux[selindices], weights = abs(s2n[selindices]))
+        else:
+            self._favg = 0.
         if self._fstd > 0.:
-            self.fibflux = (fibflux - self._fmean)/self._fstd
-            self.fibfluxerr = fibfluxerr/self._fstd
+            self.fibflux = fibflux 
+            self.fibfluxerr = fibfluxerr
         else:
             self.fibflux = fibflux
             self.fibfluxerr = fibfluxerr
         self._cache_square_distances()
         self.calcresponse = calcresponse
         self._gpmethod = gpmethod
+        self._logtrans = logtrans
 
     def _cache_square_distances(self):
         """
@@ -556,7 +569,7 @@ class GPModel(SliceView):
         # The constant of 0.25 below (instead of 0.5) ensures that the kernel
         # represents the PSF standard deviation.  To see why, note that the
         # convolving a GP with some PSF gives a GP with a kernel convolved by
-        # that PSF on both inputs.  An infinite-resolution scene has a
+        # that PSF on both inputs. An infinite-resolution scene has a
         # delta-function kernel, so convolving by a Gaussian PSF of standard
         # deviation sigma gives a kernel w/standard deviation sqrt(2)*sigma.
         return np.exp(-0.25 * D2/gamma**2)
@@ -586,8 +599,8 @@ class GPModel(SliceView):
         :param D2: pairwise square distances
         :param gamma: kernel length scale
         '''
-        alpha = 2.
-        return (1 + 0.25*D2/gamma**2/alpha)**(-alpha)
+        alpha = 1.
+        return (1 + 0.25*D2/gamma**2 / alpha)**(-alpha)
 
     def _gpkernel_moffat(self, D2, gamma):
         ''' use sersic profile
@@ -616,7 +629,7 @@ class GPModel(SliceView):
         return (1 + nu + 0.25 * 5./3 * D2/gamma**2) * np.exp(-nu)
 
     def _gpkernel_exp(self, D2, gamma):
-        ''' Matern5/2 kernel
+        ''' Exponentia; kernel
         :param D2: pairwise square distances
         :param gamma: kernel length scale
         '''    
@@ -631,8 +644,14 @@ class GPModel(SliceView):
         #alpha = 4* 2/2.335 * gamma # 2* 2.335 * gamma
         #norm = (beta - 1.0)/(np.pi * alpha**2)
         #moffat = norm * (1.0 + (D2)/alpha**2)**(-beta)
-        return  np.exp(-0.125 * np.sqrt(D2)/gamma) * np.exp(-0.125 * D2/gamma**2)  # * np.exp(-(np.sin(np.pi*np.sqrt(D2)/gamma))**2/gamma**2)
+        return  self._gpkernel(D2, gamma*0.6) + 0.5 * self._gpkernel(D2, gamma) + 0.25 *self._gpkernel(D2, gamma*1.6)
 
+    def minus_logL(self, hp):
+        """
+        Wrapper around logL (with a minus sign) for minimization.
+        :param hp: (hyper-)parameter 1-D np.array of floats
+        """
+        return self.logL(hp)
 
     def logL(self, hp):
         """
@@ -656,368 +675,105 @@ class GPModel(SliceView):
             gpKfunc = method_hash[self._gpmethod]
         else:
             print("Kernel method not supported, now taking default squared exponential!")
-            self._Kxx = self._gpkernel(self.D2, gamma)
+            gpKfunc = self._gpkernel
+        self._Kxx = gpKfunc(self.D2, gamma) 
         if self.calcresponse:
+            self._K_gv, self._AK_gv, self._AKA_gv = [ ], [ ], [ ] # just fillers
             self._A = self.response(*psf_pars)
-        y, yerr = self.fibflux, self.fibfluxerr
-        Ky = np.dot(self._A, np.dot(self._Kxx, self._A.T)) + np.diag(yerr**2) # Shape(427,427)
+        else:
+            A = self._A
+            
+        self._Kxx = self._Kxx #* self._S
+        Ky0 = np.dot(self._A, np.dot(self._Kxx, self._A.T)) 
+        y, yerr = self.fibflux.copy()  , self.fibfluxerr.copy()\
 
+        if self._logtrans:
+            # Apply log normal transform to input data
+            self.offset = np.nanstd(y) # may need fixed standard deviation of entire data cube
+            if ~np.isfinite(self.offset) | (self.offset == 0.):
+                self.offset = 0.1
+            y[y<=-self.offset/2.] = -self.offset/2.
+            y_log = np.log(self.offset + y)
+            yvar_log =  yerr**2/(self.offset + y)**2
+            ## Subtract mean of log 
+            #self.y_logmean = np.nanmean(y_log) # previous default, need to be changed
+            self.y_logmean = np.median(y_log[np.isfinite(y_log)]) # previous default, need to be changed
+            
+            s2n = y / yerr
+            selindices = ~np.isnan(s2n) & (s2n>1) & (yerr < 1e4)
+            if selindices.any():
+                self.gp0 = np.log(1+ np.nanmean(yerr[selindices]**2) / np.nanmean(y[selindices]**2))
+            else:
+                self.gp0 = 0.
+            if ~np.isfinite(self.gp0):
+                self.gp0 = 0.
+            y_log = y_log - self.y_logmean
 
-        # The marginal likelihood is a multivariate Gaussian, of the form
-        #     log(L) = -0.5 * (y.T*(Ky^-1)*y + log(det(Ky)) + n*log(2*pi))
-        # with * above meaning matrix multiplication (np.dot) for matrices.
-        # This system is usually solved by taking the Cholesky factor of Ky,
-        # a triangular matrix satisfying Ky = np.dot(Kychol, Kychol.T),
-        # in order to form both y.T*(Ky^-1)*y = u.T*u and the log det term.
+            Ky = self.gp0 * Ky0  + np.diag(yvar_log + 1e-6)  # + 0.5 * self.gp0 # adding constant doesn't change anything
+            # The marginal likelihood is a multivariate Gaussian, of self._Kxx.shape[0]the form
+            #     log(L) = -0.5 * (y.T*(Ky^-1)*y + log(det(Ky)) + n*log(2*pi))
+            # with * above meaning matrix multiplication (np.dot) for matrices.
+            # This system is usually solved by taking the Cholesky factor of Ky,
+            # a triangular matrix satisfying Ky = np.dot(Kychol, Kychol.T),
+            # in order to form both y.T*(Ky^-1)*y = u.T*u and the log det term.
+            self._Ky_chol = linalg.cholesky(Ky, lower=True) # Shape(427,427)
+            self._u = linalg.solve_triangular(self._Ky_chol, y_log, lower=True)
 
-        self._Ky_chol = linalg.cholesky(Ky, lower=True) # Shape(427,427)
-        self._u = linalg.solve_triangular(self._Ky_chol, y, lower=True)
+        else:
+            self.y_mean = np.median(y[np.isfinite(y)])
+            self.gp0 = self._favg
+           # print('Median, Avg',  self.y_mean, self.y_mean)
+            if (self.y_mean > 0.) & np.isfinite(self.y_mean):
+                y = y - self.y_mean
+            if (self._favg <= 0.) | ~np.isfinite(self.y_mean):
+                yerr = yerr *0. + 1e-3
+                self.gp0 = 0.
+            Ky =  self.gp0 * Ky0 + np.diag(yerr**2)
+            self._Ky_chol = linalg.cholesky(Ky, lower=True) # Shape(427,427)
+            self._u = linalg.solve_triangular(self._Ky_chol, y, lower=True)
+
+        self._V = linalg.solve_triangular(self._Ky_chol, np.dot(self._A , self.gp0 * self._Kxx), lower=True)
+        #self._ucorr = linalg.solve_triangular(self._Ky_chol, np.ones_like(y), lower=True)
         log_det_Ky = np.log(np.diag(self._Ky_chol)**2).sum()
         n_log_2pi = self.Lpix**2 * np.log(2 * np.pi)
-        result = -0.5 * (np.dot(self._u, self._u) + log_det_Ky + n_log_2pi)
+        result = -0.5 * (np.dot(self._u, self._u) + log_det_Ky + n_log_2pi)     
         sys.stdout.flush()
         return result
-
-    def logL_marg(self, hp, verbose=False, kl_approx=False):
-        """
-        Version of logL that marginalizes stuff out.
-        WARNING:  this code does a numeric marginalization over possible
-        values of gamma, and so it predicts the marginalized posterior
-        in addition to everything else it does.  It leaves the internal
-        variables self.scene and self.scene_cov in a state that is NOT
-        consistent with using self.predict(), so calling self.predict()
-        after calling this will give you UNPREDICTABLE, WRONG results.
-        Instead, call this and then just access self.scene and
-        self.scene_cov directly.  There may be better ways to do this
-        but for now this is what the experimental code does.
-        :param hp: (hyper-)parameter 1-D np.array of floats
-        :param verbose: print status messages (esp. time taken)?
-        :param kl_approx: experimental Gaussian posterior approximation
-            that minimizes K-L divergence from the grid on which logL
-            is calculated; intended to save cycles but doesn't really
-        """
-        vmsg = VerboseMessager(verbose=verbose)
-        t0 = time.time()
-
-        # Generate the response matrix from the hyperparameters.
-        y, yerr = self.fibflux, self.fibfluxerr
-        psf_pars, gdum = hp[:-1], hp[-1]
-        if self.calcresponse:
-            A = self._A = self.response(*psf_pars)
-        else:
-            A = self._A
-        Lpix = self.response.Lpix
-        pixscale = self.response.pixscale
-        t1 = time.time()
-        vmsg("time to set up response matrix:      {:.3f} sec".format(t1-t0))
-        sys.stdout.flush()
-
-        # Define the hyperparameter grid, wide range:
-        #dG, dlogS = 0.2, 0.05
-        #self._gamvals = np.arange(0.01, 5.0/pixscale, dG)
-        #self._Svals = 10**np.arange(-2.0, 1.0, dlogS)
-        # Define the hyperparameter grid, small range:
-        dG, dlogS = 0.2, 0.2
-        self._gamvals = np.arange(0.1, 1.0/pixscale, dG)
-        self._Svals = 10**np.arange(-1.0, 1.0, dlogS)
-       
-
-        # Look up which of the many available kernels we're using
-        method_hash = { 'squared_exp': self._gpkernel,
-                        'rational':    self._gpkernel_rational,
-                        'sparse':      self._gpkernel_sparse,
-                        'wide':        self._gpkernel_wide,
-                        'moffat':      self._gpkernel_moffat,
-                        'matern32':    self._gpkernel_matern32,
-                        'matern52':    self._gpkernel_matern52,
-                        'exp':         self._gpkernel_exp,
-                        'mix':         self._gpkernel_mix, }
-        if self._gpmethod in method_hash:
-            gpKfunc = method_hash[self._gpmethod]
-        else:
-            print("Kernel method not supported, now taking default squared exponential!")
-            gpKfunc = self._gpkernel
-
-        # Cache the grid of GP kernel matrices and their products with A.
-        # We only need to do this if we've updated the response matrix.
-        if self.calcresponse:
-            self._K_gv, self._AK_gv, self._AKA_gv = [ ], [ ], [ ]
-            for gamma in self._gamvals:
-                self._K_gv.append(gpKfunc(self.D2, gamma))
-                self._AK_gv.append(np.dot(A, self._K_gv[-1]))
-                self._AKA_gv.append(np.dot(self._AK_gv[-1], A.T))
-            self._K_gv = np.array(self._K_gv)
-            self._AK_gv = np.array(self._AK_gv)
-            self._AKA_gv = np.array(self._AKA_gv)
-        t2 = time.time()
-        vmsg("time to set up GP kernel cache:      {:.3f} sec".format(t2-t1))
-        sys.stdout.flush()
-
-        # Keep a record of parameter values during the grid search, on the
-        # expectation that only a small number of them will matter and so
-        # recalculating at the end should be only a small fraction of runtime.
-        # it will cost us relatively little to recalculate at the end.
-        evalpars = [ ]
-
-        # The marginal likelihood is a multivariate Gaussian, of the form
-        #     log(L) = -0.5 * (y.T*(Ky^-1)*y + log(det(Ky)) + n*log(2*pi))
-        # with * above meaning matrix multiplication (np.dot) for matrices.
-        # This system is usually solved by taking the Cholesky factor of Ky,
-        # a triangular matrix satisfying Ky = np.dot(Kychol, Kychol.T),
-        # in order to form both y.T*(Ky^-1)*y = u.T*u and the log det term.
-
-        for i, gamma in enumerate(self._gamvals):
-            for j, S in enumerate(self._Svals):
-                # Given gamma, S, and A, calculate the log likelihood
-                Ky = S**2 * self._AKA_gv[i] + np.diag(yerr**2)
-                Ky_chol = linalg.cholesky(Ky, lower=True)
-                u = linalg.solve_triangular(Ky_chol, y, lower=True)
-                log_det_Ky = np.log(np.diag(Ky_chol)**2).sum()
-                n_log_2pi = self.Lpix**2 * np.log(2 * np.pi)
-                logL = -0.5 * (np.dot(u, u) + log_det_Ky + n_log_2pi)
-                # Make sure we weight things appropriately; we want these
-                # hyperpriors to be uniform in gamma and S not log-spaced,
-                # even if the sampling is log spaced
-                # d(log x) = dx/x; dx = x * d(log x)
-                dV = S
-                evalpars.append([gamma, S, logL, dV])
-
-        evalpars = np.array(evalpars)
-        ngrid = len(evalpars)
-        t3 = time.time()
-        vmsg("time to calculate logL grid:         {:.3f} sec".format(t3-t2))
-        sys.stdout.flush()
-
-        # The next part (prediction) is seriously expensive, so we want to
-        # minimize the number of points we have to evaluate.  So far our
-        # *real* marginal likelihood is unimodal in the hyperparameters,
-        # so we can try approximating it by a Gaussian.  This is technically
-        # a variational inference step, that might point the way to a
-        # Bayesian optimization above.  For now we're just going to use it
-        # to tell us which points to evaluate in the evaluation loop.
-        def kldist(pars):
-            # Parametrize by mu (mean) and L (covariance Cholesky factor).
-            # logL(x) = -0.5*((mu-pars).T*C.inv*(mu-pars) + log(det C))
-            mu_x, mu_y, L_xx, L_yy, L_xy, const = pars
-            mu = np.array([mu_x, mu_y])
-            Lcov = np.array([[L_xx, 0], [L_xy, L_yy]])
-            x, logL_full = evalpars[:,0:2], evalpars[:,2] - const
-            logdetC = np.sum(np.log([L_xx**2, L_yy**2]))
-            u = linalg.solve_triangular(Lcov, (x-mu).T, lower=True).T
-            logL_var = -0.5*(np.array([np.dot(ui.T, ui) for ui in u]) + logdetC)
-            kl_var = np.mean(np.exp(logL_full)*(logL_full-logL_var))
-            return kl_var
-        if kl_approx:
-            # Run the optimization
-            imax = np.argmax(evalpars[:,2])
-            p0 = np.array([evalpars[imax,0], evalpars[imax,1],
-                           dG, dlogS, 0, evalpars[imax,2]])
-            result = optimize.minimize(kldist, p0, tol=1e-2)
-            # Evaluate the variational model to get evaluation points!
-            mu_x, mu_y, L_xx, L_yy, L_xy, const = result.x
-            Lcov = np.array([[L_xx, 0], [L_xy, L_yy]])
-            n, kappa = 2, 3.0 - 2
-            evalpars = np.array(
-                    [[mu_x,        mu_y,        const, kappa/(n+kappa)],
-                     [mu_x + L_xx, mu_y + L_xy, const,   0.5/(n+kappa)],
-                     [mu_x - L_xx, mu_y - L_xy, const,   0.5/(n+kappa)],
-                     [mu_x       , mu_y + L_yy, const,   0.5/(n+kappa)],
-                     [mu_x       , mu_y - L_yy, const,   0.5/(n+kappa)]])
-            t4 = time.time()
-            vmsg("time to run variational model:       {:.3f} sec".format(t4-t3))
-            sys.stdout.flush()
-        else:
-            # Renormalize weights for grid points we've already calculated.
-            wint = evalpars[:, -1] * np.exp((evalpars[:,-2] - evalpars[:,-2].max())/1000.)
-            weights = evalpars[:, -1] = wint**2 / np.sum(wint**2)
-            idx = (weights > 1e-2 * weights.max())
-            evalpars, weights = evalpars[idx], weights[idx]
-            t4 = time.time()
-            vmsg("time to renormalize weights:         {:.3f} sec".format(t4-t3))
-            sys.stdout.flush()
-
-        self.scene = np.zeros((Lpix**2,))
-        self.scene_cov = np.zeros((Lpix**2, Lpix**2))
-
-        # Recalculate the likelihood at the above points and run!
-        for p in evalpars:
-            gamma, S, logL, w = p
-            if kl_approx:
-                # No cache for these points, we need to recalculate
-                K = gpKfunc(self.D2, gamma)
-                AK = np.dot(A, K)
-                AKA = np.dot(AK, A.T)
-            else:
-                # Use the cached points on the pre-calculated grid
-                i = np.argmin(np.abs(self._gamvals - gamma))
-                K = self._K_gv[i]
-                AK = self._AK_gv[i]
-                AKA = self._AKA_gv[i]
-            # Do the rest of the solution
-            Ky = S**2 * AKA + np.diag(yerr**2)
-            Ky_chol = linalg.cholesky(Ky, lower=True)
-            u = linalg.solve_triangular(Ky_chol, y, lower=True)
-            V = linalg.solve_triangular(
-                    Ky_chol, S**2 * AK, lower=True)
-            self.scene += w*(np.dot(V.T, u)*self._fstd + self._fmean)
-            self.scene_cov += w**2 * (S**2 * K - np.dot(V.T, V))*self._fstd**2
-
-
-        t5 = time.time()
-        vmsg("time to form final scene solution:   {:.3f} sec".format(t5-t4))
-        vmsg("-----------------------------------------------")
-        vmsg("total time to run:                   {:.3f} sec".format(t5-t0))
-        vmsg("number of grid points contributing:  {:5d}/{}".format(
-            len(evalpars), ngrid))
-        vmsg("grid points contributing:")
-        for evp in evalpars:
-            vmsg("{:9.3f} {:6.3f} {:8.1f} {:.4f}".format(*evp))
-       # sys.stdout.flush()
-
-        vmsg("sum of weights {:.4f}".format(evalpars[:,-1].sum()))
-        sys.stdout.flush()
-
-        # Pack up everything
-        self.scene = self.scene.reshape(self.response.Lpix, self.response.Lpix)
-        self.pack_scene_var(np.diagonal(self.scene_cov))
-        self.pack_scene_cov(self.scene_cov)
-
-        # We have to return something, so return the MAP
-        return np.max(evalpars[:,-2])
-
-    def logL_margsimple(self, hp, verbose=False):
-        """
-        Version of logL that marginalizes stuff over with uniform space of gamma
-        WARNING:  this code does a numeric marginalization over possible
-        values of gamma, and so it predicts the marginalized posterior
-        in addition to everything else it does.  It leaves the internal
-        variables self.scene and self.scene_cov in a state that is NOT
-        consistent with using self.predict(), so calling self.predict()
-        after calling this will give you UNPREDICTABLE, WRONG results.
-        Instead, call this and then just access self.scene and
-        self.scene_cov directly.  
-        :param hp: (hyper-)parameter 1-D np.array of floats
-        :param verbose: print status messages (esp. time taken)?
-        """
-        vmsg = VerboseMessager(verbose=verbose)
-        t0 = time.time()
-
-        # Generate the response matrix from the hyperparameters.
-        y, yerr = self.fibflux, self.fibfluxerr
-        psf_pars, gdum = hp[:-1], hp[-1]
-        if self.calcresponse:
-            A = self._A = self.response(*psf_pars)
-        else:
-            A = self._A
-        Lpix = self.response.Lpix
-        pixscale = self.response.pixscale
-        t1 = time.time()
-        vmsg("time to set up response matrix:      {:.3f} sec".format(t1-t0))
-        sys.stdout.flush()
-
-        # Define the hyperparameter grid
-        self._gamvals = np.linspace(gdum * 0.2, 2.* gdum, 10)
-
-        # Look up which of the many available kernels we're using
-        method_hash = { 'squared_exp': self._gpkernel,
-                        'rational':    self._gpkernel_rational,
-                        'sparse':      self._gpkernel_sparse,
-                        'wide':        self._gpkernel_wide,
-                        'moffat':      self._gpkernel_moffat,
-                        'matern32':    self._gpkernel_matern32,
-                        'matern52':    self._gpkernel_matern52,
-                        'exp':         self._gpkernel_exp,
-                        'mix':         self._gpkernel_mix, }
-        if self._gpmethod in method_hash:
-            gpKfunc = method_hash[self._gpmethod]
-        else:
-            print("Kernel method not supported, now taking default squared exponential!")
-            gpKfunc = self._gpkernel
-
-        # Cache the grid of GP kernel matrices and their products with A.
-        # We only need to do this if we've updated the response matrix.
-        if self.calcresponse:
-            self._K_gv, self._AK_gv, self._AKA_gv = [ ], [ ], [ ]
-            for gamma in self._gamvals:
-                self._K_gv.append(gpKfunc(self.D2, gamma))
-                self._AK_gv.append(np.dot(A, self._K_gv[-1]))
-                self._AKA_gv.append(np.dot(self._AK_gv[-1], A.T))
-            self._K_gv = np.array(self._K_gv)
-            self._AK_gv = np.array(self._AK_gv)
-            self._AKA_gv = np.array(self._AKA_gv)
-        t2 = time.time()
-        vmsg("time to set up GP kernel cache:      {:.3f} sec".format(t2-t1))
-        sys.stdout.flush()
-
-        # The marginal likelihood is a multivariate Gaussian, of the form
-        #     log(L) = -0.5 * (y.T*(Ky^-1)*y + log(det(Ky)) + n*log(2*pi))
-        # with * above meaning matrix multiplication (np.dot) for matrices.
-        # This system is usually solved by taking the Cholesky factor of Ky,
-        # a triangular matrix satisfying Ky = np.dot(Kychol, Kychol.T),
-        # in order to form both y.T*(Ky^-1)*y = u.T*u and the log det term.
-
-        # create arrays
-        self.scene = np.zeros((Lpix**2,))
-        self.scene_cov = np.zeros((Lpix**2, Lpix**2))
-        logL = 0.
-
-        # Set uniform weighting
-        w = 1./self._gamvals.shape[0]
-
-        for i in range(len(self._gamvals)):
-            # Use the cached points on the pre-calculated grid
-            K = self._K_gv[i]
-            AK = self._AK_gv[i]
-            AKA = self._AKA_gv[i]
-            # Do the rest of the solution
-            self._S = np.sqrt(np.mean(np.diag(AKA)))
-            y, yerr = self.fibflux * self._S, self.fibfluxerr * self._S
-            Ky = AKA + np.diag(yerr**2)
-            Ky_chol = linalg.cholesky(Ky, lower=True)
-            u = linalg.solve_triangular(Ky_chol, y, lower=True)
-            V = linalg.solve_triangular(Ky_chol, AK, lower=True)
-            self.scene += w * (np.dot(V.T, u) * self._fstd/self._S  + self._fmean)
-            self.scene_cov += w**2 * (K - np.dot(V.T, V)) * (self._fstd/self._S)**2
-            # Calculation of Logl
-            log_det_Ky = np.log(np.diag(Ky_chol)**2).sum()
-            n_log_2pi = self.Lpix**2 * np.log(2 * np.pi)
-            logL += w* -0.5 * (np.dot(u, u) + log_det_Ky + n_log_2pi)
-
-        t3 = time.time()
-        vmsg("time to form final scene solution:   {:.3f} sec".format(t3-t2))
-        vmsg("-----------------------------------------------")
-        vmsg("total time to run:                   {:.3f} sec".format(t3-t0))
-        sys.stdout.flush()
-
-        # Pack up everything
-        self.scene = self.scene.reshape(self.response.Lpix, self.response.Lpix)
-        self.pack_scene_var(np.diagonal(self.scene_cov))
-        self.pack_scene_cov(self.scene_cov)
-
-        # return the LogL
-        return logL
-
-
-    def minus_logL(self, hp):
-        """
-        Wrapper around logL (with a minus sign) for minimization.
-        :param hp: (hyper-)parameter 1-D np.array of floats
-        """
-        return -self.logL(hp)
 
     def predict(self, gcovar = False):
         """
         Evaluates the predictive density of the data, and caches the
         resulting scene and its covariance.
+        Don't use this function  when marginalizing over gamma with logL_margsimple() 
         :param gcovar: set for storing covariance directly
         """
-        # Since we're predicting at the same points as the training data,
-        # we can use a lot of our calculations from earlier.  Only reason
-        # we're doing this is to deconvolve the instrument response.
-        self._V = linalg.solve_triangular(
-                self._Ky_chol, np.dot(self._A, self._Kxx), lower=True)
-        self.pack_scene(np.dot(self._V.T, self._u)*self._fstd + self._fmean)
-        self.scene_cov = self._Kxx - np.dot(self._V.T, self._V)
-        self.pack_scene_var(np.diagonal(self.scene_cov)*self._fstd**2)
+        if self._logtrans:
+            log_gmean = np.dot(self._V.T, self._u) + self.y_logmean 
+            log_cov = self.gp0 * self._Kxx  - np.dot(self._V.T, self._V)  
+            gmean = np.exp(log_gmean)  
+            #Construct covariance from log covaraince using log-normal transform: cov = mu(x)*mu(x') * (exp[logcov] - 1) 
+            #self.scene_cov = np.outer(np.exp(log_gmean), np.exp(log_gmean)) * np.exp(log_cov) * (np.exp(log_cov) - 1.)
+            self.scene_cov = np.dot(np.diag(gmean), np.dot(np.exp(log_cov), np.diag(gmean))) * (np.exp(log_cov) - 1.)   
+            gmean = gmean - self.offset
+            ### A possible minor correction to take into account data values that have been cut-off with offset(negligible):
+            # Calculate probability of of cutoff times standard deviation
+            # xcut = - 0.5 * self.offset
+            # pcut = 0.5 * (1. + erf((xcut - gmean)/np.sqrt(2 * scene_var)))
+            # print('Cutoff', 'Mean cutoff prob:', xcut, np.nanmean(pcut))
+            # cutoff = pcut * np.sqrt(scene_var)
+            # gmean = gmean - cutoff
+        else:
+            gmean = np.dot(self._V.T, self._u) + self.y_mean
+            self.scene_cov = self.gp0 * self._Kxx - np.dot(self._V.T, self._V)
+
+        scene_var = np.diagonal(self.scene_cov)
+
+        if (np.isnan(self.fibfluxerr) | (self.fibfluxerr >= 1e4)).all():
+            print('zero data')
+            gmean = gmean * 0.
+            self.scene_cov = self.scene_cov * np.nan
+        self.pack_scene(gmean)# + np.exp(self.y_logmean)) # + self._fmean)
+        self.pack_scene_var(scene_var)
         if gcovar:
-            self.pack_scene_cov(self.scene_cov*self._fstd**2)
+            #self.pack_scene_cov(self.scene_cov*self._fstd**2)
+            self.pack_scene_cov(self.scene_cov)

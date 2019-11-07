@@ -46,7 +46,7 @@ TODO: 	1) enable multiprocessing (split along spectral axis not simple, use pool
 		GP parameter, spatial offsets, and PSF on subset of cube (perhaps with SGD) 
 		6) marginalize over GP lengthscale.
  """
-from __future__ import print_function
+from __future__ import print_function, division
 import sys
 import time
 import numpy as np
@@ -63,7 +63,7 @@ Specify parameters below for cubing:
 
 def new_cube(fitslist,name,ccdband='blue',Lpix=50,pixscale=0.5,wavebin=1,responsebin=32,
         path_out='/import/opus1/nscott/SAMI_Survey/new_cubes_output/',filename_ext='_50pix_05arcsec',
-        write_fits=True):
+        write_fits=True,gamma2psf=0.4,logtrans=True):
 
     # Lpix: number of pixels for x and y in final cube
     # pixscale: preferred 18/60 = 0.3
@@ -73,13 +73,14 @@ def new_cube(fitslist,name,ccdband='blue',Lpix=50,pixscale=0.5,wavebin=1,respons
     # star_only: run only on star image for testing, specify identifier of star below
 
     gpmethod = 'squared_exp' #specify GP kernel used: 'squared_exp', or 'sparse', or 'wide', or 'moffat'
-    marginalize = True # Uniform marginalisation over GP length scale
+    marginalize = False # Uniform marginalisation over GP length scale
     zoom2 = False # Interpolate pixelsize of final cube by a factor of two
     avgpsf = False # Use average PSF of all exposures, change to False to include all
     gcovar = False # stores covariance cube, only possible for low resolution, probably don't set to True
     avgvar = False # averages variance  for all fibres and wavelengths (exposures can stib  be differnt) to make S2N and resolution stable
     test_reconstuct_covar = False # old option has been only use for internal testing 
 							#to reconstruct covariance at certain wavelength use gpcovariance_r...py
+	simulate = False
 
     names = [name]
 
@@ -95,6 +96,9 @@ def new_cube(fitslist,name,ccdband='blue',Lpix=50,pixscale=0.5,wavebin=1,respons
         ####### Plot fibre data DAR offset as scatterplot:
         # df.sami_plotfibre(data, xfibre, yfibre, identifier, path_out = path_out)
 
+		if simulate:
+			data, variance, data_true, noise2 = df.simulate_data(data, xfibre, yfibre)
+
         ### Just for testing
         if avgvar:
             for i in range(variance.shape[0]):
@@ -105,45 +109,35 @@ def new_cube(fitslist,name,ccdband='blue',Lpix=50,pixscale=0.5,wavebin=1,respons
         _Nexp = len(fitslist)
         fuse = df.DataFuse3D(data, (psf_alpha, psf_beta), (xfibre, yfibre), data_sigma = np.sqrt(variance),
                              dar_cor = (xdar, ydar), name = identifier, pixscale = pixscale, _Nexp = _Nexp,
-                             avgpsf = avgpsf, gcovar= gcovar, gpmethod=gpmethod)
+                             avgpsf = avgpsf, gcovar= gcovar, gpmethod=gpmethod, gamma2psf=gamma2psf, logtrans=logtrans)
 
         ######## Return reconstructed cubes (covar_cube is zero if not explicitly called, see above):
-        data_cube, var_cube, resp_cube, covar_cube = fuse.fusecube(Lpix = Lpix, binsize=wavebin, nresponse = responsebin)
+		data_cube, var_cube, resp_cube, covar_cube = fuse.fusecube(Lpix = Lpix, binsize=wavebin, nresponse = responsebin, marginalize=marginalize)
 
         ######## Write fits files for data+variance cube and one fits file for components to reconstruct covaraince :
         if write_fits:
             filename_out=identifier +'_' + ccdband + filename_ext +'_gp.fits'
             df.sami_write_file(fitslist, identifier, data_cube, var_cube, 
 				path_out = path_out, filename_out = filename_out, overwrite = True, covar_mode = None, pixscale = pixscale)
-            filename_out_covar=identifier +'_' + ccdband+ filename_ext +'_gp_covar.fits'
-            df.write_response_cube(identifier, resp_cube, variance, fuse.gamma, pixscale, Lpix, gpmethod,marginalize, 
+		if write_covar:
+            filename_out_covar=identifier +'_' + ccdband + filename_ext +'_gp_covar.fits'
+            if logtrans:
+				offset = np.nanstd(data, axis=(0,1)) # may need fixed standard deviation of entire data cube
+				offset[~np.isfinite(offset) | (offset ==0)] = 0.1
+				y_temp = np.zeros_like(data)
+				for i in range(data.shape[2]):
+					y_sel = data[:,:,i]
+					y_sel[y_sel<=-offset[i]/2.] = -offset[i]/2.
+					y_temp[:,:,i] = y_sel
+				variance2 =  variance/(y_temp + offset)**2
+			else:
+				variance2 = variance
+            df.write_response_cube(identifier, resp_cube, variance2, fuse.gamma, fuse.gp0, 
+                                    pixscale, Lpix, gpmethod,marginalize, 
                                    path_out = path_out, filename_out = filename_out_covar, 
                                    overwrite = True, _Nexp = _Nexp)
 
-            ######## smooth cube to half the pixel size, not really needed:
-            if zoom2:
-                data_cube[np.isnan(data_cube)] = 0.
-                var_cube[np.isnan(var_cube)] = 0.
-                data_cube = scipy.ndimage.zoom(data_cube, zoom = [0.5,0.5,1])
-                var_cube = scipy.ndimage.zoom(var_cube, zoom = [0.5,0.5,1])
-                pixscale = pixscale * 2.
-                yar,xar = np.mgrid[1:data_cube.shape[0]+1, 1:data_cube.shape[1]+1]
-                r = np.sqrt((xar - data_cube.shape[0]/2)**2 + (yar - data_cube.shape[1]/2)**2)
-                rmax = (14.7 + 1.6)/2. / pixscale
-                data_cube[r > rmax, :] = np.nan
-                var_cube[r > rmax, :] = np.nan
-                if write_fits:
-                    filename_out=identifier+'_'+ccdband+'_'+str(_Nexp)+'_'+filename_ext + '.fits'
-                    df.sami_write_file(fitslist, identifier, data_cube, var_cube, 
-					path_out = path_out, filename_out = filename_out, overwrite = True, covar_mode = None, pixscale = pixscale)
-                    filename_out_covar=identifier+'_'+ccdband+'_'+str(_Nexp)+'_'+filename_ext + '_covar.fits'
-                    df.write_response_cube(identifier, resp_cube, variance, fuse.gamma, pixscale, Lpix, gpmethod, 
-					path_out = path_out, filename_out = filename_out_covar, overwrite = True)
-                    
-######### Calculation and plotting of reconstructed cube characteristics:
-                    flux, flux_total, fwhm, fwhm2, fwhm_err, fwhm2_err, s2n_cube, s2n_fibre = df.test_dar_solution(data_cube, 
-			var_cube, covar_cube, data, variance, path_out = path_out, plot = True, 
-			pixelarcsec = pixscale, seeing = fuse.fwhm_seeing, gcovar = gcovar)
+
 
     print('CUBING FINISHED')
     print('-----------------------------------------')
