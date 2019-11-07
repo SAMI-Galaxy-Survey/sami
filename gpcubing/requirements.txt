@@ -1,0 +1,9 @@
+numpy==1.15.0
+scipy==1.1.0
+matplotlib==2.2.2
+Bottleneck==1.2.1
+astropy==2.0.8
+aplpy==2.0.3
+pyavm==0.9.4
+texttable==1.6.2
+PyYAML==5.1.2

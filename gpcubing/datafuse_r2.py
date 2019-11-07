@@ -7,7 +7,7 @@ given PSF parameters, fibre positions, and data variance
 21 March 2018, Seb Haan
 """
 
-from __future__ import print_function
+from __future__ import print_function, division
 import sys
 import os
 import time
@@ -27,8 +27,6 @@ from sami.utils.mc_adr import adr_r, DARCorrector, parallactic_angle, zenith_dis
 # The new cubesolve modul:
 from sami.gpcubing import gpcubesolve_r2 as cs
 from sami.gpcubing.settings_sami import _Nfib, _Rfib_arcsec, _plate_scale, _fov_arcsec
-
-import code
 
 cubing_method = 'GP_prior'
 wavelength_ref = 5000.0
@@ -739,7 +737,41 @@ def sami_plotfibre(data, xfibre, yfibre, name, path_out, show = False):
     if show:
         plt.show()
         
-
+def simulate_data(data, xfibre, yfibre):
+    """ Creates simulated data with output as same shape as real data
+    :param data: optical fibre data 
+    :param xfibre: fibre position in x
+    :param yfibre: fibre position in y
+    """
+    r =  np.sqrt(xfibre**2 + yfibre**2)
+    sim_true = 5 * np.exp(-r/0.5)
+    # add spectral profile imprint (include gaussian peaks and absoprtion ):
+    s_spec1 = 10 # wavelengths
+    s_spec2 = 30
+    s_spec3 = 20
+    m_spec1 = 500
+    m_spec2 = 1000
+    m_spec3 = 1500
+    waves = np.arange(data.shape[2]) 
+    amp = 1 + (5. * s_spec1 * scipynorm.pdf(waves, loc= m_spec1, scale = s_spec1) 
+        + 5.* s_spec2 * scipynorm.pdf(waves, loc= m_spec2, scale = s_spec2)
+        - 2.2 * s_spec3 * scipynorm.pdf(waves, loc= m_spec3, scale = s_spec3))
+    sim_true = amp * sim_true
+    # or make unit field
+    # sim_true = sim_true * 0. + 1./16. * 8.002315
+    #sim_true = sim_true * 0. 
+    # Add noise
+    s_sky = 0.1
+    g = 0.5
+    s_flat = 0.01
+    simvar = s_sky**2 + g * sim_true + s_flat * (g * sim_true)**2  #max = 1.4  min = 0.04
+    noise_sky = np.random.normal(loc = 0., scale=s_sky, size = sim_true.shape)
+    noise_p = np.random.normal(loc = 0., scale=np.sqrt(g * sim_true), size = sim_true.shape)
+    noise_flat = np.random.normal(loc = 0., scale=s_flat * g * sim_true, size = sim_true.shape)
+    noise = noise_sky + noise_p + noise_flat
+    noise2 = noise_sky**2 + noise_p**2 + noise_flat**2
+    sim = sim_true + noise
+    return sim, simvar, sim_true, noise2
 
 class DataFuse3D():
     """
@@ -748,7 +780,8 @@ class DataFuse3D():
     as function of wavelength and number of independent observations.
     """
     def __init__(self, data, psf_params, coord, data_sigma = None , psf_params_sigma = None, 
-        coord_sigma = None, name = None, dar_cor = None, pixscale = 0.25, avgpsf = False, gcovar = False, gpmethod = 'squared_exp', _Nexp = 7,marginalize=False):
+        coord_sigma = None, name = None, dar_cor = None, pixscale = 0.25, avgpsf = False, 
+        gcovar = False, gpmethod = 'squared_exp', _Nexp = 7,marginalize=False, gamma2psf = 0.5, logtrans = True):
         """
         :param data: callable accepting ndarrays of shape (N_obs, N_datapoints, N_wavelength)
         :param psf_params: Moffat parameters (alpha,beta) for each wavelength and observation. 
@@ -768,12 +801,15 @@ class DataFuse3D():
                                             'sparse', 
                                             'wide', 
                                             'moffat'
+        :param gamma2psf: ratiop of GP lengthscale parameter to PSF
+        :param marginalize: marginalize over gamma and an unknown variance scaling when evaluating the model
+        :param logtrans: apply log transform  to input data before GP 
         """
 
         # Checking input values and dimensions
         data = np.asarray(data)
         if data.ndim == 3:
-            self.data = data
+            self.data = 1. * data
         else:
             raise ValueError("data array has not 3 dimensions!")
         psf_params = np.asarray(psf_params)
@@ -796,7 +832,7 @@ class DataFuse3D():
             else:
                 raise ValueError("data_sigma array has not same shape as data array!")
         else: 
-            self.data_sigma = np.zeros_like(self.data) + np.mean(data) * 1e-9
+             self.data_sigma = np.zeros_like(self.data) + 1e-9
         if psf_params_sigma is not None:
             psf_params_sigma = np.asarray(psf_params_sigma)
             if psf_params_sigma.shape == psf_params.shape:
@@ -830,17 +866,19 @@ class DataFuse3D():
         self.gcovar = gcovar
         self.gpmethod = gpmethod
         self._Nexp = _Nexp
-
+        self.gpmethod = gpmethod
+        self.logtrans = logtrans
+        self.gamma2psf = gamma2psf
+        
         # calculate FWHM
         fwhm = moffat2fwhm(psf_params[0], psf_params[1])
 
         # set gamma to half of fwhm as function of wavelength, which has been shown to maximise likleihood
         # eventually include S/N ratio as well.
-        self.gamma = 0.5 * np.nanmean(fwhm, axis=0)
         #print("Average Hyperparameter gamma:", self.gamma.mean())
 
         if not marginalize:
-            self.gamma = 0.5*np.nanmean(fwhm,axis=0)
+            self.gamma =self.gamma2psf * np.nanmean(fwhm, axis=0) 
             print("Average Hyperparameter gamma:",self.gamma.mean())
         else:
             print("Marginalizing over hyperparameter gamma")
@@ -880,15 +918,15 @@ class DataFuse3D():
 
         #Make sure data contains only finite elements:
         fibflux[~np.isfinite(fibflux)] = 0.
-        fibfluxerr[(~np.isfinite(fibfluxerr)) | (~np.isfinite(fibflux))] = 1e9
+        fibfluxerr[~np.isfinite(fibfluxerr) | ~np.isfinite(fibflux) | (fibfluxerr > 1e4) ] = 1e9
         # Calculate response matrix only every nresponse step:
         kl_approx = False
         if wavenumber % nresponse == 0:
             self.response = cs.ResponseMatrix(coord, dar_cor, cs.moffat_psf, Lpix, self.pixscale, fft=True, 
                                               avgpsf=self.avgpsf,_Nexp = self._Nexp)
-            model = cs.GPModel(self.response, fibflux, fibfluxerr, calcresponse = True, gpmethod = self.gpmethod)
+            model = cs.GPModel(self.response, fibflux, fibfluxerr, calcresponse = True, gpmethod = self.gpmethod, logtrans = self.logtrans)
         else: 
-            model = cs.GPModel(self.response, fibflux, fibfluxerr, calcresponse = False, gpmethod = self.gpmethod)
+            model = cs.GPModel(self.response, fibflux, fibfluxerr, calcresponse = False, gpmethod = self.gpmethod, logtrans = self.logtrans)
             model._A = self.resp0
             model._K_gv = self.K0
             model._AK_gv = self.AK0
@@ -904,9 +942,10 @@ class DataFuse3D():
         else:
             if marginalize:
                 logL = model.logL_margsimple(hp = [alpha, beta, gamma], verbose=True)
-                #logL = model.logL_marg(hp = [alpha, beta, gamma], verbose=True)
+                logL = model.logL_marg(hp = [alpha, beta, gamma], verbose=True)
             else:
                 logL = model.logL(hp = [alpha, beta, gamma])
+        self.gp0 = model.gp0
        # print("Mean FWHM of seeing:", 2*alpha.mean()  * np.sqrt(np.power(2.,1/beta.mean()) - 1))
        # print("Std FWHM of seeing:", np.std(2*alpha  * np.sqrt(np.power(2.,1/beta) - 1)))
        # model._Kxx = model._gpkernel(model.D2, gamma)
@@ -946,7 +985,7 @@ class DataFuse3D():
             binsize = 1
         if nresponse % binsize != 0:
             raise ValueError("nresponse must be a multiple of binsize!")
-        Nbins = self.data.shape[2] / binsize
+        Nbins = int(self.data.shape[2] / binsize)
         #size_of_grid = Lpix + 10 # takes currently same number of final grid size as processing occurs
         if self.gcovar:
             # Check if its feasible to store covariance cube, need to be changed in future to sparse format (e.g. rtree)
@@ -957,10 +996,9 @@ class DataFuse3D():
                 print('WARNING! COVARIANCE ARRAY VERY LARGE! ONLY CONTINUE IF ENOUGH RAM/MEMORY AVAILABLE!')
         
         # Define cube size
-        Lpix,Nbins = int(Lpix),int(Nbins)
         flux_cube=np.zeros((Lpix, Lpix, Nbins)) * np.nan
         var_cube=np.zeros((Lpix, Lpix, Nbins)) * np.nan
-        resp_cube=np.zeros((int(self._Nexp * _Nfib), Lpix*Lpix,int(Nbins * binsize/nresponse))) * np.nan
+        resp_cube=np.zeros((_Nexp * _Nfib, Lpix*Lpix, int(Nbins * binsize/nresponse))) * np.nan
         if self.gcovar:
             covar_cube = np.zeros((Lpix**2, Lpix**2, Nbins)) * np.nan
         else:
@@ -981,6 +1019,8 @@ class DataFuse3D():
         fibre_area_pix = np.pi * _Rfib_arcsec**2 / self.pixscale**2
         self.data /= fibre_area_pix
         self.data_sigma /= fibre_area_pix
+        # rescale invalid sigma
+        self.data_sigma[self.data_sigma > np.sqrt(0.99e9)/fibre_area_pix] = 1e9
         # array to store binnned FHWM of seeing PSF
         self.fwhm_seeing = np.zeros(Nbins)
 
@@ -1006,8 +1046,7 @@ class DataFuse3D():
             flux_cube[:, :, l] = data_l 
             var_cube[:, :, l] = var_l 
             if l * binsize % nresponse == 0:
-                #code.interact(local=dict(globals(),**locals()))
-                resp_cube[:,:,l*binsize//nresponse] = resp_l
+                resp_cube[:,:,int(l*binsize/nresponse)] = resp_l
                 self.resp0 = resp_l # use repsone matrix for runs till next interval
                 self.K0 = K_l
                 self.AK0 = AK_l
@@ -1015,10 +1054,10 @@ class DataFuse3D():
             if self.gcovar:
                 covar_cube[:,:,l] =  covar_l #imshift(var_l, (xdar_l,ydar_l), order=1)
 
-            self.fwhm_seeing[l] = np.nanmean(self.gamma[self.wlow_vec[l]:self.wup_vec[l]]) * 2.
+            self.fwhm_seeing[l] = np.nanmean(self.gamma[self.wlow_vec[l]:self.wup_vec[l]]) * 1/self.gamma2psf
 
 
-        #OPtional: Accept data values with at least signal-to-noise ratio of >=1, otherwise set to zero
+        # Optional: Accept data values with at least signal-to-noise ratio of >=1, otherwise set to zero
         # flux_cube[flux_cube/np.sqrt(var_cube) < 1.] = 0.
         # Exlude range outside fiber fundle: size = 14.7 arces = 15.22arcsec/mm
         # Set values outside of FoV radius to NaN:
@@ -1334,7 +1373,7 @@ def read_cube(fullname):
     return data, variance
 
 
-def write_response_cube(identifier, resp_cube, var_fibre, gamma, pixscale, Lpix, gpmethod, marginalize, 
+def write_response_cube(identifier, resp_cube, var_fibre, gamma, gp0, pixscale, Lpix, gpmethod, marginalize, 
                         path_out, filename_out, overwrite = True, _Nexp = 7):
     """ Writes response matrix, fibre data variance, and gama in fits file to calculate covariance later    
     :param identifier: String of identifier or object ID
@@ -1402,6 +1441,7 @@ def write_response_cube(identifier, resp_cube, var_fibre, gamma, pixscale, Lpix,
     list_of_hdus.append(pf.PrimaryHDU(np.transpose(resp_cube, (2,1,0)), hdr_new))
     list_of_hdus.append(pf.ImageHDU(np.transpose(var_fibre, (2,1,0)), name='VARIANCE'))
     list_of_hdus.append(pf.ImageHDU(gamma, name='GAMMA'))
+    list_of_hdus.append(pf.ImageHDU(gp0, name='GP0'))
     
     # Put individual HDUs into a HDU list
     hdulist = pf.HDUList(list_of_hdus)
@@ -1421,6 +1461,7 @@ def read_response_cube(path, filename):
     resp = np.transpose(hdulist[0].data, (2,1,0))
     variance = np.transpose(hdulist[1].data, (2,1,0))
     gamma = hdulist[2].data
+    gp0 = hdulist[3].data
     hdr = hdulist[0].header
 
     return resp, var, gamma
@@ -1441,8 +1482,10 @@ def test_dar_solution(cubedata, cubevar, cubecovar, data, var, path_out, plot = 
     print('Evaluation and plotting of DAR and FWHM...')
     # First include only data larger than 2 sigma
     s2n_cube = cubedata/np.sqrt(cubevar)
-    #cubedata[(s2n_cube < 2) | np.isnan(s2n_cube)] = 0.
-    #cubevar[(s2n_cube < 2) | np.isnan(s2n_cube)] = np.nan
+    cubedata2 = cubedata.copy()
+    cubevar2 = cubevar.copy()
+    cubedata2[(s2n_cube < 2) | np.isnan(s2n_cube) | (np.sqrt(cubevar) > 10) ] = 0.
+    cubevar2[(s2n_cube < 2) | np.isnan(s2n_cube) | (np.sqrt(cubevar) > 10) ] = np.nan
     nslides = cubedata.shape[2]
     npix = cubedata.shape[0]
     flux = np.zeros((9,nslides))
@@ -1453,8 +1496,8 @@ def test_dar_solution(cubedata, cubevar, cubecovar, data, var, path_out, plot = 
     fwhm_err, fwhm2_err = np.zeros(nslides), np.zeros(nslides)
     cen_pos = np.zeros((2,nslides))
     #define pixel area to measure flux measurements, first define center:
-    idx0, idy0 = np.where(cubedata[:,:,nslides / 2] == np.nanmax(cubedata[:,:,nslides / 2]))
-    idx0, idy0 = idx0.sum(), idy0.sum()
+    idx0, idy0 = np.where(cubedata2[:,:,int(nslides / 2)] == np.nanmax(cubedata2[:,:,int(nslides / 2)]))
+    idx0, idy0 = idx0[0], idy0[0]
     # print('idx0, idy0', idx0, idy0)
     rmax = np.round((14.7/2. - 3.2) / pixelarcsec).astype(int)
     # print('rmax:', rmax)
@@ -1462,22 +1505,22 @@ def test_dar_solution(cubedata, cubevar, cubecovar, data, var, path_out, plot = 
     # print('diff:', diff)
     # Loop over wavelengths
     for i in range(nslides):
-        if np.isfinite(cubedata[:,:,i]).any() & (np.nanmean(cubevar[:,:,i]) < 25. * np.nanmean(cubevar)):
+        if np.isfinite(cubedata2[:,:,i]).any() & (np.nanmean(cubevar2[:,:,i]) < 25. * np.nanmean(cubevar2)):
             n = 0
             for j in range(3):
                 for k in range(3):
-                    flux[n,i] = cubedata[idx0 -1 + j, idy0 -1 +k, i]
-                    fluxvar[n,i] = cubevar[idx0 -1 + j, idy0 -1 +k, i]
+                    flux[n,i] = cubedata2[idx0 -1 + j, idy0 -1 +k, i]
+                    fluxvar[n,i] = cubevar2[idx0 -1 + j, idy0 -1 +k, i]
                     n += 1
-            flux_total[i] = np.nansum(cubedata[idx0 - rmax : idx0 + rmax ,idy0 - rmax : idy0 + rmax, i])
-            fluxvar_total[i] = np.nansum(cubevar[idx0 - rmax : idx0 + rmax ,idy0 - rmax : idy0 + rmax, i])
+            flux_total[i] = np.nansum(cubedata2[idx0 - rmax : idx0 + rmax ,idy0 - rmax : idy0 + rmax, i])
+            fluxvar_total[i] = np.nansum(cubevar2[idx0 - rmax : idx0 + rmax ,idy0 - rmax : idy0 + rmax, i])
             if flux_total[i]/np.sqrt(fluxvar_total[i]) < 2.:
                 flux_total[i] = np.nan
                 flux[:,i] = np.nan
             # Fit reconstructed FWHM
             try:
-                fwhm[i],fwhm_err[i], cen_pos[0,i], cen_pos[1,i] = fit_source_fwhm(cubedata[idx0 - rmax : idx0 + rmax ,idy0 - rmax : idy0 + rmax, i], (idx0-diff, idy0-diff), func = 'gaussian')
-                fwhm2[i], fwhm2_err[i], _, _= fit_source_fwhm(cubedata[idx0 - rmax : idx0 + rmax ,idy0 - rmax : idy0 + rmax, i], (idx0-diff, idy0-diff), func = 'moffat')
+                fwhm[i],fwhm_err[i], cen_pos[0,i], cen_pos[1,i] = fit_source_fwhm(cubedata2[idx0 - rmax : idx0 + rmax ,idy0 - rmax : idy0 + rmax, i], (idx0-diff, idy0-diff), func = 'gaussian')
+                fwhm2[i], fwhm2_err[i], _, _= fit_source_fwhm(cubedata2[idx0 - rmax : idx0 + rmax ,idy0 - rmax : idy0 + rmax, i], (idx0-diff, idy0-diff), func = 'moffat')
             except: 
                 fwhm[i], fwhm2[i] = 0., 0.
                 fwhm_err[i], fwhm2_err[i] = 0., 0.
@@ -1493,17 +1536,17 @@ def test_dar_solution(cubedata, cubevar, cubecovar, data, var, path_out, plot = 
 
 
     # Calculate Signal-to-Noise ratios of input data and cube data
-    cubedata = cubedata.reshape(cubedata.shape[0] * cubedata.shape[1], cubedata.shape[2])
-    cubevar = cubevar.reshape(cubevar.shape[0] * cubevar.shape[1], cubevar.shape[2])
-    cubedata[np.isnan(cubedata)] = 0
-    cubevar[np.isnan(cubevar)] = 1e9
-    cubedata[(cubedata < np.nanmean(cubedata)) | (cubevar>1.)] = 0.
-    cubevar[(cubedata < np.nanmean(cubedata)) | (cubevar>1.)] = 1e9
-    s2n_cube = np.nansum(cubedata, axis=0) / np.sqrt(np.nansum(cubevar, axis=0))
-    s2n_cube[s2n_cube == 0] = np.nan
+    cubedata2 = 1. * cubedata2.reshape(cubedata2.shape[0] * cubedata2.shape[1], cubedata2.shape[2])
+    cubevar2 = 1. * cubevar2.reshape(cubevar2.shape[0] * cubevar2.shape[1], cubevar2.shape[2])
+    cubedata2[np.isnan(cubedata2)] = 0
+    #cubevar[np.isnan(cubevar)] = 1e9
+    cubedata2[(cubedata2 < np.nanmean(cubedata2)) | (cubevar2>1.)] = 0.
+    cubevar2[(cubedata2 < np.nanmean(cubedata2)) | (cubevar2>1.)] = np.nan #1e9
+    s2n_cube = np.nansum(cubedata2, axis=0) / np.sqrt(np.nansum(cubevar2, axis=0))
+    s2n_cube[(s2n_cube == 0) | ~np.isfinite(s2n_cube)] = np.nan
 
-    data_fibre = data.reshape(data.shape[0] * data.shape[1], data.shape[2])
-    var_fibre = var.reshape(data.shape[0] * data.shape[1], data.shape[2])
+    data_fibre = 1. * data.reshape(data.shape[0] * data.shape[1], data.shape[2])
+    var_fibre = 1. * var.reshape(data.shape[0] * data.shape[1], data.shape[2])
     data_fibre[np.isnan(data_fibre)] = 0
     var_fibre[np.isnan(var_fibre)] = 1e9
     data_fibre[(data_fibre < np.nanmean(data_fibre)) | (var_fibre>1.) ] = 0
@@ -1512,7 +1555,7 @@ def test_dar_solution(cubedata, cubevar, cubecovar, data, var, path_out, plot = 
     s2n_fibre = np.zeros(nbins)
     binsize = data_fibre.shape[1]/nbins
     for i in range(nbins):
-        s2n_fibre[i] = np.nansum(data_fibre[:, i*binsize:(i+1)*binsize]) / np.sqrt(np.nansum(var_fibre[:, i*binsize:(i+1)*binsize]))
+        s2n_fibre[i] = np.nansum(data_fibre[:, int(i*binsize):int((i+1)*binsize)]) / np.sqrt(np.nansum(var_fibre[:, int(i*binsize):int((i+1)*binsize)]))
 
     s2n_fibre[s2n_fibre == 0] = np.nan
     fwhm[np.isnan(flux_total)] = np.nan
