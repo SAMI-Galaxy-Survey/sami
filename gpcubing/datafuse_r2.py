@@ -998,7 +998,7 @@ class DataFuse3D():
         # Define cube size
         flux_cube=np.zeros((Lpix, Lpix, Nbins)) * np.nan
         var_cube=np.zeros((Lpix, Lpix, Nbins)) * np.nan
-        resp_cube=np.zeros((_Nexp * _Nfib, Lpix*Lpix, int(Nbins * binsize/nresponse))) * np.nan
+        resp_cube=np.zeros((self._Nexp * _Nfib, Lpix*Lpix, int(Nbins * binsize/nresponse))) * np.nan
         if self.gcovar:
             covar_cube = np.zeros((Lpix**2, Lpix**2, Nbins)) * np.nan
         else:
