@@ -61,7 +61,7 @@ import scipy
 Specify parameters below for cubing:
 """
 
-def new_cube(fitslist,name,ccdband='blue',Lpix=50,pixscale=0.5,wavebin=1,responsebin=32,
+def new_cube(fitslist,name,ccdband='blue',Lpix=25,pixscale=1.0,wavebin=1,responsebin=32,
         path_out='/import/opus1/nscott/SAMI_Survey/new_cubes_output/',filename_ext='_50pix_05arcsec',
         write_fits=True,gamma2psf=0.4,logtrans=True,write_covar=False):
 
