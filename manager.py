@@ -4934,8 +4934,11 @@ def cube_object(inputs):
     if inputs['tag']:
         suffix += '_'+inputs['tag']
     inputs['suffix'] = suffix
+    
+    out = cube_wrapper(inputs)
+    print(out)
 
-    return cube_wrapper(inputs)
+    return out
 
     #return dithered_cube_from_rss_wrapper(
     #    path_list, name, suffix=suffix, write=True, nominal=True,
