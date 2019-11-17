@@ -2327,7 +2327,10 @@ class Manager:
         for inputs, cubed in zip(inputs_list, cubed_list):
             if cubed:
                 # Select the first fits file from this run (not linked runs)
-                path_list = inputs[2]  # From inputs_list above.
+                try:
+                    path_list = inputs[2]  # From inputs_list above.
+                except:
+                    code.interact(local=dict(globals(),**locals()))
                 for path in path_list:
                     fits = self.fits_file(os.path.basename(path)[:10])
                     if fits:
@@ -4934,11 +4937,8 @@ def cube_object(inputs):
     if inputs['tag']:
         suffix += '_'+inputs['tag']
     inputs['suffix'] = suffix
-    
-    out = cube_wrapper(inputs)
-    print(out)
 
-    return out
+    return cube_wrapper(inputs)
 
     #return dithered_cube_from_rss_wrapper(
     #    path_list, name, suffix=suffix, write=True, nominal=True,
