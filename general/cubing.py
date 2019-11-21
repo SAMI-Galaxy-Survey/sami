@@ -434,10 +434,10 @@ def cube_wrapper(inputs):
             output_pix_size_arcsec=output_pix_size_arcsec)
     elif cubing_method == 'gp':
         (path_list, name, cubed_root, overwrite, output_pix_size_arcsec, 
-         size_of_grid, suffix, ccd) = (inputs['path_list'], inputs['name'], 
+         size_of_grid, suffix, ccd,gamma2psf) = (inputs['path_list'], inputs['name'], 
                                   inputs['cubed_root'], inputs['overwrite'], 
                                   inputs['output_pix_size_arcsec'], inputs['size_of_grid'], 
-                                  inputs['suffix'],inputs['ccd'])
+                                  inputs['suffix'],inputs['ccd'],inputs['gamma2psf'])
         
         path_out = os.path.join(inputs['cubed_root'],name)
         if ccd == 'ccd_1':
@@ -445,7 +445,7 @@ def cube_wrapper(inputs):
         elif ccd == 'ccd_2':
             ccd = 'red'
         return run_datafuse_r2.new_cube(path_list, name, ccdband=ccd, Lpix=size_of_grid,
-                                        pixscale=output_pix_size_arcsec,
+                                        pixscale=output_pix_size_arcsec,gamma2psf=gamma2psf,
                                         path_out=path_out,filename_ext=suffix,
                                         write_fits=True)
     else:
