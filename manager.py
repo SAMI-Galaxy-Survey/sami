@@ -55,7 +55,6 @@ import shutil
 import os
 import re
 import multiprocessing
-import code
 
 import warnings
 from functools import wraps
@@ -2328,10 +2327,7 @@ class Manager:
         for inputs, cubed in zip(inputs_list, cubed_list):
             if cubed:
                 # Select the first fits file from this run (not linked runs)
-                try:
-                    path_list = inputs[2]  # From inputs_list above.
-                except:
-                    code.interact(local=dict(globals(),**locals()))
+                path_list = inputs['path_list']  # From inputs_list above.
                 for path in path_list:
                     fits = self.fits_file(os.path.basename(path)[:10])
                     if fits:
