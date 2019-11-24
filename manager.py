@@ -2268,7 +2268,7 @@ class Manager:
              star_only=False, drop_factor=None, tag='', update_tol=0.02,
              size_of_grid=50, output_pix_size_arcsec=0.5,
              min_transmission=0.333, max_seeing=4.0, min_frames=6,
-             cubing_method='',gamma2psf=0.4 **kwargs):
+             cubing_method='',gamma2psf=0.4, **kwargs):
         """Make datacubes from the given RSS files."""
         groups = self.group_files_by(
             ['field_id', 'ccd'], ndf_class='MFOBJECT', do_not_use=False,
