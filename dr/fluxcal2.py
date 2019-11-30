@@ -57,6 +57,7 @@ import numpy as np
 from scipy.optimize import leastsq, curve_fit
 from scipy.interpolate import LSQUnivariateSpline
 from scipy.ndimage.filters import median_filter, gaussian_filter1d
+from scipy.ndimage import zoom
 
 from astropy import coordinates as coord
 from astropy import units
@@ -68,6 +69,12 @@ from astropy import __version__ as ASTROPY_VERSION
 import astropy.units as u
 from astropy.time import Time
 from astropy.coordinates import SkyCoord, EarthLocation, AltAz
+from scipy.special import erfc
+from scipy.stats import binned_statistic
+from shutil import copyfile
+ 
+# required for test plotting:
+import pylab as py
 
 from ..utils import hg_changeset
 from ..utils.ifu import IFU
@@ -76,12 +83,20 @@ from ..utils.other import saturated_partial_pressure_water
 from ..config import millibar_to_mmHg
 from ..utils.fluxcal2_io import read_model_parameters, save_extracted_flux
 from .telluric2 import TelluricCorrectPrimary as telluric_correct_primary
+from . import dust
+from ..manager import read_stellar_mags
+from ..qc.fluxcal import measure_band
 
 try:
     from bottleneck import nansum, nanmean
 except ImportError:
     from numpy import nansum, nanmean
     warnings.warn("Not Using bottleneck: Speed will be improved if you install bott    leneck")
+
+# import of ppxf for fitting of secondary stds:
+import ppxf as ppxf_package
+from ppxf.ppxf import ppxf
+from ppxf.ppxf_util import log_rebin
 
 
 
@@ -103,7 +118,7 @@ TELLURIC_BANDS = np.array([[6850, 6960],
                            [7560, 7770], 
                            [8100, 8360]])
 
-def generate_subgrid(fibre_radius, n_inner=6, n_rings=10):
+def generate_subgrid(fibre_radius, n_inner=6, n_rings=10, wt_profile=False):
     """Generate a subgrid of points within a fibre."""
     radii = np.arange(0., n_rings) + 0.5
     rot_angle = 0.0
@@ -119,9 +134,19 @@ def generate_subgrid(fibre_radius, n_inner=6, n_rings=10):
     radius *= fibre_radius / n_rings
     xsub = radius * np.cos(theta)
     ysub = radius * np.sin(theta)
-    return xsub, ysub
+    # generate a weight for the points based on the radial profile.  In this case
+    # we use an error function that goes to 0.5 at 0.8 of the radius of the fibre.
+    # this is just experimental, no evidence it makes much improvement:
+    if (wt_profile):
+        wsub = 0.5*erfc((radius-fibre_radius*0.8)*4.0)
+        wnorm = float(np.size(radius))/np.sum(wsub)
+        wsub = wsub * wnorm
+    else:
+        # or unit weighting:
+        wsub = np.ones(np.size(xsub)) 
+    return xsub, ysub, wsub
 
-XSUB, YSUB = generate_subgrid(FIBRE_RADIUS)
+XSUB, YSUB, WSUB= generate_subgrid(FIBRE_RADIUS)
 N_SUB = len(XSUB)
 
 def in_telluric_band(wavelength):
@@ -232,8 +257,11 @@ def moffat_normalised(parameters, xfibre, yfibre, simple=False):
                       np.outer(np.ones(N_SUB), xfibre))
         yfibre_sub = (np.outer(YSUB, np.ones(n_fibre)) + 
                       np.outer(np.ones(N_SUB), yfibre))
+        wt_sub = (np.outer(WSUB, np.ones(n_fibre)))
         flux_sub = moffat_normalised(parameters, xfibre_sub, yfibre_sub, 
                                      simple=True)
+        flux_sub = flux_sub * wt_sub
+        
         return np.mean(flux_sub, axis=0)
 
 def moffat_flux(parameters_array, xfibre, yfibre):
@@ -295,7 +323,15 @@ def first_guess_parameters(datatube, vartube, xfibre, yfibre, wavelength,
     """Return a first guess to the parameters that will be fitted."""
     par_0 = {}
     #weighted_data = np.sum(datatube / vartube, axis=1)
-    weighted_data = np.nansum(datatube, axis=1)
+    if (np.ndim(datatube)>1):
+        weighted_data = np.nansum(datatube, axis=1)
+        (nf, nc) = np.shape(datatube)
+        print(nf,nc)
+    else:
+        weighted_data = np.copy(datatube)        
+        (nf) = np.shape(datatube)
+        nc = 1
+        print(nf)
     weighted_data[weighted_data < 0] = 0.0
     weighted_data /= np.sum(weighted_data)
     if model_name == 'ref_centre_alpha_angle':
@@ -321,7 +357,10 @@ def first_guess_parameters(datatube, vartube, xfibre, yfibre, wavelength,
     elif (model_name == 'ref_centre_alpha_dist_circ' or
           model_name == 'ref_centre_alpha_dist_circ_hdratm'):
         par_0['flux'] = np.nansum(datatube, axis=0)
-        par_0['background'] = np.zeros(len(par_0['flux']))
+        if (nc > 1):
+            par_0['background'] = np.zeros(len(par_0['flux']))
+        else:
+            par_0['background'] = np.zeros(1)
         par_0['xcen_ref'] = np.sum(xfibre * weighted_data)
         par_0['ycen_ref'] = np.sum(yfibre * weighted_data)
         par_0['zenith_distance'] = np.pi / 8.0
@@ -473,7 +512,8 @@ def parameters_dict_to_array(parameters_dict, wavelength, model_name):
     parameter_names = ('xcen ycen alphax alphay beta rho flux '
                        'background'.split())
     formats = ['float64'] * len(parameter_names)
-    parameters_array = np.zeros(len(wavelength), 
+    lw = np.size(wavelength)
+    parameters_array = np.zeros(lw, 
                                 dtype={'names':parameter_names, 
                                        'formats':formats})
     if model_name == 'ref_centre_alpha_angle':
@@ -510,7 +550,7 @@ def parameters_dict_to_array(parameters_dict, wavelength, model_name):
         parameters_array['alphay'] = (
             alpha(wavelength, parameters_dict['alpha_ref']))
         parameters_array['beta'] = parameters_dict['beta']
-        parameters_array['rho'] = np.zeros(len(wavelength))
+        parameters_array['rho'] = np.zeros(lw)
         if len(parameters_dict['flux']) == len(parameters_array):
             parameters_array['flux'] = parameters_dict['flux']
         if len(parameters_dict['background']) == len(parameters_array):
@@ -537,7 +577,7 @@ def parameters_dict_to_array(parameters_dict, wavelength, model_name):
         parameters_array['alphay'] = (
             alpha(wavelength, parameters_dict['alpha_ref']))
         parameters_array['beta'] = parameters_dict['beta']
-        parameters_array['rho'] = np.zeros(len(wavelength))
+        parameters_array['rho'] = np.zeros(lw)
         if len(parameters_dict['flux']) == len(parameters_array):
             parameters_array['flux'] = parameters_dict['flux']
         if len(parameters_dict['background']) == len(parameters_array):
@@ -992,6 +1032,49 @@ def fit_spline(wavelength, ratio, mf_av=False,tell_corr_primary=False):
     # stop at the end of the particular spectrum , which is good because the
     # wavelength coverage can vary between bundles and fibres.  The extrapolation is
     # low order and well behaved.
+
+    return fit
+
+def fit_spline_secondary(wavelength, ratio,sigma,nbins=40,nsig=5.0,verbose=False,medsize=51):
+    """Fit a smoothing spline to the data, and return the fit."""
+    # Do the fit in terms of 1.0 / ratio, because it seems to give better
+    # results.
+
+    nspec = np.size(ratio)
+
+    # identify good pixels:
+    good = np.where(np.isfinite(ratio))[0]
+    ngood1 = np.size(ratio[good])
+    
+    # median filter the data and sigma (excluding NaNs):
+    medspec = median_filter_nan_1d(ratio,medsize)
+    medsig = median_filter_nan_1d(sigma,medsize)
+
+    # identify pixels that are greater than nsig away from the median:
+    good = np.where(np.isfinite(ratio) & (abs(medspec-ratio)<nsig*medsig))[0]
+    ngood2 = np.size(ratio[good])
+
+    if (verbose):
+        print('number of pixels rejected:',ngood1-ngood2)
+        idx = np.where((abs(medspec-ratio)<nsig*medsig) & np.isfinite(ratio))
+        print(wavelength[idx])
+    
+    # specify knots.  As the data has already been flux calibrated using
+    # the primary stds, the sharp features have been removed and the remaining
+    # features are slowly varying.  Because of this, have a relatively small
+    # number of knots: 
+    knots = np.linspace(wavelength[good][0], wavelength[good][-1], 3)
+
+    # do the fit
+    spline = LSQUnivariateSpline(
+        wavelength[good], 1.0/ratio[good], knots[1:-1])
+    fit = 1.0 / spline(wavelength)
+
+    if (verbose):
+        print('knots: ',spline.get_knots())
+
+    # Next we want to do a robust outlier rejection so that any bad pixels
+    # (eg remaining CRs etc) do not cause problems.
 
     return fit
 
@@ -1557,7 +1640,952 @@ def median_filter_rotate(array, window):
     result[good[-1]+1:] = array[good[-1]+1:]
     return result
 
+def fit_sec_template_ppxf(path,doplot=False,verbose=True,tempfile='standards/kurucz_stds_raw_v5.fits',mdegree=8):
+    """main routine that actually calls ppxf to do the fitting of the
+    secondary flux calibration stars to model templates."""
+
+    if (verbose):
+        print('Fitting secondary stars to template using ppxf: %s' % str(path))
+
+    # read spectrum of secondary star from the FLUX_CALIBRATION extension.
+    # Put these into a temporary array, as we need to cut out Nans etc.
+    lam_t,flux_t,sigma_t = read_flux_calibration_extension(path,gettel=False)
+
+    # find the first and last good points in the spectrum as ppxf does not
+    # like nans:
+    nlam = np.size(lam_t)
+    for i in range(nlam):
+        if (np.isfinite(flux_t[i])):
+            istart = i
+            break
+    for i in reversed(range(nlam)):
+        if (np.isfinite(flux_t[i])):
+            iend = i
+            break
+
+    # check for other nans:
+    nnan = 0
+    for i in range(istart,iend):
+        if (np.isnan(flux_t[i])):
+            print(i,flux_t[i])
+            nnan = nnan+1
+
+    if (nnan > 0):
+        print('WARNING: extra NaNs found in spectrum from FLUX_CALIBRATION extension')
+
+    # TODO: remove any extra nans!
+        
+    if (verbose):
+        print('first and last good pixels for secondary spectrum:',istart,iend)
+
+    # specify good spectrum:
+    lam = lam_t[istart:iend]
+    flux = flux_t[istart:iend]
+    sigma = sigma_t[istart:iend]
+            
+    # divide by median flux to avoid possible numerical issues with fitting:
+    medflux = np.nanmedian(flux)
+    flux = flux/medflux
+    sigma = sigma/medflux
+
+    # log rebin input spectrum.  Returns the natural log (not log_10!!!)
+    # of wavelength values and resampled spectrum.
+    lamrange = np.array([lam[0],lam[-1]])
+    logflux, loglam, velscale = log_rebin(lamrange,flux)
+    logsigma = log_rebin(lamrange,sigma)[0]
+    lam_gal = np.exp(loglam)
+    if (verbose):
+        print('Velocity scale after log rebinning: ',velscale)
+
+    # read model templates:
+    # TODO: robust checking that template file is present!
+    temp_lam1, temp_kur1, model_feh, model_teff, model_g, model_mag = read_kurucz(tempfile,doplot=doplot,plot_iter=False,verbose=verbose)
+    n_kur, n_lam_kur = np.shape(temp_kur1)
+    
+    # process templates to get them ready for fitting:
+    # first reduce their resolution and sampling, as they are much higher resolution than our data
+    lam_temp, templates_kur1 = resample_templates(temp_lam1,temp_kur1,verbose=verbose)
+
+    # get range of wavelength:
+    lamRange_temp = [np.min(lam_temp),np.max(lam_temp)]
+        
+    # now log rebinning of templates.  Do it for one to start with, so we know the number
+    # of bins to use:
+    tmp_tmp = log_rebin(lamRange_temp,templates_kur1[0,:],velscale=velscale)[0]
+    templates_kur2 = np.zeros((n_kur,np.size(tmp_tmp)))
+    # also define an array that will just contain the best few fitted templates:
+    templates_kur3 = np.zeros((np.size(tmp_tmp),4))
+    # now log rebin all templates:
+    for i in range(n_kur):
+        templates_kur2[i,:] = log_rebin(lamRange_temp,templates_kur1[i,:],velscale=velscale)[0] 
+
+    # transpose templates:
+    templates = np.transpose(templates_kur2)
+
+    # define the number of templates:
+    temp_n=n_kur
+
+    # define the dv for ppxf.  The offset for the start of the
+    # two spectra:
+    c = 299792.458
+    dv = np.log(lam_temp[0]/lam_gal[0])*c    # km/s
+    if (verbose):
+        print('dv in km/s: ',dv)
+    
+    # starting guess for velocity and dispersion:
+    start = [0,50.0]
+
+    # fit one template at a time.  Return and save the chisq
+    # values (all of them) and the index for the best template:
+    chisq = np.zeros(temp_n)
+    chimin=1.0e10
+    ibest = -9
+    for i in range(temp_n):
+        pp = ppxf(templates[:,i],logflux,logsigma, velscale, start,
+              plot=False, moments=2, mdegree=mdegree,quiet=True,
+              degree=-1, vsyst=dv, clean=False, lam=lam_gal)
+
+        if (verbose):
+            print(i,pp.chi2,model_teff[i],model_feh[i],model_g[i])
+            
+        chisq[i] = pp.chi2
+        if (chisq[i] < chimin):
+            ibest = i
+            chimin = chisq[i]
+
+    best_g = model_g[ibest]
+    best_teff = model_teff[ibest]
+    best_feh = model_feh[ibest]
+    if (verbose):
+        print('best template:',ibest,chimin,model_teff[ibest],model_feh[ibest],model_g[ibest])
+
+    # now identify the templates closest in temperature and metallicity to the
+    # best fit one.  We can then do a best fit allowing all of those templates
+    # at once.  First decide on which gravity to use.  Just use the best fit model
+    # for that, particularly as we only have 2 gravities.  Then loop through
+    # each of the other models and find thoose that are close in teff or [Fe/H]
+    for i in range(temp_n):
+        if (model_g[i] == best_g):
+
+            # metallicity (which is [Fe/H]) steps are in 0.5.  Teff steps are in 250K
+            # we want to find the next best in Teff and [Fe/H]
+            d_teff = abs(model_teff[i]-best_teff)
+            d_feh = abs(model_feh[i]-best_feh)
+            # check either side of best fit teff.  Find the one with the best chisq:
+            chisq_best2 = 1.0e10
+            if ((d_teff < 300) & (d_teff>200) & (d_feh<0.2)):
+                if (chisq[i] < chisq_best2):
+                    best_chisq2 = chisq[i]
+                    best_teff2 = model_teff[i]
+            # check either side of best fit [FeH].  Find the one with the best chisq:
+            chisq_best2 = 1.0e10
+            if ((d_feh < 0.6) & (d_feh>0.4) & (d_teff<200)):
+                if (chisq[i] < chisq_best2):
+                    best_chisq2 = chisq[i]
+                    best_feh2 = model_feh[i]
+
+    if (verbose):
+        print(best_teff,best_teff2,best_feh,best_feh2)
+        
+    # assign the 4 best templates aroud the best fit to an array for the
+    # final fit:
+    n_best_temp = 0
+    nn_best = np.zeros(4,dtype=int)
+    for i in range(temp_n):
+        good = False
+        if (model_g[i] == best_g):
+            if ((model_teff[i] == best_teff) & (model_feh[i] == best_feh)):
+                good = True
+            if ((model_teff[i] == best_teff) & (model_feh[i] == best_feh2)):
+                good = True
+            if ((model_teff[i] == best_teff2) & (model_feh[i] == best_feh)):
+                good = True
+            if ((model_teff[i] == best_teff2) & (model_feh[i] == best_feh2)):
+                good = True
+
+            if (good):
+                templates_kur3[:,n_best_temp] = templates[:,i]
+                nn_best[n_best_temp] = i
+                n_best_temp = n_best_temp + 1
+                if (verbose):
+                    print(i,model_teff[i],model_feh[i])
+
+    # redo the ppxf fitting with just the 4 best templates:
+    pp = ppxf(templates_kur3,logflux,logsigma, velscale, start,
+              plot=False, moments=2, mdegree=mdegree,quiet=True,
+              degree=-1, vsyst=dv, clean=False, lam=lam_gal)
+
+    if (verbose):
+        print('chisq for optimal fit:',pp.chi2)
+        for i in range(n_best_temp):
+            ii = nn_best[i]
+            print(i,ii,pp.weights[i],model_teff[ii],model_feh[ii],model_g[ii])
+
+    # normalize weights to sum of 1:
+    norm_weights = pp.weights/np.nansum(pp.weights)
+            
+    # now write the template numbers and weights to the FLUX_CALIBRATION
+    # header:
+    hdulist = pf.open(path,'update')
+    header = hdulist['FLUX_CALIBRATION'].header
+    header['TEMP1'] = (nn_best[0],'Best fit template to secondary std 1')
+    header['TEMP2'] = (nn_best[1],'Best fit template to secondary std 2')
+    header['TEMP3'] = (nn_best[2],'Best fit template to secondary std 3')
+    header['TEMP4'] = (nn_best[3],'Best fit template to secondary std 4')
+    header['TEMP1WT'] = (norm_weights[0],'Weight for best fit template to secondary std 1')
+    header['TEMP2WT'] = (norm_weights[1],'Weight for best fit template to secondary std 2')
+    header['TEMP3WT'] = (norm_weights[2],'Weight for best fit template to secondary std 3')
+    header['TEMP4WT'] = (norm_weights[3],'Weight for best fit template to secondary std 4')
+    header['TEMPVEL'] = (pp.sol[0],'Best fit template velocity (km/s)')
+    header['TEMPSIG'] = (pp.sol[1],'Best fit template dispersion (km/s)')
+    hdulist.flush()
+    hdulist.close()
+                
+    return
+
+def combine_template_weights(path_list,path_out,verbose=True):
+    """look at all the weights from template fits to secondary std stars in
+    separate frames in a given field and average the weights so we can derive
+    a single optimal template for this star"""
+    
+    nframes = len(path_list)
+
+    if (verbose):
+        print('combining template weights from '+str(nframes)+' frames.')
+
+    # set up arrays to contain weights and template numbers:
+    weight_list = np.zeros((nframes,4))
+    temp_list = np.zeros((nframes,4),dtype=int)
+    temp_vel = np.zeros(nframes)
+    temp_sig = np.zeros(nframes)
+    
+    # loop over individual frames and read in the weights from the headers:
+    nf = 0
+    for index, path in enumerate(path_list):
+
+        weight_list[nf,0] = pf.getval(path,'TEMP1WT',extname='FLUX_CALIBRATION')
+        weight_list[nf,1] = pf.getval(path,'TEMP2WT',extname='FLUX_CALIBRATION')
+        weight_list[nf,2] = pf.getval(path,'TEMP3WT',extname='FLUX_CALIBRATION')
+        weight_list[nf,3] = pf.getval(path,'TEMP4WT',extname='FLUX_CALIBRATION')
+        temp_list[nf,0] = pf.getval(path,'TEMP1',extname='FLUX_CALIBRATION')
+        temp_list[nf,1] = pf.getval(path,'TEMP2',extname='FLUX_CALIBRATION')
+        temp_list[nf,2] = pf.getval(path,'TEMP3',extname='FLUX_CALIBRATION')
+        temp_list[nf,3] = pf.getval(path,'TEMP4',extname='FLUX_CALIBRATION')
+        temp_vel[nf] = pf.getval(path,'TEMPVEL',extname='FLUX_CALIBRATION')
+        temp_sig[nf] = pf.getval(path,'TEMPSIG',extname='FLUX_CALIBRATION')
+
+        nf = nf + 1
+
+    # find the average velocity and sigma:
+    vel = np.nanmean(temp_vel)
+    vel_err = np.nanstd(temp_vel)/np.sqrt(float(nf))
+    sig = np.nanmean(temp_sig)
+    sig_err = np.nanstd(temp_sig)/np.sqrt(float(nf))
+    if (verbose):
+        print('mean template velocity:',vel,'+-',vel_err)
+        print('mean template sigma:',sig,'+-',sig_err)
+
+    # find all the unique templates:
+    used_temp = np.unique(temp_list)
+    nused_temp = np.size(used_temp)
+    if (verbose):
+        print('Unique templates used:',used_temp)
+
+    # find the average weight for each unique template:
+    used_weights = np.zeros(nused_temp)
+    for nt in range(nused_temp):
+        if (verbose):
+            print('template: ',used_temp[nt])
+            
+        for i in range(nf):
+            for j in range(4):
+                if (temp_list[i,j] == used_temp[nt]):
+                    used_weights[nt] = used_weights[nt] + weight_list[i,j]
+                    if (verbose):
+                        print(weight_list[i,j])
+        used_weights[nt] = used_weights[nt]/float(nf)
+        print(used_temp[nt],used_weights[nt])
+
+    # finally, write the values to a binary table in the output file:
+
+    # define the columns:
+    col1 = pf.Column(name='templates', format='I', array=used_temp)
+    col2 = pf.Column(name='weights', format='E', array=used_weights)
+    cols = pf.ColDefs([col1, col2])
+    hdutab = pf.BinTableHDU.from_columns(cols,name='TEMPLATE_LIST')
+    # add best velocity and sigma to the header of the binary table:
+    header = hdutab.header
+    header['MTEMPVEL'] = (vel, 'Mean template velocity (km/s)')
+    header['MTEMPSIG'] = (sig, 'Mean template dispersion (km/s)')
+    hdutab.writeto(path_out,overwrite=True)
+      
+    return 
+
+def derive_secondary_tf(path_list,path_list2,path_out,tempfile='standards/kurucz_stds_raw_v5.fits',verbose=True,doplot=True):
+    """Use the best fit weights from template fits to secondary flux 
+    calibration stars to derive a transfer function for each frame and
+    write that to an extension in the data."""
+
+    print('Deriving secondary transfer function')
+
+    # Read in the templates, weights and kinematics of the best solution
+    # template.
+    hdu = pf.open(path_out,mode='update')
+    datatab = hdu['TEMPLATE_LIST'].data
+    temp_used = datatab['templates']
+    temp_weights = datatab['weights']
+    header_tab = hdu['TEMPLATE_LIST'].header
+    vel = header_tab['MTEMPVEL']
+    sig = header_tab['MTEMPSIG']
+
+    if (verbose):
+        print('templates and weights:',temp_used,temp_weights)
+    
+    # read in the templates:
+    temp_lam1, temp_kur1, model_feh, model_teff, model_g, model_mag = read_kurucz(tempfile,doplot=False,plot_iter=False,verbose=verbose)
+
+    # Reduce the template resolution and sampling, as they are much higher resolution than our data
+    # (also done before fitting the templates):
+    lam_temp, templates_kur1 = resample_templates(temp_lam1,temp_kur1,verbose=verbose)
+    n_kur, n_lam_kur = np.shape(templates_kur1)
+
+    # define array to hold the new optimal template:
+    template_opt = np.zeros(n_lam_kur)
+    
+    # make the best template from a linear combination of the templates.
+    for i in range(np.size(temp_used)):
+        if (temp_weights[i] > 0.0):
+            template_opt = template_opt + temp_weights[i] * templates_kur1[temp_used[i],:]
+            
+    # correct for velocity shift:
+    lam_temp_opt = lam_temp*(1+vel/2.9979e5)
+
+    # convolve best fit template for sigma:
+    # TODO - this is not vital at this stage, and we should arguably do this separately
+    # for the red and blue arms that have different resolution.
+        
+    # correct template for galactic extinction.  First need to get the the ra/dec of the
+    # bundle for the star in question.  To do this, find the name of the star from the
+    # FLUX_CALIBRATION header and then use the read_stellar_mags() function to get the
+    # mags and the ra/dec:
+    std_name = pf.getval(path_list[0],'STDNAME', 'FLUX_CALIBRATION')
+    catalogue = read_stellar_mags()
+    std_parameters = catalogue[std_name]
+    if (verbose):
+        print(std_name)
+        print(std_parameters)
+    std_ra = std_parameters['ra']
+    std_dec = std_parameters['dec']
+    theta, phi = dust.healpixAngularCoords(std_ra,std_dec)
+
+    # now read the dust maps and find the E(B-V):
+    for name, map_info in dust.MAPS_FILES.items():
+        ebv = dust.EBV(name, theta, phi)
+        if name == 'planck':
+            correction_t = dust.MilkyWayDustCorrection(lam_temp_opt, ebv)
+
+    if (verbose):
+        print('std star: ',std_name,' coords:',std_ra,std_dec,theta,phi)
+        print('Galactic extinction for std star, E(B-V): ',ebv)
+
+    # and then actually correct the spectrum:
+    template_opt_ext = template_opt/correction_t
+        
+    # derive template ab mags (relative).  This uses the SDSS bands and the measure_band
+    # function in qc.fluxcal
+    mag_temp = {}
+    bands = 'ugriz'
+    for band in bands:
+        mag_temp[band] = measure_band(band,template_opt_ext,lam_temp_opt)
+        if (verbose):
+            print(band,mag_temp[band],std_parameters[band],mag_temp[band]-std_parameters[band])
+    
+    # normalize template based on ab mags.  Do this based on the g and r bands as these are
+    # the bands contained within the SAMI spectral range:
+    deltamag = ((mag_temp['g']-std_parameters['g'])+ (mag_temp['r']-std_parameters['r']))/2.0
+    if (verbose):
+        print('mean delta mag for g and r bands:',deltamag)
+
+    fluxscale = 10**(-0.4*deltamag)
+
+    template_opt_ext_scale = template_opt_ext/fluxscale
+
+    # recalculate the mags after scaling the photometry:
+    mag_temp2 = {}
+    for band in bands:
+        mag_temp2[band] = measure_band(band,template_opt_ext_scale,lam_temp_opt)
+        if (verbose):
+            print(band,mag_temp2[band],std_parameters[band],mag_temp2[band]-std_parameters[band])
+        
+        
+    # write template to TEMPLATES2combined.fits file as the best template for this
+    # field/star.  For this we need the resampled and redshifted flux with extinction
+    # and scaling added.  We can also write the nominal magnitudes are re-scaling
+    # to the combined g and r bands.  This will all go into an extension called
+    # TEMPLATE_OPT.  This is written as a FITS binary table:
+    col1 = pf.Column(name='wavelength', format='E', array=lam_temp_opt)
+    col2 = pf.Column(name='flux', format='E', array=template_opt_ext_scale)
+    cols = pf.ColDefs([col1, col2])
+    hdutab = pf.BinTableHDU.from_columns(cols,name='TEMPLATE_OPT')
+    header = hdutab.header
+    for band in bands:
+        header['TEMPMAG'+band.upper()] = (mag_temp2[band],band+' mag of optimal template (scaled)')
+    
+    hdu.append(hdutab)
+    hdu.flush()
+    hdu.close()
+
+    # loop over all the individual frames, read the secondary std star fluxes and
+    # find the TF:
+    nfiles = 0
+    for index, path1 in enumerate(path_list):
+
+        path2 = path_list2[index]
+        if (verbose):
+            print('deriving TF for ',path1)
+            print('and ',path2)
+
+        # read the FLUX_CALIBRATION extension to get the star spectrum:
+        lam_b,flux_b,sigma_b = read_flux_calibration_extension(path1,gettel=False)
+        lam_r,flux_r,sigma_r, tel_r = read_flux_calibration_extension(path2,gettel=True)
+
+        # if this is the first frame, set up arrays to hold different TFs:
+        if (index == 0):
+            tf_b = np.zeros((len(path_list),np.size(lam_b)))
+            tf_r = np.zeros((len(path_list),np.size(lam_r)))
+
+        # correct the red arm for telluric abs:
+        flux_r = flux_r * tel_r
+
+        # resample the template spectrum onto the SAMI wavelength scale.
+        # TODO: need to check whether the template wavelength scale is air or vacuum.  Its probably
+        # vacuum, so we should fix this up at an early stage, before we fit the velocity.
+        #
+        # this internal SAMI resampling code does not see to work in this case:
+        #temp_flux_b = rebin_flux(lam_b,lam_temp_opt,template_opt_ext_scale)
+        #temp_flux_r = rebin_flux(lam_r,lam_temp_opt,template_opt_ext_scale)
+        # currently use an external resampling routine:
+        temp_flux_b = spectres(lam_b,lam_temp_opt,template_opt_ext_scale)
+        temp_flux_r = spectres(lam_r,lam_temp_opt,template_opt_ext_scale)
+
+        # take the ratio:
+        ratio_b = flux_b/temp_flux_b
+        ratio_r = flux_r/temp_flux_r
+
+        # get ratio errors:
+        ratio_sig_b = sigma_b/temp_flux_b
+        ratio_sig_r = sigma_r * tel_r/temp_flux_r
+
+        # fit the ratios
+        ratio_sp_b = fit_spline_secondary(lam_b,ratio_b,ratio_sig_b,verbose=verbose)
+        ratio_sp_r = fit_spline_secondary(lam_r,ratio_r,ratio_sig_r,verbose=verbose)
+
+        # store TFs in array for combining later:
+        tf_b[index,:] = ratio_sp_b
+        tf_r[index,:] = ratio_sp_r
+        
+        # generate some diagnostic plots if needed:
+        if (doplot):
+            fig1 = py.figure()
+            ax1_1 = fig1.add_subplot(311)
+
+            # first plot the template without extinction:
+            ax1_1.plot(lam_temp_opt,template_opt_ext_scale*correction_t,'k',alpha=0.5)
+            # then the template with extinction applied (both are scaled to mags):
+            ax1_1.plot(lam_temp_opt,template_opt_ext_scale,'k')
+
+            # now plot the SAMI data:
+            ax1_1.plot(lam_b,flux_b,'b')
+            ax1_1.plot(lam_r,flux_r,'r')
+            ax1_1.plot(lam_b,flux_b+5.0*sigma_b,':',color='b')
+            ax1_1.plot(lam_r,flux_r+5.0*sigma_r,':',color='r')
+            ax1_1.plot(lam_b,flux_b-5.0*sigma_b,':',color='b')
+            ax1_1.plot(lam_r,flux_r-5.0*sigma_r,':',color='r')
+
+            # then the template on the SAMI wavelength scale:
+            ax1_1.plot(lam_b,temp_flux_b,'c')
+            ax1_1.plot(lam_r,temp_flux_r,'m')
+            xmin = np.min(lam_b)-100.0
+            xmax = np.max(lam_r)+100.0
+            title = os.path.basename(path1)
+            ax1_1.set(xlim=[xmin,xmax],xlabel='Wavelength (Ang.)',ylabel='Relative flux',title=title)
+
+            # plot the ratios:
+            ax1_2 = fig1.add_subplot(312)
+            ax1_2.axhline(1.0,color='k')
+            ax1_2.plot(lam_b,ratio_b,'b')
+            ax1_2.plot(lam_r,ratio_r,'r')
+            ax1_2.plot(lam_b,median_filter_nan_1d(ratio_b,51),'g')
+            ax1_2.plot(lam_r,median_filter_nan_1d(ratio_r,51),'g')
+            # plot filtered stdev
+            ax1_2.plot(lam_b,median_filter_nan_1d(ratio_b,51)+ 5.0*median_filter_nan_1d(ratio_sig_b,51),':',color='g')
+            ax1_2.plot(lam_b,median_filter_nan_1d(ratio_b,51)- 5.0*median_filter_nan_1d(ratio_sig_b,51),':',color='g')
+            ax1_2.plot(lam_r,median_filter_nan_1d(ratio_r,51)+ 5.0*median_filter_nan_1d(ratio_sig_r,51),':',color='g')
+            ax1_2.plot(lam_r,median_filter_nan_1d(ratio_r,51)- 5.0*median_filter_nan_1d(ratio_sig_r,51),':',color='g')
+
+            ax1_2.set(xlim=[xmin,xmax],xlabel='Wavelength (Ang.)',ylabel='SAMI/template')
+
+            # plot the spline fits to the ratio:
+            ax1_2.plot(lam_b,ratio_sp_b,'c')
+            ax1_2.plot(lam_r,ratio_sp_r,'m')
+        
+            ax1_3 = fig1.add_subplot(313)
+            ax1_3.axhline(1.0,color='k')
+            ax1_3.plot(lam_b,ratio_sp_b,'c')
+            ax1_3.plot(lam_r,ratio_sp_r,'m')
+            ax1_3.set(xlim=[xmin,xmax],xlabel='Wavelength (Ang.)',ylabel='SAMI/template')
+
+        # write the TF to the individual frame header.  We will write this to a binary table
+        # as it makes it easier to know what the format is after the fact (i.e. all the
+        # columns have proper headings etc):
+        hdu_b = pf.open(path1,mode='update')
+        # remove old version of the FLUX_CALIBRATION2 extension:
+        try:
+            hdu_b.pop('FLUX_CALIBRATION2')
+        except KeyError:
+            print('no old FLUX_CALIBRATION2 extension found')
+
+        col1 = pf.Column(name='wavelength', format='E', array=lam_b)
+        col2 = pf.Column(name='flux', format='E', array=flux_b)
+        col3 = pf.Column(name='template', format='E', array=temp_flux_b)
+        col4 = pf.Column(name='transfer_fn', format='E', array=ratio_sp_b)
+        cols = pf.ColDefs([col1, col2, col3, col4])
+        hdutab = pf.BinTableHDU.from_columns(cols,name='FLUX_CALIBRATION2')
+        hdu_b.append(hdutab)
+        hdu_b.flush()
+        hdu_b.close()
+
+        # repeat for the red frame:
+        hdu_r = pf.open(path2,mode='update')
+        # remove old version of the FLUX_CALIBRATION2 extension:
+        try:
+            hdu_r.pop('FLUX_CALIBRATION2')
+        except KeyError:
+            print('no old FLUX_CALIBRATION2 extension found')
+
+        col1 = pf.Column(name='wavelength', format='E', array=lam_r)
+        col2 = pf.Column(name='flux', format='E', array=flux_r)
+        col3 = pf.Column(name='template', format='E', array=temp_flux_r)
+        col4 = pf.Column(name='transfer_fn', format='E', array=ratio_sp_r)
+        cols = pf.ColDefs([col1, col2, col3, col4])
+        hdutab = pf.BinTableHDU.from_columns(cols,name='FLUX_CALIBRATION2')
+        hdu_r.append(hdutab)
+        hdu_r.flush()
+        hdu_r.close()
+        
+
+        
+
+        nfiles = nfiles + 1
+        
+    # combine the different TFs together to get a mean TF for this field:
+    # TODO: consider more robust combination.  e.g. scale before combine,
+    # remove outliers etc.
+    tf_mean_b = np.nanmean(tf_b,axis=0)
+    tf_mean_r = np.nanmean(tf_r,axis=0)
+
+    # copy the TRANSFER2combined.fits file to the CCD_2 directory.
+    ccd2_path = os.path.dirname(path_list2[0])+'/'+os.path.basename(path_out)
+    print(path_out)
+    print(ccd2_path)
+    copyfile(path_out,ccd2_path)
+    
+    # write the tf_mean_b and tf_mean_r to the TRANSFER2combined.fits file.
+    # write it to a binary table:
+    hdu = pf.open(path_out,mode='update')
+    col1 = pf.Column(name='wavelength', format='E', array=lam_b)
+    col2 = pf.Column(name='tf_average', format='E', array=tf_mean_b)
+    cols = pf.ColDefs([col1, col2])
+    hdutab = pf.BinTableHDU.from_columns(cols,name='TF_MEAN')
+    hdu.append(hdutab)
+    hdu.flush()
+    hdu.close()
+    
+    # now for the red one:
+    hdu = pf.open(ccd2_path,mode='update')
+    col1 = pf.Column(name='wavelength', format='E', array=lam_r)
+    col2 = pf.Column(name='tf_average', format='E', array=tf_mean_r)
+    cols = pf.ColDefs([col1, col2])
+    hdutab = pf.BinTableHDU.from_columns(cols,name='TF_MEAN')
+    hdu.append(hdutab)
+    hdu.flush()
+    hdu.close()
+    
+    # plor the combined TFs:
+    if (doplot):
+        fig2 = py.figure()
+        ax2_1 = fig2.add_subplot(111)
+        ax2_1.axhline(1.0,color='k')
+        for i in range(nfiles):
+            ax2_1.plot(lam_b,tf_b[i,:],'c')
+            ax2_1.plot(lam_r,tf_r[i,:],'m')
+            
+        ax2_1.plot(lam_b,tf_mean_b,'b')
+        ax2_1.plot(lam_r,tf_mean_r,'r')
+        ax2_1.set(xlim=[xmin,xmax],xlabel='Wavelength (Ang.)',ylabel='SAMI/template')
+
+        
+    
+    return
+
+def apply_secondary_tf(path1,path2,path_out1,path_out2,use_av_tf=False,verbose=True,force=True):
+    """Apply a previously measured secondary transfer function to the spectral
+    data.  Optionally to use an average tranfer function.  force=True will force the
+    correction to be made even if it has already been done."""
+    
+    print('Applying secondary transfer function to ',path1,path2)
+
+    hdulist1 = pf.open(path1,mode='update')
+    hdulist2 = pf.open(path2,mode='update')
+    if (not force):
+        # check to see if done already.
+        try:
+            seccor = hdulist1[0].header['SECCOR']
+            if (seccor):
+                print('SECCOR keyword is True.  Not correcting ',path1)
+                hdulist1.close()
+                return
+        except KeyError:
+            seccor = False
+    
+        # also check if the red frame has been corrected already:
+        try:
+            seccor = hdulist2[0].header['SECCOR']
+            if (seccor):
+                print('SECCOR keyword is True.  Not correcting ',path2)
+                hdulist2.close()
+                return
+        except KeyError:
+            seccor = False
+
+        
+    # read TF from FLUX_CALIBRATION2 extension.
+    tf_b = hdulist1['FLUX_CALIBRATION2'].data['transfer_fn']
+    tf_r = hdulist2['FLUX_CALIBRATION2'].data['transfer_fn']
+
+    print(tf_b)
+    print(tf_r)
+
+    # if needed, read average TF from TRANSFER2combined.fits file.
+    if (use_av_tf):
+        hdulist_tf1 = pf.open(path_out1,mode='update')
+        tf_av_b = hdulist_tf1['TF_MEAN'].data['tf_average']
+        lam_av_b = hdulist_tf1['TF_MEAN'].data['wavelength']
+        
+        hdulist_tf2 = pf.open(path_out2,mode='update')
+        tf_av_r = hdulist_tf2['TF_MEAN'].data['tf_average']
+        lam_av_r = hdulist_tf2['TF_MEAN'].data['wavelength']
+
+        hdulist_tf1.close()
+        hdulist_tf2.close()
+        
+        # Need to think about how to scale the average - do we assume that the
+        # global scaling is correct - we probably should, we assume that for the rescale_frames()
+        # part.  If we are using the mean TF, then scale this so it has the same normalization
+        # as the individual TFs.  That is, we are only using the average TF to define the shape
+        # of the TF, not the normalization.
+        ratio_b = tf_b/tf_av_b
+        ratio_r = tf_r/tf_av_r
+
+        # average the ratios between reasonable wavelength ranges, not using the very ends
+        # that can move around a little more:
+        idx_b = np.where((lam_av_b>4500.0) & (lam_av_b<5500.0))  
+        idx_r = np.where((lam_av_r>6500.0) & (lam_av_r<7200.0))  
+        scale_b = np.nanmean(ratio_b[idx_b]) 
+        scale_r = np.nanmean(ratio_b[idx_r])
+
+        scale = (scale_b+scale_r)/2.0
+        
+        # generate
+        tf_av_b = tf_av_b * scale
+        tf_av_r = tf_av_r * scale
+        
+        if (verbose):
+            print('scale_b: ',scale_b)
+            print('scale_r: ',scale_r)
+    
+    # apply the TF to data and variance:
+    hdulist1[0].data /= tf_b
+    hdulist1['VARIANCE'].data /= tf_b**2
+
+    hdulist2[0].data /= tf_r
+    hdulist2['VARIANCE'].data /= tf_r**2
+        
+    # write FITS header keyword to say its done.
+    hdulist1[0].header['SECCOR'] = (True,'Flag to indicate correction by secondary flux cal')
+    hdulist2[0].header['SECCOR'] = (True,'Flag to indicate correction by secondary flux cal')
+
+    hdulist1.flush()
+    hdulist2.flush()
+    hdulist1.close()
+    hdulist2.close()
+        
+    return
 
 
+def read_flux_calibration_extension(infile,gettel=False):
+    """Read the FLUX_CALIBRATION extension for a secondary frame so we can
+    get the spectrum and any other things we need.  May not work with the 
+    format of a primary standard FLUX_CALIBRATION extension - need to check"""
+    
+    # open the file:
+    hdulist = pf.open(infile)
+    primary_header=hdulist['PRIMARY'].header
+
+    # read WCS:
+    crval1=primary_header['CRVAL1']
+    cdelt1=primary_header['CDELT1']
+    crpix1=primary_header['CRPIX1']
+    naxis1=primary_header['NAXIS1']
+    
+    # define wavelength array:
+    x=np.arange(naxis1)+1
+    L0=crval1-crpix1*cdelt1 #Lc-pix*dL        
+    lam=L0+x*cdelt1
+
+    # get data from FLUX_CALIBRATION extension:
+    fdata = hdulist['FLUX_CALIBRATION'].data
+    fc_header=hdulist['FLUX_CALIBRATION'].header
+        
+    if (gettel):
+        tel = fdata[5,:]
+        
+    flux = fdata[0, :]
+    sigma = fdata[2, :]
+
+    hdulist.close()
+    
+    if (gettel):
+        return lam,flux,sigma,tel        
+    else:
+        return lam,flux,sigma
+
+    
+###########################################################################
+# read in Krurucz from SDSS templates list.
+#
+def read_kurucz(infile,doplot=False,plot_iter=False,verbose=False):
+
+    # open the file:
+    hdulist = pf.open(infile)
+
+    # get the model info and mags:
+    table_data = hdulist[1].data
+    
+    # get individual model data cols:
+    model_name=table_data.field('MODEL')
+    model_feh =table_data.field('FEH')
+    model_teff =table_data.field('TEFF')
+    model_g =table_data.field('G')
+    model_mag =table_data.field('MAG')
+    
+    # now read in the actual model spectra:
+    model_flux = hdulist[0].data
+    nmodel,nlam = np.shape(model_flux)
+    if (verbose):
+        print('number of template models:',nmodel)
+        print('number of template wavelength bins:',nlam)
+
+    # and get the wavelength array;
+    primary_header=hdulist['PRIMARY'].header
+    crval1=primary_header['CRVAL1']
+    cdelt1=primary_header['CD1_1']
+    crpix1=primary_header['CRPIX1']
+    naxis1=primary_header['NAXIS1']
+    x=np.arange(naxis1)+1
+    L0=crval1-crpix1*cdelt1 #Lc-pix*dL        
+    lam=L0+x*cdelt1
+
+    # if plot requested, then do it:
+    if (doplot):
+        fig1 = py.figure()
+        ax1 = fig1.add_subplot(211)
+        ax2 = fig1.add_subplot(212)
+        for i in range(nmodel):
+            ax1.cla()
+            ax2.cla()
+            ax1.set(xlim=[3600,7000])
+            ax2.set(xlim=[3600,7000])
+            ax1.plot(lam,model_flux[i,:])
+            label = '[Fe/H]='+str(model_feh[i])+' Teff='+str(model_teff[i])+' G='+str(model_g[i]) 
+            ax1.text(0.5,1.1,label,verticalalignment='center',transform=ax1.transAxes)
+            if (i<(nmodel-1)):
+                label2 = '[Fe/H]='+str(model_feh[i+1])+' Teff='+str(model_teff[i+1])+' G='+str(model_g[i+1]) 
+                ax2.plot(lam,model_flux[i,:]/model_flux[i+1,:])
+                ax2.text(0.5,0.9,label+'/'+label2,verticalalignment='center',horizontalalignment='center',transform=ax2.transAxes)
+
+            py.draw()
+            if (plot_iter):
+                yn=input('continue?')
+
+    return lam, model_flux, model_feh, model_teff, model_g, model_mag
 
 
+def resample_templates(temp_lam1,temp_kur1,nrebin=10,verbose=False):
+    """Resample Kurucz high resolution model templates to power resolution to
+    make the fitting faster/easier."""
+
+    # factor to scale/zoom:
+    zfact = 1.0/float(nrebin)
+    
+    # set up arrays:
+    n_kur, n_lam_kur = np.shape(temp_kur1)
+    templates_kur1 = np.zeros((n_kur,int(n_lam_kur/nrebin)))
+    
+    # convolve templates to lower resolution to better match data:
+    lam_temp = zoom(temp_lam1,zfact)
+    for i in range(n_kur):
+        templates_kur1[i,:] = zoom(gaussian_filter1d(temp_kur1[i,:],float(nrebin)),zfact)
+
+    if (verbose):
+        print('template wavelength binsize:',lam_temp[1]-lam_temp[0])
+
+    return lam_temp,templates_kur1
+
+###############################################################################
+# spectres routine from: https://github.com/ACCarnall/SpectRes
+#
+def spectres(new_spec_wavs, old_spec_wavs, spec_fluxes, spec_errs=None):
+
+    """ 
+    Function for resampling spectra (and optionally associated uncertainties) onto a new wavelength basis.
+    Parameters
+    ----------
+    new_spec_wavs : numpy.ndarray
+        Array containing the new wavelength sampling desired for the spectrum or spectra.
+    old_spec_wavs : numpy.ndarray
+        1D array containing the current wavelength sampling of the spectrum or spectra.
+    spec_fluxes : numpy.ndarray
+        Array containing spectral fluxes at the wavelengths specified in old_spec_wavs, last dimension must correspond to the shape of old_spec_wavs.
+        Extra dimensions before this may be used to include multiple spectra.
+    spec_errs : numpy.ndarray (optional)
+        Array of the same shape as spec_fluxes containing uncertainties associated with each spectral flux value.
+    
+    Returns
+    -------
+    resampled_fluxes : numpy.ndarray
+        Array of resampled flux values, first dimension is the same length as new_spec_wavs, other dimensions are the same as spec_fluxes
+    resampled_errs : numpy.ndarray
+        Array of uncertainties associated with fluxes in resampled_fluxes. Only returned if spec_errs was specified.
+    """
+
+    # Generate arrays of left hand side positions and widths for the old and new bins
+    spec_lhs = np.zeros(old_spec_wavs.shape[0])
+    spec_widths = np.zeros(old_spec_wavs.shape[0])
+    spec_lhs = np.zeros(old_spec_wavs.shape[0])
+    spec_lhs[0] = old_spec_wavs[0] - (old_spec_wavs[1] - old_spec_wavs[0])/2
+    spec_widths[-1] = (old_spec_wavs[-1] - old_spec_wavs[-2])
+    spec_lhs[1:] = (old_spec_wavs[1:] + old_spec_wavs[:-1])/2
+    spec_widths[:-1] = spec_lhs[1:] - spec_lhs[:-1]
+
+    filter_lhs = np.zeros(new_spec_wavs.shape[0]+1)
+    filter_widths = np.zeros(new_spec_wavs.shape[0])
+    filter_lhs[0] = new_spec_wavs[0] - (new_spec_wavs[1] - new_spec_wavs[0])/2
+    filter_widths[-1] = (new_spec_wavs[-1] - new_spec_wavs[-2])
+    filter_lhs[-1] = new_spec_wavs[-1] + (new_spec_wavs[-1] - new_spec_wavs[-2])/2
+    filter_lhs[1:-1] = (new_spec_wavs[1:] + new_spec_wavs[:-1])/2
+    filter_widths[:-1] = filter_lhs[1:-1] - filter_lhs[:-2]
+
+    # Check that the range of wavelengths to be resampled_fluxes onto falls within the initial sampling region
+    # SMC change, allow new wavelength ranges that are outside the range of the old ones.
+    #if filter_lhs[0] < spec_lhs[0] or filter_lhs[-1] > spec_lhs[-1]:
+    #    raise ValueError("spectres: The new wavelengths specified must fall within the range of the old wavelength values.")
+
+    #Generate output arrays to be populated
+    resampled_fluxes = np.zeros(spec_fluxes[...,0].shape + new_spec_wavs.shape)
+
+    if spec_errs is not None:
+        if spec_errs.shape != spec_fluxes.shape:
+            raise ValueError("If specified, spec_errs must be the same shape as spec_fluxes.")
+        else:
+            resampled_fluxes_errs = np.copy(resampled_fluxes)
+
+    start = 0
+    stop = 0
+
+    # Calculate the new spectral flux and uncertainty values, loop over the new bins
+    for j in range(new_spec_wavs.shape[0]):
+
+        # Find the first old bin which is partially covered by the new bin
+        while spec_lhs[start+1] <= filter_lhs[j]:
+            start += 1
+
+        # Find the last old bin which is partially covered by the new bin
+        while spec_lhs[stop+1] < filter_lhs[j+1]:
+            stop += 1
+
+        # if there is not an overlap, then set the value to NaN:
+        # (SMC addition):
+        if ((start == 0) & (stop == 0)):
+            resampled_fluxes[...,j] = np.nan
+        # If the new bin falls entirely within one old bin the are the same the new flux and new error are the same as for that bin
+        elif stop == start:
+
+            resampled_fluxes[...,j] = spec_fluxes[...,start]
+            if spec_errs is not None:
+                resampled_fluxes_errs[...,j] = spec_errs[...,start]
+
+        # Otherwise multiply the first and last old bin widths by P_ij, all the ones in between have P_ij = 1 
+        else:
+
+            start_factor = (spec_lhs[start+1] - filter_lhs[j])/(spec_lhs[start+1] - spec_lhs[start])
+            end_factor = (filter_lhs[j+1] - spec_lhs[stop])/(spec_lhs[stop+1] - spec_lhs[stop])
+
+            spec_widths[start] *= start_factor
+            spec_widths[stop] *= end_factor
+
+            # Populate the resampled_fluxes spectrum and uncertainty arrays
+            resampled_fluxes[...,j] = np.sum(spec_widths[start:stop+1]*spec_fluxes[...,start:stop+1], axis=-1)/np.sum(spec_widths[start:stop+1])
+
+            if spec_errs is not None:
+                resampled_fluxes_errs[...,j] = np.sqrt(np.sum((spec_widths[start:stop+1]*spec_errs[...,start:stop+1])**2, axis=-1))/np.sum(spec_widths[start:stop+1])
+            
+            # Put back the old bin widths to their initial values for later use
+            spec_widths[start] /= start_factor
+            spec_widths[stop] /= end_factor
+
+
+    # If errors were supplied return the resampled_fluxes spectrum and error arrays
+    if spec_errs is not None:
+        return resampled_fluxes, resampled_fluxes_errs
+
+    # Otherwise just return the resampled_fluxes spectrum array
+    else: 
+        return resampled_fluxes
+
+
+def median_filter_nan(im,filt):
+    """Function to median filter an array with correction
+    for NaN values."""
+    
+    V = im.copy()
+    V[im!=im]=0
+    print(np.shape(V))
+    print(filt)
+    VV = median_filter(V,size=filt)
+
+    W = 0*im.copy()+1
+    W[im!=im] = 0
+    WW = median_filter(W,size=filt)
+
+    im_med = VV/WW
+
+    return im_med
+
+def median_filter_nan_1d(spec,filt):
+    """Function to median filter a 1D array with correction
+    for NaN values."""
+
+    n = np.size(spec)
+
+    medspec = np.zeros(n)
+
+    hsize = int(filt/2)
+    for i in range(n):
+
+        i1 = max(0,i-hsize)
+        i2 = min(n-1,i+hsize)
+
+        medspec[i] = np.nanmedian(spec[i1:i2])
+
+    return medspec

@@ -554,6 +554,31 @@ class Manager:
     and overwrite=True can be set to force re-processing of files that
     have already been done.
 
+    A option is to flux calibrate from the secondary stars.  This can 
+    have several advantages.  For example, it means that any residual 
+    extinction variations can be removed on a frame-by-frame basis.  It can
+    also provide better calibration when the pirmary standards have too much
+    scattered light in the blue.  This can cause PSF fitting problems and so
+    lead to some systematics at trhe far blue end (can be 10-20%).  To fit
+    using the secondaries we need to match the star to a model (Kurucz 
+    theoretical models) and we do this using ppxf to find the best model. 
+    The model used is a linear combination of the 4 templates closest in
+    Teff and [Fe/H] to the observed star.  The best template is estimated
+    from all the frames in the field.  This is then use to estimate
+    the transfer function for inditivual frames.  There is also an option
+    to average the TF across all the frames used.  The model star spectrum
+    is also scaled to the SDSS photometry so that application of the TF 
+    also does the equivalent of the scale_frames() proceedure, so this
+    should not need to be done if fluxcal_secondary() is used.
+
+    >>> mngr.fluxcal_secondary()
+
+    of if averaging:
+
+    >>> mngr.fluxcal_secondary(use_av_tf_sec=True)  (default)
+
+    >>> mngr.fluxcal_secondary(use_av_tf_sec=False)  (or not)
+
     Scaling frames
     ==============
 
@@ -812,6 +837,7 @@ class Manager:
         ('combine_transfer_function', True),
         ('flux_calibrate', True),
         ('telluric_correct', True),
+        ('fluxcal_secondary',True),
         ('scale_frames', True),
         ('measure_offsets', True),
         ('cube', True),
@@ -2197,6 +2223,79 @@ class Manager:
                 f.write(new)
         return
 
+    def fluxcal_secondary(self, overwrite=False, use_av_tf_sec = True, **kwargs):
+        """derive a flux calibration for individual frames based on the secondary std stars.
+        This is done with fits to stellar models using ppxf to get the correct stellar model"""
+
+        # Generate a list of frames to do fit the stellar models to.
+        # these are only for ccd_1 (not enough features in the red arm to
+        # make it useful).  The fits are done one frame at a time for all
+        # object frames and the best templates are written to the header
+        # of the frame.  Also write a header keyword to signify that the
+        # secondary correction has been done - keyword is SECCOR.
+        inputs_list = []
+        for fits_1 in self.files(ndf_class='MFOBJECT', do_not_use=False,
+                                 spectrophotometric=False, ccd='ccd_1',
+                                 name='main',**kwargs):
+            if (not overwrite and 'SECCOR' in
+                    pf.getheader(fits_1.telluric_path)):
+                # Already been done; skip to the next file
+                continue
+            inputs_list.append((fits_1.telluric_path))
+            
+        print(inputs_list)
+        
+        # fit each of the frames indivdually using ppxf, store the results
+        # (the best template(s) and possibly weights) in the headers.
+        # call to actually do the fitting:
+        self.map(fit_sec_template, inputs_list)
+ 
+        # group the data by field and/or std star (probably field).  Average
+        # The best templates or weights to determine the best model for the
+        # star in each field.
+        groups = self.group_files_by(('date', 'field_id', 'ccd'),
+                                     ndf_class='MFOBJECT', do_not_use=False,
+                                     ccd='ccd_1',
+                                     spectrophotometric=False, **kwargs)
+
+        for fits_list in groups.values():
+            #fits_1 = self.other_arm(fits_2)
+            #inputs_list.append((fits_1.telluric_path, fits_2.telluric_path))
+            # get the path list for all the ccd_1 frames in this group:
+            path_list = [fits.telluric_path for fits in fits_list]
+            # also get the equivalent list for the ccd_2 frames:
+            path_list2 = [self.other_arm(fits).telluric_path for fits in fits_list]
+            path_out = os.path.join(os.path.dirname(path_list[0]),
+                                    'TRANSFER2combined.fits')
+            path_out2 = os.path.join(os.path.dirname(path_list2[0]),
+                                    'TRANSFER2combined.fits')
+            if overwrite or not os.path.exists(path_out):
+                print('combined template weight into', path_out)
+                # now actually call the routine to combine the weights:
+                fluxcal2.combine_template_weights(path_list, path_out)
+   
+            # for each frame (red and blue) use the best template (gal extinction corrected)
+            # to derive a transfer function.  Write the transfer function to the data frame
+            # as a separate extension - FLUX_CALIBRATION2.  Also grouped by field, average
+            # the indivdual secondary calibrations to derive one per field.  This may be
+            # optional depending on how good invididual fits are.  Write the combined secondary
+            # TF to a separate file for each field.
+            fluxcal2.derive_secondary_tf(path_list,path_list2,path_out)
+
+            # by group now correct the spectra by applying the TF.  This can be done on a
+            # frame by frame basis, or by field.
+            for index, path1 in enumerate(path_list):
+                path2 = path_list2[index]
+                fluxcal2.apply_secondary_tf(path1,path2,path_out,path_out2,use_av_tf=use_av_tf_sec)
+        
+        # possibly set some QC stuff here...?
+
+        
+        self.next_step('fluxcal_secondary', print_message=True)
+        
+        return
+        
+    
     def scale_frames(self, overwrite=False, **kwargs):
         """Scale individual RSS frames to the secondary standard flux."""
         # First make the list of file pairs to scale
@@ -4984,6 +5083,19 @@ def scale_cubes_field(group):
         print('No photometric data found for', star)
     return
 
+
+@safe_for_multiprocessing
+def fit_sec_template(path):
+    """Fit theoretical templates to secondary calibration stars that have been
+    selected to be halo F-stars.  This uses ppxf and save the best template and
+    weight to the fits header."""
+    print('Fitting secondary star to templates: %s' % str(path))
+
+    # call the main template fitting routine for the given file:
+    fluxcal2.fit_sec_template_ppxf(path)
+    
+    
+    return
 
 @safe_for_multiprocessing
 def scale_frame_pair(path_pair):
