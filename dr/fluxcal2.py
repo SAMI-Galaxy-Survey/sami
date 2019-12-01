@@ -1640,7 +1640,7 @@ def median_filter_rotate(array, window):
     result[good[-1]+1:] = array[good[-1]+1:]
     return result
 
-def fit_sec_template_ppxf(path,doplot=False,verbose=True,tempfile='standards/kurucz_stds_raw_v5.fits',mdegree=8):
+def fit_sec_template_ppxf(path,doplot=False,verbose=False,tempfile='standards/kurucz_stds_raw_v5.fits',mdegree=8,lam1=3600.0,lam2=5700.0):
     """main routine that actually calls ppxf to do the fitting of the
     secondary flux calibration stars to model templates."""
 
@@ -1652,14 +1652,15 @@ def fit_sec_template_ppxf(path,doplot=False,verbose=True,tempfile='standards/kur
     lam_t,flux_t,sigma_t = read_flux_calibration_extension(path,gettel=False)
 
     # find the first and last good points in the spectrum as ppxf does not
-    # like nans:
+    # like nans.  Also only fit within lam1 and lam2 wavelengths.  This is
+    # particularly useful for ignoring the very ends, e.g. near dichroic.
     nlam = np.size(lam_t)
     for i in range(nlam):
-        if (np.isfinite(flux_t[i])):
+        if (np.isfinite(flux_t[i]) & (lam_t[i]>lam1)):
             istart = i
             break
     for i in reversed(range(nlam)):
-        if (np.isfinite(flux_t[i])):
+        if (np.isfinite(flux_t[i]) & (lam_t[i]<lam2)):
             iend = i
             break
 
@@ -1671,7 +1672,7 @@ def fit_sec_template_ppxf(path,doplot=False,verbose=True,tempfile='standards/kur
             nnan = nnan+1
 
     if (nnan > 0):
-        print('WARNING: extra NaNs found in spectrum from FLUX_CALIBRATION extension')
+        print('WARNING: extra NaNs found in spectrum from FLUX_CALIBRATION extension: ',path)
 
     # TODO: remove any extra nans!
         
@@ -1688,8 +1689,9 @@ def fit_sec_template_ppxf(path,doplot=False,verbose=True,tempfile='standards/kur
     flux = flux/medflux
     sigma = sigma/medflux
 
-    # log rebin input spectrum.  Returns the natural log (not log_10!!!)
-    # of wavelength values and resampled spectrum.
+    # log rebin input spectrum using the ppxf log_rebin() function.
+    # Returns the natural log (not log_10!!!) of wavelength values
+    # and resampled spectrum.
     lamrange = np.array([lam[0],lam[-1]])
     logflux, loglam, velscale = log_rebin(lamrange,flux)
     logsigma = log_rebin(lamrange,sigma)[0]
@@ -1704,6 +1706,8 @@ def fit_sec_template_ppxf(path,doplot=False,verbose=True,tempfile='standards/kur
     
     # process templates to get them ready for fitting:
     # first reduce their resolution and sampling, as they are much higher resolution than our data
+    # In principle we could do this differently for the red and blue arms, at least when getting
+    # the TF, if not fitting the best fit template.
     lam_temp, templates_kur1 = resample_templates(temp_lam1,temp_kur1,verbose=verbose)
 
     # get range of wavelength:
@@ -1787,7 +1791,7 @@ def fit_sec_template_ppxf(path,doplot=False,verbose=True,tempfile='standards/kur
     if (verbose):
         print(best_teff,best_teff2,best_feh,best_feh2)
         
-    # assign the 4 best templates aroud the best fit to an array for the
+    # assign the 4 best templates around the best fit to an array for the
     # final fit:
     n_best_temp = 0
     nn_best = np.zeros(4,dtype=int)
@@ -1843,7 +1847,7 @@ def fit_sec_template_ppxf(path,doplot=False,verbose=True,tempfile='standards/kur
                 
     return
 
-def combine_template_weights(path_list,path_out,verbose=True):
+def combine_template_weights(path_list,path_out,verbose=False):
     """look at all the weights from template fits to secondary std stars in
     separate frames in a given field and average the weights so we can derive
     a single optimal template for this star"""
@@ -1894,17 +1898,14 @@ def combine_template_weights(path_list,path_out,verbose=True):
     # find the average weight for each unique template:
     used_weights = np.zeros(nused_temp)
     for nt in range(nused_temp):
-        if (verbose):
-            print('template: ',used_temp[nt])
             
         for i in range(nf):
             for j in range(4):
                 if (temp_list[i,j] == used_temp[nt]):
                     used_weights[nt] = used_weights[nt] + weight_list[i,j]
-                    if (verbose):
-                        print(weight_list[i,j])
         used_weights[nt] = used_weights[nt]/float(nf)
-        print(used_temp[nt],used_weights[nt])
+        if (verbose):
+            print('template:',used_temp[nt],' weight: ',used_weights[nt])
 
     # finally, write the values to a binary table in the output file:
 
@@ -1921,7 +1922,7 @@ def combine_template_weights(path_list,path_out,verbose=True):
       
     return 
 
-def derive_secondary_tf(path_list,path_list2,path_out,tempfile='standards/kurucz_stds_raw_v5.fits',verbose=True,doplot=True):
+def derive_secondary_tf(path_list,path_list2,path_out,tempfile='standards/kurucz_stds_raw_v5.fits',verbose=False,doplot=True):
     """Use the best fit weights from template fits to secondary flux 
     calibration stars to derive a transfer function for each frame and
     write that to an extension in the data."""
@@ -1946,6 +1947,7 @@ def derive_secondary_tf(path_list,path_list2,path_out,tempfile='standards/kurucz
 
     # Reduce the template resolution and sampling, as they are much higher resolution than our data
     # (also done before fitting the templates):
+    # we may want to adjust this to better match the red and blue arms.
     lam_temp, templates_kur1 = resample_templates(temp_lam1,temp_kur1,verbose=verbose)
     n_kur, n_lam_kur = np.shape(templates_kur1)
 
@@ -1972,7 +1974,7 @@ def derive_secondary_tf(path_list,path_list2,path_out,tempfile='standards/kurucz
     catalogue = read_stellar_mags()
     std_parameters = catalogue[std_name]
     if (verbose):
-        print(std_name)
+        print('getting star parameters for: ',std_name)
         print(std_parameters)
     std_ra = std_parameters['ra']
     std_dec = std_parameters['dec']
@@ -2010,7 +2012,9 @@ def derive_secondary_tf(path_list,path_list2,path_out,tempfile='standards/kurucz
 
     template_opt_ext_scale = template_opt_ext/fluxscale
 
-    # recalculate the mags after scaling the photometry:
+    # recalculate the mags after scaling the photometry.  This is really just a check that
+    # the scaling was in the right direction.  We could just apply the offsets to all the
+    # mags.
     mag_temp2 = {}
     for band in bands:
         mag_temp2[band] = measure_band(band,template_opt_ext_scale,lam_temp_opt)
@@ -2020,7 +2024,7 @@ def derive_secondary_tf(path_list,path_list2,path_out,tempfile='standards/kurucz
         
     # write template to TEMPLATES2combined.fits file as the best template for this
     # field/star.  For this we need the resampled and redshifted flux with extinction
-    # and scaling added.  We can also write the nominal magnitudes are re-scaling
+    # and scaling added.  We can also write the nominal magnitudes that are re-scaled
     # to the combined g and r bands.  This will all go into an extension called
     # TEMPLATE_OPT.  This is written as a FITS binary table:
     col1 = pf.Column(name='wavelength', format='E', array=lam_temp_opt)
@@ -2059,12 +2063,15 @@ def derive_secondary_tf(path_list,path_list2,path_out,tempfile='standards/kurucz
 
         # resample the template spectrum onto the SAMI wavelength scale.
         # TODO: need to check whether the template wavelength scale is air or vacuum.  Its probably
-        # vacuum, so we should fix this up at an early stage, before we fit the velocity.
+        # vacuum, so we should fix this up at an early stage, before we fit the velocity.  However
+        # given that we fit the velocity anyway, to zeroth order the wavelength shift will be
+        # taken out.
         #
         # this internal SAMI resampling code does not see to work in this case:
         #temp_flux_b = rebin_flux(lam_b,lam_temp_opt,template_opt_ext_scale)
         #temp_flux_r = rebin_flux(lam_r,lam_temp_opt,template_opt_ext_scale)
-        # currently use an external resampling routine:
+        #
+        # currently use an external resampling routine and has been put into 
         temp_flux_b = spectres(lam_b,lam_temp_opt,template_opt_ext_scale)
         temp_flux_r = spectres(lam_r,lam_temp_opt,template_opt_ext_scale)
 
@@ -2074,7 +2081,7 @@ def derive_secondary_tf(path_list,path_list2,path_out,tempfile='standards/kurucz
 
         # get ratio errors:
         ratio_sig_b = sigma_b/temp_flux_b
-        ratio_sig_r = sigma_r * tel_r/temp_flux_r
+        ratio_sig_r = (sigma_r*tel_r)/temp_flux_r
 
         # fit the ratios
         ratio_sp_b = fit_spline_secondary(lam_b,ratio_b,ratio_sig_b,verbose=verbose)
@@ -2135,7 +2142,7 @@ def derive_secondary_tf(path_list,path_list2,path_out,tempfile='standards/kurucz
             ax1_3.plot(lam_r,ratio_sp_r,'m')
             ax1_3.set(xlim=[xmin,xmax],xlabel='Wavelength (Ang.)',ylabel='SAMI/template')
 
-        # write the TF to the individual frame header.  We will write this to a binary table
+        # write the TF to the individual frame.  We will write this to a binary table
         # as it makes it easier to know what the format is after the fact (i.e. all the
         # columns have proper headings etc):
         hdu_b = pf.open(path1,mode='update')
@@ -2174,8 +2181,6 @@ def derive_secondary_tf(path_list,path_list2,path_out,tempfile='standards/kurucz
         hdu_r.close()
         
 
-        
-
         nfiles = nfiles + 1
         
     # combine the different TFs together to get a mean TF for this field:
@@ -2186,12 +2191,11 @@ def derive_secondary_tf(path_list,path_list2,path_out,tempfile='standards/kurucz
 
     # copy the TRANSFER2combined.fits file to the CCD_2 directory.
     ccd2_path = os.path.dirname(path_list2[0])+'/'+os.path.basename(path_out)
-    print(path_out)
-    print(ccd2_path)
     copyfile(path_out,ccd2_path)
     
     # write the tf_mean_b and tf_mean_r to the TRANSFER2combined.fits file.
     # write it to a binary table:
+    # first blue:
     hdu = pf.open(path_out,mode='update')
     col1 = pf.Column(name='wavelength', format='E', array=lam_b)
     col2 = pf.Column(name='tf_average', format='E', array=tf_mean_b)
@@ -2211,7 +2215,7 @@ def derive_secondary_tf(path_list,path_list2,path_out,tempfile='standards/kurucz
     hdu.flush()
     hdu.close()
     
-    # plor the combined TFs:
+    # plot the combined TFs:
     if (doplot):
         fig2 = py.figure()
         ax2_1 = fig2.add_subplot(111)
@@ -2224,19 +2228,18 @@ def derive_secondary_tf(path_list,path_list2,path_out,tempfile='standards/kurucz
         ax2_1.plot(lam_r,tf_mean_r,'r')
         ax2_1.set(xlim=[xmin,xmax],xlabel='Wavelength (Ang.)',ylabel='SAMI/template')
 
-        
-    
     return
 
-def apply_secondary_tf(path1,path2,path_out1,path_out2,use_av_tf=False,verbose=True,force=True):
+def apply_secondary_tf(path1,path2,path_out1,path_out2,use_av_tf_sec=False,verbose=True,force=True):
     """Apply a previously measured secondary transfer function to the spectral
     data.  Optionally to use an average tranfer function.  force=True will force the
     correction to be made even if it has already been done."""
-    
-    print('Applying secondary transfer function to ',path1,path2)
 
+    # open files:
     hdulist1 = pf.open(path1,mode='update')
     hdulist2 = pf.open(path2,mode='update')
+
+    # if force=True, then we force the correction, even though its already been done.
     if (not force):
         # check to see if done already.
         try:
@@ -2263,11 +2266,8 @@ def apply_secondary_tf(path1,path2,path_out1,path_out2,use_av_tf=False,verbose=T
     tf_b = hdulist1['FLUX_CALIBRATION2'].data['transfer_fn']
     tf_r = hdulist2['FLUX_CALIBRATION2'].data['transfer_fn']
 
-    print(tf_b)
-    print(tf_r)
-
     # if needed, read average TF from TRANSFER2combined.fits file.
-    if (use_av_tf):
+    if (use_av_tf_sec):
         hdulist_tf1 = pf.open(path_out1,mode='update')
         tf_av_b = hdulist_tf1['TF_MEAN'].data['tf_average']
         lam_av_b = hdulist_tf1['TF_MEAN'].data['wavelength']
@@ -2294,6 +2294,7 @@ def apply_secondary_tf(path1,path2,path_out1,path_out2,use_av_tf=False,verbose=T
         scale_b = np.nanmean(ratio_b[idx_b]) 
         scale_r = np.nanmean(ratio_b[idx_r])
 
+        # have a single scaling for blue and red:
         scale = (scale_b+scale_r)/2.0
         
         # generate
@@ -2324,9 +2325,10 @@ def apply_secondary_tf(path1,path2,path_out1,path_out2,use_av_tf=False,verbose=T
 
 
 def read_flux_calibration_extension(infile,gettel=False):
-    """Read the FLUX_CALIBRATION extension for a secondary frame so we can
-    get the spectrum and any other things we need.  May not work with the 
-    format of a primary standard FLUX_CALIBRATION extension - need to check"""
+    """Read the FLUX_CALIBRATION extension for a science frame so we can
+    get the spectrum for secondary calibration and any other things we need.  
+    May not work with the format of a primary standard FLUX_CALIBRATION 
+    extension - need to check"""
     
     # open the file:
     hdulist = pf.open(infile)
