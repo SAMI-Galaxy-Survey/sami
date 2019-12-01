@@ -2243,8 +2243,6 @@ class Manager:
                 continue
             inputs_list.append((fits_1.telluric_path))
             
-        print(inputs_list)
-        
         # fit each of the frames indivdually using ppxf, store the results
         # (the best template(s) and possibly weights) in the headers.
         # call to actually do the fitting:
@@ -5089,7 +5087,6 @@ def fit_sec_template(path):
     """Fit theoretical templates to secondary calibration stars that have been
     selected to be halo F-stars.  This uses ppxf and save the best template and
     weight to the fits header."""
-    print('Fitting secondary star to templates: %s' % str(path))
 
     # call the main template fitting routine for the given file:
     fluxcal2.fit_sec_template_ppxf(path)
