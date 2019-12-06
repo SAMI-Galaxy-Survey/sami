@@ -5,13 +5,14 @@ Script for Reconstructing Covariance Matrix from file
 Please change settings in config_covar.py
 and then execute python gpcovariance_r2.py
 """
-from __future__ import print_function
+from __future__ import print_function, division
 import sys
 import os
 import numpy as np
 from astropy.io import fits as pf
 import astropy.wcs as pw
 from scipy import linalg
+from settings_sami import _Rfib_arcsec
 from .config_covar import *
 
 
@@ -35,11 +36,7 @@ class Covariance():
         self.Lpix = hdr['LPIX']
         self.pixscale = hdr['PIXSCALE']
         self.gpkernel_method = hdr['GPMETHOD']
-        try:
-            self.gpmarginalized = hdr['GPMARGINAL']
-        except:
-            print('WARNING: NO GPMARGINAL KEYWORD IN HEADER')
-            self.gpmarginalized = 'notdefined'
+        self.gpmarginalized = 'notdefined'
         self._cache_square_distances()
         self.hdr = hdr
 
@@ -75,6 +72,14 @@ class Covariance():
         res = (2 + np.cos(2*np.pi * D2/gamma))/3.*(1-D2/gamma) + 1/(2.*np.pi) * np.sin(2*np.pi*D2/gamma)
         res[D2>=gamma] = 0.
         return res
+
+    def _gpkernel_rational(self, D2, gamma):
+        ''' use rational quadratic, change alpha (currently set at at 2)
+        :param D2: pairwise square distances
+        :param gamma: kernel length scale
+        '''
+        alpha = 2.
+        return (1 + 0.25*D2/gamma**2/alpha)**(-alpha)
 
     def _gpkernel_wide(self, D2, gamma):
         """ use sersic profile or sigmoi multiplication
@@ -112,6 +117,24 @@ class Covariance():
         nu = 0.5 * np.sqrt(5) * np.sqrt(D2) / gamma      
         return (1 + nu + 0.25 * 5./3 * D2/gamma**2) * np.exp(-nu)
 
+    def _gpkernel_exp(self, D2, gamma):
+        ''' Exponentia; kernel
+        :param D2: pairwise square distances
+        :param gamma: kernel length scale
+        '''    
+        return np.exp(-0.5 * np.sqrt(D2)/gamma)
+
+    def _gpkernel_mix(self, D2, gamma):
+        ''' user specific mix of gp kernels
+        :param D2: pairwise square distances
+        :param gamma: kernel length scale
+        '''    
+        #beta = 4.7
+        #alpha = 4* 2/2.335 * gamma # 2* 2.335 * gamma
+        #norm = (beta - 1.0)/(np.pi * alpha**2)
+        #moffat = norm * (1.0 + (D2)/alpha**2)**(-beta)
+        return  np.exp(-0.125 * np.sqrt(D2)/gamma) * np.exp(-0.125 * D2/gamma**2) 
+
     def read_response_cube(self, filename):
         """ Read fits file and returns response matrix/cube, fibre data variance, and gamma 
         :param path: input path
@@ -119,10 +142,22 @@ class Covariance():
         """
         hdulist = pf.open(filename)
         resp = np.transpose(hdulist[0].data, (2,1,0))
-        variance = np.transpose(hdulist[1].data, (2,1,0))
+        variance = np.transpose(hdulist[1].data, (1,0))
         gamma = hdulist[2].data
+        gp0 = hdulist[3].data
+        gpoffset = hdulist[4].data
         hdulist.close()
-        return resp, variance, gamma
+        return resp, variance, gamma, gp0, gpoffset
+
+    def read_data_cube(self, filename):
+        """ Read fits file and returns cube with flux data
+        :param path: input path
+        :param filename: filename 
+        """
+        hdulist = pf.open(filename)
+        data = np.transpose(hdulist[0].data, (2,1,0))
+        hdulist.close()
+        return data
 
     def read_response_hdr(self, filename):
         """ Read fits file and returns response matrix/cube, fibre data variance, and gamma 

@@ -15,6 +15,7 @@ import numpy as np
 import matplotlib.pylab as plt
 from scipy import fftpack, interpolate, linalg, signal, optimize
 from scipy.ndimage.interpolation import shift as imshift
+from scipy.stats import norm as scipynorm
 from astropy.io import fits as pf
 import astropy.wcs as pw
 from astropy.modeling import models as astromodels
@@ -780,7 +781,7 @@ class DataFuse3D():
     as function of wavelength and number of independent observations.
     """
     def __init__(self, data, psf_params, coord, data_sigma = None , psf_params_sigma = None, 
-        coord_sigma = None, name = None, dar_cor = None, pixscale = 0.25, avgpsf = False, 
+        coord_sigma = None, name = None, dar_cor = None, pixscale = 0.5, avgpsf = False, 
         gcovar = False, gpmethod = 'squared_exp', _Nexp = 7,marginalize=False, gamma2psf = 0.5, logtrans = True):
         """
         :param data: callable accepting ndarrays of shape (N_obs, N_datapoints, N_wavelength)
@@ -832,7 +833,7 @@ class DataFuse3D():
             else:
                 raise ValueError("data_sigma array has not same shape as data array!")
         else: 
-             self.data_sigma = np.zeros_like(self.data) + 1e-9
+            self.data_sigma = np.zeros_like(self.data) + 1e-9
         if psf_params_sigma is not None:
             psf_params_sigma = np.asarray(psf_params_sigma)
             if psf_params_sigma.shape == psf_params.shape:
@@ -866,25 +867,24 @@ class DataFuse3D():
         self.gcovar = gcovar
         self.gpmethod = gpmethod
         self._Nexp = _Nexp
-        self.gpmethod = gpmethod
         self.logtrans = logtrans
         self.gamma2psf = gamma2psf
-        
+        self.gp0 = []
+        self.gpoffset = []
+               
         # calculate FWHM
         fwhm = moffat2fwhm(psf_params[0], psf_params[1])
 
         # set gamma to half of fwhm as function of wavelength, which has been shown to maximise likleihood
         # eventually include S/N ratio as well.
-        #print("Average Hyperparameter gamma:", self.gamma.mean())
-
         if not marginalize:
-            self.gamma =self.gamma2psf * np.nanmean(fwhm, axis=0) 
+            self.gamma = self.gamma2psf * np.nanmean(fwhm, axis=0) 
             print("Average Hyperparameter gamma:",self.gamma.mean())
         else:
             print("Marginalizing over hyperparameter gamma")
 
 
-    def fuseimage(self, wavenumber, wavenumber2 = None, Lpix = 50, plot = False, 
+    def fuseimage(self, wavenumber, wavenumber2 = None, Lpix = 50, plot = False,
                   show = False, covar = False, nresponse = 32, marginalize = False):
         """Function for transformation of fiber to image 
         : param wavenumber: spectral axis number, or lower end for binnning if wavenumber2 > 1
@@ -945,7 +945,8 @@ class DataFuse3D():
                 logL = model.logL_marg(hp = [alpha, beta, gamma], verbose=True)
             else:
                 logL = model.logL(hp = [alpha, beta, gamma])
-        self.gp0 = model.gp0
+        self.gp0 = np.append(self.gp0, model.gp0)
+        self.gpoffset = np.append(self.gpoffset, model.offset)
        # print("Mean FWHM of seeing:", 2*alpha.mean()  * np.sqrt(np.power(2.,1/beta.mean()) - 1))
        # print("Std FWHM of seeing:", np.std(2*alpha  * np.sqrt(np.power(2.,1/beta) - 1)))
        # model._Kxx = model._gpkernel(model.D2, gamma)
@@ -968,7 +969,7 @@ class DataFuse3D():
             plt.savefig('image_' + self.name + '_ew' + wavenumber +'.png')
             if show: plt.show()    
 
-        return model.scene, model.variance, model._A, model.covariance, model._K_gv, model._AK_gv, model._AKA_gv
+        return model.scene, model.variance, model._A, model.covariance, model._K_gv, model._AK_gv, model._AKA_gv, model.yvar_log
 
     
     def fusecube(self, Lpix = 50, binsize = 1, nresponse = 32,  silent = True, marginalize=True):
@@ -999,6 +1000,7 @@ class DataFuse3D():
         flux_cube=np.zeros((Lpix, Lpix, Nbins)) * np.nan
         var_cube=np.zeros((Lpix, Lpix, Nbins)) * np.nan
         resp_cube=np.zeros((self._Nexp * _Nfib, Lpix*Lpix, int(Nbins * binsize/nresponse))) * np.nan
+        self.logvar_fibre = np.zeros((_Nexp * _Nfib, Nbins)) * np.nan
         if self.gcovar:
             covar_cube = np.zeros((Lpix**2, Lpix**2, Nbins)) * np.nan
         else:
@@ -1031,11 +1033,11 @@ class DataFuse3D():
         for l in range(Nbins):
             print("wavelength slide:", self.wlow_vec[l], ' - ', self.wup_vec[l])
             if binsize > 1:
-                data_l, var_l, resp_l, covar_l, K_l, AK_l, AKA_l = self.fuseimage(self.wlow_vec[l], wavenumber2 = self.wup_vec[l], 
+                data_l, var_l, resp_l, covar_l, K_l, AK_l, AKA_l, logvar_l = self.fuseimage(self.wlow_vec[l], wavenumber2 = self.wup_vec[l], 
                                                                                   Lpix = Lpix, plot = False, covar = False, 
                                                                                   nresponse = nresponse, marginalize=marginalize)
             elif binsize == 1:
-                data_l, var_l, resp_l, covar_l, K_l, AK_l, AKA_l = self.fuseimage(self.wlow_vec[l], Lpix = Lpix, plot = False, 
+                data_l, var_l, resp_l, covar_l, K_l, AK_l, AKA_l, logvar_l = self.fuseimage(self.wlow_vec[l], Lpix = Lpix, plot = False, 
                                                                                   covar = False, nresponse = nresponse, marginalize=marginalize)
             ### optionally shift image in cube for additonal correction, comment out:
             #xdar_l = (self.coord[0, :, :, self.wlow_vec[l]:self.wup_vec[l]].mean() - self.RA_cen) / self.pixscale
@@ -1045,6 +1047,7 @@ class DataFuse3D():
             # or uncomment for no additional correction:
             flux_cube[:, :, l] = data_l 
             var_cube[:, :, l] = var_l 
+            self.logvar_fibre[:, l] = logvar_l
             if l * binsize % nresponse == 0:
                 resp_cube[:,:,int(l*binsize/nresponse)] = resp_l
                 self.resp0 = resp_l # use repsone matrix for runs till next interval
@@ -1439,9 +1442,10 @@ def write_response_cube(identifier, resp_cube, var_fibre, gamma, gp0, pixscale, 
     # of the axes in Numpy/Python.
     list_of_hdus = []
     list_of_hdus.append(pf.PrimaryHDU(np.transpose(resp_cube, (2,1,0)), hdr_new))
-    list_of_hdus.append(pf.ImageHDU(np.transpose(var_fibre, (2,1,0)), name='VARIANCE'))
+    list_of_hdus.append(pf.ImageHDU(np.transpose(var_fibre, (1,0)), name='VARIANCE'))
     list_of_hdus.append(pf.ImageHDU(gamma, name='GAMMA'))
     list_of_hdus.append(pf.ImageHDU(gp0, name='GP0'))
+    list_of_hdus.append(pf.ImageHDU(gpoffset, name='LOGOFF'))
     
     # Put individual HDUs into a HDU list
     hdulist = pf.HDUList(list_of_hdus)
@@ -1501,7 +1505,7 @@ def test_dar_solution(cubedata, cubevar, cubecovar, data, var, path_out, plot = 
     # print('idx0, idy0', idx0, idy0)
     rmax = np.round((14.7/2. - 3.2) / pixelarcsec).astype(int)
     # print('rmax:', rmax)
-    diff = (cubedata.shape[0]/2 - rmax)
+    diff = (cubedata2.shape[0]/2 - rmax)
     # print('diff:', diff)
     # Loop over wavelengths
     for i in range(nslides):
@@ -1660,6 +1664,159 @@ def test_dar_solution(cubedata, cubevar, cubecovar, data, var, path_out, plot = 
         # if show: plt.show()
 
     return flux, flux_total, fwhm, fwhm2, fwhm_err, fwhm2_err, s2n_cube, s2n_fibre
+
+def var_solution(cubedata, cubevar, data, var, xfibre, yfibre, path_out, plot = True, show = False, pixelarcsec = 0.5):
+   # cubedata2 = cubedata.copy()
+   # cubevar2 = cubevar.copy() 
+    s2n_cube = cubedata/np.sqrt(cubevar)
+   # cubedata2[(s2n_cube < 1.) | ~np.isfinite(s2n_cube) | (cubevar > 1e4)] = 0.
+   # cubevar[(s2n_cube < 1.) | ~np.isfinite(s2n_cube)| (cubevar > 1e4)] = np.nan
+    cdatasum = np.nanmean(cubedata, axis =2)
+    cvarsum = np.nanmean(cubevar, axis =2)
+    plt.clf()
+    plt.imshow(cdatasum)
+    plt.colorbar()
+    plt.title('Cube Data Sum')
+    plt.savefig(path_out + 'Cubeflux.png')
+    plt.clf()
+    plt.imshow(cvarsum)
+    plt.colorbar()
+    plt.title('Cube Var Sum')
+    plt.savefig(path_out+ 'Cubevar.png')
+    #Radial Profile
+    nslides = cubedata.shape[2]
+    npix = cubedata.shape[0]
+    cen_pos = np.zeros((2,nslides))
+    nslides = cubedata.shape[2]
+    npix = cubedata.shape[0]
+    #define pixel area to measure flux measurements, first define center:
+    idy0, idx0 = np.where(cubedata[:,:,int(nslides / 2)] == np.nanmax(cubedata[:,:,int(nslides / 2)]))
+    idx0, idy0 = idx0[0], idy0[0]
+    # print('idx0, idy0', idx0, idy0)
+    rmax = np.round((14.7/2. - 3.2) / pixelarcsec).astype(int)
+    y,x = np.indices((cdatasum.shape)) # first determine radii of all pixels
+    r = np.sqrt((x-idx0)**2+(y-idy0)**2)
+    ind = np.argsort(r.flat) # get sorted indices
+    sr = r.flat[ind] # sorted radii
+    sim = cdatasum.flat[ind] # image values sorted by radii
+    ri = sr.astype(np.int32) # integer part of radii (bin size = 1)
+    # determining distance between changes
+    deltar = ri[1:] - ri[:-1] # assume all radii represented
+    rind = np.where(deltar)[0] # location of changed radius
+    nr = rind[1:] - rind[:-1] # number in radius bin
+    csim = np.cumsum(sim, dtype=np.float64) # cumulative sum to figure out sums for each radii bin
+   # csim_var = np.nanstd(sim, dtype=np.float64) # cumulative sum to figure out sums for each radii bin
+    tbin = csim[rind[1:]] - csim[rind[:-1]] # sum for image values in radius bins
+    radial_data = tbin/nr 
+    # standard deviation
+    sim_std = np.zeros(tbin.shape[0]) 
+    for i in range(ri.max()-1):
+        sim_std[i] = np.nanstd(sim[ri == i+1])
+    sim_std[sim_std == 0.] = np.nan
+    # Calculate reconstructed variance:
+    sim2 = cvarsum.flat[ind]
+    csim2 = np.cumsum(sim2, dtype=np.float64)
+    tbin2 = csim2[rind[1:]] - csim2[rind[:-1]] # sum for image values in radius bins
+    radial_data2 = tbin2/nr # the answer
+
+    # Calculate from interpolated fibre data and variance
+    data_fibre = 1. * data.reshape(data.shape[0] * data.shape[1], data.shape[2])
+    var_fibre = 1. * var.reshape(data.shape[0] * data.shape[1], data.shape[2])
+    x_fib = 1. * xfibre.reshape(data.shape[0] * data.shape[1], data.shape[2])
+    y_fib = 1. * yfibre.reshape(data.shape[0] * data.shape[1], data.shape[2])
+    fdatamean = np.nanmean(data_fibre, axis =1)
+    fvarmean = np.nanmean(var_fibre, axis =1)
+    xmean = np.nanmean(x_fib, axis =1)
+    ymean = np.nanmean(y_fib, axis =1)
+
+    plt.clf()
+    plt.plot(np.log(abs(radial_data)), color='b',label='Data')
+    plt.plot(np.log(np.sqrt(radial_data2)), color='r',label='Sigma')
+    plt.plot(np.log(sim_std), color='k',label='Std Data')
+    plt.ylabel('Log Scale')
+    plt.title('Radial Profile')
+    plt.legend(loc = 1)
+    plt.savefig(path_out + 'Cubefluxvar_profile.png')
+    print('Mean Sigma/Data and Var/Data:', np.nanmean(np.sqrt(radial_data2[0:4])/radial_data[0:4]), np.nanmean(radial_data2[0:4]/radial_data[0:4]))
+    print('Mean Std_Data/Data and Var_data/Data:', np.nanmean(sim_std[0:4]/radial_data[0:4]), np.nanmean(sim_std[0:4]**2/radial_data[0:4]))
+
+    # plot offstar
+    flux = np.zeros((9,nslides))
+    flux_total = np.zeros(nslides)
+    fluxvar = np.zeros((9,nslides))
+    fluxvar_total =  np.zeros(nslides)
+    fwhm, fwhm2 = np.zeros(nslides), np.zeros(nslides)
+    fwhm_err, fwhm2_err = np.zeros(nslides), np.zeros(nslides)
+    # print('idx0, idy0', idx0, idy0)
+    rmax = np.round((14.7/2. - 3.2) / pixelarcsec).astype(int)
+    # print('rmax:', rmax)
+    diff = (cubedata.shape[0]/2 - rmax)
+    # print('diff:', diff)
+    # Loop over wavelengths
+    for i in range(nslides):
+        if np.isfinite(cubedata[:,:,i]).any() & (np.nanmean(cubevar[:,:,i]) < 25. * np.nanmean(cubevar)):
+            n = 0
+            for j in range(3):
+                for k in range(3):
+                    flux[n,i] = cubedata[idx0 -1 + j, idy0 -1 +k, i]
+                    fluxvar[n,i] = cubevar[idx0 -1 + j, idy0 -1 +k, i]
+                    n += 1
+            flux_total[i] = np.nansum(cubedata[idx0 - rmax : idx0 + rmax ,idy0 - rmax : idy0 + rmax, i])
+            fluxvar_total[i] = np.nansum(cubevar[idx0 - rmax : idx0 + rmax ,idy0 - rmax : idy0 + rmax, i])
+            # if flux_total[i]/np.sqrt(fluxvar_total[i]) < 1.:
+            #     flux_total[i] = np.nan
+            #     flux[:,i] = np.nan
+    plt.clf()
+    ax1 = plt.subplot(211)
+    #ax2.plot([1,nslides],[0. , 2*(flux0/flux_total).max() ], '.', alpha=0.)
+    #ax2.plot([1,nslides],[0. , flux.max() * 1.2], '.', alpha=0.)
+    #fluxa = np.zeros_like(flux)
+    #fluxa[np.isnan(fluxa)] = 0
+    for i in range(9):
+        ax1.plot(np.linspace(1,nslides, nslides), flux[i,:], color='k')
+    ax1.set_ylabel('Flux On-Peak')
+    ax2 = plt.subplot(212)
+    for i in range(9):
+        ax2.plot(np.linspace(1,nslides, nslides), fluxvar[i,:], color='k')
+    ax2.set_ylabel('Variance On-Peak')
+    ax2.set_xlabel('Wavelength Slice')
+    plt.savefig(path_out + 'Cubespectra_onstar.png')
+    # now set to off-star 
+    idx0 = idx0 + 10 # set to off-star position
+    for i in range(nslides):
+        if np.isfinite(cubedata[:,:,i]).any() & (np.nanmean(cubevar[:,:,i]) < 25. * np.nanmean(cubevar)):
+            n = 0
+            for j in range(3):
+                for k in range(3):
+                    flux[n,i] = cubedata[idx0 -1 + j, idy0 -1 +k, i]
+                    fluxvar[n,i] = cubevar[idx0 -1 + j, idy0 -1 +k, i]
+                    n += 1
+            flux_total[i] = np.nansum(cubedata[idx0 - rmax : idx0 + rmax ,idy0 - rmax : idy0 + rmax, i])
+            fluxvar_total[i] = np.nansum(cubevar[idx0 - rmax : idx0 + rmax ,idy0 - rmax : idy0 + rmax, i])
+            # if flux_total[i]/np.sqrt(fluxvar_total[i]) < 1.:
+            #     flux_total[i] = np.nan
+            #     flux[:,i] = np.nan
+    plt.clf()
+    ax1 = plt.subplot(211)
+    #ax2.plot([1,nslides],[0. , 2*(flux0/flux_total).max() ], '.', alpha=0.)
+    #ax2.plot([1,nslides],[0. , flux.max() * 1.2], '.', alpha=0.)
+    #fluxa = np.zeros_like(flux)
+    #fluxa[np.isnan(fluxa)] = 0
+    for i in range(9):
+        ax1.plot(np.linspace(1,nslides, nslides), flux[i,:], color='k')
+    ax1.set_ylabel('Flux Off-Peak')
+    ax2 = plt.subplot(212)
+    for i in range(9):
+        ax2.plot(np.linspace(1,nslides, nslides), fluxvar[i,:], color='k')
+    ax2.set_ylabel('Variance Off-Peak')
+    ax2.set_xlabel('Wavelength Slice')
+    plt.savefig(path_out + 'Cubespectra_offstar.png')
+
+    #### Data Consitency check that no flux is lost:
+    print('Sum Fibre Data (Var): ', np.nansum(data), np.nansum(var))
+    print('Sum Pixel Data (Var): ', np.nansum(cubedata) , np.nansum(cubevar))
+    return radial_data, radial_data2
+
 
 
 
