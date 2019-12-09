@@ -84,8 +84,8 @@ from ..config import millibar_to_mmHg
 from ..utils.fluxcal2_io import read_model_parameters, save_extracted_flux
 from .telluric2 import TelluricCorrectPrimary as telluric_correct_primary
 from . import dust
-from ..manager import read_stellar_mags
-from ..qc.fluxcal import measure_band
+#from ..manager import read_stellar_mags
+#from ..qc.fluxcal import measure_band
 
 try:
     from bottleneck import nansum, nanmean
@@ -1695,6 +1695,7 @@ def fit_sec_template_ppxf(path,doplot=False,verbose=False,tempfile='standards/ku
     lamrange = np.array([lam[0],lam[-1]])
     logflux, loglam, velscale = log_rebin(lamrange,flux)
     logsigma = log_rebin(lamrange,sigma)[0]
+    logsigma[np.isfinite(logsigma) == False] = np.nanmedian(logsigma)
     lam_gal = np.exp(loglam)
     if (verbose):
         print('Velocity scale after log rebinning: ',velscale)
@@ -1922,10 +1923,13 @@ def combine_template_weights(path_list,path_out,verbose=False):
       
     return 
 
-def derive_secondary_tf(path_list,path_list2,path_out,tempfile='standards/kurucz_stds_raw_v5.fits',verbose=False,doplot=True):
+def derive_secondary_tf(path_list,path_list2,path_out,tempfile='standards/kurucz_stds_raw_v5.fits',verbose=False,doplot=False):
     """Use the best fit weights from template fits to secondary flux 
     calibration stars to derive a transfer function for each frame and
     write that to an extension in the data."""
+
+    from ..manager import read_stellar_mags
+    from ..qc.fluxcal import measure_band
 
     print('Deriving secondary transfer function')
 
