@@ -838,7 +838,7 @@ class Manager:
         ('flux_calibrate', True),
         ('telluric_correct', True),
         ('fluxcal_secondary',True),
-        ('scale_frames', True),
+        #('scale_frames', True),
         ('measure_offsets', True),
         ('cube', True),
         #('scale_cubes', True),
@@ -2253,7 +2253,7 @@ class Manager:
         # star in each field.
         groups = self.group_files_by(('date', 'field_id', 'ccd'),
                                      ndf_class='MFOBJECT', do_not_use=False,
-                                     ccd='ccd_1',
+                                     ccd='ccd_1',name='main',
                                      spectrophotometric=False, **kwargs)
 
         for fits_list in groups.values():
@@ -2271,7 +2271,6 @@ class Manager:
                 print('combined template weight into', path_out)
                 # now actually call the routine to combine the weights:
                 fluxcal2.combine_template_weights(path_list, path_out)
-   
             # for each frame (red and blue) use the best template (gal extinction corrected)
             # to derive a transfer function.  Write the transfer function to the data frame
             # as a separate extension - FLUX_CALIBRATION2.  Also grouped by field, average
@@ -2284,7 +2283,7 @@ class Manager:
             # frame by frame basis, or by field.
             for index, path1 in enumerate(path_list):
                 path2 = path_list2[index]
-                fluxcal2.apply_secondary_tf(path1,path2,path_out,path_out2,use_av_tf=use_av_tf_sec)
+                fluxcal2.apply_secondary_tf(path1,path2,path_out,path_out2,use_av_tf_sec=use_av_tf_sec)
         
         # possibly set some QC stuff here...?
 
