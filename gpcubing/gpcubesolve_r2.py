@@ -291,9 +291,9 @@ class ResponseMatrix(object):
         fibre_accept = np.zeros((Lfft, Lfft))
         Lgrb, igrb = int(Lfft/rb), int((Lfft - Lfft/rb)/2)
         fibre_accept[igrb:igrb+Lgrb, igrb:igrb+Lgrb] = fibre_subsamp
-        #fibre_accept /= fibre_accept.sum() 
-        fibre_accept /= rb**2
-        psf_image /= psf_image.sum()
+        fibre_accept /= fibre_accept.sum() 
+        #fibre_accept /= rb**2
+        #psf_image /= psf_image.sum()
         
         t3 = time.time()
         vmsg("time to calculate fibre acceptance:  {:.3f} sec".format(t3-t2))
