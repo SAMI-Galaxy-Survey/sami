@@ -7,7 +7,7 @@ For non-optical-fibre instruments, change response matrix calculation
 # Constants for the SAMI instrument
 ####################################
 # Number of exposures(frames) and Fibres:
-_Nexp, _Nfib = 7, 61, #11
+_Nfib = 61, #11
 # Radius of individual SAMI fibres in arcseconds:
 _Rfib_arcsec = 0.798
 # Approximate plate scale:

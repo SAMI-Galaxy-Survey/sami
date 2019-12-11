@@ -1,6 +1,7 @@
 """
 Script for Reconstructing Covariance Matrix from file
-1 March 2018 Seb Haan
+Latest Change including marginalization over gamma
+Nov 2018 Seb Haan
 
 Please change settings in config_covar.py
 and then execute python gpcovariance_r2.py
@@ -12,24 +13,26 @@ import numpy as np
 from astropy.io import fits as pf
 import astropy.wcs as pw
 from scipy import linalg
+import yaml
 from settings_sami import _Rfib_arcsec
-from .config_covar import *
+from config_covar import *
 
 
 class Covariance():
     """
         Class for calculating the covariance matrix from saved components: 
         response matrix, GP gamma, and fibre data variance
-        See for more details gpcubesolve_r1.py for constructing cube and covariance
+        See for more details gpcubesolve.py for constructing cube and covariance
     """
     
-    def __init__(self, filename):
+    def __init__(self, filename, filename2):
         """ Readin of header information and calculate matrix distances
-        Can eventually be replaced with standalone __main__ and called with 'python gpcovariance path+filename'
+        Can eventually be replaced with standalone __main__ and called with 'python gpcovariance path+filename path+filename2'
         :param path: path for input file, string
         :param filename: filename, string
+        :param filename2: filename, string
         """
-        print("Reconstructing Covariance from file", filename)
+        print("Reconstructing Covariance from file", filename, 'and', filename2)
         hdr = self.read_response_hdr(filename)
         self.Nexp = hdr['NEXP']
         self.Nfib = hdr['NFIB']
@@ -170,21 +173,26 @@ class Covariance():
         return hdr
 
 
-    def calc_covar(self, resp, var, gamma, wavenumber):
+    def calc_covar(self, resp, var, gamma, gp0, gpoffset, ymean, wavenumber):
         """ Calculating covariance matrix from response matrix cube, fibre variance, and GP gamma 
         input must be obtained from read_response_cube()
         :param resp: response matrix or cube, shape = (Nfibre*Nexposure,Npix*Npix,Nwavelenth/Nresponse)
         :param var: variance of fibre data, shape= (Nexposure, Nfibre, Nwavelenth)
         :param gamma: GP lengthscale hyperparameter, shape= (Nwavelenth)
+        :param gp0: GP amplitude, shape= (Nwavelenth)
+        :param gpoffset: GP offset for log-transform of data, shape= (Nwavelenth)
+        :param ymean: GP amplitude, shape= (Nwavelenth)
         :param wavenumber: number of element on spectral axis for which to calculate covariance
         """
         print('Calculating reconstructed covariance matrix at spectral slice', wavenumber, '...')
         gamma = np.asarray(gamma)
-        Nresponse = len(gamma)/resp.shape[2]
+        Nresponse = int(len(gamma)/resp.shape[2])
+        nresp = int(wavenumber // Nresponse) - 1
         if len(gamma) % resp.shape[2] != 0:
             raise ValueError("length of gamma array is not multiple of binned spectral lenght of response cube!")
         if len(gamma) > wavenumber:
-            gamma_l = gamma[wavenumber]
+            gamma_l = np.nanmean(gamma[wavenumber:wavenumber + Nresponse ])
+            #gamma_l = gamma[nresp]
         else:
             raise ValueError("Wavenumber element must be smaller than length of gamma vector")
         # Nresponse is the integer number of steps that the response matrix has been calculated, default should be 32
@@ -204,52 +212,35 @@ class Covariance():
             gpKfunc = self._gpkernel
         Kxx = gpKfunc(self.D2, gamma_l)
         # calculate relative position of response matrix 
-        nresp = wavenumber // Nresponse
+        gp0_l = gp0[nresp]
         A = resp[:,:,nresp]
-        var_l = var[:,:,wavenumber]
-        var_l = var_l.reshape(self.Nexp * self.Nfib)
-        scene_cov = np.zeros((self.Lpix**2, self.Lpix**2))
-        if self.gpmarginalized == 'yes':
-            print('Marginalizing over GP lengthscale ... ')
-            self._gamvals = np.linspace(gamma_l * 0.2, 2.* gamma_l, 10)
-            w = 1./self._gamvals.shape[0]
-            self.scene_cov = np.zeros((self.Lpix**2, self.Lpix**2))
-            for g in self._gamvals:
-                K = gpKfunc(self.D2, g)
-                AK = np.dot(A, K)
-                AKA = np.dot(AK, A.T)
-                self._S = np.sqrt(np.mean(np.diag(AKA)))
-                err = var_l * self._S
-                Ky = AKA + np.diag(var_l**2)
-                Ky_chol = linalg.cholesky(Ky, lower=True)
-                V = linalg.solve_triangular(Ky_chol, AK, lower=True)
-                scene_cov += w**2 * (K - np.dot(V.T, V)) / self._S**2
-        elif self.gpmarginalized == 'no':
-            K = Kxx
-            AK = np.dot(A, K)
-            AKA = np.dot(AK, A.T)
-            self._S = np.sqrt(np.mean(np.diag(AKA)))
-            yerr = var_l * self._S
-            Ky = AKA + np.diag(yerr**2)
-            Ky_chol = linalg.cholesky(Ky, lower=True)
-            V = linalg.solve_triangular(Ky_chol, AK, lower=True)
-            scene_cov += w**2 * (K - np.dot(V.T, V)) / self._S**2
-        else:
-            print('No marginalisation keyword in header, instead using previous version')
-            Ky = np.dot(A, np.dot(Kxx, A.T)) + np.diag(var_l**2)
-            Ky_chol = linalg.cholesky(Ky, lower=True)
-            V = linalg.solve_triangular(Ky_chol, np.dot(A, Kxx), lower=True)
-            scene_cov = Kxx - np.dot(V.T, V)
+        var_l = var[:, nresp]
+        var_l = var_l.flatten()
+        var_l[np.isnan(var_l)] = 1.e9
+
+        ymean_w = ymean[:,:,nresp]
+        ymean_w = ymean_w.flatten() + gpoffset[nresp]
+        #offset = np.nanstd(y) # may need fixed standard deviation of entire data cube
+        #scene_cov = np.zeros((self.Lpix**2, self.Lpix**2))
+        Ky0 = np.dot(A, np.dot(Kxx, A.T)) 
+        Ky = gp0_l * Ky0  + np.diag(var_l + 1e-6)
+        Ky_chol = linalg.cholesky(Ky, lower=True)
+        V = linalg.solve_triangular(Ky_chol, np.dot(A, gp0_l * Kxx), lower=True)
+        log_cov = gp0_l * Kxx - np.dot(V.T, V)
+        scene_cov = np.dot(np.diag(ymean_w), np.dot(np.exp(log_cov), np.diag(ymean_w))) * (np.exp(log_cov) - 1.)
+        #scene_cov = np.outer(np.exp(log_gmean), np.exp(log_gmean)) * np.exp(log_cov) * (np.exp(log_cov) - 1.)
         return scene_cov
 
-
-    def calc_covar_pixel(self, resp, var, gamma, wavenumber, xypixel = None, reduced = False):
+    def calc_covar_pixel(self, resp, var, gamma, gp0, gpoffset, ymean, wavenumber, xypixel = None, reduced = False):
         """ Calculating covariance matrix from response matrix cube, fibre variance, and GP gamma
         for a given wavelength and pixel. 
         Input must be obtained from read_response_cube()
         :param resp: response matrix or cube, shape = (Nfibre*Nexposure,Npix*Npix,Nwavelenth/Nresponse)
         :param var: variance of fibre data, shape= (Nexposure, Nfibre, Nwavelenth)
         :param gamma: GP lengthscale hyperparameter, shape= (Nwavelenth)
+        :param gp0: GP amplitude, shape= (Nwavelenth)
+        :param gpoffset: GP offset for log-transform of data, shape= (Nwavelenth)
+        :param ymean: pixel flux, shape= (Npix,Npix)
         :param wavenumber: number of element on spectral axis for which to calculate covariance
         :param xypixel: (x,y) array row/coumn position of pixel for which covariance should be extracted, 
                         if None, entire covariance array between all pixels will be returned.
@@ -257,7 +248,8 @@ class Covariance():
                     if False, return full covariance between selected  pixel and all other pixel in image
         """
         # Calculate first entire covariance matrix for specified wavelength
-        res_covar = self.calc_covar(resp, var, gamma, wavenumber)
+        res_covar = self.calc_covar(resp, var, gamma, gp0, gpoffset, ymean, wavenumber)
+        # print('res_covar', res_covar)
         if xypixel is not None:
             xypixel = np.asarray(xypixel)
             if len(xypixel) == 2:
@@ -299,12 +291,12 @@ class Covariance():
             raise ValueError("Provide output filename")
         # Check if the object directory already exists or not.
         if fileformat == 'csv':
-            if not os.path.exists(filename_out) | overwrite:
+            if (not os.path.exists(filename_out)) | (overwrite):
                 np.savetxt(filename_out +'.csv', res_covar, delimiter=",")
         elif fileformat == 'fits':
             hdu = pf.PrimaryHDU(covar)
             hdu.header = self.hdr
-            hdu.writeto(filename_out +'.fits', clobber = overwrite)
+            hdu.writeto(filename_out +'.fits', overwrite = overwrite)
         else:
             print('Format for output file incorrect. Select csv or fits')
         # Filename to write to
@@ -316,14 +308,18 @@ if __name__ == "__main__":
     """
     reads in covariance file and writes reconstructed covariance at a certain wavelength slice to csv or fits file
     """
+
     if (xpix is not None) and (ypix is not None):
         xypixel = np.asarray([xpix, ypix]).astype(int)
     else:
         xypixel = None
-    covar = Covariance(inputfile)
+
+    covar = Covariance(inputfile, inputfile2)
     # Read response matix cube:
-    resp_c, var_c, gamma_c =  covar.read_response_cube(inputfile)
+    resp_c, var_c, gamma_c, gp0_c, gpoff_c =  covar.read_response_cube(inputfile)
+    # Read data matix cube:
+    ymean_c =  covar.read_data_cube(inputfile2)
     # Reconstruct covariance for one wavelength and pixel
-    res_covar = covar.calc_covar_pixel(resp_c, var_c, gamma_c, wavenumber = Nspectral, xypixel = xypixel, reduced = reduced)
+    res_covar = covar.calc_covar_pixel(resp_c, var_c, gamma_c, gp0_c, gpoff_c, ymean_c, wavenumber = Nspectral, xypixel = xypixel, reduced = reduced)
     # Write reconstructed covariance to fits or csv file
     covar.write_res(res_covar, outputfile, fileformat = fileformat, overwrite = True)

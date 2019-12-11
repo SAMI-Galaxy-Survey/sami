@@ -52,7 +52,7 @@ import time
 import numpy as np
 import matplotlib.pyplot as plt
 from sami.gpcubing import datafuse_r2 as df
-from sami.gpcubing import gpcovariance_r2 as gpcov
+from sami.gpcubing import gpcovariance_log as gpcov
 import matplotlib.pylab as plt
 import scipy
 
@@ -61,7 +61,7 @@ import scipy
 Specify parameters below for cubing:
 """
 
-def new_cube(fitslist,name,ccdband='blue',Lpix=25,pixscale=1.0,wavebin=1,responsebin=32,
+def new_cube(fitslist,name,ccdband='blue',Lpix=50,pixscale=0.5,wavebin=1,responsebin=32,
         path_out='/import/opus1/nscott/SAMI_Survey/new_cubes_output/',filename_ext='_50pix_05arcsec',
         write_fits=True,gamma2psf=0.4,logtrans=True,write_covar=False):
 
@@ -121,21 +121,10 @@ def new_cube(fitslist,name,ccdband='blue',Lpix=25,pixscale=1.0,wavebin=1,respons
                 path_out = path_out, filename_out = filename_out, overwrite = True, covar_mode = None, pixscale = pixscale)
         if write_covar:
             filename_out_covar=identifier +'_' + ccdband + filename_ext +'_gp_covar.fits'
-            if logtrans:
-                offset = np.nanstd(data, axis=(0,1)) # may need fixed standard deviation of entire data cube
-                offset[~np.isfinite(offset) | (offset ==0)] = 0.1
-                y_temp = np.zeros_like(data)
-                for i in range(data.shape[2]):
-                    y_sel = data[:,:,i]
-                    y_sel[y_sel<=-offset[i]/2.] = -offset[i]/2.
-                    y_temp[:,:,i] = y_sel
-                variance2 =  variance/(y_temp + offset)**2
-            else:
-                variance2 = variance
-            df.write_response_cube(identifier, resp_cube, variance2, fuse.gamma, fuse.gp0, 
-                                    pixscale, Lpix, gpmethod,marginalize, 
-                                   path_out = path_out, filename_out = filename_out_covar, 
-                                   overwrite = True, _Nexp = _Nexp)
+            df.write_response_cube(identifier, resp_cube, fuse.logvar_fibre, fuse.gamma, fuse.gp0, 
+                                    fuse.gpoffset, pixscale, Lpix, gpmethod, marginalize, 
+                                    path_out = path_out, filename_out = filename_out_covar, 
+                                    overwrite = True, _Nexp = _Nexp)
 
 
 
