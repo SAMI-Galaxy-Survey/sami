@@ -683,7 +683,7 @@ class GPModel(SliceView):
         else:
             A = self._A
             
-        self._Kxx = self._Kxx #* self._S
+        #self._Kxx = self._Kxx #* self._S
         Ky0 = np.dot(self._A, np.dot(self._Kxx, self._A.T)) 
         y, yerr = self.fibflux.copy()  , self.fibfluxerr.copy()\
 
@@ -695,6 +695,8 @@ class GPModel(SliceView):
             y[y<=-self.offset/2.] = -self.offset/2.
             y_log = np.log(self.offset + y)
             yvar_log =  yerr**2/(self.offset + y)**2
+            # save for convarince recontrsuction later
+            self.yvar_log = yvar_log * 1.
             ## Subtract mean of log 
             #self.y_logmean = np.nanmean(y_log) # previous default, need to be changed
             self.y_logmean = np.median(y_log[np.isfinite(y_log)]) # previous default, need to be changed
@@ -731,6 +733,7 @@ class GPModel(SliceView):
             Ky =  self.gp0 * Ky0 + np.diag(yerr**2)
             self._Ky_chol = linalg.cholesky(Ky, lower=True) # Shape(427,427)
             self._u = linalg.solve_triangular(self._Ky_chol, y, lower=True)
+            self.yvar_log = yerr * 0.
 
         self._V = linalg.solve_triangular(self._Ky_chol, np.dot(self._A , self.gp0 * self._Kxx), lower=True)
         #self._ucorr = linalg.solve_triangular(self._Ky_chol, np.ones_like(y), lower=True)
