@@ -838,7 +838,7 @@ class Manager:
         ('flux_calibrate', True),
         ('telluric_correct', True),
         ('fluxcal_secondary',True),
-        #('scale_frames', True),
+        ('scale_frames', True),
         ('measure_offsets', True),
         ('cube', True),
         #('scale_cubes', True),
@@ -1985,9 +1985,11 @@ class Manager:
         return reduced_files
 
     def derive_transfer_function(self,
-                                 overwrite=False, model_name='ref_centre_alpha_dist_circ_hdratm',
+                                 overwrite=False, model_name='ref_centre_alpha_circ_hdratm',
                                  smooth='spline', **kwargs):
         """Derive flux calibration transfer functions and save them."""
+        # modified model name to be the version that takes ZD from header values, not
+        # fitted.  This is because the fitting is not always robust for ZD.
         inputs_list = []
         for fits in self.files(ndf_class='MFOBJECT', do_not_use=False,
                                spectrophotometric=True, ccd='ccd_1', **kwargs):
@@ -2278,6 +2280,7 @@ class Manager:
                 print('combined template weight into', path_out)
                 # now actually call the routine to combine the weights:
                 fluxcal2.combine_template_weights(path_list, path_out)
+   
             # for each frame (red and blue) use the best template (gal extinction corrected)
             # to derive a transfer function.  Write the transfer function to the data frame
             # as a separate extension - FLUX_CALIBRATION2.  Also grouped by field, average
