@@ -1298,10 +1298,11 @@ def rebin_flux(target_wavelength, source_wavelength, source_flux):
     return rebinneddata
 
 
-def calc_eff_airmass(header):
+def calc_eff_airmass(header,return_zd=False):
     """Calculate the effective airmass using observatory location, coordinates 
     and time.  This makes use of various astropy functions.  The input is 
-    a primary FITS header for a standard frame.
+    a primary FITS header for a standard frame.  If return_zd = True, then
+    return the effective ZD rather than airmass.
     """
     # this should really go into fluxcal, but there seems to be problems with
     # imports as this is also called from the ifu class that is within utils.
@@ -1363,6 +1364,10 @@ def calc_eff_airmass(header):
     # get effective airmass by simpsons rule integration:
     airmass_eff = ( airmass1 + 4. * airmass_mid + airmass2 ) / 6.
 
+    # if needed get effective ZD:
+    if (return_zd):
+        zd_eff = ( zd1 + 4. * zd_mid + zd2 ) / 6.
+        
     #print('effective airmass:',airmass_eff)
     #print('ZD start:',zdstart)
     #print('ZD start (calculated):',zd1)
@@ -1377,8 +1382,10 @@ def calc_eff_airmass(header):
         alt1 = 90.0-zdstart
         airmass_eff = 1./ ( np.sin( ( alt1 + 244. / ( 165. + 47 * alt1**1.1 )
                                 ) / 180. * np.pi ) )
-
-    return airmass_eff
+    if (return_zd):
+        return zd_eff
+    else:
+        return airmass_eff
 
 
 def remove_atmosphere(ifu):
@@ -1592,8 +1599,10 @@ def set_fixed_parameters(path_list, model_name, probenum=None):
         fixed_parameters['vapour_pressure'] = vapour_pressure
     if model_name == 'ref_centre_alpha_circ_hdratm':
         # Should take into account variation over course of observation
-        # instead of just using the start value
-        fixed_parameters['zenith_distance'] = np.deg2rad(header['ZDSTART'])
+        # instead of just using the start value, which we do here:
+        zd_eff = calc_eff_airmass(header,return_zd=True)
+        fixed_parameters['zenith_distance'] = np.deg2rad(zd_eff)
+        #fixed_parameters['zenith_distance'] = np.deg2rad(header['ZDSTART'])
     return fixed_parameters
 
 def check_psf_parameters(psf_parameters, chunked_data):
@@ -1922,7 +1931,7 @@ def combine_template_weights(path_list,path_out,verbose=False):
       
     return 
 
-def derive_secondary_tf(path_list,path_list2,path_out,tempfile='standards/kurucz_stds_raw_v5.fits',verbose=False,doplot=True):
+def derive_secondary_tf(path_list,path_list2,path_out,tempfile='standards/kurucz_stds_raw_v5.fits',verbose=False,doplot=False):
     """Use the best fit weights from template fits to secondary flux 
     calibration stars to derive a transfer function for each frame and
     write that to an extension in the data."""
@@ -2122,13 +2131,14 @@ def derive_secondary_tf(path_list,path_list2,path_out,tempfile='standards/kurucz
             ax1_2.axhline(1.0,color='k')
             ax1_2.plot(lam_b,ratio_b,'b')
             ax1_2.plot(lam_r,ratio_r,'r')
-            ax1_2.plot(lam_b,median_filter_nan_1d(ratio_b,51),'g')
-            ax1_2.plot(lam_r,median_filter_nan_1d(ratio_r,51),'g')
+            # don't plot these as they take some time to generate:
+            #ax1_2.plot(lam_b,median_filter_nan_1d(ratio_b,51),'g')
+            #ax1_2.plot(lam_r,median_filter_nan_1d(ratio_r,51),'g')
             # plot filtered stdev
-            ax1_2.plot(lam_b,median_filter_nan_1d(ratio_b,51)+ 5.0*median_filter_nan_1d(ratio_sig_b,51),':',color='g')
-            ax1_2.plot(lam_b,median_filter_nan_1d(ratio_b,51)- 5.0*median_filter_nan_1d(ratio_sig_b,51),':',color='g')
-            ax1_2.plot(lam_r,median_filter_nan_1d(ratio_r,51)+ 5.0*median_filter_nan_1d(ratio_sig_r,51),':',color='g')
-            ax1_2.plot(lam_r,median_filter_nan_1d(ratio_r,51)- 5.0*median_filter_nan_1d(ratio_sig_r,51),':',color='g')
+            #ax1_2.plot(lam_b,median_filter_nan_1d(ratio_b,51)+ 5.0*median_filter_nan_1d(ratio_sig_b,51),':',color='g')
+            #ax1_2.plot(lam_b,median_filter_nan_1d(ratio_b,51)- 5.0*median_filter_nan_1d(ratio_sig_b,51),':',color='g')
+            #ax1_2.plot(lam_r,median_filter_nan_1d(ratio_r,51)+ 5.0*median_filter_nan_1d(ratio_sig_r,51),':',color='g')
+            #ax1_2.plot(lam_r,median_filter_nan_1d(ratio_r,51)- 5.0*median_filter_nan_1d(ratio_sig_r,51),':',color='g')
 
             ax1_2.set(xlim=[xmin,xmax],xlabel='Wavelength (Ang.)',ylabel='SAMI/template')
 
@@ -2230,7 +2240,7 @@ def derive_secondary_tf(path_list,path_list2,path_out,tempfile='standards/kurucz
 
     return
 
-def apply_secondary_tf(path1,path2,path_out1,path_out2,use_av_tf_sec=False,verbose=True,force=True):
+def apply_secondary_tf(path1,path2,path_out1,path_out2,use_av_tf_sec=False,verbose=False,force=False):
     """Apply a previously measured secondary transfer function to the spectral
     data.  Optionally to use an average tranfer function.  force=True will force the
     correction to be made even if it has already been done."""
