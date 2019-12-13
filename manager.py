@@ -2140,7 +2140,12 @@ class Manager:
                 PS_spec_file = None
                 scale_PS_by_airmass = False
                 if model_name is None:
-                    model_name_out = 'ref_centre_alpha_dist_circ_hdratm'
+#                    model_name_out = 'ref_centre_alpha_dist_circ_hdratm'
+                    # in some case the fit of the model does not do a good job of
+                    # getting the zenith distance.  A more reliable fit is
+                    # obtained when we instead use the ZD based on the atmosphere
+                    # fully, not just the direction:
+                    model_name_out = 'ref_centre_alpha_circ_hdratm'
                 else:
                     model_name_out = model_name
             inputs_list.append({
@@ -2223,9 +2228,11 @@ class Manager:
                 f.write(new)
         return
 
-    def fluxcal_secondary(self, overwrite=False, use_av_tf_sec = True, **kwargs):
+    def fluxcal_secondary(self, overwrite=False, use_av_tf_sec = True,force=False, **kwargs):
         """derive a flux calibration for individual frames based on the secondary std stars.
-        This is done with fits to stellar models using ppxf to get the correct stellar model"""
+        This is done with fits to stellar models using ppxf to get the correct stellar model.
+        If force=True, we will apply the correction even if the SECCOR keyword is set to 
+        True."""
 
         # Generate a list of frames to do fit the stellar models to.
         # these are only for ccd_1 (not enough features in the red arm to
@@ -2253,7 +2260,7 @@ class Manager:
         # star in each field.
         groups = self.group_files_by(('date', 'field_id', 'ccd'),
                                      ndf_class='MFOBJECT', do_not_use=False,
-                                     ccd='ccd_1',name='main',
+                                     ccd='ccd_1',
                                      spectrophotometric=False, **kwargs)
 
         for fits_list in groups.values():
@@ -2283,7 +2290,7 @@ class Manager:
             # frame by frame basis, or by field.
             for index, path1 in enumerate(path_list):
                 path2 = path_list2[index]
-                fluxcal2.apply_secondary_tf(path1,path2,path_out,path_out2,use_av_tf_sec=use_av_tf_sec)
+                fluxcal2.apply_secondary_tf(path1,path2,path_out,path_out2,use_av_tf_sec=use_av_tf_sec,force=force)
         
         # possibly set some QC stuff here...?
 
