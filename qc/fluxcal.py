@@ -934,7 +934,15 @@ def measure_band(band, flux, wavelength, sdss_dir='./sdss/'):
         warnings.filterwarnings('ignore', r'invalid value', RuntimeWarning)
         flux_band = (np.sum(delta_wl * wl_m * filter_interpolated * flux_wm3) /
                      np.sum(delta_wl * wl_m * filter_interpolated * flux_zero))
-    return -2.5 * np.log10(flux_band)
+    #
+    mag =  -2.5 * np.log10(flux_band)
+    # correct to SDSS mags which are a little off AB:
+    if (band == 'u'):
+        mag = mag + 0.04
+    if (band == 'z'):
+        mag = mag - 0.02
+    
+    return mag
 
 def measure_mags(flux, noise, wavelength):
     """Do clipping and interpolation, then return g and r band mags."""
