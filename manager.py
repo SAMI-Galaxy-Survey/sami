@@ -2262,7 +2262,7 @@ class Manager:
         # star in each field.
         groups = self.group_files_by(('date', 'field_id', 'ccd'),
                                      ndf_class='MFOBJECT', do_not_use=False,
-                                     ccd='ccd_1',
+                                     ccd='ccd_1',name='main',
                                      spectrophotometric=False, **kwargs)
 
         for fits_list in groups.values():
@@ -2289,18 +2289,19 @@ class Manager:
             # TF to a separate file for each field.
             fluxcal2.derive_secondary_tf(path_list,path_list2,path_out)
 
-            # put the actual SDSS/VST mags for the secondary star into the FLUX_CALIBRATION
-            # HDU.  This is also done in the scale_frames() function, but as scale_frames()
-            # is not used when doing secondary calibration, we do it here instead.
-            star = pf.getval(path_list, 'STDNAME', 'FLUX_CALIBRATION')
-            found = assign_true_mag([path_list,path_list2], star, catalogue=None,
-                            hdu='FLUX_CALIBRATION')
-
             # by group now correct the spectra by applying the TF.  This can be done on a
             # frame by frame basis, or by field.
             for index, path1 in enumerate(path_list):
                 path2 = path_list2[index]
                 fluxcal2.apply_secondary_tf(path1,path2,path_out,path_out2,use_av_tf_sec=use_av_tf_sec,force=force)
+                
+                # put the actual SDSS/VST mags for the secondary star into the FLUX_CALIBRATION
+                # HDU.  This is also done in the scale_frames() function, but as scale_frames()
+                # is not used when doing secondary calibration, we do it here instead.
+                star = pf.getval(path1, 'STDNAME', 'FLUX_CALIBRATION')
+                found = assign_true_mag([path1,path2], star, catalogue=None,
+                                hdu='FLUX_CALIBRATION')
+
         
         # possibly set some QC stuff here...?
 
