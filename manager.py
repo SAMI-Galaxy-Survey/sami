@@ -2230,7 +2230,7 @@ class Manager:
                 f.write(new)
         return
 
-    def fluxcal_secondary(self, overwrite=False, use_av_tf_sec = True,force=False, **kwargs):
+    def fluxcal_secondary(self, overwrite=False, use_av_tf_sec = True,force=False,verbose=False, minexp=600.0,**kwargs):
         """derive a flux calibration for individual frames based on the secondary std stars.
         This is done with fits to stellar models using ppxf to get the correct stellar model.
         If force=True, we will apply the correction even if the SECCOR keyword is set to 
@@ -2287,7 +2287,7 @@ class Manager:
             # the indivdual secondary calibrations to derive one per field.  This may be
             # optional depending on how good invididual fits are.  Write the combined secondary
             # TF to a separate file for each field.
-            fluxcal2.derive_secondary_tf(path_list,path_list2,path_out)
+            fluxcal2.derive_secondary_tf(path_list,path_list2,path_out,verbose=verbose,minexp=minexp)
 
             # by group now correct the spectra by applying the TF.  This can be done on a
             # frame by frame basis, or by field.
