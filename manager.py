@@ -2301,6 +2301,36 @@ class Manager:
                 star = pf.getval(path1, 'STDNAME', 'FLUX_CALIBRATION')
                 found = assign_true_mag([path1,path2], star, catalogue=None,
                                 hdu='FLUX_CALIBRATION')
+                
+                # also write the SDSS/VST mags to the TRANSFER2combined.fits if this is the first frame,
+                # don't need to repeat every time.  For completeness, do this for red and blue arms,
+                # although really only need it on one of them.
+                if (index == 0):
+                    stdname = pf.getval(path1,'STDNAME',extname='FLUX_CALIBRATION')
+                    hdulist1 = pf.open(path_out, 'update')
+                    hdulist2 = pf.open(path_out2, 'update')
+                    hdu = 'TEMPLATE_OPT'
+                    for band in 'ugriz':
+                        starmag = pf.getval(path1,'CATMAG'+ band.upper(),extname='FLUX_CALIBRATION')
+                        hdulist1[hdu].header['CATMAG' + band.upper()] = (starmag, band + ' mag from catalogue')
+                        hdulist2[hdu].header['CATMAG' + band.upper()] = (starmag, band + ' mag from catalogue')
+                    hdulist1[hdu].header['STDNAME'] = (stdname,'Name of standard star')
+                    hdulist2[hdu].header['STDNAME'] = (stdname,'Name of standard star')
+                    hdulist1.flush()
+                    hdulist2.flush()
+                    hdulist1.close()
+                    hdulist2.close()
+
+
+                
+
+
+                
+                umag = pf.getval(path1,'CATMAGU',extname='FLUX_CALIBRATION')
+                gmag = pf.getval(path1,'CATMAGG',extname='FLUX_CALIBRATION')
+                rmag = pf.getval(path1,'CATMAGR',extname='FLUX_CALIBRATION')
+                imag = pf.getval(path1,'CATMAGI',extname='FLUX_CALIBRATION')
+                zmag = pf.getval(path1,'CATMAGZ',extname='FLUX_CALIBRATION')
 
         
         # possibly set some QC stuff here...?
