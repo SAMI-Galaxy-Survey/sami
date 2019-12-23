@@ -1037,8 +1037,9 @@ def fit_spline(wavelength, ratio, mf_av=False,tell_corr_primary=False):
 
 def fit_spline_secondary(wavelength, ratio,sigma,nbins=40,nsig=5.0,verbose=False,medsize=51):
     """Fit a smoothing spline to the data, and return the fit."""
-    # Do the fit in terms of 1.0 / ratio, because it seems to give better
-    # results.
+    # for this one, we do NOT fit in terms of 1/ratio, as the ratio is defined
+    # as data/model.  The main issue can be that the data can be noisy or go below zero
+    # but the model does not.
 
     nspec = np.size(ratio)
 
@@ -1067,8 +1068,8 @@ def fit_spline_secondary(wavelength, ratio,sigma,nbins=40,nsig=5.0,verbose=False
 
     # do the fit
     spline = LSQUnivariateSpline(
-        wavelength[good], 1.0/ratio[good], knots[1:-1])
-    fit = 1.0 / spline(wavelength)
+        wavelength[good], ratio[good], knots[1:-1])
+    fit = spline(wavelength)
 
     if (verbose):
         print('knots: ',spline.get_knots())
@@ -1932,10 +1933,12 @@ def combine_template_weights(path_list,path_out,verbose=False):
       
     return 
 
-def derive_secondary_tf(path_list,path_list2,path_out,tempfile='standards/kurucz_stds_raw_v5.fits',verbose=False,doplot=False):
+def derive_secondary_tf(path_list,path_list2,path_out,tempfile='standards/kurucz_stds_raw_v5.fits',verbose=False,doplot=False,minexp=600.0):
     """Use the best fit weights from template fits to secondary flux 
     calibration stars to derive a transfer function for each frame and
-    write that to an extension in the data."""
+    write that to an extension in the data.
+
+    minexp gives the minimum exposure time to use for deriving the mean TF."""
 
     from ..manager import read_stellar_mags
     from ..qc.fluxcal import measure_band
@@ -2066,11 +2069,23 @@ def derive_secondary_tf(path_list,path_list2,path_out,tempfile='standards/kurucz
         lam_b,flux_b,sigma_b = read_flux_calibration_extension(path1,gettel=False)
         lam_r,flux_r,sigma_r, tel_r = read_flux_calibration_extension(path2,gettel=True)
 
-        # if this is the first frame, set up arrays to hold different TFs:
+        # if this is the first frame, set up arrays to hold different TFs and the
+        # individual file names used:
         if (index == 0):
             tf_b = np.zeros((len(path_list),np.size(lam_b)))
             tf_r = np.zeros((len(path_list),np.size(lam_r)))
+            files_b = np.empty(len(path_list),dtype='U256')
+            files_r = np.empty(len(path_list),dtype='U256')
 
+        # check for min exposure time:
+        exposed = pf.getval(path1,'EXPOSED')
+        if (exposed < minexp):
+            continue
+        
+        # assign file names to array:
+        files_b[nfiles] = os.path.basename(path1)
+        files_r[nfiles] = os.path.basename(path2)
+            
         # correct the red arm for telluric abs:
         flux_r = flux_r * tel_r
 
@@ -2101,9 +2116,9 @@ def derive_secondary_tf(path_list,path_list2,path_out,tempfile='standards/kurucz
         ratio_sp_r = fit_spline_secondary(lam_r,ratio_r,ratio_sig_r,verbose=verbose)
 
         # store TFs in array for combining later:
-        tf_b[index,:] = ratio_sp_b
-        tf_r[index,:] = ratio_sp_r
-        
+        tf_b[nfiles,:] = ratio_sp_b
+        tf_r[nfiles,:] = ratio_sp_r
+
         # generate some diagnostic plots if needed:
         if (doplot):
             fig1 = py.figure()
@@ -2200,8 +2215,8 @@ def derive_secondary_tf(path_list,path_list2,path_out,tempfile='standards/kurucz
     # combine the different TFs together to get a mean TF for this field:
     # TODO: consider more robust combination.  e.g. scale before combine,
     # remove outliers etc.
-    tf_mean_b = np.nanmean(tf_b,axis=0)
-    tf_mean_r = np.nanmean(tf_r,axis=0)
+    tf_mean_b = np.nanmean(tf_b[0:nfiles,:],axis=0)
+    tf_mean_r = np.nanmean(tf_r[0:nfiles,:],axis=0)
 
     # copy the TRANSFER2combined.fits file to the CCD_2 directory.
     ccd2_path = os.path.dirname(path_list2[0])+'/'+os.path.basename(path_out)
@@ -2215,6 +2230,11 @@ def derive_secondary_tf(path_list,path_list2,path_out,tempfile='standards/kurucz
     col2 = pf.Column(name='tf_average', format='E', array=tf_mean_b)
     cols = pf.ColDefs([col1, col2])
     hdutab = pf.BinTableHDU.from_columns(cols,name='TF_MEAN')
+    # write filename of used frames to header:
+    tabhdr = hdutab.header
+    for i in range(nfiles):
+        keyname = 'TFFILE{0:02d}'.format(i)
+        tabhdr[keyname] = (files_b[i],'Frames used to estimate TF')
     hdu.append(hdutab)
     hdu.flush()
     hdu.close()
@@ -2225,6 +2245,11 @@ def derive_secondary_tf(path_list,path_list2,path_out,tempfile='standards/kurucz
     col2 = pf.Column(name='tf_average', format='E', array=tf_mean_r)
     cols = pf.ColDefs([col1, col2])
     hdutab = pf.BinTableHDU.from_columns(cols,name='TF_MEAN')
+    # write filename of used frames to header:
+    tabhdr = hdutab.header
+    for i in range(nfiles):
+        keyname = 'TFFILE{0:02d}'.format(i)
+        tabhdr[keyname] = (files_r[i],'Frames used to estimate TF')
     hdu.append(hdutab)
     hdu.flush()
     hdu.close()
