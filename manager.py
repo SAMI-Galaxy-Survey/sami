@@ -3662,8 +3662,12 @@ class Manager:
             return tlm_offset
 
         def flux_level_shift(fits,fits_test):
+            
             fits_comp = self.matchmaker(fits,'tlmap')
+            if fits_comp == None:
+                fits_comp = self.matchmaker(fits,'tlmap_loose')
             shift = determine_tlm_shift_fits(fits_test,fits_comp)
+
             if np.abs(shift) >= 1:
                     return np.inf
             else:
