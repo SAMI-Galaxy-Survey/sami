@@ -326,12 +326,12 @@ def first_guess_parameters(datatube, vartube, xfibre, yfibre, wavelength,
     if (np.ndim(datatube)>1):
         weighted_data = np.nansum(datatube, axis=1)
         (nf, nc) = np.shape(datatube)
-        print(nf,nc)
+        #print(nf,nc)
     else:
         weighted_data = np.copy(datatube)        
         (nf) = np.shape(datatube)
         nc = 1
-        print(nf)
+        #print(nf)
     weighted_data[weighted_data < 0] = 0.0
     weighted_data /= np.sum(weighted_data)
     if model_name == 'ref_centre_alpha_angle':
@@ -1678,7 +1678,7 @@ def fit_sec_template_ppxf(path,doplot=False,verbose=False,tempfile='standards/ku
     nnan = 0
     for i in range(istart,iend):
         if (np.isnan(flux_t[i])):
-            print(i,flux_t[i])
+            #print(i,flux_t[i])
             nnan = nnan+1
 
     if (nnan > 0):
@@ -2269,7 +2269,7 @@ def derive_secondary_tf(path_list,path_list2,path_out,tempfile='standards/kurucz
 
     return
 
-def apply_secondary_tf(path1,path2,path_out1,path_out2,use_av_tf_sec=False,verbose=False,force=False):
+def apply_secondary_tf(path1,path2,path_out1,path_out2,use_av_tf_sec=False,verbose=False,force=False,minexp=600.0):
     """Apply a previously measured secondary transfer function to the spectral
     data.  Optionally to use an average tranfer function.  force=True will force the
     correction to be made even if it has already been done."""
@@ -2284,7 +2284,8 @@ def apply_secondary_tf(path1,path2,path_out1,path_out2,use_av_tf_sec=False,verbo
         try:
             seccor = hdulist1[0].header['SECCOR']
             if (seccor):
-                print('SECCOR keyword is True.  Not correcting ',path1)
+                if verbose:
+                    print('SECCOR keyword is True.  Not correcting ',path1)
                 hdulist1.close()
                 return
         except KeyError:
@@ -2294,7 +2295,8 @@ def apply_secondary_tf(path1,path2,path_out1,path_out2,use_av_tf_sec=False,verbo
         try:
             seccor = hdulist2[0].header['SECCOR']
             if (seccor):
-                print('SECCOR keyword is True.  Not correcting ',path2)
+                if verbose:
+                    print('SECCOR keyword is True.  Not correcting ',path2)
                 hdulist2.close()
                 return
         except KeyError:
@@ -2302,6 +2304,10 @@ def apply_secondary_tf(path1,path2,path_out1,path_out2,use_av_tf_sec=False,verbo
 
         
     # read TF from FLUX_CALIBRATION2 extension.
+    exposed = hdulist1[0].header['EXPOSED']
+    if (exposed < minexp):
+        return
+
     tf_b = hdulist1['FLUX_CALIBRATION2'].data['transfer_fn']
     tf_r = hdulist2['FLUX_CALIBRATION2'].data['transfer_fn']
 
@@ -2601,8 +2607,8 @@ def median_filter_nan(im,filt):
     
     V = im.copy()
     V[im!=im]=0
-    print(np.shape(V))
-    print(filt)
+    #print(np.shape(V))
+    #print(filt)
     VV = median_filter(V,size=filt)
 
     W = 0*im.copy()+1

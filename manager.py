@@ -838,7 +838,7 @@ class Manager:
         ('flux_calibrate', True),
         ('telluric_correct', True),
         ('fluxcal_secondary',True),
-        ('scale_frames', True),
+        #('scale_frames', True),
         ('measure_offsets', True),
         ('cube', True),
         #('scale_cubes', True),
@@ -2243,11 +2243,13 @@ class Manager:
         # of the frame.  Also write a header keyword to signify that the
         # secondary correction has been done - keyword is SECCOR.
         inputs_list = []
+        print('Fitting models to star observations')
         for fits_1 in self.files(ndf_class='MFOBJECT', do_not_use=False,
                                  spectrophotometric=False, ccd='ccd_1',
                                  name='main',**kwargs):
-            if (not overwrite and 'SECCOR' in
-                    pf.getheader(fits_1.telluric_path)):
+            if ((not overwrite and 'SECCOR' in
+                    pf.getheader(fits_1.telluric_path)) | 
+                (not os.path.exists(fits_1.telluric_path))):
                 # Already been done; skip to the next file
                 continue
             inputs_list.append((fits_1.telluric_path))
@@ -2260,16 +2262,20 @@ class Manager:
         # group the data by field and/or std star (probably field).  Average
         # The best templates or weights to determine the best model for the
         # star in each field.
+        print('Averaging models to determine best calibration template')
         groups = self.group_files_by(('date', 'field_id', 'ccd'),
                                      ndf_class='MFOBJECT', do_not_use=False,
                                      ccd='ccd_1',name='main',
                                      spectrophotometric=False, **kwargs)
 
+        print('Deriving and applying secondary transfer functions')
         for fits_list in groups.values():
             #fits_1 = self.other_arm(fits_2)
             #inputs_list.append((fits_1.telluric_path, fits_2.telluric_path))
             # get the path list for all the ccd_1 frames in this group:
-            path_list = [fits.telluric_path for fits in fits_list]
+            path_list = [fits.telluric_path for fits in fits_list if os.path.exists(fits.telluric_path)]
+            if len(path_list) == 0:
+                continue
             # also get the equivalent list for the ccd_2 frames:
             path_list2 = [self.other_arm(fits).telluric_path for fits in fits_list]
             path_out = os.path.join(os.path.dirname(path_list[0]),
@@ -2287,13 +2293,14 @@ class Manager:
             # the indivdual secondary calibrations to derive one per field.  This may be
             # optional depending on how good invididual fits are.  Write the combined secondary
             # TF to a separate file for each field.
+            
             fluxcal2.derive_secondary_tf(path_list,path_list2,path_out,verbose=verbose,minexp=minexp)
 
             # by group now correct the spectra by applying the TF.  This can be done on a
             # frame by frame basis, or by field.
             for index, path1 in enumerate(path_list):
                 path2 = path_list2[index]
-                fluxcal2.apply_secondary_tf(path1,path2,path_out,path_out2,use_av_tf_sec=use_av_tf_sec,force=force)
+                fluxcal2.apply_secondary_tf(path1,path2,path_out,path_out2,use_av_tf_sec=use_av_tf_sec,force=force,minexp=minexp)
                 
                 # put the actual SDSS/VST mags for the secondary star into the FLUX_CALIBRATION
                 # HDU.  This is also done in the scale_frames() function, but as scale_frames()
