@@ -684,7 +684,8 @@ def centroid_fit(x,y,data,reference=None,rssframe=None,galaxyid=None,microns=Tru
                 mean, median, std = sigma_clipped_stats(img3, sigma=3.0)
                 threshold = median + std*0.1
                 tbl = find_peaks(img3, threshold, box_size=width) #find peaks
-
+                if tbl == None:
+                    continue
                 if(len(tbl)==1): # only a single peak is found until maximum iteration (=100)
                     tx,ty,trad=tbl['y_peak']+np.min(x), tbl['x_peak']+np.min(y),1000 # fibre masking is not applied (trad = 1000)
                     checkind = 'single_edge'

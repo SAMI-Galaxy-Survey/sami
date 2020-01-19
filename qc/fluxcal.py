@@ -493,28 +493,30 @@ def stellar_mags_cube_pair(file_pair, sum_cubes=False, save=False):
     mags = measure_mags(flux, noise, wavelength)
     if save:
         for path in file_pair:
-            hdulist = pf.open(path, 'update')
-            for band in BANDS:
-                if np.isfinite(mags[band]):
-                    mag = mags[band]
-                else:
-                    mag = -99999
-                hdulist[0].header['MAG'+band.upper()] = (
-                    mag, band+' mag before scaling')    
-            if not sum_cubes:
-                # CDELT1 gives the pixel scale in degrees; convert to arcsec
-                alpha = (3600.0 * np.abs(hdulist[0].header['CDELT1'])
+            with pf.open(path, 'update') as hdulist:
+                for band in BANDS:
+                    if np.isfinite(mags[band]):
+                        mag = mags[band]
+                    else:
+                        mag = -99999
+                    hdulist[0].header['MAG'+band.upper()] = (
+                        mag, band+' mag before scaling')    
+                if not sum_cubes:
+                    # CDELT1 gives the pixel scale in degrees; convert to arcsec
+                    alpha = (3600.0 * np.abs(hdulist[0].header['CDELT1'])
                          * psf_params[0])
-                beta = psf_params[1]
-                fwhm = alpha * 2.0 * np.sqrt(2.0**(1.0/beta) - 1.0)
-                hdulist[0].header['PSFALPHA'] = (
-                    alpha, 'PSF parameter: alpha')
-                hdulist[0].header['PSFBETA'] = (
-                    beta, 'PSF parameter: beta')
-                hdulist[0].header['PSFFWHM'] = (
-                    fwhm, 'FWHM (arcsec) of PSF')
-            hdulist.flush()
-            hdulist.close()
+                    beta = psf_params[1]
+                    fwhm = alpha * 2.0 * np.sqrt(2.0**(1.0/beta) - 1.0)
+                    hdulist[0].header['PSFALPHA'] = (
+                        alpha, 'PSF parameter: alpha')
+                    hdulist[0].header['PSFBETA'] = (
+                        beta, 'PSF parameter: beta')
+                    hdulist[0].header['PSFFWHM'] = (
+                        fwhm, 'FWHM (arcsec) of PSF')
+
+                hdulist.flush()
+                hdulist.close()
+
     return mags
 
 def stellar_mags_scatter_cube_pair(file_pair, min_relative_flux=0.5, save=False):
