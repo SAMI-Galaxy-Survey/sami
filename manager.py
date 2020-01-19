@@ -105,7 +105,7 @@ if not os.path.exists(os.path.join(MF_BIN_DIR,'molecfit')):
 else:
 	MOLECFIT_AVAILABLE = True
 
-from .utils.other import find_fibre_table, gzip
+from .utils.other import find_fibre_table, gzip, ungzip
 from .utils import IFU
 from .general.cubing import dithered_cubes_from_rss_list, get_object_names
 from .general.cubing import dithered_cube_from_rss_wrapper
@@ -841,7 +841,7 @@ class Manager:
         #('scale_frames', True),
         ('measure_offsets', True),
         ('cube', True),
-        #('scale_cubes', True),
+        ('scale_cubes', True),
         ('bin_cubes', True),
         ('record_dust', True),
         ('bin_aperture_spectra', True),
@@ -2687,6 +2687,46 @@ class Manager:
                         input_list.append(input_path)
         self.map(gzip_wrapper, input_list)
         self.next_step('gzip_cubes', print_message=True)
+        return
+
+    def ungzip_cubes(self, overwrite=False, min_exposure=599.0, name='main',
+                   star_only=False, min_transmission=0.333, max_seeing=4.0,
+                   tag=None, **kwargs):
+        """Gzip the final datacubes."""
+        groups = self.group_files_by(
+            ['field_id', 'ccd'], ndf_class='MFOBJECT', do_not_use=False,
+            reduced=True, name=name, include_linked_managers = True, **kwargs)
+        input_list = []
+        for (field_id, ccd), fits_list in groups.items():
+            if ccd == 'ccd_1':
+                arm = 'blue'
+            else:
+                arm = 'red'
+            if star_only:
+                objects = [pf.getval(fits_list[0].fcal_path, 'STDNAME',
+                                     'FLUX_CALIBRATION')]
+            else:
+                table = pf.getdata(fits_list[0].reduced_path, 'FIBRES_IFU')
+                objects = table['NAME'][table['TYPE'] == 'P']
+                objects = np.unique(objects).tolist()
+                objects = [obj.strip() for obj in objects]
+            for obj in objects:
+                input_path = self.cubed_path(
+                    obj, arm, fits_list, field_id,
+                    exists=True, min_exposure=min_exposure,
+                    min_transmission=min_transmission,
+                    max_seeing=max_seeing, tag=tag)
+                if input_path:
+                    if input_path.endswith('.fits'):
+                        # Already ungzipped, and no non-gzipped version exists
+                        continue
+                    output_path = input_path[:-3]
+                    if os.path.exists(output_path) and overwrite:
+                        os.remove(output_path)
+                    if not os.path.exists(output_path):
+                        input_list.append(input_path)
+        self.map(ungzip_wrapper, input_list)
+
         return
 
     def reduce_all(self, start=None, finish=None, overwrite=False, **kwargs):
@@ -5120,23 +5160,27 @@ def scale_cubes_field(group):
     star_header = pf.getheader(star_path_pair[0])
     for object_path_pair in object_path_pair_list:
         for object_path in object_path_pair:
-            hdulist_write = pf.open(object_path, 'update')
-            for key in ('PSFFWHM', 'PSFALPHA', 'PSFBETA'):
-                try:
-                    hdulist_write[0].header[key] = star_header[key]
-                except KeyError:
-                    pass
-            hdulist_write.flush()
-            hdulist_write.close()
+            with pf.open(object_path,mode='update') as hdulist_write:
+                for key in ('PSFFWHM', 'PSFALPHA', 'PSFBETA'):
+                    try:
+                        hdulist_write[0].header[key] = star_header[key]
+                    except KeyError:
+                        pass
+                hdulist_write.flush()
+                hdulist_write.close()
     # Previously tried reading the catalogue once and passing it, but for
     # unknown reasons that was corrupting the data when run on aatmacb.
-    found = assign_true_mag(star_path_pair, star, catalogue=None)
-    if found:
-        scale = scale_cube_pair_to_mag(star_path_pair, 3)
-        for object_path_pair in object_path_pair_list:
-            scale_cube_pair(object_path_pair, scale)
-    else:
-        print('No photometric data found for', star)
+
+    # Temporarily commenting out the below step to scale the cube fluxes. Now
+    # only determines and writes the PSF info to the cube.
+
+    #found = assign_true_mag(star_path_pair, star, catalogue=None)
+    #if found:
+    #    scale = scale_cube_pair_to_mag(star_path_pair, 3)
+    #    for object_path_pair in object_path_pair_list:
+    #        scale_cube_pair(object_path_pair, scale)
+    #else:
+    #    print('No photometric data found for', star)
     return
 
 
@@ -5200,6 +5244,12 @@ def aperture_spectra_pair(path_pair, overwrite=False):
         traceback.print_exc()
     return
 
+@safe_for_multiprocessing
+def ungzip_wrapper(path):
+    """Gzip a single file."""
+    print('Ungzipping file: ' + path)
+    ungzip(path)
+    return
 
 @safe_for_multiprocessing
 def gzip_wrapper(path):
