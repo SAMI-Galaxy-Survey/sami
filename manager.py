@@ -962,6 +962,7 @@ class Manager:
             # input_list is empty. I expected the map functions to deal with
             # this issue, but in one case it hung on aatmacb, so let's be
             # absolutely sure to avoid the issue
+            print('empty input_list, returning...')
             return []
         # if asyncio.iscoroutinefunction(function):
         #
@@ -2348,10 +2349,22 @@ class Manager:
         return
         
     
-    def scale_frames(self, overwrite=False, **kwargs):
-        """Scale individual RSS frames to the secondary standard flux."""
+    def scale_frames(self, overwrite=False, apply_scale=False, **kwargs):
+        """Scale individual RSS frames to the secondary standard flux.
+        If we only want to calculate the scaling but not apply it, then
+        use apply_scale=False.  Typically this will be because we have 
+        already done the scaling, for example by flux calibrating to the 
+        secondary standard stars.  However, it is still useful to derive
+        the scaling for QC purposes, so even if apply_scale=False we 
+        calculate the value and write to the header.  Note that in this case
+        the scaling is based on the secondary flux star in the frame, which 
+        is extracted before secondary flux calibration.  Therefore if calculated
+        after secondary flux cal, the rescale value gives a good estimate for
+        the relative system throughput, but should not be applied to the data
+        as it has aleady been rescaled."""
         # First make the list of file pairs to scale
         inputs_list = []
+        frames_list = []
         for fits_2 in self.files(ndf_class='MFOBJECT', do_not_use=False,
                                  spectrophotometric=False, ccd='ccd_2',
                                  telluric_corrected=True, name='main',
@@ -2360,11 +2373,17 @@ class Manager:
                     pf.getheader(fits_2.telluric_path, 'FLUX_CALIBRATION')):
                 # Already been done; skip to the next file
                 continue
+            
             fits_1 = self.other_arm(fits_2)
-            inputs_list.append((fits_1.telluric_path, fits_2.telluric_path))
+            path_pair = (fits_1.telluric_path, fits_2.telluric_path)
+            # here we make input list an set of iterable lists so that map will
+            # work properly on it:
+            inputs_list.append({'path_pair': path_pair,'apply_scale': apply_scale})
+            frames_list.append(path_pair)
+
         self.map(scale_frame_pair, inputs_list)
         # Measure the relative atmospheric transmission
-        for (path_1, path_2) in inputs_list:
+        for (path_1, path_2) in frames_list:
             self.qc_throughput_frame(path_1)
             self.qc_throughput_frame(path_2)
         self.next_step('scale_frames', print_message=True)
@@ -5197,10 +5216,19 @@ def fit_sec_template(path):
     return
 
 @safe_for_multiprocessing
-def scale_frame_pair(path_pair):
+def scale_frame_pair(inputs):
     """Scale a pair of RSS frames to the correct magnitude."""
-    print('Scaling RSS files to give star correct magnitude: %s' %
+
+    # get inputs:
+    path_pair = inputs['path_pair']
+    apply_scale = inputs['apply_scale']
+    if (apply_scale):
+        print('Scaling RSS files to give star correct magnitude: %s' %
           str((os.path.basename(path_pair[0]), os.path.basename(path_pair[1]))))
+    else:
+        print('Calculating scaling for RSS files to give star correct magnitude, but NOT applying: %s' %
+          str((os.path.basename(path_pair[0]), os.path.basename(path_pair[1]))))
+        
     stellar_mags_frame_pair(path_pair, save=True)
     star = pf.getval(path_pair[0], 'STDNAME', 'FLUX_CALIBRATION')
     # Previously tried reading the catalogue once and passing it, but for
@@ -5208,7 +5236,7 @@ def scale_frame_pair(path_pair):
     found = assign_true_mag(path_pair, star, catalogue=None,
                             hdu='FLUX_CALIBRATION')
     if found:
-        scale_cube_pair_to_mag(path_pair, 1, hdu='FLUX_CALIBRATION')
+        scale_cube_pair_to_mag(path_pair, 1, hdu='FLUX_CALIBRATION',apply_scale=apply_scale)
     else:
         print('No photometric data found for', star)
     return
