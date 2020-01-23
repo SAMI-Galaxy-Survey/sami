@@ -1329,22 +1329,28 @@ def scale_cube_pair(file_pair, scale, **kwargs):
     for path in file_pair:
         scale_cube(path, scale, **kwargs)
 
-def scale_cube(path, scale, hdu='PRIMARY', band=None):
+def scale_cube(path, scale, hdu='PRIMARY', band=None, apply_scale=True):
     """Scale a single cube by a given value."""
     hdulist = pf.open(path, 'update')
     try:
         old_scale = hdulist[hdu].header['RESCALE']
     except KeyError:
         old_scale = 1.0
-    hdulist['PRIMARY'].data *= (scale / old_scale)
-    hdulist['VARIANCE'].data *= (scale / old_scale)**2
-    hdulist[hdu].header['RESCALE'] = (scale, 'Scaling applied to data')
+    # only apply scaling if actually requested, otherwise just calculate it:
+    if (apply_scale):
+        hdulist['PRIMARY'].data *= (scale / old_scale)
+        hdulist['VARIANCE'].data *= (scale / old_scale)**2
+        hdulist[hdu].header['RESCALED'] = (True, 'Has rescaling been applied?')
+    else:
+        hdulist[hdu].header['RESCALED'] = (False, 'Has rescaling been applied?')
+    # the rescaling value, whether we apply it or not:
+    hdulist[hdu].header['RESCALE'] = (scale, 'Scaling to apply to data')
     if band is not None:
         hdulist[hdu].header['SCALEBND'] = (band, 'Band used to scale data')
     hdulist.flush()
     hdulist.close()
 
-def scale_cube_pair_to_mag(file_pair, axis, hdu='PRIMARY', band=None):
+def scale_cube_pair_to_mag(file_pair, axis, hdu='PRIMARY', band=None,apply_scale=True):
     """
     Scale both cubes according to their pre-measured magnitude.
 
@@ -1372,7 +1378,7 @@ def scale_cube_pair_to_mag(file_pair, axis, hdu='PRIMARY', band=None):
     if measured_mag == -99999:
         # No valid magnitude found
         scale = 1.0
-    scale_cube_pair(file_pair, scale, hdu=hdu, band=band)
+    scale_cube_pair(file_pair, scale, hdu=hdu, band=band,apply_scale=apply_scale)
     return scale
 
 def wavelength_overlap(file_pair, band, axis):
