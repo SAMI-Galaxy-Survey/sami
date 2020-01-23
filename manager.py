@@ -2538,7 +2538,8 @@ class Manager:
                                 min_transmission=min_transmission,
                                 max_seeing=max_seeing, tag=tag)
                 for arm in ('blue', 'red')]
-            if star_path_pair[0] is None or star_path_pair[1] is None:
+            if ((star_path_pair[0] is None) or (star_path_pair[1] is None) or 
+                ('.gz' in star_path_pair[0]) or ('.gz' in star_path_pair[1])):
                 continue
             if not overwrite:
                 # Need to check if the scaling has already been done
@@ -2552,7 +2553,7 @@ class Manager:
                 [self.cubed_path(name, arm, fits_list, field_id,
                                  exists=True, min_exposure=min_exposure,
                                  min_transmission=min_transmission,
-                                 max_seeing=max_seeing, tag=tag)
+                                 max_seeing=max_seeing, tag=tag, gzipped=False)
                  for arm in ('blue', 'red')]
                 for name in objects]
             object_path_pair_list = [
@@ -2579,9 +2580,12 @@ class Manager:
                     self.cubed_path(name, arm, fits_list, field_id,
                                     exists=True, min_exposure=min_exposure,
                                     min_transmission=min_transmission,
-                                    max_seeing=max_seeing, tag=tag)
+                                    max_seeing=max_seeing, tag=tag,gzipped=False)
                     for arm in ('blue', 'red')]
                 if path_pair[0] and path_pair[1]:
+                    if ('.gz' in path_pair[0]) or ('.gz' in path_pair[1]):
+                        skip = True
+                        continue
                     skip = False
                     if not overwrite:
                         hdulist = pf.open(path_pair[0])
@@ -2612,9 +2616,11 @@ class Manager:
                     self.cubed_path(name.strip(), arm, fits_list, field_id,
                                     exists=True, min_exposure=min_exposure,
                                     min_transmission=min_transmission,
-                                    max_seeing=max_seeing, tag=tag)
+                                    max_seeing=max_seeing, tag=tag, gzipped=False)
                     for arm in ('blue', 'red')]
                 if path_pair[0] and path_pair[1]:
+                    if ('.gz' in path_pair[0]) or ('.gz' in path_pair[1]):
+                        continue
                     path_pair_list.append(path_pair)
 
         inputs_list = []
@@ -2642,9 +2648,10 @@ class Manager:
                         name, arm, fits_list, field_id,
                         exists=True, min_exposure=min_exposure,
                         min_transmission=min_transmission,
-                        max_seeing=max_seeing, tag=tag)
+                        max_seeing=max_seeing, tag=tag, gzipped=False)
                     if path:
-                        dust.dustCorrectSAMICube(path, overwrite=overwrite)
+                        if '.gz' not in path:
+                            dust.dustCorrectSAMICube(path, overwrite=overwrite)
 
         self.next_step('record_dust',print_message=True)
         return

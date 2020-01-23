@@ -438,7 +438,7 @@ def dithered_cube_from_rss_wrapper(files, name, size_of_grid=50,
         outfile_name_full=os.path.join(directory, outfile_name)
 
         # Check if the filename already exists
-        if os.path.exists(outfile_name_full):
+        if (os.path.exists(outfile_name_full)) | (os.path.exists(os.path.splitext(outfile_name_full)[0]+'.fits.gz')):
             if overwrite:
                 os.remove(outfile_name_full)
             else:
