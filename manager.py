@@ -2644,8 +2644,8 @@ class Manager:
 
         inputs_list = []
         for path_pair in path_pair_list:
-            inputs_list.append(overwrite)
-        self.map(aperture_spectra_pair, path_pair_list)
+            inputs_list.append([path_pair,overwrite])
+        self.map(aperture_spectra_pair, inputs_list)
         self.next_step('bin_aperture_spectra', print_message=True)
 
         return
@@ -5267,8 +5267,9 @@ def bin_cubes_pair(path_pair):
 
 
 @safe_for_multiprocessing
-def aperture_spectra_pair(path_pair, overwrite=False):
+def aperture_spectra_pair(input_list, overwrite=False):
     """Create aperture spectra for a pair of data cubes using default apertures."""
+    path_pair,overwrite = input_list
     path_blue, path_red = path_pair
     global CATALOG_PATH
     try:
