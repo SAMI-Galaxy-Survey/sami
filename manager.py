@@ -838,7 +838,7 @@ class Manager:
         ('flux_calibrate', True),
         ('telluric_correct', True),
         ('fluxcal_secondary',True),
-        #('scale_frames', True),
+        ('scale_frames', True),
         ('measure_offsets', True),
         ('cube', True),
         ('scale_cubes', True),
