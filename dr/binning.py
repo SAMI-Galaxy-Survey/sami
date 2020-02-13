@@ -156,7 +156,7 @@ def aperture_spectra_pair(path_blue, path_red, path_to_catalogs,overwrite=True):
     out_file_base = os.path.basename(path).split(".")[0]
     output_filename = out_dir + "/" + out_file_base + "_aperture_spec_test.fits"
     
-    overwrite = True
+    #overwrite = True
     if (os.path.exists(output_filename)) & (overwrite == False):
         return
 
