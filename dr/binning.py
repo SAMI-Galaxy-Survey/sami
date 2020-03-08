@@ -295,15 +295,15 @@ def aperture_spectra_pair(path_blue, path_red, path_to_catalogs,overwrite=True):
 
             # Add header item to indicate if centre of aperture has been adjusted
 
-            centres_cat_file = '/import/opus1/nscott/SAMI_Survey/gama_catalogues/cube_centres_adjusted.dat'
-            centres_cat = Table.read(centres_cat_file,format='ascii')
-            id = np.int(hdulist[0].header['NAME'])
-            if id in centres_cat['CATID']:
-                ap_adjusted_flag = 'Y'
-            else:
-                ap_adjusted_flag = 'N'
+            #centres_cat_file = '/import/opus1/nscott/SAMI_Survey/gama_catalogues/cube_centres_adjusted.dat'
+            #centres_cat = Table.read(centres_cat_file,format='ascii')
+            #id = np.int(hdulist[0].header['NAME'])
+            #if id in centres_cat['CATID']:
+            #    ap_adjusted_flag = 'Y'
+            #else:
+            #    ap_adjusted_flag = 'N'
 
-            aperture_hdulist[0].header['AP_ADJ'] = (ap_adjusted_flag, "Aperture position manually adjusted")
+            #aperture_hdulist[0].header['AP_ADJ'] = (ap_adjusted_flag, "Aperture position manually adjusted")
 
             # Calculate the aperture bins based on first file only.
             if bin_mask is None:
@@ -312,6 +312,9 @@ def aperture_spectra_pair(path_blue, path_red, path_to_catalogs,overwrite=True):
                     bin_mask[aper] = aperture_bin_sami(hdulist, **standard_apertures[aper])
                     standard_apertures[aper]['mask'] = (bin_mask[aper] == 1)
                     standard_apertures[aper]['n_pix_included'] = int(np.sum(standard_apertures[aper]['mask']))
+                    #if standard_apertures[aper]['n_pix_included'] == 0:
+                    #    import code
+                    #    code.interact(local=dict(globals(),**locals()))
                 log_aperture_data(standard_apertures, sami_id)
 
             for aper in standard_apertures:
@@ -490,10 +493,14 @@ def bin_cube(hdu,bin_mask, mode='', **kwargs):
             binned_cube[:,spaxel_coords[0,:],spaxel_coords[1,:]] = cube[:,spaxel_coords[0,:],spaxel_coords[1,:]]
             binned_var[:,spaxel_coords[0,:],spaxel_coords[1,:]] = var[:,spaxel_coords[0,:],spaxel_coords[1,:]]
         elif n_spaxels > 1:
-            binned_spectrum = np.nansum(cube[:,spaxel_coords[0,:],spaxel_coords[1,:]],axis=1)/n_spaxels
+            #binned_spectrum = np.nansum(cube[:,spaxel_coords[0,:],spaxel_coords[1,:]],axis=1)/n_spaxels
+            binned_spectrum = np.nanmean(cube[:,spaxel_coords[0,:],spaxel_coords[1,:]],axis=1)
             binned_weighted_spectrum = np.nansum(weighted_cube[:,spaxel_coords[0,:],spaxel_coords[1,:]],axis=1)#/n_spaxels
+            binned_weighted_spectrum[binned_weighted_spectrum == 0] = np.nan # Fix for changed behaviour of np.nansum
             binned_weight = np.nansum(weight[:,spaxel_coords[0,:],spaxel_coords[1,:]],axis=1)
+            binned_weight[binned_weight == 0] = np.nan # As above
             binned_weight2 = np.nansum(weight[:,spaxel_coords[0,:],spaxel_coords[1,:]]**2,axis=1)
+            binned_weight2[binned_weight2 == 0.0] = np.nan # As above
 
             if mode == 'adaptive':
                 temp = np.tile(np.reshape(binned_weighted_spectrum/binned_weight,(len(binned_spectrum),1)),n_spaxels)
@@ -506,6 +513,7 @@ def bin_cube(hdu,bin_mask, mode='', **kwargs):
             covar_factor = return_covar_factor(spaxel_coords[0,:],spaxel_coords[1,:],covar,order)
             #binned_weighted_variance = np.nansum(weighted_var[:,spaxel_coords[0,:],spaxel_coords[1,:]],axis=1)*covar_factor
             binned_weighted_variance = np.nansum(weighted_var[:,spaxel_coords[0,:],spaxel_coords[1,:]]*covar_factor,axis=1)
+            binned_weighted_variance[binned_weighted_variance == 0] = np.nan # As above
             binned_variance = binned_weighted_variance*((binned_spectrum/binned_weighted_spectrum)**2)#/(n_spaxels**2)
             if mode == 'adaptive':
                 temp_var = np.tile(np.reshape(binned_weighted_variance/(binned_weight**2),(len(binned_variance),1)),n_spaxels)
@@ -875,15 +883,15 @@ def aperture_bin_sami(hdu, aperture_radius=1, ellipticity=0, pa=0):
     # Check to see if the centre needs adjusting following Sree's catalogue.
     # If so, update xmed and ymed accordingly.
 
-    centres_cat_file = '/import/opus1/nscott/SAMI_Survey/gama_catalogues/cube_centres_adjusted.dat'
-    if os.path.exists(centres_cat_file):
-        centres_cat = Table.read(centres_cat_file,format='ascii')
-        id = np.int(hdu[0].header['NAME'])
+    #centres_cat_file = '/import/opus1/nscott/SAMI_Survey/gama_catalogues/cube_centres_adjusted.dat'
+    #if os.path.exists(centres_cat_file):
+    #    centres_cat = Table.read(centres_cat_file,format='ascii')
+    #    id = np.int(hdu[0].header['NAME'])
 
-        if id in centres_cat['CATID']:
-            ww = np.where(id == centres_cat['CATID'])[0]
-            xmed = centres_cat['x_sree'][ww]-1.0
-            ymed = centres_cat['y_sree'][ww]-1.0
+    #    if id in centres_cat['CATID']:
+    #        ww = np.where(id == centres_cat['CATID'])[0]
+    #        xmed = centres_cat['x_sree'][ww]-1.0
+    #        ymed = centres_cat['y_sree'][ww]-1.0
 
     pa_rad = np.radians(pa)
 

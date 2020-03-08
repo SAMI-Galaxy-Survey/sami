@@ -2619,7 +2619,8 @@ class Manager:
         return
 
     def bin_aperture_spectra(self, overwrite=False, min_exposure=599.0, name='main',
-                             min_transmission=0.333, max_seeing=4.0, tag=None, **kwargs):
+                             min_transmission=0.333, max_seeing=4.0, tag=None, 
+                             include_gzipped=False, **kwargs):
         """Create aperture spectra."""
         print('Producing aperture spectra')
         path_pair_list = []
@@ -2635,10 +2636,10 @@ class Manager:
                     self.cubed_path(name.strip(), arm, fits_list, field_id,
                                     exists=True, min_exposure=min_exposure,
                                     min_transmission=min_transmission,
-                                    max_seeing=max_seeing, tag=tag, gzipped=False)
+                                    max_seeing=max_seeing, tag=tag, gzipped=include_gzipped)
                     for arm in ('blue', 'red')]
                 if path_pair[0] and path_pair[1]:
-                    if ('.gz' in path_pair[0]) or ('.gz' in path_pair[1]):
+                    if (('.gz' in path_pair[0]) or ('.gz' in path_pair[1])) and (include_gzipped == False):
                         continue
                     path_pair_list.append(path_pair)
 
