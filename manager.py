@@ -892,6 +892,7 @@ class Manager:
         self.scratch_dir = None
         self.min_exposure_for_throughput = 900.0
         self.min_exposure_for_sky_wave = 900.0
+        self.min_exposure_for_5577pca = 599.0
         self.aat_username = None
         self.aat_password = None
         self.inspect_root(copy_files, move_files)
@@ -3063,6 +3064,10 @@ class Manager:
             options.extend(['-SKYSCRUNCH', '1'])
         else:
             options.extend(['-SKYSCRUNCH', '0'])
+
+        # only do improved 5577 PCA for longer exposures (CCD_1):
+        if (fits.ccd == 'ccd_1') and (fits.exposure <= self.min_exposure_for_5577pca):
+            options.extend(['PCAFILT5577','0'])
                 
         # add options for just CCD_2:
         if fits.ccd == 'ccd_2':
