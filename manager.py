@@ -3314,6 +3314,7 @@ class Manager:
                     # if we haven't already found a matching FFLAT above (i.e. if found = 0), then
                     # go through the options with the flats:
                     if (found == 0):
+                        options.extend(['-TRUNCFLAT', '1'])
                         # Try with normal FFLAT from flat:
                         filename_match = self.match_link(fits, 'fflat')
                         if filename_match is None:
