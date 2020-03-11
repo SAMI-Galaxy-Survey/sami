@@ -38,16 +38,20 @@ from numpy import nanmedian
 from scipy.ndimage.filters import median_filter
 from scipy.ndimage.measurements import label
 from . import voronoi_2d_binning_wcovar
+
 from ..utils.other import hg_changeset
 from astropy.table import Table
+
 
 def bin_cube_pair(path_blue, path_red, name=None, **kwargs):
     """Calculate bins, do binning and save results for a pair of cubes."""
     hdulist_blue = pf.open(path_blue, 'update')
     hdulist_red = pf.open(path_red, 'update')
     bin_mask = return_bin_mask(hdulist_blue, **kwargs)
+
     bin_and_save(hdulist_blue, bin_mask, name=name, **kwargs)
     bin_and_save(hdulist_red, bin_mask, name=name, **kwargs)
+
     hdulist_blue.close()
     hdulist_red.close()
 
@@ -439,7 +443,7 @@ def bin_and_save(hdulist, bin_mask, name=None, **kwargs):
     hdulist.flush()
     return
 
-def return_bin_mask(hdu, mode='adaptive', targetSN=10, minSN=None, sectors=8,radial=5,log=False):
+def return_bin_mask(hdu, mode='adaptive', targetSN=5, minSN=None, sectors=8,radial=5,log=False):
     
     if mode == 'adaptive':
         bin_mask = adaptive_bin_sami(hdu,targetSN=targetSN, minSN=minSN)

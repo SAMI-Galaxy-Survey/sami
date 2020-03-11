@@ -84,6 +84,7 @@ import astropy.io.fits as pf
 from astropy import __version__ as ASTROPY_VERSION
 import numpy as np
 
+
 try:
     import pysftp
 
@@ -153,7 +154,7 @@ IDX_FILES = {'fast': IDX_FILES_FAST,
              'slow': IDX_FILES_SLOW}
 
 GRATLPMM = {'580V': 582.0,
-            '1500V': 1500.0,
+            '1500V': 1502.0,
             '1000R': 1001.0}
 
 CATALOG_PATH = "./gama_catalogues/"
@@ -289,8 +290,13 @@ STELLAR_MAGS_FILES = [
     ('standards/secondary/Abell_2399.fstarcat.txt', 'SDSS_cluster',
      (0.0, 0.0, 0.0, 0.0, 0.0)),
     ('standards/secondary/sdss_stellar_mags.csv', 'SDSS_GAMA',
-     (0.0, 0.0, 0.0, 0.0, 0.0))]
-
+        (0.0, 0.0, 0.0, 0.0, 0.0)),
+    ('standards/secondary/fornax_stellar_mags.txt', 'FORNAX',
+        (0.0, 0.0, 0.0, 0.0, 0.0)),
+    ('standards/secondary/fornax_stellar_mags2.txt','FORNAX',
+        (0.0, 0.0, 0.0, 0.0, 0.0)),
+    ('standards/secondary/fornax_stellar_mags3.txt','FORNAX',
+        (0.0, 0.0, 0.0, 0.0, 0.0))]
 
 def stellar_mags_files():
     """Yield details of each stellar magnitudes file that can be found."""
@@ -2433,7 +2439,7 @@ class Manager:
 
     def cube(self, overwrite=False, min_exposure=599.0, name='main',
              star_only=False, drop_factor=None, tag='', update_tol=0.02,
-             size_of_grid=50, output_pix_size_arcsec=0.5,
+             size_of_grid=25, output_pix_size_arcsec=1.0,
              min_transmission=0.333, max_seeing=4.0, min_frames=6, **kwargs):
         """Make datacubes from the given RSS files."""
         groups = self.group_files_by(
@@ -2658,6 +2664,7 @@ class Manager:
         groups = self.group_files_by(
             'field_id', ccd='ccd_1', ndf_class='MFOBJECT', do_not_use=False,
             reduced=True, name=name, include_linked_managers = True, **kwargs)
+
         for (field_id,), fits_list in groups.items():
             table = pf.getdata(fits_list[0].reduced_path, 'FIBRES_IFU')
             objects = table['NAME'][table['TYPE'] == 'P']
@@ -5363,6 +5370,12 @@ def read_stellar_mags():
             skiprows = 1
             delimiter = ','
             name_func = lambda d: d['name']
+        elif catalogue_type == 'FORNAX':
+            names = ('ID','radeg','decdeg','g','r','i','u','z')
+            formats = ('U20','f8','f8','f8','f8','f8','f8','f8')
+            skiprows = 1
+            delimiter = None
+            name_func = lambda d: d['ID']
         data = np.loadtxt(path, skiprows=skiprows, delimiter=delimiter,
                           dtype={'names': names, 'formats': formats})
         if data.shape == ():

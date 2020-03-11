@@ -646,7 +646,7 @@ def dithered_cube_from_rss(ifu_list, size_of_grid=50, output_pix_size_arcsec=0.5
        
             gf1=fitting.TwoDGaussFitter(p0, x_good, y_good, data_good)
             gf1.fit()
-            
+
             # Adjust the micron positions of the fibres - for use in making final cubes.
             xm=galaxy_data.x_microns-gf1.p[1]
             ym=galaxy_data.y_microns-gf1.p[2]
@@ -657,6 +657,8 @@ def dithered_cube_from_rss(ifu_list, size_of_grid=50, output_pix_size_arcsec=0.5
             y_shift_full = galaxy_data.y_refmed - galaxy_data.y_shift
             xm=galaxy_data.x_microns-x_shift_full
             ym=galaxy_data.y_microns-y_shift_full
+            
+
 
         else:
             # Perhaps use this place to allow definition of the offsets manually??
