@@ -32,10 +32,14 @@ DRC_OVERRIDE_PAR SUBSKY TRUE REDUCE
 
 # don't use whale shark matching algorithm - goes badly wrong for 1500V
 DRC_OVERRIDE_PAR USE_WSM_ALGOL FALSE REDUCE
+# derive the spectral resolution:
 DRC_OVERRIDE_PAR SPECRES TRUE REDUCE
 
 # use sky lines for throughput calibration
-DRC_OVERRIDE_PAR TPMETH SKYFLUX(MED) REDUCE
+#DRC_OVERRIDE_PAR TPMETH SKYFLUX(MED) REDUCE
+# Added this - not sure if it will work
+DRC_OVERRIDE_PAR TPMETH OFFSKY REDUCE
+DRC_OVERRIDE_PAR SKYCOMBINE UNWTMEDIAN REDUCE
 
 # do not combine frames
 DRC_OVERRIDE_PAR AUTO_COMB FALSE REDUCE
