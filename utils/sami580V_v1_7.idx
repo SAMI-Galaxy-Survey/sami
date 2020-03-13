@@ -27,6 +27,8 @@ DRC_OVERRIDE_PAR OPTEX_SLMODEL BSPLINE REDUCE
 DRC_OVERRIDE_PAR OPTEX_NSLPARS 0 REDUCE
 # allow residual images to be made:
 DRC_OVERRIDE_PAR OPTEX_MKRES TRUE REDUCE
+# allow a single bad pixel within a profile:
+DRC_OVERRIDE_PAR NUMBADPIXEX 1 REDUCE
 
 # Use External PSF and set values for Blue Frame
 # not actually used (only here for testing)
@@ -36,12 +38,6 @@ DRC_OVERRIDE_PAR OPTEX_MKRES TRUE REDUCE
 #DRC_CONST_PAR EPSF_SAMT 0.123 REDUCE
 #DRC_CONST_PAR EPSF_GAM1 4.870 REDUCE
 
-# Set the blue flat truncation pixels here
-# but only enable for dome flats with the
-# call to aaorun
-DRC_OVERRIDE_PAR TRUNCFLAT FALSE REDUCE
-DRC_OVERRIDE_PAR USEFLATSTART 500 REDUCE
-DRC_OVERRIDE_PAR USEFLATEND 2048 REDUCE
 
 # still use 1D fit for now:
 #DRC_OVERRIDE_PAR SCATSUB NONE REDUCE
@@ -76,13 +72,6 @@ DRC_OVERRIDE_PAR AUTO_COMB FALSE REDUCE
 # set default bias/lflat filenames (dark is done below)
 DRC_CONST_PAR BIAS_FILENAME BIAScombined.fits REDUCE
 DRC_CONST_PAR LFLAT_FILENAME LFLATcombined.fits REDUCE
-
-# RnD stuff to truncate flat fielding.  No lomnger needed
-# when we are using twilights as flat fields.
-#DRC_OVERRIDE_PAR TRUNCFLAT TRUE REDUCE
-DRC_OVERRIDE_PAR TRUNCFLAT FALSE REDUCE
-DRC_OVERRIDE_PAR USEFLATSTART 1 REDUCE
-DRC_OVERRIDE_PAR USEFLATEND 2048 REDUCE
 
 # better profile/TLM fitting:
 DRC_OVERRIDE_PAR SIGPROF TRUE REDUCE
@@ -124,8 +113,17 @@ DRC_CONST_PAR WAVE_START 365.0 REDUCE
 DRC_CONST_PAR WAVE_END 580.0 REDUCE
 
 # Hard code flag to apply filter to PCA around 5577:
+# NOTE - Not in standard IDX file
 DRC_CONST_PAR PCAFILT5577 TRUE REDUCE
 
+# RnD stuff to truncate flat fielding.  Should only be
+# required in the occasional cases where twilight is
+# not available, so be turned off by default.
+DRC_OVERRIDE_PAR TRUNCFLAT FALSE REDUCE
+DRC_OVERRIDE_PAR USEFLATSTART 500 REDUCE
+DRC_OVERRIDE_PAR USEFLATEND 2048 REDUCE
+
+# do heliocentric correction:
 DRC_OVERRIDE_PAR VELCOR TRUE REDUCE
 
 proc URP:ModifyReduceArgs {file class args} {
