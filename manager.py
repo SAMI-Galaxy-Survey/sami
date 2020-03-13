@@ -3067,7 +3067,7 @@ class Manager:
 
         # only do improved 5577 PCA for longer exposures (CCD_1):
         if (fits.ccd == 'ccd_1') and (fits.exposure <= self.min_exposure_for_5577pca):
-            options.extend(['PCAFILT5577','0'])
+            options.extend(['PCASKY','0'])
                 
         # add options for just CCD_2:
         if fits.ccd == 'ccd_2':
