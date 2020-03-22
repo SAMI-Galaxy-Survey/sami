@@ -5139,7 +5139,7 @@ def cube_group(group):
     dithered_cubes_from_rss_list(
         path_list, suffix='_' + field[0], size_of_grid=50, write=True,
         nominal=True, root=root, overwrite=overwrite, do_dar_correct=True,
-        objects=objects, clip=True, drop_factor=drop_factor)
+        objects=objects, clip=False, clip_by_fibre=True, drop_factor=drop_factor)
     return
 
 
@@ -5155,8 +5155,8 @@ def cube_object(inputs):
         suffix += '_' + tag
     return dithered_cube_from_rss_wrapper(
         path_list, name, suffix=suffix, write=True, nominal=True,
-        root=cubed_root, overwrite=overwrite, do_dar_correct=True, clip=True,
-        drop_factor=drop_factor, update_tol=update_tol,
+        root=cubed_root, overwrite=overwrite, do_dar_correct=True, clip=False,
+        clip_by_fibre=True, drop_factor=drop_factor, update_tol=update_tol,
         size_of_grid=size_of_grid,
         output_pix_size_arcsec=output_pix_size_arcsec)
 
