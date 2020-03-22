@@ -1816,8 +1816,10 @@ class Manager:
             # Switch to sky line throughputs if the sky residuals are bad
             fits_list = self.files_with_bad_dome_throughput(
                 reduced_files, sky_residual_limit=sky_residual_limit)
-            # Only keep them if they actually have a sky line to use
-            fits_list = [fits for fits in fits_list if fits.has_sky_lines()]
+            # Only keep them if they actually have a sky line to use 
+            # - except for Y15SAR3_P006_12T097 which is problematic due to a v. bright galaxy
+            fits_list = [fits for fits in fits_list if (fits.has_sky_lines() and 
+                                                        (fits.field_id != 'Y15SAR3_P006_12T097'))]
             self.reduce_file_iterable(
                 fits_list, throughput_method='skylines',
                 overwrite=True, check='OBJ')
@@ -2387,6 +2389,7 @@ class Manager:
         for (path_1, path_2) in frames_list:
             self.qc_throughput_frame(path_1)
             self.qc_throughput_frame(path_2)
+
         self.next_step('scale_frames', print_message=True)
         return
 
@@ -2922,6 +2925,7 @@ class Manager:
 
     def qc_throughput_frame(self, path):
         """Calculate and save the relative throughput for an object frame."""
+
         try:
             median_relative_throughput = (
                 pf.getval(pf.getval(path, 'FCALFILE'),
