@@ -121,8 +121,11 @@ import scipy.ndimage as nd
 
 from scipy import integrate
 
+
 import astropy.io.fits as pf
 import astropy.wcs as pw
+import scipy.stats as stats
+import scipy.optimize as optimize
 
 import itertools
 import os
@@ -410,7 +413,7 @@ def dithered_cubes_from_rss_list(files, objects='all', **kwargs):
 
 def dithered_cube_from_rss_wrapper(files, name, size_of_grid=50, 
                                    output_pix_size_arcsec=0.5, drop_factor=0.5,
-                                   clip=True, plot=True, write=True, suffix='',
+                                   clip=False, clip_by_fibre=True, plot=True, write=True, suffix='',
                                    nominal=False, root='', overwrite=False,
                                    offsets='file', covar_mode='optimal',
                                    do_dar_correct=True, clip_throughput=True,
@@ -461,7 +464,7 @@ def dithered_cube_from_rss_wrapper(files, name, size_of_grid=50,
         dithered_cube_from_rss(
             ifu_list, size_of_grid=size_of_grid,
             output_pix_size_arcsec=output_pix_size_arcsec,
-            drop_factor=drop_factor, clip=clip, plot=plot,
+            drop_factor=drop_factor, clip=clip, clip_by_fibre=clip_by_fibre, plot=plot,
             offsets=offsets, covar_mode=covar_mode,
             do_dar_correct=do_dar_correct, clip_throughput=clip_throughput,
             update_tol=update_tol)
@@ -546,7 +549,7 @@ def dithered_cube_from_rss_wrapper(files, name, size_of_grid=50,
 
 
 def dithered_cube_from_rss(ifu_list, size_of_grid=50, output_pix_size_arcsec=0.5, drop_factor=0.5,
-                           clip=True, plot=True, offsets='file', covar_mode='optimal',
+                           clip=False, clip_by_fibre=True, plot=True, offsets='file', covar_mode='optimal',
                            do_dar_correct=True, clip_throughput=True, update_tol=0.02):
     diagnostic_info = {}
 
@@ -743,11 +746,10 @@ def dithered_cube_from_rss(ifu_list, size_of_grid=50, output_pix_size_arcsec=0.5
 
     # alternative bad pixel clipping. At the moment, set the default to be not using
     # this, but allow clipping by changing the paramete do_clip_by_fibre:
-    do_clip_by_fibre = True
-    print('test')
-    if (do_clip_by_fibre):
+    if (clip_by_fibre):
         print('Clipping bad pixels by fibre...')
-        data_all,var_all = clip_by_fibre(xfibre_all,yfibre_all,data_all,var_all,doplot=False)
+        data_all,var_all = clip_by_fibre(xfibre_all,yfibre_all,data_all,var_all,testplot=False,verbose=False)
+        print('Clipping done.')
 
  
 
@@ -1457,23 +1459,29 @@ def create_qc_hdu(file_list, name):
     hdu = pf.BinTableHDU.from_columns(columns, name='QC')
     return hdu
 
+###################
+# simply linear function for curve_fit:
+def lin_func(x,a,b):
+    return a*x + b
 
 ###################
 # function to clip cosmics etc from the spectra based on comparisons between spectra
 # at similar locations.  Written by Scott Croom, 2018.
 
-def clip_by_fibre(xpos,ypos,data_all,var_all,nnear=7,nsig=5.0,nsig2=3.0,medfiltsize=35,expand_bad=1,doplot=True,testplot=True,verbose=True):
+def clip_by_fibre(xpos,ypos,data_all,var_all,nnear=7,nsig=5.0,nsig2=3.0,medfiltsize=35,expand_bad=1,testplot=False,verbose=True):
     """Compare fibre spectra and find outlying pixels.  Relies on adjacent spectra
     being relatively similar.  The key issues with this approach are:
     1) how do we adjust for the median spectrum not quite being the same as the
-       individual spectra?  Simple methods are either division or addition.  For division 
-       the problem is divide by zero problems when close to zero flux.  For addition
-       this could cause problems if the spectra are just scaled versions of each other
-       as the addtion could cause differences in strong features.
+       individual spectra?  Simple methods are either division or subtraction.  Here we use
+       subtraction as the divison can lead to divide by zero (or close to zero) problems
+       when low S/N.  As long as we use the measured RMS between fibres this should be okay
     2) How do we define the variance?  Based on individual spectra variances, or from
        scatter between spectra.  the second of these is probably safer."""
 
-
+    # the previous method just works on overlapping pixels in the cube and gets
+    # the median and MAD and uses this to do a 5 sigma clipping.  The problem
+    # with this is the scaling of the spectra.
+    
     # approach:
     # 1) find NNEAR closest spectra.
     # 2) median filter (in spectral direction) the spectra and subtract median.
@@ -1495,31 +1503,24 @@ def clip_by_fibre(xpos,ypos,data_all,var_all,nnear=7,nsig=5.0,nsig2=3.0,medfilts
     ypos_med = np.nanmedian(ypos,axis=1)
 
     # median filter all the spectra:
-    med_data_all = np.zeros((n_spec,n_slices))
     if (verbose):
         print('Filtering input spectra...')
     start_time = time.time()
     med_data_all = nd.filters.generic_filter(data_all,np.nanmedian,size=[1,medfiltsize])
-    if (verbose):
-        print(("Time taken %s sec" % (time.time() - start_time)))
-    
-    # TBD: do we set all values outside of good lam range to NaN?  What do do at edges?
     
     if (verbose):
         print('shape of xpos_med:',np.shape(xpos_med))
 
     # define arrays:
     near_spec = np.zeros((nnear,n_slices))
-    near_var = np.zeros((nnear,n_slices))
     near_spec_sub = np.zeros((nnear,n_slices))
-    near_var_sub = np.zeros((nnear,n_slices))
     near_ind = np.zeros(nnear,dtype=int)
     near_diff = np.zeros(nnear)
     nbad_fibs = np.zeros(n_spec)
     
     # set up plotting:
     if (testplot):
-        # deifne x axis if plotting:
+        # define x axis if plotting:
         xpix=np.arange(n_slices)
         fig1 = py.figure(1)
         fig2 = py.figure(2)
@@ -1528,8 +1529,8 @@ def clip_by_fibre(xpos,ypos,data_all,var_all,nnear=7,nsig=5.0,nsig2=3.0,medfilts
     # loop through each spectrum and identify all  the spectra that are close to it
     for i in range(n_spec):
         # skip to a specific fibre (only for debugging):
-        if (i < 107):
-            continue
+        #if (i < 90):
+        #    continue
         
         if (verbose):
             print('spectrum :',i,xpos_med[i],ypos_med[i])
@@ -1543,11 +1544,12 @@ def clip_by_fibre(xpos,ypos,data_all,var_all,nnear=7,nsig=5.0,nsig2=3.0,medfilts
 
         if (testplot):
             fig3.clf()
-            ax3 = fig3.add_subplot(1,1,1)
-            ax3.plot(xpos_med,ypos_med,'o',color='b')
-            ax3.plot(xpos_med[near_ind],ypos_med[near_ind],'o',color='r')
-            ax3.plot(xpos_med[i],ypos_med[i],'o',color='g')
-        
+            ax31 = fig3.add_subplot(1,2,1)
+            ax31.plot(xpos_med,ypos_med,'o',color='b')
+            ax31.plot(xpos_med[near_ind],ypos_med[near_ind],'o',color='r')
+            ax31.plot(xpos_med[i],ypos_med[i],'o',color='g')
+            ax32 = fig3.add_subplot(1,2,2)
+            
         if (verbose):
             print('Index of nearest fibres: ',near_ind)
         
@@ -1565,12 +1567,8 @@ def clip_by_fibre(xpos,ypos,data_all,var_all,nnear=7,nsig=5.0,nsig2=3.0,medfilts
         inear = 0
         for ind in near_ind:
 
-            if (verbose):
-                print(inear,ind,diff[ind])
-
             # store the spectra in the near_spec array:
             near_spec[inear,:] = data_all[ind,:]
-            near_var[inear,:] = var_all[ind,:]
             med_filt_spec = med_data_all[ind,:]
 
             # subtract the median filtered spectrum from the data:
@@ -1591,6 +1589,7 @@ def clip_by_fibre(xpos,ypos,data_all,var_all,nnear=7,nsig=5.0,nsig2=3.0,medfilts
                     title_string = 'fib number {0:3d}, separation {1:5.1f}'.format(ind,diff[ind])
                     ax2.set(title=title_string)
 
+            # save indices and differences:
             near_ind[inear] = ind
             near_diff[inear] = diff[ind]
 
@@ -1600,56 +1599,83 @@ def clip_by_fibre(xpos,ypos,data_all,var_all,nnear=7,nsig=5.0,nsig2=3.0,medfilts
                 ax1[0].plot(xpix,near_spec[inear,:],label='fibre '+str(inear)+' '+str(diff[ind]))
                 # plot subtracted spec:
                 ax1[1].plot(xpix,near_spec_sub[inear,:],label='fibre '+str(inear)+' '+str(diff[ind]))
-                
+
+            # increment counter at end of loop
             inear = inear +1
 
-        # calculate the median spectrum, and the median variance and sigma:
+        # calculate the median spectrum, with and without subtraction:
         med_spec_sub = np.nanmedian(near_spec_sub,axis=0)
-        med_var =  np.nanmedian(near_var,axis=0)
-        med_sigma = np.sqrt(med_var)
-        # calculate the median without the continuum subtraction:
         med_spec = np.nanmedian(near_spec,axis=0)
+        # calculate the median absolute deviation with subtraction:
+        mad_spec_sub = utils.mad(near_spec_sub,axis=0)
+
+        # do a robust fit to the median vs individual fluxes, with the aim of
+        # getting the scaling between the two.  First clean up the data and
+        # only include good points:
+        good = np.where(np.isfinite(near_data0) & np.isfinite(med_spec) & np.isfinite(near_sig0) & (near_spec_sub0 > 0) & (med_spec_sub > 0))
+        #
+        # now do the fit.  Make sure to catch it with an exception in case
+        # the fit fails for some reason.
+        try: 
+            popt, pcov = optimize.curve_fit(lin_func,med_spec_sub[good],near_spec_sub0[good],loss='soft_l1',bounds=([0.33,-0.001],[3.0,0.001]))
+            ma = popt[0]
+            mb = popt[1]
+        except:
+            ma = 1.0
+            mb = 0.0
+
+        print('robust gradient and intercept:',popt)
+        print('covariance array for robust fit:',pcov)
+        scale0 = ma
+        
+        # plot flux of median vs flux of individual fibre:
+        if (testplot):
+            ax32.plot(med_spec_sub,near_spec_sub0,'.')
+            ax32.plot(med_spec_sub[good],near_spec_sub0[good],'.')
+            low_x, high_x = ax32.get_xlim()
+            ax32.plot([low_x,high_x],[low_x,high_x],color='k')
+            ax32.plot([low_x,high_x],[ma*low_x+mb,ma*high_x+mb],color='r')
         
         # estimate the rms of the spectra.  For this we really want to remove outliers, as otherwise
         # then will make the error small
-        rms_spec_sub = np.nanstd(near_spec_sub,axis=0)
-
-        rms_spec_sub_orig = np.copy(rms_spec_sub)
+        #rms_spec_sub = np.nanstd(near_spec_sub,axis=0)
+        
+        #rms_spec_sub_orig = np.copy(rms_spec_sub)
         # now we need to modify the RMS in a few ways:
         # 1) in cases where the RMS is much smaller when clipping the largest outlier
         #    then we replace with the clipped value.
         # 2) For cases where the RMS is too low (not enough pixels or just by change
         #    due to small number of samples), then replace by local median of RMS 
         # now find the pixel furthest from the median and remove that from the calc of RMS.
-        near_spec_sub_clip = np.copy(near_spec_sub)
-        for j in range(n_slices):
-            idx = np.where(abs(near_spec_sub[:,j])==np.nanmax(abs(near_spec_sub[:,j])))
-            near_spec_sub_clip[idx,j] = np.nan
+        #near_spec_sub_clip = np.copy(near_spec_sub)
+        #for j in range(n_slices):
+        #    idx = np.where(abs(near_spec_sub[:,j])==np.nanmax(abs(near_spec_sub[:,j])))
+        #    near_spec_sub_clip[idx,j] = np.nan
         # do this a second time to find the small number of cases where you have
         # two outliers:
-        near_spec_sub_clip2 = np.copy(near_spec_sub_clip)
-        for j in range(n_slices):
-            idx = np.where(abs(near_spec_sub[:,j])==np.nanmax(abs(near_spec_sub_clip[:,j])))
-            near_spec_sub_clip2[idx,j] = np.nan
+        #near_spec_sub_clip2 = np.copy(near_spec_sub_clip)
+        #for j in range(n_slices):
+        #    idx = np.where(abs(near_spec_sub[:,j])==np.nanmax(abs(near_spec_sub_clip[:,j])))
+        #    near_spec_sub_clip2[idx,j] = np.nan
 
 
         # remove the largest outluer and if the rms is 1.5 times lower, then
         # use the clipped one:
-        rms_spec_sub_clip = np.nanstd(near_spec_sub_clip,axis=0)
-        rms_spec_sub_clip2 = np.nanstd(near_spec_sub_clip2,axis=0)
+        #rms_spec_sub_clip = np.nanstd(near_spec_sub_clip,axis=0)
+        #rms_spec_sub_clip2 = np.nanstd(near_spec_sub_clip2,axis=0)
         #
         # define local median filtered RMS, but of clipped version:
-        rms_spec_sub_med = nd.filters.generic_filter(rms_spec_sub_clip,np.nanmedian,size=25)
-        for j in range(n_slices):
+        #rms_spec_sub_med = nd.filters.generic_filter(rms_spec_sub_clip,np.nanmedian,size=25)
+        #for j in range(n_slices):
             # replace with clipped version:
-            if (rms_spec_sub_orig[j] > 1.5 * rms_spec_sub_clip[j]):
-                rms_spec_sub[j] = rms_spec_sub_clip[j]
-            if (rms_spec_sub_orig[j] > 1.5 * rms_spec_sub_clip2[j]):
-                rms_spec_sub[j] = rms_spec_sub_clip2[j]
+            #if (rms_spec_sub_orig[j] > 1.5 * rms_spec_sub_clip[j]):
+            #    rms_spec_sub[j] = rms_spec_sub_clip[j]
+            #if (rms_spec_sub_orig[j] > 1.5 * rms_spec_sub_clip2[j]):
+            #    rms_spec_sub[j] = rms_spec_sub_clip2[j]
             # replace with median if too low (but this is filtered version
             # of the clippd rms:
-            if (rms_spec_sub[j] < rms_spec_sub_med[j]):
-                rms_spec_sub[j] = rms_spec_sub_med[j]
+            #if (rms_spec_sub[j] < rms_spec_sub_med[j]):
+            #    rms_spec_sub[j] = rms_spec_sub_med[j]
             # replace with variance propagated value if too low:
             # don't do this for now:
             #if (rms_spec_sub[j] < near_sig0[j]):
@@ -1657,9 +1683,10 @@ def clip_by_fibre(xpos,ypos,data_all,var_all,nnear=7,nsig=5.0,nsig2=3.0,medfilts
                 
         if (testplot):
             # plot then
+            ax1[0].plot(xpix,med_spec,label='Median',color='k')
             ax1[1].plot(xpix,med_spec_sub,label='Median')
             # plot the measured rms spec:
-            ax1[2].plot(xpix,rms_spec_sub,label='RMS')
+            #ax1[2].plot(xpix,rms_spec_sub,label='RMS')
 
                 
         # Now for the fibre in question, flag the bad pixels:
@@ -1670,19 +1697,28 @@ def clip_by_fibre(xpos,ypos,data_all,var_all,nnear=7,nsig=5.0,nsig2=3.0,medfilts
                 if (testplot):
                     # plot diff divided by sigma (from variance) or RMS: 
                     ax1[3].plot(xpix,(near_spec_sub[ind,:]-med_spec_sub)/near_sig0,label='sigma')
-                    ax1[3].plot(xpix,(near_spec_sub[ind,:]-med_spec_sub)/med_sigma,label='median sigma')
-                    ax1[3].plot(xpix,(near_spec_sub[ind,:]-med_spec_sub)/rms_spec_sub,label='RMS')
-                    ax1[3].plot(xpix,(near_spec_sub[ind,:]-med_spec_sub)/rms_spec_sub_clip,label='RMS clipped')
+                    #ax1[3].plot(xpix,(near_spec_sub[ind,:]-med_spec_sub)/rms_spec_sub,label='RMS')
+                    #ax1[3].plot(xpix,(near_spec_sub[ind,:]-med_spec_sub)/rms_spec_sub_clip,label='RMS clipped')
+                    ax1[3].plot(xpix,(near_spec_sub[ind,:]-med_spec_sub*scale0)/mad_spec_sub,label='MAD',color='k')
                     
-                    ax1[2].plot(xpix,np.sqrt(near_var[ind,:]),label='sigma')
-                    ax1[2].plot(xpix,med_sigma,label='median sigma')
-                    ax1[2].plot(xpix,rms_spec_sub_clip,label='RMS clipped')
-                    ax1[2].plot(xpix,rms_spec_sub_orig,label='RMS orig')
+                    ax1[2].plot(xpix,near_sig0,label='sigma')
+                    #ax1[2].plot(xpix,rms_spec_sub_clip,label='RMS clipped')
+                    #ax1[2].plot(xpix,rms_spec_sub_orig,label='RMS orig')
+                    ax1[2].plot(xpix,mad_spec_sub,label='MAD',color='k')
 
                 # use the estimated RMS.  Use a regular threshold for the RMS (of nsig, typcially 5
                 # sigma, but also have a second threshold of at least nsig2 (say 3 sigma) from regular
                 # sigma from variance array so that we account for varying noise between spectra.
-                bad_ind = np.where((np.abs(near_spec_sub[ind,:]-med_spec_sub)>nsig*rms_spec_sub) & (np.abs(near_spec_sub[ind,:]-med_spec_sub)>nsig2*near_sig0))
+                # stadard new method:
+                #bad_ind = np.where((np.abs(near_spec_sub[ind,:]-med_spec_sub)>nsig*rms_spec_sub) & (np.abs(near_spec_sub[ind,:]-med_spec_sub)>nsig2*near_sig0))
+                # equivalent to old method:
+                #bad_ind = np.where((np.abs(near_spec_sub[ind,:]-med_spec_sub*scale0)>nsig*mad_spec_sub) & (np.abs(near_spec_sub[ind,:]-med_spec_sub*scale0)>nsig2*near_sig0))
+                #
+                # also put a limit in for the ratio of spectrum flux to observed flux.  If the median flux is
+                # -ve, set it to close to zero.
+                # 
+                bad_ind = np.where((np.abs(near_spec_sub[ind,:]-med_spec_sub*scale0)>nsig*mad_spec_sub) & (np.abs(near_spec_sub[ind,:]-med_spec_sub*scale0)>nsig2*near_sig0) & (np.abs(near_spec_sub0/(med_spec_sub.clip(min=1.0e-10)*scale0)) > 10.0))
+
                 #bad_ind = np.where(np.abs(near_spec_sub[ind,:]-med_spec_sub)>nsig*np.sqrt(near_var0))
 
                 # expand the bad pixel by expand_bad: 
@@ -1702,6 +1738,9 @@ def clip_by_fibre(xpos,ypos,data_all,var_all,nnear=7,nsig=5.0,nsig2=3.0,medfilts
                 if (verbose):
                     print('number of bad pixels:',np.size(bad_ind))
                     print('bad_ind:',bad_ind)
+                    print('flux ratio:',near_spec_sub0[bad_ind]/(med_spec_sub[bad_ind]*scale0))
+                    print('flux med sub:',med_spec_sub[bad_ind]*scale0)
+                    print('flux spec sub:',near_spec_sub0[bad_ind])
                 # plot bad pixels:
                 if (testplot):
                     ax1[0].plot(xpix[bad_ind],np.ravel(near_spec[ind,bad_ind]),'x',color='red')
@@ -1714,6 +1753,7 @@ def clip_by_fibre(xpos,ypos,data_all,var_all,nnear=7,nsig=5.0,nsig2=3.0,medfilts
                     ax2.plot(xpix,med_filt_spec0-5*near_sig0,':')
                     ax2.plot(xpix,med_filt_spec0+near_sig0,':')
                     ax2.plot(xpix,med_filt_spec0-near_sig0,':')
+                    ax32.plot(med_spec_sub[bad_ind],near_spec_sub0[bad_ind],'x',color='red')
 
                     
         if (testplot):
@@ -1733,15 +1773,17 @@ def clip_by_fibre(xpos,ypos,data_all,var_all,nnear=7,nsig=5.0,nsig2=3.0,medfilts
             py.pause(0.01)
             # pause code so we can look at spectra:
             #only pause if lots of bad pixels:
-            #if (nbad > 10):
-            yn = input('Continue? (y/n):')
+            if (nbad > 20):
+                yn = input('Continue? (y/n):')
             
         nbad_fibs[i] = np.size(bad_ind)
-        print(near_ind)
 
-    for i in range(n_spec):
-        print(i,nbad_fibs[i])
+    if (verbose):
+        for i in range(n_spec):
+            print(i,nbad_fibs[i])
         
+    if (verbose):
+        print(("Time taken %s sec" % (time.time() - start_time)))
         
     return data_all,var_all
 
