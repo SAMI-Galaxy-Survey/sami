@@ -693,8 +693,8 @@ def second_moments(image,ind):
     
     #Return the position of the peak intensity
     n = 20
-    xmed1 = np.round(xmed,decimals=0)
-    ymed1 = np.round(ymed,decimals=0)
+    xmed1 = np.int(np.round(xmed,decimals=0))
+    ymed1 = np.int(np.round(ymed,decimals=0))
     if (xmed1 - n > 0) & (xmed1+n < s[1]) & (ymed1 - n > 0) & (ymed1+n < s[0]):
         tmp = np.max(image[ymed1-n:ymed1+n+1,xmed1-n:xmed1+n+1])
         j = np.where(image == tmp)
@@ -717,7 +717,7 @@ def find_galaxy(image,nblob=1,fraction=0.1,quiet=True):
     s = np.shape(image)
     a = median_filter(image,size=5,mode='constant')
     j = a.ravel().argsort()
-    level = a.ravel()[j[np.size(a)*(1.0 - fraction)]]
+    level = a.ravel()[j[np.int(np.size(a)*(1.0 - fraction))]]
     j = np.where(a > level)
     
     a = np.zeros(s)
