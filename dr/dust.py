@@ -192,8 +192,8 @@ def dustCorrectSAMICube( path, overwrite=False ):
     header = hdulist[0].header
     ra, dec = header[ 'CATARA' ], header[ 'CATADEC' ]
     wl = header[ 'CRVAL3' ] + ( header[ 'CDELT3' ] *
-                                (1 + np.arange( header[ 'NAXIS3' ] ))
-                                - header[ 'CRPIX3' ] )
+                                (1 + np.arange( header[ 'NAXIS3' ] )
+                                - header[ 'CRPIX3' ] ))
     theta, phi = healpixAngularCoords( ra, dec )
     for name, map_info in MAPS_FILES.items():
         ebv = EBV(name, theta, phi)
