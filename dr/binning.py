@@ -55,7 +55,7 @@ def is_id_in_catalogs(sami_id, catalogs):
     sami_id = int(sami_id)
     for cat in catalogs:
         if sami_id not in catalogs[cat]['CATAID']:
-            print("SAMI ID %s not in GAMA catalog %s" % (sami_id, cat))
+            print("SAMI ID %s not in catalogue %s" % (sami_id, cat))
             return False
     # Found in all catalogs
     return True
@@ -72,7 +72,7 @@ class CatalogAccessor(object):
         self.catalog_filenames = dict()
 
         self.load_catalogs()
-        log.debug("Catalog data is loaded and available.")
+        log.debug("Catalogue data is loaded and available.")
 
 
     def load_catalogs(self):
@@ -88,7 +88,7 @@ class CatalogAccessor(object):
             try:
                 files_found = glob(self.path_to_catalogs + "/*" + cat + "*.fits")
                 if len(files_found) > 1:
-                    log.warning("Multiple potential catalogs found for %s!", cat)
+                    log.warning("Multiple potential catalogues found for %s!", cat)
                 self.catalog_filenames[cat] = files_found[0]
                 with pf.open(self.catalog_filenames[cat]) as f:
                     self.catalogs[cat] = f[1].data
@@ -96,7 +96,7 @@ class CatalogAccessor(object):
                     assert col in self.catalogs[cat].columns.dtype.names
             except Exception as e:
                 print("Original error: %s" % e)
-                raise ValueError("Invalid or missing GAMA Catalog %s in directory %s" %
+                raise ValueError("Invalid or missing catalogue %s in directory %s" %
                                  (cat, os.path.abspath(self.path_to_catalogs)))
 
     def cataid_available(self, sami_id):
@@ -104,7 +104,7 @@ class CatalogAccessor(object):
         found = []
         for cat in self.catalog_names:
             if sami_id not in self.catalogs[cat]['CATAID']:
-                print("SAMI ID %s not in catalog %s" % (sami_id, cat))
+                print("SAMI ID %s not in catalogue %s" % (sami_id, cat))
                 found.append(0)
             else:
                 found.append(1)
@@ -116,12 +116,12 @@ class CatalogAccessor(object):
         return True
 
     def retrieve(self, catalog_name, column, cataid):
-        """Return the value from the catalog for the given CATAID"""
+        """Return the value from the catalogue for the given CATAID"""
         cataid = int(cataid)
         catalog = self.catalogs[catalog_name]
         if cataid not in catalog['CATAID']:
             # print "SAMI ID %s not in GAMA catalogs - no aperture spectra produced" % cataid
-            raise ValueError("CATAID %s not in GAMA Catalog" % cataid)
+            raise ValueError("CATAID %s not in catalogue" % cataid)
         else:
             # Cut down the catalog to only contain the row for this SAMI ID.
             return catalog[catalog['CATAID'] == cataid][column][0]
@@ -144,7 +144,8 @@ def aperture_spectra_pair(path_blue, path_red, path_to_catalogs,overwrite=True):
         # Note spelling of Distance(s)Frames different from that used by GAMA
         'DistanceFrames': ['Z_TONRY_2'],
         'MGEPhotom': ['ReMGE_r','PAMGE_r','epsMGE_r'],
-        'ClustersCombined':['Z']
+        'ClustersCombined':['Z'],
+        'SAMI_COMBINED_single_sersic':['RE','ANG','AXRAT']
     }
 
     gama_catalogs = CatalogAccessor(path_to_catalogs, catalogs_required)
@@ -179,8 +180,8 @@ def aperture_spectra_pair(path_blue, path_red, path_to_catalogs,overwrite=True):
         if gama_catalogs.cataid_available(sami_id):
             log.info("Constructing apertures using GAMA data for SAMI ID %s", sami_id)
         else:
-            print("No aperture spectra produced for {} because it is not in the GAMA or cluster catalogs".format(sami_id))
-            return None
+            print("Only fixed aperture spectra produced for {} because it is not in the GAMA or cluster catalogs".format(sami_id))
+        #    return None
 
 
 
@@ -203,7 +204,18 @@ def aperture_spectra_pair(path_blue, path_red, path_to_catalogs,overwrite=True):
         except:
             print('%s not found in MGE catalogue. No MGE Re spectrum produced for %s' % (sami_id,sami_id))
 
-        
+        nosersic = False
+        try:
+            if not np.isfinite(gama_catalogs.retrieve('SAMI_COMBINED_single_sersic','RE',sami_id)/pix_size):
+                raise Exception
+            standard_apertures['re'] = {
+                'aperture_radius':gama_catalogs.retrieve('SAMI_COMBINED_single_sersic','RE',sami_id)/pix_size,
+                'pa': gama_catalogs.retrieve('SAMI_COMBINED_single_sersic','ANGWCS',sami_id),
+                'ellipticity': 1. - gama_catalogs.retrieve('SAMI_COMBINED_single_sersic','AXRAT',sami_id)
+                }
+        except:
+            print('%s not found in cluster Sersic catalogue.' % (sami_id))
+            nosersic = True
 
         try:
 
@@ -218,7 +230,9 @@ def aperture_spectra_pair(path_blue, path_red, path_to_catalogs,overwrite=True):
                 'ellipticity': gama_catalogs.retrieve('SersicCatAll', 'GAL_ELLIP_R', sami_id)
                 }
         except:
-            print('%s not found in GAMA catalogue. No GAMA Re spectrum produced for %s' % (sami_id,sami_id))
+            print('%s not found in GAMA catalogue.' % (sami_id))
+            if nosersic == True:
+                print('No Sersic aperture produced for {}'.format(sami_id))
 
 #        standard_apertures['r90'] = {
 #            'aperture_radius': gama_catalogs.retrieve('SersicCatAll', 'GAL_R90_R', sami_id)/pix_size,
@@ -226,17 +240,26 @@ def aperture_spectra_pair(path_blue, path_red, path_to_catalogs,overwrite=True):
 #            'ellipticity': gama_catalogs.retrieve('SersicCatAll', 'GAL_ELLIP_R', sami_id)
 #        }
 
+        kpc_ap = True
+
         try:
             redshift = gama_catalogs.retrieve('DistanceFrames', 'Z_TONRY_2', sami_id)
         except:
-            redshift = gama_catalogs.retrieve('ClustersCombined','Z',sami_id)
-        ang_size_kpc = (1*u.kpc / cosmo.kpc_proper_per_arcmin(redshift)).to(u.arcsec).value / pix_size
+            try:
+                redshift = gama_catalogs.retrieve('ClustersCombined','Z',sami_id)
+            except:
+                print('No redshift found for {} in either the GAMA or cluster catalogues'.format(sami_id))
+                print('No 3kpc aperture will be produced for {}'.format(sami_id))
+                kpc_ap = False
 
-        standard_apertures['3kpc_round'] = {
-            'aperture_radius': 1.5*ang_size_kpc,
-            'pa': 0,
-            'ellipticity': 0
-        }
+        if kpc_ap:
+            ang_size_kpc = (1*u.kpc / cosmo.kpc_proper_per_arcmin(redshift)).to(u.arcsec).value / pix_size
+
+            standard_apertures['3kpc_round'] = {
+                'aperture_radius': 1.5*ang_size_kpc,
+                'pa': 0,
+                'ellipticity': 0
+            }
 
         standard_apertures['1.4_arcsecond'] = {
             'aperture_radius': 1.4/2./pix_size,
@@ -261,17 +284,6 @@ def aperture_spectra_pair(path_blue, path_red, path_to_catalogs,overwrite=True):
             'pa': 0,
             'ellipticity': 0
             }
-
-#        try:
-#            seeing = get_seeing(hdulist_blue)
-#        except:
-#            print "Unable to determine seeing for %s, seeing aperture not included" % path_blue
-#        else:
-#            standard_apertures['seeing'] = {
-#                'aperture_radius': seeing/pix_size,
-#                'pa': 0,
-#                'ellipticity': 0
-#            }
 
         bin_mask = None
 
@@ -366,12 +378,21 @@ def aperture_spectra_pair(path_blue, path_red, path_to_catalogs,overwrite=True):
                 output_header['POS_ANG'] = (
                     aperture_data['pa'],
                     "Position angle of the major axis, N->E")
-                output_header['KPC_SIZE'] = (
-                    ang_size_kpc,
-                    "Size of 1 kpc at galaxy distance in pixels")
-                output_header['Z_TONRY'] = (
-                    redshift,
-                    "Redshift used to calculate galaxy distance")
+                if kpc_ap:
+                    output_header['KPC_SIZE'] = (
+                        ang_size_kpc,
+                        "Size of 1 kpc at galaxy distance in pixels")
+                    output_header['Z_TONRY'] = (
+                        redshift,
+                        "Redshift used to calculate galaxy distance")
+                else:
+                     output_header['KPC_SIZE'] = (
+                        -99,
+                        "Size of 1 kpc at galaxy distance in pixels")
+                     output_header['Z_TONRY'] = (
+                         -99,
+                         "Redshift used to calculate galaxy distance")
+
                 output_header['N_SPAX'] = (
                     n_spax_included,
                     "Number of spaxels included in mask")
