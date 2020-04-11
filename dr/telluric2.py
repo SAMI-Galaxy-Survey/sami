@@ -36,7 +36,9 @@ def TelluricCorrectPrimary(path_list,probenum,molecfit_dir=''):
 
 
 def TelluricCorrect(fcal_fname, star_flux, star_flux_err, wave, mf_bin_dir = '', 
-                    wrange_include='none', delete_files=True, quiet=True, primary=False):
+                    wrange_include='none', delete_files=False, quiet=True, primary=False):
+
+    print('Running molecfit on {}'.format(fcal_fname))
 
     """ Perform a telluric correction for every each fiber spectum using ESO's molecfit software """
     # Using the model correction determined by the molecfit software for the secondary standard 
