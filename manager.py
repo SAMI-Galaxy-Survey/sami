@@ -5371,7 +5371,7 @@ def read_stellar_mags():
             delimiter = ','
             name_func = lambda d: d['name']
         elif catalogue_type == 'FORNAX':
-            names = ('ID','radeg','decdeg','g','r','i','u','z')
+            names = ('ID','ra','dec','g','r','i','u','z')
             formats = ('U20','f8','f8','f8','f8','f8','f8','f8')
             skiprows = 1
             delimiter = None
