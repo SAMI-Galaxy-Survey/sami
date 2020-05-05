@@ -143,7 +143,7 @@ def aperture_spectra_pair(path_blue, path_red, path_to_catalogs,overwrite=True):
             'GAL_ELLIP_R'],
         # Note spelling of Distance(s)Frames different from that used by GAMA
         'DistanceFrames': ['Z_TONRY_2'],
-        'MGEPhotom': ['ReMGE_r','PAMGE_r','epsMGE_r'],
+        'MGEPhotom': ['ReMGE','PAMGE','epsMGE_Re'],
         'ClustersCombined':['Z'],
         'SAMI_COMBINED_single_sersic':['RE','ANG','AXRAT']
     }
@@ -155,7 +155,7 @@ def aperture_spectra_pair(path_blue, path_red, path_to_catalogs,overwrite=True):
     if out_dir == "":
         out_dir = '.'
     out_file_base = os.path.basename(path).split(".")[0]
-    output_filename = out_dir + "/" + out_file_base + "_aperture_spec.fits"
+    output_filename = out_dir + "/" + out_file_base + "_apspec.fits"
     
     #overwrite = True
     if (os.path.exists(output_filename)) & (overwrite == False):
@@ -194,12 +194,13 @@ def aperture_spectra_pair(path_blue, path_red, path_to_catalogs,overwrite=True):
         #assert hdulist_blue[0].header['CDELT1'] == hdulist_red[0].header['CDELT1']
 
         try:
-            if not np.isfinite(gama_catalogs.retrieve('MGEPhotom','ReMGE_r',sami_id)/pix_size):
+            if not np.isfinite(gama_catalogs.retrieve('MGEPh
+otom','ReMGE',sami_id)/pix_size):
                 raise Exception
             standard_apertures['re_MGE'] = {
-                'aperture_radius':gama_catalogs.retrieve('MGEPhotom','ReMGE_r',sami_id)/pix_size,
-                'pa': gama_catalogs.retrieve('MGEPhotom','PAMGE_r',sami_id),
-                'ellipticity': gama_catalogs.retrieve('MGEPhotom','epsMGE_r',sami_id)
+                'aperture_radius':gama_catalogs.retrieve('MGEPhotom','ReMGE',sami_id)/pix_size,
+                'pa': gama_catalogs.retrieve('MGEPhotom','PAMGE',sami_id),
+                'ellipticity': gama_catalogs.retrieve('MGEPhotom','epsMGE_Re',sami_id)
                 }
         except:
             print('%s not found in MGE catalogue. No MGE Re spectrum produced for %s' % (sami_id,sami_id))
