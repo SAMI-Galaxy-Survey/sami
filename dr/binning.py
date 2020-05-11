@@ -194,8 +194,7 @@ def aperture_spectra_pair(path_blue, path_red, path_to_catalogs,overwrite=True):
         #assert hdulist_blue[0].header['CDELT1'] == hdulist_red[0].header['CDELT1']
 
         try:
-            if not np.isfinite(gama_catalogs.retrieve('MGEPh
-otom','ReMGE',sami_id)/pix_size):
+            if not np.isfinite(gama_catalogs.retrieve('MGEPhotom','ReMGE',sami_id)/pix_size):
                 raise Exception
             standard_apertures['re_MGE'] = {
                 'aperture_radius':gama_catalogs.retrieve('MGEPhotom','ReMGE',sami_id)/pix_size,
