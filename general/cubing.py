@@ -224,7 +224,6 @@ else:
     cubing_method = 'Gaussian'
 
 # Some global constants:
-HG_CHANGESET = utils.hg_changeset(__file__)
 
 epsilon = np.finfo(np.float).eps
 # Store the value of epsilon for quick access.
@@ -1189,10 +1188,6 @@ def create_primary_header(ifu_list,name,files,WCS_pos,WCS_flag):
     for ifu in ifu_list:
         total_exptime+=ifu.primary_header['EXPOSED']
     hdr_new['TOTALEXP'] = (total_exptime, 'Total exposure (seconds)')
-
-    # Add the mercurial changeset ID to the header
-    hdr_new['HGCUBING'] = (HG_CHANGESET, 'Hg changeset ID for cubing code')
-    # Need to implement a global version number for the database
     
     # Put the RSS files into the header
     for num in range(len(files)):
@@ -1210,7 +1205,7 @@ def create_primary_header(ifu_list,name,files,WCS_pos,WCS_flag):
                                    'GRATID','GRATTILT','GRATLPMM','ORDER','TDFCTVER','TDFCTDAT','DICHROIC',
                                    'OBSTYPE','TOPEND','AXIS','AXIS_X','AXIS_Y','TRACKING','TDFDRVER']
 
-    primary_header_conditional_keyword_list = ['HGCOORDS','COORDROT','COORDREV']
+    primary_header_conditional_keyword_list = ['COORDROT','COORDREV']
 
     for keyword in primary_header_keyword_list:
         if keyword in ifu.primary_header.keys():
