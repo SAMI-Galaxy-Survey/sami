@@ -55,7 +55,7 @@ def is_id_in_catalogs(sami_id, catalogs):
     sami_id = int(sami_id)
     for cat in catalogs:
         if sami_id not in catalogs[cat]['CATAID']:
-            #print("SAMI ID %s not in GAMA catalog %s" % (sami_id, cat))
+            print("SAMI ID %s not in catalogue %s" % (sami_id, cat))
             return False
     # Found in all catalogs
     return True
@@ -72,7 +72,7 @@ class CatalogAccessor(object):
         self.catalog_filenames = dict()
 
         self.load_catalogs()
-        log.debug("Catalog data is loaded and available.")
+        log.debug("Catalogue data is loaded and available.")
 
 
     def load_catalogs(self):
@@ -88,15 +88,15 @@ class CatalogAccessor(object):
             try:
                 files_found = glob(self.path_to_catalogs + "/*" + cat + "*.fits")
                 if len(files_found) > 1:
-                    log.warning("Multiple potential catalogs found for %s!", cat)
+                    log.warning("Multiple potential catalogues found for %s!", cat)
                 self.catalog_filenames[cat] = files_found[0]
                 with pf.open(self.catalog_filenames[cat]) as f:
                     self.catalogs[cat] = f[1].data
                 for col in self.catalog_descriptions[cat]:
                     assert col in self.catalogs[cat].columns.dtype.names
             except Exception as e:
-                print("Original error: %s" % str(e))
-                raise ValueError("Invalid or missing GAMA Catalog %s in directory %s" %
+                print("Original error: %s" % e)
+                raise ValueError("Invalid or missing catalogue %s in directory %s" %
                                  (cat, os.path.abspath(self.path_to_catalogs)))
 
     def cataid_available(self, sami_id):
@@ -104,7 +104,7 @@ class CatalogAccessor(object):
         found = []
         for cat in self.catalog_names:
             if sami_id not in self.catalogs[cat]['CATAID']:
-                #print("SAMI ID %s not in catalog %s" % (sami_id, cat))
+                print("SAMI ID %s not in catalogue %s" % (sami_id, cat))
                 found.append(0)
             else:
                 found.append(1)
@@ -116,7 +116,7 @@ class CatalogAccessor(object):
         return True
 
     def retrieve(self, catalog_name, column, cataid):
-        """Return the value from the catalog for the given CATAID"""
+        """Return the value from the catalogue for the given CATAID"""
         cataid = int(cataid)
         catalog = self.catalogs[catalog_name]
         if cataid not in catalog['CATAID']:
@@ -143,8 +143,9 @@ def aperture_spectra_pair(path_blue, path_red, path_to_catalogs,overwrite=True):
             'GAL_ELLIP_R'],
         # Note spelling of Distance(s)Frames different from that used by GAMA
         'DistanceFrames': ['Z_TONRY_2'],
-        'MGEPhotom': ['ReMGE_r','PAMGE_r','epsMGE_r'],
-        'ClustersCombined':['Z']
+        'MGEPhotom': ['ReMGE','PAMGE','epsMGE_Re'],
+        'ClustersCombined':['Z'],
+        'SAMI_COMBINED_single_sersic':['RE','ANG','AXRAT']
     }
 
     gama_catalogs = CatalogAccessor(path_to_catalogs, catalogs_required)
@@ -154,7 +155,7 @@ def aperture_spectra_pair(path_blue, path_red, path_to_catalogs,overwrite=True):
     if out_dir == "":
         out_dir = '.'
     out_file_base = os.path.basename(path).split(".")[0]
-    output_filename = out_dir + "/" + out_file_base + "_aperture_spec_test.fits"
+    output_filename = out_dir + "/" + out_file_base + "_apspec.fits"
     
     if (os.path.exists(output_filename)) & (overwrite == False):
         return
@@ -178,8 +179,8 @@ def aperture_spectra_pair(path_blue, path_red, path_to_catalogs,overwrite=True):
         if gama_catalogs.cataid_available(sami_id):
             log.info("Constructing apertures using GAMA data for SAMI ID %s", sami_id)
         else:
-            print("No aperture spectra produced for {} because it is not in the GAMA or cluster catalogs".format(sami_id))
-            return None
+            print("Only fixed aperture spectra produced for {} because it is not in the GAMA or cluster catalogs".format(sami_id))
+        #    return None
 
 
 
@@ -192,17 +193,28 @@ def aperture_spectra_pair(path_blue, path_red, path_to_catalogs,overwrite=True):
         #assert hdulist_blue[0].header['CDELT1'] == hdulist_red[0].header['CDELT1']
 
         try:
-            if not np.isfinite(gama_catalogs.retrieve('MGEPhotom','ReMGE_r',sami_id)/pix_size):
+            if not np.isfinite(gama_catalogs.retrieve('MGEPhotom','ReMGE',sami_id)/pix_size):
                 raise Exception
             standard_apertures['re_MGE'] = {
-                'aperture_radius':gama_catalogs.retrieve('MGEPhotom','ReMGE_r',sami_id)/pix_size,
-                'pa': gama_catalogs.retrieve('MGEPhotom','PAMGE_r',sami_id),
-                'ellipticity': gama_catalogs.retrieve('MGEPhotom','epsMGE_r',sami_id)
+                'aperture_radius':gama_catalogs.retrieve('MGEPhotom','ReMGE',sami_id)/pix_size,
+                'pa': gama_catalogs.retrieve('MGEPhotom','PAMGE',sami_id),
+                'ellipticity': gama_catalogs.retrieve('MGEPhotom','epsMGE_Re',sami_id)
                 }
         except:
             print('%s not found in MGE catalogue. No MGE Re spectrum produced for %s' % (sami_id,sami_id))
 
-        
+        nosersic = False
+        try:
+            if not np.isfinite(gama_catalogs.retrieve('SAMI_COMBINED_single_sersic','RE',sami_id)/pix_size):
+                raise Exception
+            standard_apertures['re'] = {
+                'aperture_radius':gama_catalogs.retrieve('SAMI_COMBINED_single_sersic','RE',sami_id)/pix_size,
+                'pa': gama_catalogs.retrieve('SAMI_COMBINED_single_sersic','ANGWCS',sami_id),
+                'ellipticity': 1. - gama_catalogs.retrieve('SAMI_COMBINED_single_sersic','AXRAT',sami_id)
+                }
+        except:
+            print('%s not found in cluster Sersic catalogue.' % (sami_id))
+            nosersic = True
 
         try:
 
@@ -212,12 +224,14 @@ def aperture_spectra_pair(path_blue, path_red, path_to_catalogs,overwrite=True):
                             gama_catalogs.retrieve('ApMatchedCat', 'THETA_IMAGE', sami_id))
 
             standard_apertures['re'] = {
-                'aperture_radius': gama_catalogs.retrieve('SersicCatAll', 'GAL_RE_r', sami_id)/pix_size,
-                'pa': gama_catalogs.retrieve('SersicCatAll', 'GAL_PA_r', sami_id) + pos_angle_adjust,
-                'ellipticity': gama_catalogs.retrieve('SersicCatAll', 'GAL_ELLIP_r', sami_id)
+                'aperture_radius': gama_catalogs.retrieve('SersicCatAll', 'GAL_RE_R', sami_id)/pix_size,
+                'pa': gama_catalogs.retrieve('SersicCatAll', 'GAL_PA_R', sami_id) + pos_angle_adjust,
+                'ellipticity': gama_catalogs.retrieve('SersicCatAll', 'GAL_ELLIP_R', sami_id)
                 }
         except:
-            print('%s not found in GAMA catalogue. No GAMA Re spectrum produced for %s' % (sami_id,sami_id))
+            print('%s not found in GAMA catalogue.' % (sami_id))
+            if nosersic == True:
+                print('No Sersic aperture produced for {}'.format(sami_id))
 
 #        standard_apertures['r90'] = {
 #            'aperture_radius': gama_catalogs.retrieve('SersicCatAll', 'GAL_R90_R', sami_id)/pix_size,
@@ -225,17 +239,26 @@ def aperture_spectra_pair(path_blue, path_red, path_to_catalogs,overwrite=True):
 #            'ellipticity': gama_catalogs.retrieve('SersicCatAll', 'GAL_ELLIP_R', sami_id)
 #        }
 
+        kpc_ap = True
+
         try:
             redshift = gama_catalogs.retrieve('DistanceFrames', 'Z_TONRY_2', sami_id)
         except:
-            redshift = gama_catalogs.retrieve('ClustersCombined','Z',sami_id)
-        ang_size_kpc = (1*u.kpc / cosmo.kpc_proper_per_arcmin(redshift)).to(u.arcsec).value / pix_size
+            try:
+                redshift = gama_catalogs.retrieve('ClustersCombined','Z',sami_id)
+            except:
+                print('No redshift found for {} in either the GAMA or cluster catalogues'.format(sami_id))
+                print('No 3kpc aperture will be produced for {}'.format(sami_id))
+                kpc_ap = False
 
-        standard_apertures['3kpc_round'] = {
-            'aperture_radius': 1.5*ang_size_kpc,
-            'pa': 0,
-            'ellipticity': 0
-        }
+        if kpc_ap:
+            ang_size_kpc = (1*u.kpc / cosmo.kpc_proper_per_arcmin(redshift)).to(u.arcsec).value / pix_size
+
+            standard_apertures['3kpc_round'] = {
+                'aperture_radius': 1.5*ang_size_kpc,
+                'pa': 0,
+                'ellipticity': 0
+            }
 
         standard_apertures['1.4_arcsecond'] = {
             'aperture_radius': 1.4/2./pix_size,
@@ -261,17 +284,6 @@ def aperture_spectra_pair(path_blue, path_red, path_to_catalogs,overwrite=True):
             'ellipticity': 0
             }
 
-#        try:
-#            seeing = get_seeing(hdulist_blue)
-#        except:
-#            print "Unable to determine seeing for %s, seeing aperture not included" % path_blue
-#        else:
-#            standard_apertures['seeing'] = {
-#                'aperture_radius': seeing/pix_size,
-#                'pa': 0,
-#                'ellipticity': 0
-#            }
-
         bin_mask = None
 
         for hdulist in (hdulist_blue, hdulist_red):
@@ -294,15 +306,15 @@ def aperture_spectra_pair(path_blue, path_red, path_to_catalogs,overwrite=True):
 
             # Add header item to indicate if centre of aperture has been adjusted
 
-            centres_cat_file = '/import/opus1/nscott/SAMI_Survey/gama_catalogues/cube_centres_adjusted.dat'
-            centres_cat = Table.read(centres_cat_file,format='ascii')
-            id = np.int(hdulist[0].header['NAME'])
-            if id in centres_cat['CATID']:
-                ap_adjusted_flag = 'Y'
-            else:
-                ap_adjusted_flag = 'N'
+            #centres_cat_file = '/import/opus1/nscott/SAMI_Survey/gama_catalogues/cube_centres_adjusted.dat'
+            #centres_cat = Table.read(centres_cat_file,format='ascii')
+            #id = np.int(hdulist[0].header['NAME'])
+            #if id in centres_cat['CATID']:
+            #    ap_adjusted_flag = 'Y'
+            #else:
+            #    ap_adjusted_flag = 'N'
 
-            aperture_hdulist[0].header['AP_ADJ'] = (ap_adjusted_flag, "Aperture position manually adjusted")
+            #aperture_hdulist[0].header['AP_ADJ'] = (ap_adjusted_flag, "Aperture position manually adjusted")
 
             # Calculate the aperture bins based on first file only.
             if bin_mask is None:
@@ -311,7 +323,8 @@ def aperture_spectra_pair(path_blue, path_red, path_to_catalogs,overwrite=True):
                     bin_mask[aper] = aperture_bin_sami(hdulist, **standard_apertures[aper])
                     standard_apertures[aper]['mask'] = (bin_mask[aper] == 1)
                     standard_apertures[aper]['n_pix_included'] = int(np.sum(standard_apertures[aper]['mask']))
-                #log_aperture_data(standard_apertures, sami_id)
+
+                log_aperture_data(standard_apertures, sami_id)
 
             for aper in standard_apertures:
                 aperture_data = standard_apertures[aper]
@@ -332,7 +345,8 @@ def aperture_spectra_pair(path_blue, path_red, path_to_catalogs,overwrite=True):
                 #     aperture spectra will not introduce any systematics.
                 spaxel_area = n_spax_included * pix_size**2
                 # (remember aperture_radius is in pix_size, so the ellipse is initially pix_size)
-                aperture_area = (2 * np.pi *
+                # previous extra factor of 2 here removed by SMC (19/10/2019):
+                aperture_area = (np.pi *
                                  (aperture_data['aperture_radius'])**2 *
                                  (1 - aperture_data['ellipticity'])) * pix_size**2
                 area_correction = aperture_area / spaxel_area
@@ -361,12 +375,21 @@ def aperture_spectra_pair(path_blue, path_red, path_to_catalogs,overwrite=True):
                 output_header['POS_ANG'] = (
                     aperture_data['pa'],
                     "Position angle of the major axis, N->E")
-                output_header['KPC_SIZE'] = (
-                    ang_size_kpc,
-                    "Size of 1 kpc at galaxy distance in pixels")
-                output_header['Z_TONRY'] = (
-                    redshift,
-                    "Redshift used to calculate galaxy distance")
+                if kpc_ap:
+                    output_header['KPC_SIZE'] = (
+                        ang_size_kpc,
+                        "Size of 1 kpc at galaxy distance in pixels")
+                    output_header['Z_TONRY'] = (
+                        redshift,
+                        "Redshift used to calculate galaxy distance")
+                else:
+                     output_header['KPC_SIZE'] = (
+                        -99,
+                        "Size of 1 kpc at galaxy distance in pixels")
+                     output_header['Z_TONRY'] = (
+                         -99,
+                         "Redshift used to calculate galaxy distance")
+
                 output_header['N_SPAX'] = (
                     n_spax_included,
                     "Number of spaxels included in mask")
@@ -491,10 +514,14 @@ def bin_cube(hdu,bin_mask, mode='', **kwargs):
             binned_cube[:,spaxel_coords[0,:],spaxel_coords[1,:]] = cube[:,spaxel_coords[0,:],spaxel_coords[1,:]]
             binned_var[:,spaxel_coords[0,:],spaxel_coords[1,:]] = var[:,spaxel_coords[0,:],spaxel_coords[1,:]]
         elif n_spaxels > 1:
-            binned_spectrum = np.nansum(cube[:,spaxel_coords[0,:],spaxel_coords[1,:]],axis=1)/n_spaxels
+            #binned_spectrum = np.nansum(cube[:,spaxel_coords[0,:],spaxel_coords[1,:]],axis=1)/n_spaxels
+            binned_spectrum = np.nanmean(cube[:,spaxel_coords[0,:],spaxel_coords[1,:]],axis=1)
             binned_weighted_spectrum = np.nansum(weighted_cube[:,spaxel_coords[0,:],spaxel_coords[1,:]],axis=1)#/n_spaxels
+            binned_weighted_spectrum[binned_weighted_spectrum == 0] = np.nan # Fix for changed behaviour of np.nansum
             binned_weight = np.nansum(weight[:,spaxel_coords[0,:],spaxel_coords[1,:]],axis=1)
+            binned_weight[binned_weight == 0] = np.nan # As above
             binned_weight2 = np.nansum(weight[:,spaxel_coords[0,:],spaxel_coords[1,:]]**2,axis=1)
+            binned_weight2[binned_weight2 == 0.0] = np.nan # As above
 
             if mode == 'adaptive':
                 temp = np.tile(np.reshape(binned_weighted_spectrum/binned_weight,(len(binned_spectrum),1)),n_spaxels)
@@ -507,6 +534,7 @@ def bin_cube(hdu,bin_mask, mode='', **kwargs):
             covar_factor = return_covar_factor(spaxel_coords[0,:],spaxel_coords[1,:],covar,order)
             #binned_weighted_variance = np.nansum(weighted_var[:,spaxel_coords[0,:],spaxel_coords[1,:]],axis=1)*covar_factor
             binned_weighted_variance = np.nansum(weighted_var[:,spaxel_coords[0,:],spaxel_coords[1,:]]*covar_factor,axis=1)
+            binned_weighted_variance[binned_weighted_variance == 0] = np.nan # As above
             binned_variance = binned_weighted_variance*((binned_spectrum/binned_weighted_spectrum)**2)#/(n_spaxels**2)
             if mode == 'adaptive':
                 temp_var = np.tile(np.reshape(binned_weighted_variance/(binned_weight**2),(len(binned_variance),1)),n_spaxels)
@@ -686,8 +714,8 @@ def second_moments(image,ind):
     
     #Return the position of the peak intensity
     n = 20
-    xmed1 = np.round(xmed,decimals=0)
-    ymed1 = np.round(ymed,decimals=0)
+    xmed1 = np.int(np.round(xmed,decimals=0))
+    ymed1 = np.int(np.round(ymed,decimals=0))
     if (xmed1 - n > 0) & (xmed1+n < s[1]) & (ymed1 - n > 0) & (ymed1+n < s[0]):
         tmp = np.max(image[ymed1-n:ymed1+n+1,xmed1-n:xmed1+n+1])
         j = np.where(image == tmp)
@@ -710,7 +738,7 @@ def find_galaxy(image,nblob=1,fraction=0.1,quiet=True):
     s = np.shape(image)
     a = median_filter(image,size=5,mode='constant')
     j = a.ravel().argsort()
-    level = a.ravel()[j[np.size(a)*(1.0 - fraction)]]
+    level = a.ravel()[j[np.int(np.size(a)*(1.0 - fraction))]]
     j = np.where(a > level)
     
     a = np.zeros(s)
@@ -878,15 +906,15 @@ def aperture_bin_sami(hdu, aperture_radius=1, ellipticity=0, pa=0):
     # Check to see if the centre needs adjusting following Sree's catalogue.
     # If so, update xmed and ymed accordingly.
 
-    centres_cat_file = '/import/opus1/nscott/SAMI_Survey/gama_catalogues/cube_centres_adjusted.dat'
-    if os.path.exists(centres_cat_file):
-        centres_cat = Table.read(centres_cat_file,format='ascii')
-        id = np.int(hdu[0].header['NAME'])
+    #centres_cat_file = '/import/opus1/nscott/SAMI_Survey/gama_catalogues/cube_centres_adjusted.dat'
+    #if os.path.exists(centres_cat_file):
+    #    centres_cat = Table.read(centres_cat_file,format='ascii')
+    #    id = np.int(hdu[0].header['NAME'])
 
-        if id in centres_cat['CATID']:
-            ww = np.where(id == centres_cat['CATID'])[0]
-            xmed = centres_cat['x_sree'][ww]-1.0
-            ymed = centres_cat['y_sree'][ww]-1.0
+    #    if id in centres_cat['CATID']:
+    #        ww = np.where(id == centres_cat['CATID'])[0]
+    #        xmed = centres_cat['x_sree'][ww]-1.0
+    #        ymed = centres_cat['y_sree'][ww]-1.0
 
     pa_rad = np.radians(pa)
 

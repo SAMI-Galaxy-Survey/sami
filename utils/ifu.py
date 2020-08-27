@@ -14,8 +14,13 @@ import numpy as np
 
 # astropy fits file io (replacement for pyfits)
 import astropy.io.fits as pf
+# extra astropy bits to calculate airmass
+import astropy.units as u
+from astropy.time import Time
+from astropy.coordinates import SkyCoord, EarthLocation, AltAz
 
 from .fluxcal2_io import read_model_parameters
+
 
 class IFU:
 
@@ -67,7 +72,7 @@ class IFU:
 
         self.zdstart=self.primary_header['ZDSTART']
         self.zdend=self.primary_header['ZDEND']
-        
+
         # Wavelength range
         x=np.arange(self.naxis1)+1
         

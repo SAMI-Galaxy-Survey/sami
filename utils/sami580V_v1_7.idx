@@ -1,0 +1,149 @@
+# basic SAMI defaults
+DRC_INCLUDE sami580V.idx
+
+# use bias, darks and longslit flats
+DRC_OVERRIDE_PAR USEBIASIM TRUE REDUCE
+DRC_OVERRIDE_PAR USEDARKIM TRUE REDUCE
+DRC_OVERRIDE_PAR USEFLATIM TRUE REDUCE
+DRC_OVERRIDE_PAR BIASOVSCAN TRUE REDUCE
+
+#use POLYEXP for overscan fit (appropriate for old blue CCD):
+DRC_OVERRIDE_PAR FITOVERSCAN POLYEXP REDUCE
+DRC_OVERRIDE_PAR OVERSCANORDER 2 REDUCE
+
+# use LACosmic for object frames only
+# as of 2dfdr 6.3, can no longer switch cosmic ray rejection
+# on for object frames only
+DRC_OVERRIDE_PAR COSRAY_MTHD LACOSMIC REDUCE
+
+# use optimal extraction
+#DRC_OVERRIDE_PAR EXTR_OPERATION SMCOPTEX REDUCE
+# use regular optex, as now removing SL via TRACE:
+DRC_OVERRIDE_PAR EXTR_OPERATION OPTEX REDUCE
+DRC_OVERRIDE_PAR OPTEX_SLMODEL BSPLINE REDUCE
+#DRC_OVERRIDE_PAR OPTEX_NSLPARS 8 REDUCE
+#DRC_OVERRIDE_PAR OPTEX_NSLPARS 16 REDUCE
+# remove bsline fitting for OPTEX
+DRC_OVERRIDE_PAR OPTEX_NSLPARS 0 REDUCE
+# allow residual images to be made:
+DRC_OVERRIDE_PAR OPTEX_MKRES TRUE REDUCE
+# allow a single bad pixel within a profile:
+DRC_OVERRIDE_PAR NUMBADPIXEX 1 REDUCE
+
+# Use External PSF and set values for Blue Frame
+# not actually used (only here for testing)
+#DRC_OVERRIDE_PAR PSF_TYPE C2G2L REDUCE
+#DRC_CONST_PAR EPSF_HSEP 0.565 REDUCE
+#DRC_CONST_PAR EPSF_SIG1 0.799 REDUCE
+#DRC_CONST_PAR EPSF_SAMT 0.123 REDUCE
+#DRC_CONST_PAR EPSF_GAM1 4.870 REDUCE
+
+
+# still use 1D fit for now:
+#DRC_OVERRIDE_PAR SCATSUB NONE REDUCE
+# use new trace mode:
+DRC_OVERRIDE_PAR SCATSUB TRACE REDUCE
+#DRC_OVERRIDE_PAR SCATSUB 1DFIT REDUCE
+
+# subtract scattered light from offset sky frames
+DRC_OVERRIDE_PAR SUBSKY TRUE REDUCE
+
+# use whale shark matching algorithm
+DRC_OVERRIDE_PAR USE_WSM_ALGOL TRUE REDUCE
+# derive the spectral resolution:
+DRC_OVERRIDE_PAR SPECRES TRUE REDUCE
+
+# use sky lines for throughput calibration
+#DRC_OVERRIDE_PAR TPMETH SKYFLUX(MED) REDUCE
+DRC_OVERRIDE_PAR TPMETH OFFSKY REDUCE
+DRC_OVERRIDE_PAR SKYCOMBINE UNWTMEDIAN REDUCE
+
+# do not combine frames
+DRC_OVERRIDE_PAR AUTO_COMB FALSE REDUCE
+
+# use ridge tracking in fibre flat fields
+# not a valid parameter in 2dfdr 5.61 and later
+#DRC_OVERRIDE_PAR RIDGETRACK "USE SUBMODEL TLM" REDUCE
+
+# use rotate/shift to match for fibre flat fields only
+# not a valid parameter in 2dfdr 5.61 and later
+#DRC_OVERRIDE_PAR MATCH "FLAT ONLY" REDUCE
+
+# set default bias/lflat filenames (dark is done below)
+DRC_CONST_PAR BIAS_FILENAME BIAScombined.fits REDUCE
+DRC_CONST_PAR LFLAT_FILENAME LFLATcombined.fits REDUCE
+
+# better profile/TLM fitting:
+DRC_OVERRIDE_PAR SIGPROF TRUE REDUCE
+DRC_OVERRIDE_PAR TLMGAUSSFIT TRUE REDUCE
+
+# range to sum twilights over:
+DRC_OVERRIDE_PAR SKYLAM_START 4000.0 REDUCE
+DRC_OVERRIDE_PAR SKYLAM_END 5500.0 REDUCE
+
+# correct for TLM shifts:
+DRC_OVERRIDE_PAR MSR_TLM_CREEP TRUE REDUCE
+
+# use trace scattered light model for subtraction prior to profile fits:
+DRC_OVERRIDE_PAR TLMFITSUBBKG TRACE REDUCE
+
+
+# wavelength calibrate to sky lines
+# and also smooth the fit.
+DRC_OVERRIDE_PAR SKYSCRUNCH TRUE REDUCE
+DRC_OVERRIDE_PAR SKYFITORDER 0 REDUCE
+DRC_OVERRIDE_PAR SKYSCRUNCHSM TRUE REDUCE
+
+# PCA parameters, tuned for scattering wings of 5577:
+DRC_OVERRIDE_PAR PCASKY TRUE REDUCE
+DRC_OVERRIDE_PAR PCAFAINT TRUE REDUCE
+DRC_OVERRIDE_PAR PCANUM 10 REDUCE
+DRC_OVERRIDE_PAR PCASIG 10.0 REDUCE
+DRC_OVERRIDE_PAR PCALMIN 5527.0 REDUCE
+DRC_OVERRIDE_PAR PCALMAX 5627.0 REDUCE
+
+# bspline fit the flats to reduce noise and take out residual features.
+DRC_OVERRIDE_PAR BSSMOOTH TRUE REDUCE
+DRC_OVERRIDE_PAR BSSNPARS 16 REDUCE
+DRC_OVERRIDE_PAR BSSNSIGM 6.0 REDUCE
+
+# Hard coded wavelength ranges for SAMI blue arm data
+# keep consistent sampling for all data.  Units are nm:
+DRC_CONST_PAR WAVE_START 365.0 REDUCE  
+DRC_CONST_PAR WAVE_END 580.0 REDUCE
+
+# Hard code flag to apply filter to PCA around 5577:
+# NOTE - Not in standard IDX file
+DRC_CONST_PAR PCAFILT5577 TRUE REDUCE
+
+# RnD stuff to truncate flat fielding.  Should only be
+# required in the occasional cases where twilight is
+# not available, so be turned off by default.
+DRC_OVERRIDE_PAR TRUNCFLAT FALSE REDUCE
+DRC_OVERRIDE_PAR USEFLATSTART 500 REDUCE
+DRC_OVERRIDE_PAR USEFLATEND 2048 REDUCE
+
+# do heliocentric correction:
+DRC_OVERRIDE_PAR VELCOR TRUE REDUCE
+
+proc URP:ModifyReduceArgs {file class args} {
+
+    set mindist 99999999
+    set darkfiles [glob -nocomplain DARKcombined*.fits]
+    set bestdark ""
+    foreach darkfile $darkfiles {
+    	set darkexp [string range $darkfile 12 end-5]
+	set exposure [FitsOps:GetKeyWord $file EXPOSED]
+	if {abs($darkexp - $exposure) < $mindist} {
+	    set bestdark $darkfile
+	    set mindist [expr abs($darkexp - $exposure)]
+	}
+    }
+    ArgPutString $args DARK_FILENAME $bestdark
+
+    if {$class=="LFLAT"} {
+        ArgPutString $args USEFLATIM 0
+    }
+
+    return 0
+}

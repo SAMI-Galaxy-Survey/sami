@@ -1,0 +1,2 @@
+name,objID,ra,dec,type,psfMag_u,psfMagErr_u,psfMag_g,psfMagErr_g,psfMag_r,psfMagErr_r,psfMag_i,psfMagErr_i,psfMag_z,psfMagErr_z
+10000154,587722984442495050,221.26397023,0.85722468,STAR,18.63936,0.021473,17.69257,0.0123,17.328297,0.010979,17.204514,0.016144,17.134987,0.016114

@@ -1,0 +1,120 @@
+# basic SAMI defaults
+DRC_INCLUDE sami1000R.idx
+
+# Don't use bias, darks.  Do use longslit flats
+DRC_OVERRIDE_PAR USEBIASIM FALSE REDUCE
+DRC_OVERRIDE_PAR USEDARKIM FALSE REDUCE
+DRC_OVERRIDE_PAR USEFLATIM TRUE REDUCE
+DRC_OVERRIDE_PAR BIASOVSCAN TRUE REDUCE
+
+# reduce overscan order:
+DRC_OVERRIDE_PAR OVERSCANORDER 2 REDUCE
+
+# use LACosmic for object frames only
+# as of 2dfdr 6.3, can no longer switch cosmic ray rejection
+# on for object frames only
+DRC_OVERRIDE_PAR COSRAY_MTHD LACOSMIC REDUCE
+
+# use optimal extraction
+DRC_OVERRIDE_PAR EXTR_OPERATION OPTEX REDUCE
+DRC_OVERRIDE_PAR OPTEX_SLMODEL BSPLINE REDUCE
+# modify scattered light model order:
+#DRC_OVERRIDE_PAR OPTEX_NSLPARS 8 REDUCE
+# using TRACE not BSPLINE in OPTEX: 
+DRC_OVERRIDE_PAR OPTEX_NSLPARS 0 REDUCE
+# allow residual images to be made:
+DRC_OVERRIDE_PAR OPTEX_MKRES TRUE REDUCE
+# test to remove weighting on extraction:
+#DRC_OVERRIDE_PAR WTSCHEME NONE REDUCE
+#DRC_CONST_PAR OPTEX_KNTS_FILE knots.txt REDUCE
+# allow a single bad pixel within a profile:
+DRC_OVERRIDE_PAR NUMBADPIXEX 1 REDUCE
+
+# Use External PSF and set values for Red Frame
+#DRC_OVERRIDE_PAR PSF_TYPE C2G2L REDUCE
+#DRC_CONST_PAR EPSF_HSEP 0.63 REDUCE
+#DRC_CONST_PAR EPSF_HS_R 0.68 REDUCE
+#DRC_CONST_PAR EPSF_SIG1 0.933 REDUCE
+#DRC_CONST_PAR EPSF_SAMT 0.05 REDUCE
+#DRC_CONST_PAR EPSF_GAM1 0.65 REDUCE
+
+# Still use 1D fit for now:
+DRC_OVERRIDE_PAR SCATSUB TRACE REDUCE
+#DRC_OVERRIDE_PAR SCATSUB 1DFIT REDUCE
+
+# subtract scattered light from offset sky frames
+DRC_OVERRIDE_PAR SUBSKY TRUE REDUCE
+
+# use trace scattered light model for subtraction prior to profile fits:
+DRC_OVERRIDE_PAR TLMFITSUBBKG TRACE REDUCE
+
+
+# don't use whale shark matching algorithm
+DRC_OVERRIDE_PAR USE_WSM_ALGOL FALSE REDUCE
+# derive the spectral resolution:
+DRC_OVERRIDE_PAR SPECRES TRUE REDUCE
+
+# use skylines for wavelength calibration:
+DRC_OVERRIDE_PAR SKYSCRUNCH TRUE REDUCE
+DRC_OVERRIDE_PAR SKYFITORDER 2 REDUCE
+DRC_OVERRIDE_PAR SKYCOMBINE UNWTMEDIAN REDUCE
+
+# use sky lines for throughput calibration
+DRC_OVERRIDE_PAR TPMETH SKYFLUX(MED) REDUCE
+
+# do not combine frames
+DRC_OVERRIDE_PAR AUTO_COMB FALSE REDUCE
+
+# use ridge tracking in fibre flat fields
+# not a valid parameter in 2dfdr 5.61 and later
+#DRC_OVERRIDE_PAR RIDGETRACK "USE SUBMODEL TLM" REDUCE
+
+# use rotate/shift to match for fibre flat fields only
+# not a valid parameter in 2dfdr 5.61 and later
+#DRC_OVERRIDE_PAR MATCH "FLAT ONLY" REDUCE
+
+# set default bias/lflat filenames (dark is done below)
+DRC_CONST_PAR BIAS_FILENAME BIAScombined.fits REDUCE
+DRC_CONST_PAR LFLAT_FILENAME LFLATcombined.fits REDUCE
+
+# better profile/TLM fitting:
+DRC_OVERRIDE_PAR SIGPROF TRUE REDUCE
+DRC_OVERRIDE_PAR TLMGAUSSFIT TRUE REDUCE
+
+# range to sum twilights over:
+DRC_OVERRIDE_PAR SKYLAM_START 6350.0 REDUCE
+DRC_OVERRIDE_PAR SKYLAM_END 7250.0 REDUCE
+
+# correct for TLM shifts:
+DRC_OVERRIDE_PAR MSR_TLM_CREEP TRUE REDUCE
+
+# do heliocentric correction:
+DRC_OVERRIDE_PAR VELCOR TRUE REDUCE
+
+# Hard coded wavelength ranges for SAMI red arm data
+# keep consistent sampling for all data.  Units are nm:
+DRC_CONST_PAR WAVE_START 624.0 REDUCE  
+DRC_CONST_PAR WAVE_END 746.0 REDUCE
+
+
+proc URP:ModifyReduceArgs {file class args} {
+
+    set mindist 99999999
+    set darkfiles [glob -nocomplain DARKcombined*.fits]
+    set bestdark ""
+    foreach darkfile $darkfiles {
+    	set darkexp [string range $darkfile 12 end-5]
+	set exposure [FitsOps:GetKeyWord $file EXPOSED]
+	if {abs($darkexp - $exposure) < $mindist} {
+	    set bestdark $darkfile
+	    set mindist [expr abs($darkexp - $exposure)]
+	}
+    }
+    ArgPutString $args DARK_FILENAME $bestdark
+
+    if {$class=="LFLAT"} {
+        ArgPutString $args USEFLATIM 0
+    }
+
+    return 0
+}

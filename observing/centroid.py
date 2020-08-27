@@ -75,6 +75,8 @@ import scipy as sp
 
 import os
 
+import photutils 
+
 # astropy fits file io (replacement for pyfits)
 import astropy.io.fits as pf
 
@@ -618,8 +620,11 @@ def seeing(infile, ifu):
     title_string=string.join(['Probe ', str(ifu_data.ifu)])
     ax0.set_title(title_string, fontsize=14)    
 
-def centroid_fit(x,y,data,microns=True, circular=True):
+def centroid_fit(x,y,data,reference=None,rssframe=None,galaxyid=None,microns=True, circular=True): #** reference,rssframe,galaxyid added 
+
     """Fit the x,y,data values, regardless of what they are and return some useful stuff. Data is an array of spectra"""
+
+    working_dir = rssframe.strip('sci.fits')
 
     # Smooth the data spectrally to get rid of cosmics
     data_smooth=np.zeros_like(data)
@@ -631,17 +636,117 @@ def centroid_fit(x,y,data,microns=True, circular=True):
     data_sum=np.nansum(data_smooth[:,200:1800],axis=1)
     data_med=np.nanmedian(data_smooth[:,200:1800], axis=1)
 
-    # Use the crude distributed centre-of-mass to get the rough centre of mass
-    com=utils.comxyz(x,y,data_sum)
-    
+#** New masking method starts ————————————————————————————————————————————————
+    from scipy.ndimage.filters import gaussian_filter
+    from astropy.stats import sigma_clipped_stats
+    from photutils import find_peaks
+
+   # Parameter initializations
+    x0, y0 = x-np.min(x), y-np.min(y) # image x,y
+    xc, yc = (np.max(x)-np.min(x))/2.+np.min(x),(np.max(y)-np.min(y))/2.+np.min(y) # central pixel
+    width = 85. # default gaussian filtering size
+    checkind = 'None' # for check list
+    img = np.zeros((np.max(x0)+1,np.max(y0)+1)) # rss image
+    x_good, y_good, data_sum_good = x, y, data_sum  # good fibres to use
+    tx,ty,trad = xc,yc,1000     #target x,y centre and masking radius (1000 means no masking)
+    if not os.path.exists(working_dir+'_centroid_fit_reference/'): # path to save centre of reference frame & checklist
+        os.makedirs(working_dir+'_centroid_fit_reference')
+
+   # Load fibre flux to image
+    for i in range(len(x0)):
+        img[x0[i],y0[i]] = data_sum[i]
+
+   # Gaussian filtering
+    img1 = gaussian_filter(img, sigma=(width, width), order=0, mode='constant') # width = diameter of a core in degrees/microns
+
+   # Find peaks
+    mean, median, std = sigma_clipped_stats(img1, sigma=3.0)
+    threshold = median + std
+    tbl = find_peaks(img1, threshold, box_size=105)
+
+   # Case1: If no peaks are found, masking is not applied. Actually I don't find any.
+    if tbl == None:
+        checkind = 'nopeak'
+
+    elif(len(tbl) < 1): 
+        checkind = 'nopeak'
+
+   # Case2: A single peak is found
+    elif(len(tbl) == 1): 
+        checkind = 'single'
+        dist = (tbl['y_peak']+np.min(x)-xc)**2+(tbl['x_peak']+np.min(y)-yc)**2    # separation between a peak and centre 
+        if(dist < (310)**2): # Single peak near the centre
+            tx,ty,trad = tbl['y_peak']+np.min(x), tbl['x_peak']+np.min(y),105*2  # y_peak is x. yes. it's right.
+        else:  # When a peak is near the edge. High possibility that our target is not detected due to low brightness
+            for k in range(1,100):  # repeat until it finds multiple peaks with reduced filtering box
+                width = width*0.98
+                img3 = gaussian_filter(img, sigma=(width, width), order=0, mode='constant',cval=np.min(img)) # width = diameter of a core in degrees/microns
+                mean, median, std = sigma_clipped_stats(img3, sigma=3.0)
+                threshold = median + std*0.1
+                tbl = find_peaks(img3, threshold, box_size=width) #find peaks
+                if tbl == None:
+                    continue
+                if(len(tbl)==1): # only a single peak is found until maximum iteration (=100)
+                    tx,ty,trad=tbl['y_peak']+np.min(x), tbl['x_peak']+np.min(y),1000 # fibre masking is not applied (trad = 1000)
+                    checkind = 'single_edge'
+
+                if(len(tbl)>1):  # multiple peaks are found, go to Case3: multiple peaks
+                    checkind = 'multi_faint'
+                    break
+
+    # Case3: When there are multiple peaks
+    elif(len(tbl) > 1):
+        if checkind is not 'multi_faint':
+            checkind = 'multi'
+        xx,yy = tbl['y_peak']+np.min(x), tbl['x_peak']+np.min(y) # y_peak is x. yes. it's right.
+
+        # The assumption is that dithering is relatively small, and our target is near the target centre from the (1st) reference frame
+        if reference is not None and rssframe != reference and os.path.exists(working_dir+'_centroid_fit_reference/centre_'+galaxyid+'_ref.txt') != False:
+            fileref = open(working_dir+'_centroid_fit_reference/centre_'+galaxyid+'_ref.txt','r')
+            rx,ry=np.loadtxt(fileref, usecols=(0,1))
+            coff = (xx-rx)**2+(yy-ry)**2  # If not reference frame, the closest object from the reference
+        else:
+            coff = (xx-xc)**2+(yy-yc)**2  # If reference frame, the closest object from the centre
+        
+        tx, ty = xx[np.where(coff == np.min(coff))[0][0]], yy[np.where(coff == np.min(coff))[0][0]]  # target centre 
+        xx, yy = xx[np.where(xx*yy != tx*ty)], yy[np.where(xx*yy != tx*ty)]
+        osub = np.where(((xx-tx)**2+(yy-ty)**2 - np.min((xx-tx)**2+(yy-ty)**2)) < 0.1)   # the 2nd closest object
+        trad = np.sqrt((xx[osub]-tx)**2+(yy[osub]-ty)**2)/2.   # masking radius = (a separation btw the target and 2nd closest object)/2.
+        if(trad > 105*2): # when masking radius is too big
+            trad = 105*2
+        if(trad < 105*1.5): # when masking radius is too small
+            trad = 105*1.5
+
+    # Use fibres only within masking radius
+    gsub = np.where(np.sqrt((x-tx)**2+(y-ty)**2) < trad)
+    if len(gsub) < 5:
+        tdist = np.sqrt((x-tx)**2+(y-ty)**2)
+        inds = np.argsort(tdist)
+        gsub = inds[:5]
+    x_good, y_good, data_sum_good = x[gsub], y[gsub], data_sum[gsub]
+
+    # Save the target centre of reference frame
+    if reference is not None and rssframe == reference:
+        ref=open(working_dir+'_centroid_fit_reference/centre_'+galaxyid+'_ref.txt','w')
+        try:
+            ref.write(str(tx.data[0])+' '+str(ty.data[0]))
+        except:
+            ref.write(str(tx)+' '+str(ty))
+        ref.close()
+
+#** New masking method ends ————————————————————————————————————————————————
+
+   
+ # Use the crude distributed centre-of-mass to get the rough centre of mass
+    com=utils.comxyz(x_good,y_good,data_sum_good) #**use good data within masking
+
     # Peak height guess could be closest fibre to com position.
     dist=(x-com[0])**2+(y-com[1])**2 # distance between com and all fibres.
-        
+ 
     # First guess at width of Gaussian - diameter of a core in degrees/microns.
     if microns==True:
         sigx=105.0
         core_diam=105.0
-
     else:
         sigx=4.44e-4
         core_diam=4.44e-4
@@ -649,17 +754,20 @@ def centroid_fit(x,y,data,microns=True, circular=True):
     # First guess Gaussian parameters.
     if circular==True:
         p0=[data_sum[np.sum(np.where(dist==np.min(dist)))], com[0], com[1], sigx, 0.0]
-        #print "Guess Parameters:", p0
+
+        #print "Guess Parameters:", p0 #here
 
     elif circular==False:
         p0=[data_sum[np.sum(np.where(dist==np.min(dist)))], com[0], com[1], sigx, sigx, 45.0, 0.0]
         #print "Guess Parameters:", p0
-    
-    # Fit two circular 2D Gaussians.
-    gf=fitting.TwoDGaussFitter(p0,x,y,data_sum)
-    fitting.fibre_integrator(gf, core_diam) # fibre integrator
-    gf.fit()
 
+    # Fit two circular 2D Gaussians.
+    gf=fitting.TwoDGaussFitter(p0,x_good,y_good,data_sum_good)     #** use good data within masking
+    amplitude_mic, xout_mic, yout_mic, sig_mic, bias_mic = gf.p    
+
+
+    fitting.fibre_integrator(gf, core_diam) # fibre integrator
+    gf.fit() #### gaussian fitting
     # Make a linear grid to reconstruct the fitted Gaussian over.
     x_0=np.min(x) 
     y_0=np.min(y)
@@ -678,6 +786,9 @@ def centroid_fit(x,y,data,microns=True, circular=True):
         for jj in range(len(ylin)):
             yval=ylin[jj]
             model[ii,jj]=gf.fitfunc(gf.p, xval, yval)
+
+    amplitude_mic, xout_mic, yout_mic, sig_mic, bias_mic = gf.p    
+  #  print('gx,gy final',xout_mic,yout_mic) #test
     
     return gf.p, data_sum, xlin, ylin, model
 

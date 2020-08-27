@@ -413,7 +413,7 @@ def dithered_cubes_from_rss_list(files, objects='all', **kwargs):
 
 def dithered_cube_from_rss_wrapper(files, name, size_of_grid=50, 
                                    output_pix_size_arcsec=0.5, drop_factor=0.5,
-                                   clip=False, clip_by_fibre=True, plot=True, write=True, suffix='',
+                                   clip=False, do_clip_by_fibre=True, plot=True, write=True, suffix='',
                                    nominal=False, root='', overwrite=False,
                                    offsets='file', covar_mode='optimal',
                                    do_dar_correct=True, clip_throughput=True,
@@ -443,7 +443,7 @@ def dithered_cube_from_rss_wrapper(files, name, size_of_grid=50,
         outfile_name_full=os.path.join(directory, outfile_name)
 
         # Check if the filename already exists
-        if os.path.exists(outfile_name_full):
+        if (os.path.exists(outfile_name_full)) | (os.path.exists(os.path.splitext(outfile_name_full)[0]+'.fits.gz')):
             if overwrite:
                 os.remove(outfile_name_full)
             else:
@@ -464,7 +464,7 @@ def dithered_cube_from_rss_wrapper(files, name, size_of_grid=50,
         dithered_cube_from_rss(
             ifu_list, size_of_grid=size_of_grid,
             output_pix_size_arcsec=output_pix_size_arcsec,
-            drop_factor=drop_factor, clip=clip, clip_by_fibre=clip_by_fibre, plot=plot,
+            drop_factor=drop_factor, clip=clip, do_clip_by_fibre=do_clip_by_fibre, plot=plot,
             offsets=offsets, covar_mode=covar_mode,
             do_dar_correct=do_dar_correct, clip_throughput=clip_throughput,
             update_tol=update_tol)
@@ -549,7 +549,7 @@ def dithered_cube_from_rss_wrapper(files, name, size_of_grid=50,
 
 
 def dithered_cube_from_rss(ifu_list, size_of_grid=50, output_pix_size_arcsec=0.5, drop_factor=0.5,
-                           clip=False, clip_by_fibre=True, plot=True, offsets='file', covar_mode='optimal',
+                           clip=False, do_clip_by_fibre=True, plot=True, offsets='file', covar_mode='optimal',
                            do_dar_correct=True, clip_throughput=True, update_tol=0.02):
     diagnostic_info = {}
 
@@ -675,8 +675,8 @@ def dithered_cube_from_rss(ifu_list, size_of_grid=50, output_pix_size_arcsec=0.5
                               (galaxy_data.fibre_throughputs > 1.5))
             galaxy_data.data[bad_throughput, :] = np.nan
             galaxy_data.var[bad_throughput, :] = np.nan
-            print('clipping:',bad_throughput)
-            print(galaxy_data.fibre_throughputs)
+            #print('clipping:',bad_throughput)
+            #print(galaxy_data.fibre_throughputs)
             
         xfibre_all[j, :] = xm
         yfibre_all[j, :] = ym
@@ -746,7 +746,7 @@ def dithered_cube_from_rss(ifu_list, size_of_grid=50, output_pix_size_arcsec=0.5
 
     # alternative bad pixel clipping. At the moment, set the default to be not using
     # this, but allow clipping by changing the paramete do_clip_by_fibre:
-    if (clip_by_fibre):
+    if (do_clip_by_fibre):
         print('Clipping bad pixels by fibre...')
         data_all,var_all = clip_by_fibre(xfibre_all,yfibre_all,data_all,var_all,testplot=False,verbose=False)
         print('Clipping done.')
@@ -1355,22 +1355,28 @@ def scale_cube_pair(file_pair, scale, **kwargs):
     for path in file_pair:
         scale_cube(path, scale, **kwargs)
 
-def scale_cube(path, scale, hdu='PRIMARY', band=None):
+def scale_cube(path, scale, hdu='PRIMARY', band=None, apply_scale=True):
     """Scale a single cube by a given value."""
     hdulist = pf.open(path, 'update')
     try:
         old_scale = hdulist[hdu].header['RESCALE']
     except KeyError:
         old_scale = 1.0
-    hdulist['PRIMARY'].data *= (scale / old_scale)
-    hdulist['VARIANCE'].data *= (scale / old_scale)**2
-    hdulist[hdu].header['RESCALE'] = (scale, 'Scaling applied to data')
+    # only apply scaling if actually requested, otherwise just calculate it:
+    if (apply_scale):
+        hdulist['PRIMARY'].data *= (scale / old_scale)
+        hdulist['VARIANCE'].data *= (scale / old_scale)**2
+        hdulist[hdu].header['RESCALED'] = (True, 'Has rescaling been applied?')
+    else:
+        hdulist[hdu].header['RESCALED'] = (False, 'Has rescaling been applied?')
+    # the rescaling value, whether we apply it or not:
+    hdulist[hdu].header['RESCALE'] = (scale, 'Scaling to apply to data')
     if band is not None:
         hdulist[hdu].header['SCALEBND'] = (band, 'Band used to scale data')
     hdulist.flush()
     hdulist.close()
 
-def scale_cube_pair_to_mag(file_pair, axis, hdu='PRIMARY', band=None):
+def scale_cube_pair_to_mag(file_pair, axis, hdu='PRIMARY', band=None,apply_scale=True):
     """
     Scale both cubes according to their pre-measured magnitude.
 
@@ -1398,7 +1404,7 @@ def scale_cube_pair_to_mag(file_pair, axis, hdu='PRIMARY', band=None):
     if measured_mag == -99999:
         # No valid magnitude found
         scale = 1.0
-    scale_cube_pair(file_pair, scale, hdu=hdu, band=band)
+    scale_cube_pair(file_pair, scale, hdu=hdu, band=band,apply_scale=apply_scale)
     return scale
 
 def wavelength_overlap(file_pair, band, axis):
@@ -1624,8 +1630,10 @@ def clip_by_fibre(xpos,ypos,data_all,var_all,nnear=7,nsig=5.0,nsig2=3.0,medfilts
             ma = 1.0
             mb = 0.0
 
-        print('robust gradient and intercept:',popt)
-        print('covariance array for robust fit:',pcov)
+        if (verbose):
+            print('robust gradient and intercept:',popt)
+            print('covariance array for robust fit:',pcov)
+            
         scale0 = ma
         
         # plot flux of median vs flux of individual fibre:
@@ -1729,10 +1737,10 @@ def clip_by_fibre(xpos,ypos,data_all,var_all,nnear=7,nsig=5.0,nsig2=3.0,medfilts
                     var_all[i,ibad] = np.nan
                     if (expand_bad > 0):
                         for ie in range(expand_bad+1):
-                            data_all[i,ibad+ie] = np.nan 
-                            data_all[i,ibad-ie] = np.nan 
-                            var_all[i,ibad+ie] = np.nan
-                            var_all[i,ibad-ie] = np.nan
+                            data_all[i,min(ibad+ie,n_slices-1)] = np.nan 
+                            data_all[i,max(ibad-ie,0)] = np.nan 
+                            var_all[i,min(ibad+ie,n_slices-1)] = np.nan
+                            var_all[i,max(ibad-ie,0)] = np.nan
                 
 
                 if (verbose):

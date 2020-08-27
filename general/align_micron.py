@@ -129,17 +129,17 @@ from ..observing import centroid
 from ..utils.mc_adr import DARCorrector
 
 import numpy as np
-import os
+import os, shutil
 import matplotlib.pyplot as plt
 from matplotlib import cm
 import astropy.io.fits as pf
 from scipy.optimize import leastsq
 
-
 HG_CHANGESET = utils.hg_changeset(__file__)
 
 # Multiply by this value to convert arcseconds to microns
 ARCSEC_TO_MICRON = 1000.0 / 15.2
+
 
 ifus=[1,2,3,4,5,6,7,8,9,10,11,12,13]
 
@@ -151,11 +151,15 @@ def find_dither(RSSname,reference,centroid=True,inter=False,plot=False,remove_fi
       ## into a txt file.  
 
       if centroid:
+          # Clean up any existing centroiding files
+          centroid_dir = ''.join([os.path.splitext(reference)[0],'/centroid_fit_reference'])
+          if os.path.exists(centroid_dir):
+                shutil.rmtree(centroid_dir)
           for name in RSSname:
-              get_centroid(name, do_dar_correct=do_dar_correct)
-            
+              #print(name)
+              get_centroid(name, reference, do_dar_correct=do_dar_correct) #**reference added
+
       nRSS=len(RSSname)
-      
       
       ### For the reference frame extracts the position in micron for the central fibers of each IFU
       ### These positions are stored into "central_data" and saved int the file "file_centralfib" to 
@@ -163,7 +167,7 @@ def find_dither(RSSname,reference,centroid=True,inter=False,plot=False,remove_fi
       ### N.B. The huge assumption here is that the coordinates in micron of each central fibers on the focal 
       ### plane will remain exactly the same in the various exposures!  
       
-      file_centralfib=''.join([reference.strip('.fits'), "ref_centrFIB.txt"]) 
+      file_centralfib=''.join([os.path.splitext(reference)[0], "ref_centrFIB.txt"]) 
       f=open(file_centralfib,'w')
       
     
@@ -196,7 +200,7 @@ def find_dither(RSSname,reference,centroid=True,inter=False,plot=False,remove_fi
       ycent = np.array([data['ycent'] for data in central_data])
       
       
-      file_ref=''.join([reference.strip('.fits'), "_centroid"]) # Name of the file containing the centroid coordinates for the RSS used as a reference
+      file_ref=''.join([os.path.splitext(reference)[0], "_centroid"]) # Name of the file containing the centroid coordinates for the RSS used as a reference
       
       xref=np.zeros(n_ifu)   #x coordinates of centroid in each ifu of the reference RSS
       yref=np.zeros(n_ifu)   #y coordinates of centroid in each ifu of the reference RSS
@@ -231,7 +235,7 @@ def find_dither(RSSname,reference,centroid=True,inter=False,plot=False,remove_fi
       
       ## Check if IRAF output db already exist. If yes, delete it
       
-      file_geodb=''.join([reference.strip('.fits'), "_dbsolution"]) # File where the 2D solution of geomap is stored 
+      file_geodb=''.join([os.path.splitext(reference)[0], "_dbsolution"]) # File where the 2D solution of geomap is stored 
       if os.path.isfile(file_geodb):
                 os.remove(file_geodb)
 
@@ -246,7 +250,7 @@ def find_dither(RSSname,reference,centroid=True,inter=False,plot=False,remove_fi
          
              ## Define names of all the files used in this part of the module 
              
-             name=RSSmatch[i].strip('.fits')
+             name=os.path.splitext(RSSmatch[i])[0]
              file_centroid=''.join([name, "_centroid"]) # File containing the centroid coordinates. Produce by get_centroid
              file_geoin=''.join([name, "_mapin.txt"]) # This is the input file of geomap. It includes 4 columns having the x,y coordinates of the centroid in the inupt RSS and the ones in the reference RSS
              file_stats=''.join([name, "_fit"]) # File containing the detailed statistics for each fit. The content of each file is shown on the terminal.
@@ -387,9 +391,12 @@ def find_dither(RSSname,reference,centroid=True,inter=False,plot=False,remove_fi
 
       if remove_files:
           # Remove more text files
-          for filename in [file_geodb, file_centralfib, ''.join([reference.strip('.fits'), "_centroid"])]:
+          for filename in [file_geodb, file_centralfib, ''.join([os.path.splitext(reference)[0], "_centroid"])]:
               if os.path.exists(filename):
                 os.remove(filename)
+          ref_dir = ''.join([os.path.splitext(reference)[0],'/centroid_fit_reference/'])
+          if os.path.exists(ref_dir):
+                shutil.rmtree(ref_dir)
 
       # Re-calculate the reference X and Y values
       recalculate_ref(results, central_data)
@@ -416,6 +423,7 @@ def find_dither(RSSname,reference,centroid=True,inter=False,plot=False,remove_fi
                           'xref_median': results[0]['xref_median'],
                           'yref_median': results[0]['yref_median']}
       save_results(ref_results_dict)
+      #print(ref_results_dict)
       
       ## Save final dither solution
       #file_results=''.join([reference.strip('.fits'), "_dither_solution.txt"])
@@ -522,32 +530,32 @@ def fit_transform(p0, coords_in, coords_ref, sigma_clip=None, good=None):
             break
     return fit, good, n_good
 
-def get_centroid(infile, do_dar_correct=True):
+def get_centroid(infile,reference=None, do_dar_correct=True): #** reference added
 
     ## Create name of the file where centroid coordinates are stored 
     
-    out_txt=''.join([infile.strip('.fits'), "_centroid"])
+    out_txt=''.join([os.path.splitext(infile)[0], "_centroid"])
 
     f=open(out_txt, 'w')
-    
+ 
     ## Run centroid fit on each IFU
-    
-    for i, ifu in enumerate(ifus):
 
+    for i, ifu in enumerate(ifus):
             try:
                 ifu_data=utils.IFU(infile, ifu, flag_name=False)
             except IndexError:
                 # Probably a broken hexabundle
                 continue
-                
-            p_mic, data_mic, xlin_mic, ylin_mic, model_mic=centroid.centroid_fit(ifu_data.x_microns, ifu_data.y_microns,
-                                                                                    ifu_data.data, circular=True)
+
+
+            p_mic, data_mic, xlin_mic, ylin_mic, model_mic=centroid.centroid_fit(ifu_data.x_microns, ifu_data.y_microns, ifu_data.data, reference,infile,ifu_data.name, circular=True) #**reference,infile,ifu_data.name added
+
+
             amplitude_mic, xout_mic, yout_mic, sig_mic, bias_mic=p_mic
-            
             ##Get coordinates in micron. 
             ##Since centroid_fit currently inverts the x coordinates to have 'on-sky' coordinates, here 
             ##I need to re-multiply x coordinates by -1 to have them in the focal plane reference 
-             
+                
             x_out= -1*xout_mic
             y_out= yout_mic
             
