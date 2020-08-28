@@ -29,8 +29,6 @@ from scipy.ndimage.filters import median_filter
 import scipy.optimize as optimize
 import re
 
-HG_CHANGESET = utils.hg_changeset(__file__)
-
 # KEY:      SS = Secondary Standard, PS = Primary Standard
 
 def derive_transfer_function(frame_list, PS_spec_file=None, use_PS=False,
@@ -119,7 +117,6 @@ def derive_transfer_function(frame_list, PS_spec_file=None, use_PS=False,
     data_2 = np.vstack((model_flux, transfer_function, sigma_transfer))
     for path, data_new in zip(frame_list, (data_1, data_2)):
         hdulist = pf.open(path, 'update', do_not_scale_image_data=True)
-        hdulist[0].header['HGTELLUR'] = (HG_CHANGESET,'Hg changeset ID for telluric code')
         hdu = hdulist[hdu_name]
         # Arrange the data into a single array
         data = np.vstack((hdu.data[:4, :], data_new))
@@ -269,7 +266,7 @@ def extract_secondary_standard(path_list,model_name='ref_centre_alpha_dist_circ_
         save_extracted_flux(path, observed_flux, observed_background,
                             sigma_flux, sigma_background,
                             star_match, psf_parameters, model_name,
-                            good_psf, HG_CHANGESET, hdu_name=hdu_name)
+                            good_psf, hdu_name=hdu_name)
     return
 
 def identify_secondary_standard(path, use_probe=None):
@@ -314,8 +311,6 @@ def apply_correction(path_in, path_out):
         hdulist['VARIANCE'].data = hdulist[0].data**2 * (
             (sigma_factor / telluric_function)**2 +
             hdulist['VARIANCE'].data / uncorrected_flux**2)
-    hdulist[0].header['HGTELLUR'] = (HG_CHANGESET, 
-                                     'Hg changeset ID for telluric code')
     hdulist.writeto(path_out)
     return
 

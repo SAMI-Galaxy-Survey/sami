@@ -38,8 +38,6 @@ import os, sys, time, urllib, urllib2
 
 from .. import utils
 
-HG_CHANGESET = utils.hg_changeset(__file__)
-
 i_am_ned = False
 if i_am_ned :
     at_the_telescope = False
@@ -685,7 +683,6 @@ def save_transfer_fn(fitsfilename, ratio, variance, sensitivity,
         ('STDNAME', standardname, 'Name of standard star'),
         ('STDOFF', standardoffset, 'Offset (arcsec) to standard star '
                                    'coordinates'),
-        ('HGFLXCAL', HG_CHANGESET, 'Hg changeset ID for fluxcal code'),
         ]
     for key, value, comment in header_item_list:
         new_hdu.header[key] = (value, comment)
@@ -713,12 +710,7 @@ def save_combined_transfer_fn(final_transfer_fn, final_transfer_var,
     data = np.vstack((final_transfer_fn, final_transfer_var, final_sensitivity))
     # Make the primary HDU
     primary_hdu = pf.PrimaryHDU(data)
-    # Add info to the header
-    header_item_list = [
-        ('HGFLXCAL', HG_CHANGESET, 'Hg changeset ID for fluxcal code'),
-        ]
-    for key, value, comment in header_item_list:
-        primary_hdu.header[key] = (value, comment)
+
     # Make an HDU list, to include data from each contributing file
     hdulist = pf.HDUList([primary_hdu])
     hdu_name = 'INPUT_FUNCTION'

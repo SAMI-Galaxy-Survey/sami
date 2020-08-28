@@ -474,16 +474,6 @@ def get_probes_objects(infile, ifus='all'):
         ifu_data=IFU(infile, ifu, flag_name=False)
         print(ifu,"\t", ifu_data.name)
 
-def hg_changeset(path=__file__):
-    """Return the changeset ID for the current version of the code."""
-    try:
-        changeset = subprocess.check_output(['hg', '-q', 'id'],
-                                            cwd=os.path.dirname(path))
-        changeset = changeset.strip().decode('ascii')
-    except (subprocess.CalledProcessError, OSError):
-        changeset = ''
-    return changeset
-
 def mad(a, c=0.6745, axis=None):
     """
     Compute the median absolute deviation along the specified axis.

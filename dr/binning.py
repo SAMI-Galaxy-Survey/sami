@@ -38,7 +38,6 @@ from numpy import nanmedian
 from scipy.ndimage.filters import median_filter
 from scipy.ndimage.measurements import label
 from . import voronoi_2d_binning_wcovar
-from ..utils.other import hg_changeset
 from astropy.table import Table
 
 def bin_cube_pair(path_blue, path_red, name=None, **kwargs):
@@ -129,8 +128,6 @@ class CatalogAccessor(object):
 def aperture_spectra_pair(path_blue, path_red, path_to_catalogs,overwrite=True):
     """Calculate binned spectra and save as new file for each pair of cubes."""
 
-    #if log.isEnabledFor(slogging.INFO):
-    #    log.info("Running aperture_spectra_pair HG version %s", hg_changeset(__file__))
     #log.debug("Starting aperture_spectra_pair: %s, %s, %s", path_blue, path_red, path_to_catalogs)
 
     # A dictionary of required catalogs and the columns required in each catalog.
@@ -301,8 +298,6 @@ def aperture_spectra_pair(path_blue, path_red, path_to_catalogs,overwrite=True):
 
             # Copy the header from the fits CUBE to primary HDU
             aperture_hdulist[0].header = hdulist[0].header
-
-            aperture_hdulist[0].header['HGAPER'] = (hg_changeset(__file__), "Hg changeset ID for aperture code")
 
             # Add header item to indicate if centre of aperture has been adjusted
 

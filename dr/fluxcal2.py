@@ -76,7 +76,6 @@ from shutil import copyfile
 # required for test plotting:
 import pylab as py
 
-from ..utils import hg_changeset
 from ..utils.ifu import IFU
 from ..utils.mc_adr import parallactic_angle, adr_r
 from ..utils.other import saturated_partial_pressure_water
@@ -102,8 +101,6 @@ from ppxf.ppxf_util import log_rebin
 
 # Get the astropy version as a tuple of integers
 ASTROPY_VERSION = tuple(int(x) for x in ASTROPY_VERSION.split('.'))
-
-HG_CHANGESET = hg_changeset(__file__)
 
 STANDARD_CATALOGUES = ('./standards/ESO/ESOstandards.dat',
                        './standards/Bessell/Bessellstandards.dat')
@@ -676,7 +673,7 @@ def derive_transfer_function(path_list, max_sep_arcsec=60.0,
         save_extracted_flux(path2, observed_flux, observed_background,
                             sigma_flux, sigma_background,
                             star_match, psf_parameters, model_name,
-                            good_psf, HG_CHANGESET)
+                            good_psf)
         transfer_function = take_ratio(
             standard_data['flux'],
             standard_data['wavelength'],
@@ -1528,8 +1525,6 @@ def save_combined_transfer_function(path_out, tf_combined, path_list):
     """Write the combined transfer function (and the individuals to file."""
     # Put the combined transfer function in the primary HDU
     primary_hdu = pf.PrimaryHDU(tf_combined)
-    primary_hdu.header['HGFLXCAL'] = (HG_CHANGESET, 
-                                      'Hg changeset ID for fluxcal code')
     # Copy the wavelength information into the new file
     header_input = pf.getheader(path_list[0])
     for key in ['CRVAL1', 'CDELT1', 'NAXIS1', 'CRPIX1', 'RO_GAIN']:
@@ -1627,8 +1622,6 @@ def primary_flux_calibrate(path_in, path_out, path_transfer_function):
     hdulist['VARIANCE'].data *= transfer_function**2
     hdulist[0].header['FCALFILE'] = (path_transfer_function,
                                      'Flux calibration file')
-    hdulist[0].header['HGFLXCAL'] = (HG_CHANGESET, 
-                                     'Hg changeset ID for fluxcal code')
     hdulist[0].header['BUNIT'] = ('10**(-16) erg /s /cm**2 /angstrom',
                                   'Units')
     hdulist.writeto(path_out)

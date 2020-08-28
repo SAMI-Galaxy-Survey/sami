@@ -16,11 +16,9 @@ from __future__ import absolute_import, division, print_function, unicode_litera
 
 import astropy.io.fits as pf
 import numpy as np
-from sami.utils.other import find_fibre_table, hg_changeset
+from sami.utils.other import find_fibre_table
 from scipy.optimize import leastsq
 import os
-
-HG_CHANGESET = hg_changeset(__file__)
 
 def reverse_probes(fibre_table):
     """Reverse the order of the probes in the fibre table.
@@ -198,9 +196,6 @@ def correct_coordinates(filename):
     # If anything needs doing...
     if do_rotate or do_switch:
         header = hdulist[0].header
-        # We will edit the file, so record which version of the code was used
-        header['HGCOORDS'] = (HG_CHANGESET,
-                      'Hg changeset ID for coordinates code')
         try:
             # First try to copy the old coordinates back into the fibre table
             hdulist[fibre_table_extno].data = hdulist['OLD_COORDS'].data

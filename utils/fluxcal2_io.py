@@ -42,7 +42,7 @@ def header_translate_inverse(header_name):
 def save_extracted_flux(path, observed_flux, observed_background,
                         sigma_flux, sigma_background,
                         star_match, psf_parameters, model_name,
-                        good_psf, hg_changeset, hdu_name='FLUX_CALIBRATION'):
+                        good_psf, hdu_name='FLUX_CALIBRATION'):
     """Add the extracted flux to the specified FITS file."""
     # Turn the data into a single array
     data = np.vstack((observed_flux, observed_background, 
@@ -54,7 +54,6 @@ def save_extracted_flux(path, observed_flux, observed_background,
         ('PROBENUM', star_match['probenum'], 'Number of the probe containing '
                                              'the star'),
         ('STDNAME', star_match['name'], 'Name of standard star'),
-        ('HGFLXCAL', hg_changeset, 'Hg changeset ID for fluxcal code'),
         ('MODEL', model_name, 'Name of model used in PSF fit'),
         ('GOODPSF', good_psf, 'Whether the PSF fit has good parameters')]
     if 'path' in star_match:
