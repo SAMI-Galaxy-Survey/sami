@@ -34,6 +34,7 @@ import re
 from contextlib import contextmanager
 import six
 import shutil, shlex
+import warnings
 
 # Set up logging
 from .. import slogging
