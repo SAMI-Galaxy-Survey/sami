@@ -51,8 +51,6 @@ from __future__ import absolute_import, division, print_function, unicode_litera
 
 from typing import List, Tuple, Dict, Sequence
 
-import code
-
 import shutil
 import os
 import re
@@ -2650,7 +2648,7 @@ class Manager:
                         continue
                     path_pair_list.append(path_pair)
 
-        input_list = []
+        inputs_list = []
 
         for path_pair in path_pair_list:
             inputs_list.append([path_pair,overwrite])
