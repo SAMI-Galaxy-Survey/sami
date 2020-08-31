@@ -56,7 +56,8 @@ except (OSError, FileNotFoundError):
         'Cannot find the 2dfdr executable ``{}``\n'.format(COMMAND_REDUCE)
         + 'Please ensure that 2dfdr is correctly installed.')
     #raise ImportError(error_message)
-    warnings.warn(error_message)
+    warnings.warn(error_message,stacklevel=2)
+    
 try:
     assert len(os.environ["DISPLAY"]) > 0
 except (AssertionError, TypeError):
