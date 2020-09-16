@@ -4464,6 +4464,7 @@ class FITSFile:
             self.plate_id_short = None
             self.field_no = None
             self.field_id = None
+        self.set_instrument()
         self.set_ccd()
         self.set_detector()
         self.set_grating()
@@ -4722,14 +4723,37 @@ class FITSFile:
             self.detector = None
         return
 
+    def set_instrument(self):
+        """Set the instrument name, either Spector or AAOmega"""
+        if self.ndf_class:
+            instrument = self.header['INSTRUME']
+            if instrument == 'AAOMEGA-SAMI':
+                self.instrument = 'AAOMEGA-SAMI'
+            elif instrument == 'AAOMEGA-HECTOR':
+                self.instrument = 'AAOMEGA-HECTOR'
+            elif instrument == 'HECTOR-STARBUGS':
+                self.instrument = 'SPECTOR-HECTOR'
+            else:
+                self.instrument = 'unknown_instrument'
+        else:
+            self.instrument = None
+        return
+            
     def set_ccd(self):
         """Set the CCD name."""
-        if self.ndf_class:
+        if (self.ndf_class and (self.instrument is not None)
+            and (self.instrument != 'unknown_instrument')):
             spect_id = self.header['SPECTID']
-            if spect_id == 'BL':
+            if (spect_id == 'BL') and ((self.instrument == 'AAOMEGA-SAMI') or
+                                        (self.instrument == 'AAOMEGA-HECTOR')):
                 self.ccd = 'ccd_1'
-            elif spect_id == 'RD':
+            elif (spect_id == 'RD') and ((self.instrument == 'AAOMEGA-SAMI') or
+                                        (self.instrument == 'AAOMEGA-HECTOR')):
                 self.ccd = 'ccd_2'
+            elif (spect_id == 'BL') and (self.instrument == 'SPECTOR-HECTOR'):
+                self.ccd = 'ccd_3'
+            elif (spect_id == 'RD') and (self.instrument == 'SPECTOR-HECTOR'):
+                self.ccd = 'ccd_4'
             else:
                 self.ccd = 'unknown_ccd'
         else:
