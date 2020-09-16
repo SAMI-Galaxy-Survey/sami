@@ -144,17 +144,24 @@ else:
 
 IDX_FILES_SLOW = {'580V': 'sami580V_v1_7.idx',
                   '1500V': 'sami1500V_v1_5.idx',
-                  '1000R': 'sami1000R_v1_7.idx'}
+                  '1000R': 'sami1000R_v1_7.idx',
+                  'SPECTOR1':'spector1_v0.idx',
+                  'SPECTOR2':'spector2_v0.idx'}
 
 IDX_FILES_FAST = {'580V': 'sami580V.idx',
                   '1500V': 'sami1500V.idx',
-                  '1000R': 'sami1000R.idx'}
+                  '1000R': 'sami1000R.idx',
+                  'SPECTOR1':'spector1_v0.idx',
+                  'SPECTOR2':'spector2_v0.idx'}
+                  
 IDX_FILES = {'fast': IDX_FILES_FAST,
              'slow': IDX_FILES_SLOW}
 
 GRATLPMM = {'580V': 582.0,
             '1500V': 1500.0,
-            '1000R': 1001.0}
+            '1000R': 1001.0,
+            'SPECTOR1': 0.0,
+            'SPECTOR2': 0.0}
 
 CATALOG_PATH = "./gama_catalogues/"
 
@@ -1088,6 +1095,9 @@ class Manager:
             # Without an idx file we would have no way to reduce this file
             self.disable_files([fits])
         self.file_list.append(fits)
+        if fits.instrument == 'SPECTOR-HECTOR':
+            import code
+            code.interact(local=dict(globals(),**locals()))
         return
 
     def set_raw_path(self, fits):
