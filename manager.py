@@ -1095,9 +1095,6 @@ class Manager:
             # Without an idx file we would have no way to reduce this file
             self.disable_files([fits])
         self.file_list.append(fits)
-        if fits.instrument == 'SPECTOR-HECTOR':
-            import code
-            code.interact(local=dict(globals(),**locals()))
         return
 
     def set_raw_path(self, fits):
