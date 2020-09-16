@@ -1031,7 +1031,7 @@ class Manager:
         # Match filenames of the form 01jan10001.fits
         return (re.match(r'[0-3][0-9]'
                          r'(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)'
-                         r'[1-2][0-9]{4}\.(fit|fits|FIT|FITS)$',
+                         r'[1-4][0-9]{4}\.(fit|fits|FIT|FITS)$',
                          filename)
                 and (self.fits_file(filename) is None))
 

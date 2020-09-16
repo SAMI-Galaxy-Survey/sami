@@ -517,16 +517,25 @@ def find_fibre_table(hdulist):
     whichever is found. Raises KeyError if neither is found."""
 
     extno = None
-    try:
+    #try:
+    #    extno = hdulist.index_of('FIBRES_IFU')
+    #except KeyError:
+    #    pass
+    #if extno is None:
+    #    try:
+    #        extno = hdulist.index_of('MORE.FIBRES_IFU')
+    #    except KeyError:
+    #        raise KeyError("Extensions 'FIBRES_IFU' and "
+    #                       "'MORE.FIBRES_IFU' both not found")
+    if 'FIBRES' in hdulist:
+        extno = hdulist.index_of('FIBRES')
+    elif 'FIBRES_IFU' in hdulist:
         extno = hdulist.index_of('FIBRES_IFU')
-    except KeyError:
-        pass
-    if extno is None:
-        try:
-            extno = hdulist.index_of('MORE.FIBRES_IFU')
-        except KeyError:
-            raise KeyError("Extensions 'FIBRES_IFU' and "
-                           "'MORE.FIBRES_IFU' both not found")
+    elif 'MORE.FIBRES_IFU' in hdulist:
+        extno = hdulist.index_of('MORE.FIBRES_IFU')
+    else:
+        raise KeyError("Extensions 'FIBRES', 'FIBRES_IFU' and "
+                           "'MORE.FIBRES_IFU' not found")
     return extno
 
 
