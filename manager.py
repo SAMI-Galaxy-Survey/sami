@@ -858,7 +858,8 @@ class Manager:
     def __init__(self, root, copy_files=False, move_files=False, fast=False,
                  gratlpmm=GRATLPMM, n_cpu=1,demo_data_source='demo',
                  use_twilight_tlm_blue=False, use_twilight_flat_blue=False,
-                 improve_blue_wavecorr=False, telluric_correct_primary=False, debug=False):
+                 improve_blue_wavecorr=False, telluric_correct_primary=False,
+                debug=False, dummy=False):
         if fast:
             self.speed = 'fast'
         else:
@@ -929,8 +930,11 @@ class Manager:
         else:
             print('NOT applying telluric correction to primary standard stars')
 
+        self.dummy = dummy
+
         self._debug = False
         self.debug = debug
+        
 
     @property
     def debug(self):
