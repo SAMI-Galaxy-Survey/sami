@@ -1913,7 +1913,14 @@ class Manager:
         for fits in reduced_files:
             if (fits.ndf_class == 'MFFFF' and tlm and not leave_reduced and os.path.exists(fits.reduced_path)):
                 os.remove(fits.reduced_path)
+                
+        
+        # Create dummy output if pipeline is being run in dummy mode
+        if self.dummy:
+            create_dummy_output(reduced_files)
+                
         # Return a list of fits objects that were reduced
+        
         return reduced_files
 
     def target_path(self, fits, tlm=False):
@@ -5035,7 +5042,6 @@ class FITSFile:
         # No sky lines were within the observed wavelength range
         return False
 
-
 def update_checks(key, file_iterable, value, force=False):
     """Set flags for whether the files have been manually checked."""
     for fits in file_iterable:
@@ -5419,6 +5425,13 @@ def read_stellar_mags():
         data_dict.update(new_data_dict)
     return data_dict
 
+def create_dummy_output(reduced_files):
+    # Loop over all reduced files and create mock
+    # output for the appropriate file type
+
+    for reduced_file in reduced_files:
+        if reduced_file.ndf_class == 'BIAS':
+            shutil.copy2(reduced_file.raw_path,reduced_file.reduced_path)
 
 class MatchException(Exception):
     """Exception raised when no matching calibrator is found."""
