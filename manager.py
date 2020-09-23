@@ -1891,7 +1891,7 @@ class Manager:
                     not os.path.exists(self.target_path(fits, tlm=tlm))):
                 tdfdr_options = tuple(self.tdfdr_options(fits, throughput_method=throughput_method, tlm=tlm))
                 input_list.append(
-                    (fits, self.idx_files[fits.grating], tdfdr_options))
+                    (fits, self.idx_files[fits.grating], tdfdr_options, self.dummy))
         reduced_files = [item[0] for item in input_list]
 
         # Send the items out for reducing. Keep track of which ones were done.
@@ -5212,10 +5212,10 @@ def best_path(fits):
 @safe_for_multiprocessing
 def run_2dfdr_single_wrapper(group):
     """Run 2dfdr on a single file."""
-    fits, idx_file, options = \
+    fits, idx_file, options, dummy = \
         group
     try:
-        tdfdr.run_2dfdr_single(fits, idx_file, options=options)
+        tdfdr.run_2dfdr_single(fits, idx_file, options=options, dummy=dummy)
     except tdfdr.LockException:
         message = ('Postponing ' + fits.filename +
                    ' while other process has directory lock.')

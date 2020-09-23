@@ -102,7 +102,7 @@ def subprocess_call(command_line, **kwargs):
     return stdout
 
 
-def call_2dfdr_reduce(dirname, options=None):
+def call_2dfdr_reduce(dirname, options=None, dummy=False):
     """Call 2dfdr in pipeline reduction mode using `aaorun`"""
     # Make a temporary directory with a unique name for use as IMP_SCRATCH
     with TemporaryDirectory() as imp_scratch:
@@ -111,37 +111,45 @@ def call_2dfdr_reduce(dirname, options=None):
         if options is not None:
             command_line.extend(options)
 
-        # Set up the environment:
-        environment = dict(os.environ)
-        environment["IMP_SCRATCH"] = imp_scratch
+        if dummy:
+            print('#####################')
+            print('2dfdr call options:')
+            print(' '.join(command_line))
+            print('#####################')
+            print()
+        else:
 
-        if log.isEnabledFor(slogging.DEBUG):
-            with open("2dfdr_commands.txt", "a") as cmd_file:
-                cmd_file.write("\n[2dfdr_command]\n")
-                cmd_file.write("working_dir = {}\n".format(dirname))
-                cmd_file.write("command = {}\n".format(
-                    " ".join(map(shlex.quote, command_line))))
+            # Set up the environment:
+            environment = dict(os.environ)
+            environment["IMP_SCRATCH"] = imp_scratch
+
+            if log.isEnabledFor(slogging.DEBUG):
+                with open("2dfdr_commands.txt", "a") as cmd_file:
+                    cmd_file.write("\n[2dfdr_command]\n")
+                    cmd_file.write("working_dir = {}\n".format(dirname))
+                    cmd_file.write("command = {}\n".format(
+                        " ".join(map(shlex.quote, command_line))))
 
 
-        with directory_lock(dirname):
-            # add some debug printing:
-            #print('2dfdr call options:')
-            #print(command_line)
-            tdfdr_stdout = subprocess_call(command_line, cwd=dirname, env=environment)
-            #print(tdfdr_stdout)
+            with directory_lock(dirname):
+                # add some debug printing:
+                #print('2dfdr call options:')
+                #print(command_line)
+                tdfdr_stdout = subprocess_call(command_line, cwd=dirname, env=environment)
+                #print(tdfdr_stdout)
 
-        # @TODO: Make this work with various versions of 2dfdr.
-        # Confirm that the above command ran to completion, otherwise raise an exception
-        try:
-            confirm_line = tdfdr_stdout.splitlines()[-2]
-            assert (
-                re.search(r"Action \"EXIT\", Task \S+, completed.*", tdfdr_stdout) is not None or  # 2dfdr v6.28
-                re.match(r"Data Reduction command \S+ completed.", confirm_line) is not None       # 2dfdr v6.14
-            )
-        except (IndexError, AssertionError):
-            log.debug(tdfdr_stdout)
-            message = "2dfdr did not run to completion for command: %s" % " ".join(command_line)
-            raise TdfdrException(message)
+            # @TODO: Make this work with various versions of 2dfdr.
+            # Confirm that the above command ran to completion, otherwise raise an exception
+            try:
+                confirm_line = tdfdr_stdout.splitlines()[-2]
+                assert (
+                    re.search(r"Action \"EXIT\", Task \S+, completed.*", tdfdr_stdout) is not None or  # 2dfdr v6.28
+                    re.match(r"Data Reduction command \S+ completed.", confirm_line) is not None       # 2dfdr v6.14
+                )
+            except (IndexError, AssertionError):
+                log.debug(tdfdr_stdout)
+                message = "2dfdr did not run to completion for command: %s" % " ".join(command_line)
+                raise TdfdrException(message)
 
 
 def call_2dfdr_gui(dirname, options=None):
@@ -171,7 +179,7 @@ def load_gui(dirname, idx_file=None):
     return
 
 
-def run_2dfdr_single(fits, idx_file, options=None):
+def run_2dfdr_single(fits, idx_file, options=None, dummy=False):
     """Run 2dfdr on a single FITS file."""
     print('Reducing file:', fits.filename)
     if fits.ndf_class == 'BIAS':
@@ -198,11 +206,11 @@ def run_2dfdr_single(fits, idx_file, options=None):
                    '-OUT_DIRNAME', out_dirname]
     if options is not None:
         options_all.extend(options)
-    call_2dfdr_reduce(fits.reduced_dir, options=options_all)
+    call_2dfdr_reduce(fits.reduced_dir, options=options_all, dummy=dummy)
     return '2dfdr Reduced file:' + fits.filename
 
 
-def run_2dfdr_combine(input_path_list, output_path, idx_file):
+def run_2dfdr_combine(input_path_list, output_path, idx_file, dummy=False):
     """Run 2dfdr to combine the specified FITS files."""
     if len(input_path_list) < 2:
         raise ValueError('Need at least 2 files to combine!')
@@ -214,7 +222,7 @@ def run_2dfdr_combine(input_path_list, output_path, idx_file):
                output_filename,
                '-idxfile',
                idx_file]
-    call_2dfdr_reduce(output_dir, options=options)
+    call_2dfdr_reduce(output_dir, options=options, dummy=dummy)
 
 
 def cleanup():
