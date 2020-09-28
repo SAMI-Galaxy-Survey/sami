@@ -84,6 +84,7 @@ import astropy.io.fits as pf
 from astropy import __version__ as ASTROPY_VERSION
 import numpy as np
 
+
 try:
     import pysftp
 
@@ -1524,9 +1525,9 @@ class Manager:
         self.next_step('reduce_bias', print_message=True)
         return
 
-    def combine_bias(self, overwrite=False):
+    def combine_bias(self, overwrite=False): 
         """Produce and link necessary BIAScombined.fits files."""
-        self.combine_calibrator('bias', overwrite=overwrite)
+        self.combine_calibrator('bias', overwrite=overwrite) 
         self.next_step('combine_bias', print_message=True)
         return
 
@@ -1917,7 +1918,7 @@ class Manager:
         
         # Create dummy output if pipeline is being run in dummy mode
         if self.dummy:
-            create_dummy_output(reduced_files)
+            create_dummy_output(reduced_files, tlm=tlm)
                 
         # Return a list of fits objects that were reduced
         
@@ -3457,10 +3458,14 @@ class Manager:
         tlm_offset = np.mean(twilight_tlm-flat_tlm)
         return tlm_offset
 
-    def run_2dfdr_combine(self, file_iterable, output_path):
+    def run_2dfdr_combine(self, file_iterable, output_path): 
         """Use 2dfdr to combine the specified FITS files."""
-        file_iterable, file_iterable_copy = itertools.tee(file_iterable)
+
+   #     file_iterable, file_iterable_copy,copy = itertools.tee(file_iterable,3)
+        file_iterable, file_iterable_copy, file_iterable_dummy = itertools.tee(file_iterable,3)
+
         input_path_list = [fits.reduced_path for fits in file_iterable]
+
         if not input_path_list:
             print('No reduced files found to combine!')
             return
@@ -3468,7 +3473,17 @@ class Manager:
         grating = next(file_iterable_copy).grating
         idx_file = self.idx_files[grating]
         print('Combining files to create', output_path)
-        tdfdr.run_2dfdr_combine(input_path_list, output_path, idx_file)
+        tdfdr.run_2dfdr_combine(input_path_list, output_path, idx_file, self.dummy)
+
+
+
+
+
+        # Create dummy output if pipeline is being run in dummy mode
+        if self.dummy:
+            reduced_files = [fits for fits in file_iterable_dummy]
+            create_dummy_combine(input_path_list[0], output_path, reduced_files[0].ndf_class)
+
         return
 
     def files(self, ndf_class=None, date=None, plate_id=None,
@@ -5425,13 +5440,36 @@ def read_stellar_mags():
         data_dict.update(new_data_dict)
     return data_dict
 
-def create_dummy_output(reduced_files):
+def create_dummy_output(reduced_files, tlm=False):
     # Loop over all reduced files and create mock
-    # output for the appropriate file type
+    # output for the appropriate file type and size
 
     for reduced_file in reduced_files:
-        if reduced_file.ndf_class == 'BIAS':
-            shutil.copy2(reduced_file.raw_path,reduced_file.reduced_path)
+#        if reduced_file.ndf_class == 'BIAS' or reduced_file.ndf_class == 'DARK' or reduced_file.ndf_class == 'LFLAT':
+#            shutil.copy2(reduced_file.raw_path,reduced_file.reduced_path)
+
+        if reduced_file.ndf_class == 'BIAS' or reduced_file.ndf_class == 'DARK' or reduced_file.ndf_class == 'LFLAT' or reduced_file.ndf_class == 'MFFFF':
+        #probably we would not require above if condition
+            tmpfile = pf.open(reduced_file.raw_path)
+            if reduced_file.ccd == 'ccd_1' or reduced_file.ccd == 'ccd_2':
+                tmpfile['PRIMARY'].data = tmpfile['PRIMARY'].data[:,0:2048]
+            else:
+                tmpfile['PRIMARY'].data = tmpfile['PRIMARY'].data[:,0:4096] # 4096?? 
+
+            if reduced_file.ndf_class == 'MFFFF' and tlm: #for make_tlm
+                os.remove(reduced_file.tlm_path)
+                tmpfile.writeto(reduced_file.tlm_path)
+            else:
+                tmpfile.writeto(reduced_file.reduced_path)
+
+
+
+def create_dummy_combine(input_file, output_file, class_dummy):
+    # Simply copy one of the reduced calibration files to combined one
+    if class_dummy == 'BIAS' or class_dummy == 'DARK' or class_dummy == 'LFLAT':
+        shutil.copy2(input_file, output_file)
+
+
 
 class MatchException(Exception):
     """Exception raised when no matching calibrator is found."""
