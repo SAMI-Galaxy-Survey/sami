@@ -1629,8 +1629,9 @@ class Manager:
                                    **kwargs)
         reduced_files = self.reduce_file_iterable(
             file_iterable, overwrite=overwrite, check='ARC')
-        for fits in reduced_files:
-            bad_fibres(fits.reduced_path, save=True)
+        if not self.dummy:
+            for fits in reduced_files:
+                bad_fibres(fits.reduced_path, save=True)
         self.next_step('reduce_arc', print_message=True)
         return
 
@@ -1915,10 +1916,9 @@ class Manager:
             if (fits.ndf_class == 'MFFFF' and tlm and not leave_reduced and os.path.exists(fits.reduced_path)):
                 os.remove(fits.reduced_path)
                 
-        
         # Create dummy output if pipeline is being run in dummy mode
         if self.dummy:
-            create_dummy_output(reduced_files, tlm=tlm)
+            create_dummy_output(reduced_files, tlm=tlm, overwrite=overwrite)
                 
         # Return a list of fits objects that were reduced
         
@@ -5440,28 +5440,38 @@ def read_stellar_mags():
         data_dict.update(new_data_dict)
     return data_dict
 
-def create_dummy_output(reduced_files, tlm=False):
+def create_dummy_output(reduced_files, tlm=False, overwrite=False):
     # Loop over all reduced files and create mock
     # output for the appropriate file type and size
-
+    
     for reduced_file in reduced_files:
-#        if reduced_file.ndf_class == 'BIAS' or reduced_file.ndf_class == 'DARK' or reduced_file.ndf_class == 'LFLAT':
-#            shutil.copy2(reduced_file.raw_path,reduced_file.reduced_path)
-
-        if reduced_file.ndf_class == 'BIAS' or reduced_file.ndf_class == 'DARK' or reduced_file.ndf_class == 'LFLAT' or reduced_file.ndf_class == 'MFFFF':
+        if reduced_file.ndf_class == 'BIAS' or reduced_file.ndf_class == 'DARK' or reduced_file.ndf_class == 'LFLAT' or reduced_file.ndf_class == 'MFFFF' or reduced_file.ndf_class == 'MFARC':
         #probably we would not require above if condition
             tmpfile = pf.open(reduced_file.raw_path)
-            if reduced_file.ccd == 'ccd_1' or reduced_file.ccd == 'ccd_2':
-                tmpfile['PRIMARY'].data = tmpfile['PRIMARY'].data[:,0:2048]
-            else:
-                tmpfile['PRIMARY'].data = tmpfile['PRIMARY'].data[:,0:4096] # 4096?? 
+            sz1 = 4096; sz2 = 2048
+            if reduced_file.ccd == 'ccd_3' or reduced_file.ccd == 'ccd_4': # Spector
+                sz2 = 4096 # Should check the dimension for Spector is really 4096x4096
+            if reduced_file.ndf_class == 'MFARC' or (reduced_file.ndf_class == 'MFFFF' and not tlm): # reduce_arc() and reduce_fflat()
+                sz1 = 819
+                if reduced_file.ccd == 'ccd_3' or reduced_file.ccd == 'ccd_4':
+                    sz1 = 819 # Should update the dimension of arc frame for Spector
 
-            if reduced_file.ndf_class == 'MFFFF' and tlm: #for make_tlm
-                os.remove(reduced_file.tlm_path)
-                tmpfile.writeto(reduced_file.tlm_path)
-            else:
-                tmpfile.writeto(reduced_file.reduced_path)
+            tmpfile['PRIMARY'].data = tmpfile['PRIMARY'].data[0:sz1,0:sz2]
 
+# when we require wcs in headers..
+#        if 'CRPIX1' not in tmpfile['PRIMARY'].header:
+#            tmpfile['PRIMARY'].header['CRPIX1'] = (1.024000000000E+03,'Reference pixel along axis 1')
+#            tmpfile['PRIMARY'].header['CDELT1'] = (1.050317537860E+00,'Co-ordinate increment along axis 1')
+#            tmpfile['PRIMARY'].header['CRVAL1'] = (4.724474841231E+03,'Co-ordinate value of axis 1')
+
+            if reduced_file.ndf_class == 'MFFFF' and tlm: # make_tlm()
+                out_path = reduced_file.tlm_path
+            else:
+                out_path = reduced_file.reduced_path
+            if os.path.exists(out_path) and overwrite:
+                os.remove(out_path)
+            tmpfile.writeto(out_path)
+            tmpfile.close()
 
 
 def create_dummy_combine(input_file, output_file, class_dummy):
