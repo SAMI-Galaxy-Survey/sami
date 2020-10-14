@@ -255,9 +255,12 @@ def TelluricCorrect(fcal_fname, star_flux, star_flux_err, wave, mf_bin_dir = '',
     transfer_function = 1./transfer_data['mtrans']
     sigma_transfer = star_flux_err/star_flux*transfer_function  #np.zeros(len(transfer_function))
     sigma_transfer[transfer_function == 1.] = 0.0
+    sigma_transfer[np.isfinite(sigma_transfer) == False] = 0.0
+
+    # Possibly not multi-processing safe. NEED TO CHECK THIS - ignore_errors=True is a possibly dangerous fudge
     
     if delete_files:
-        shutil.rmtree(obs_name)
+        shutil.rmtree(obs_name,ignore_errors=True)
     
     return transfer_function, sigma_transfer, model_flux
 

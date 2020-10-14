@@ -27,7 +27,8 @@ DRC_OVERRIDE_PAR OPTEX_MKRES TRUE REDUCE
 # test to remove weighting on extraction:
 #DRC_OVERRIDE_PAR WTSCHEME NONE REDUCE
 #DRC_CONST_PAR OPTEX_KNTS_FILE knots.txt REDUCE
-
+# allow a single bad pixel within a profile:
+DRC_OVERRIDE_PAR NUMBADPIXEX 1 REDUCE
 
 # Use External PSF and set values for Red Frame
 #DRC_OVERRIDE_PAR PSF_TYPE C2G2L REDUCE
@@ -86,6 +87,9 @@ DRC_OVERRIDE_PAR SKYLAM_END 7250.0 REDUCE
 
 # correct for TLM shifts:
 DRC_OVERRIDE_PAR MSR_TLM_CREEP TRUE REDUCE
+
+# do heliocentric correction:
+DRC_OVERRIDE_PAR VELCOR TRUE REDUCE
 
 # Hard coded wavelength ranges for SAMI red arm data
 # keep consistent sampling for all data.  Units are nm:

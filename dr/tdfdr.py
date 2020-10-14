@@ -34,6 +34,7 @@ import re
 from contextlib import contextmanager
 import six
 import shutil, shlex
+import warnings
 
 # Set up logging
 from .. import slogging
@@ -54,7 +55,9 @@ except (OSError, FileNotFoundError):
     error_message = (
         'Cannot find the 2dfdr executable ``{}``\n'.format(COMMAND_REDUCE)
         + 'Please ensure that 2dfdr is correctly installed.')
-    raise ImportError(error_message)
+    #raise ImportError(error_message)
+    warnings.warn(error_message,stacklevel=2)
+    
 try:
     assert len(os.environ["DISPLAY"]) > 0
 except (AssertionError, TypeError):

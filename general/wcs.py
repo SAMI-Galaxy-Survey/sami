@@ -181,7 +181,7 @@ def wcs_position_coords(object_RA, object_DEC, wave, object_flux_cube, object_na
         x_offset_degree = 0.0
     
     # Create dictionary of positional WCS
-    if isinstance(xcube/2, int):
+    if isinstance(xcube//2, int):
         WCS_pos={"CRVAL1":(img_crval1 + x_offset_degree), "CRVAL2":(img_crval2 + y_offset_degree), "CRPIX1":(xcube/2 + 0.5),
             "CRPIX2":(ycube/2 + 0.5), "CDELT1":(img_cdelt1), "CDELT2":(img_cdelt2), "CTYPE1":"RA---TAN", "CTYPE2":"DEC--TAN",
             "CUNIT1": 'deg', "CUNIT2": 'deg'}

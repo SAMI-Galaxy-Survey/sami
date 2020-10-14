@@ -135,8 +135,6 @@ from matplotlib import cm
 import astropy.io.fits as pf
 from scipy.optimize import leastsq
 
-HG_CHANGESET = utils.hg_changeset(__file__)
-
 # Multiply by this value to convert arcseconds to microns
 ARCSEC_TO_MICRON = 1000.0 / 15.2
 
@@ -600,7 +598,6 @@ def save_results(results):
     hdu.header['SIGMA'] = (results['sigma'], 'Sigma clipping used in the fit')
     hdu.header['N_GOOD'] = (results['n_good'], 'Number of galaxies used in fit')
     hdu.header['REF_FILE'] = (results['reference'], 'Reference filename')
-    hdu.header['HGALIGN'] = (HG_CHANGESET, 'Hg changeset ID for alignment code')
 
     hdu.header['EXTNAME'] = 'ALIGNMENT'
     # Open up the file for editing

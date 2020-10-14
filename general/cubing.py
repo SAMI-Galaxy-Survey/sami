@@ -13,7 +13,7 @@ A few things to be aware of:
 * Alignment should be done before calling the cubing. If it hasn't, the
   cubing will fall back to measuring the offsets itself, but this is much
   worse than the proper alignment code.
-* By default, the absolute astrometry is measured  comparison to SDSS
+* By default, the absolute astrometry is measured by comparison to SDSS
   images. However, this doesn't work properly, so until someone fixes it
   you should always ask for nominal astrometry by setting nominal=True.
 * The covariance information would be too large to store at every
@@ -51,7 +51,7 @@ described below.
 > sami.general.cubing.dithered_cubes_from_rss_files("testfiles1.txt",write=True,clip=True,drop_factor=0.5,suffix="_Clip",covar_mode="none",nominal=True,root="testing_small/",overwrite=True,objects=["36894","47286"])
 > sami.general.cubing.dithered_cubes_from_rss_files("testfiles1.txt",write=True,clip=True,drop_factor=0.5,suffix="_FullClip",covar_mode="none",nominal=True,root="testing_small/",overwrite=True,objects=["36894","47286"])
 
-> sami.general.cubing.dithered_cubes_from_rss_files("testfiles1bluetxt",write=True,clip=False,drop_factor=0.5,suffix="_ReducedDrop_NoClip",covar_mode="none",nominal=True,root="testing_small/",overwrite=True,objects=["36894","47286"])
+> sami.general.cubing.dithered_cubes_from_rss_files("testfiles1blue.txt",write=True,clip=False,drop_factor=0.5,suffix="_ReducedDrop_NoClip",covar_mode="none",nominal=True,root="testing_small/",overwrite=True,objects=["36894","47286"])
 > sami.general.cubing.dithered_cubes_from_rss_files("testfiles1blue.txt",write=True,clip=True,drop_factor=0.5,suffix="_ReducedDrop_ClipWithReducedDrop",covar_mode="none",nominal=True,root="testing_small/",overwrite=True,objects=["36894","47286"])
 > sami.general.cubing.dithered_cubes_from_rss_files("testfiles1blue.txt",write=True,clip=True,drop_factor=0.5,suffix="_ReducedDrop_ClipWithFullDrop",covar_mode="none",nominal=True,root="testing_small/",overwrite=True,objects=["36894","47286"])
 
@@ -117,17 +117,22 @@ from __future__ import absolute_import, division, print_function, unicode_litera
 import pylab as py
 import numpy as np
 import scipy as sp
+import scipy.ndimage as nd
 
 from scipy import integrate
 
+
 import astropy.io.fits as pf
 import astropy.wcs as pw
+import scipy.stats as stats
+import scipy.optimize as optimize
 
 import itertools
 import os
 import sys
 import datetime
 import warnings
+import time
 warnings.simplefilter('always', DeprecationWarning)
 warnings.simplefilter('always', ImportWarning)
 from glob import glob
@@ -224,7 +229,6 @@ else:
     cubing_method = 'Gaussian'
 
 # Some global constants:
-HG_CHANGESET = utils.hg_changeset(__file__)
 
 epsilon = np.finfo(np.float).eps
 # Store the value of epsilon for quick access.
@@ -456,7 +460,7 @@ def cube_wrapper(inputs):
 
 def dithered_cube_from_rss_wrapper(files, name, size_of_grid=50, 
                                    output_pix_size_arcsec=0.5, drop_factor=0.5,
-                                   clip=True, plot=True, write=True, suffix='',
+                                   clip=False, do_clip_by_fibre=True, plot=True, write=True, suffix='',
                                    nominal=False, root='', overwrite=False,
                                    offsets='file', covar_mode='optimal',
                                    do_dar_correct=True, clip_throughput=True,
@@ -486,7 +490,7 @@ def dithered_cube_from_rss_wrapper(files, name, size_of_grid=50,
         outfile_name_full=os.path.join(directory, outfile_name)
 
         # Check if the filename already exists
-        if os.path.exists(outfile_name_full) | os.path.exists(outfile_name_full+'.gz'):
+        if (os.path.exists(outfile_name_full)) | (os.path.exists(os.path.splitext(outfile_name_full)[0]+'.fits.gz')):
             if overwrite:
                 if os.path.isfile(outfile_name_full):
                     os.remove(outfile_name_full)
@@ -511,7 +515,7 @@ def dithered_cube_from_rss_wrapper(files, name, size_of_grid=50,
         dithered_cube_from_rss(
             ifu_list, size_of_grid=size_of_grid,
             output_pix_size_arcsec=output_pix_size_arcsec,
-            drop_factor=drop_factor, clip=clip, plot=plot,
+            drop_factor=drop_factor, clip=clip, do_clip_by_fibre=do_clip_by_fibre, plot=plot,
             offsets=offsets, covar_mode=covar_mode,
             do_dar_correct=do_dar_correct, clip_throughput=clip_throughput,
             update_tol=update_tol)
@@ -596,7 +600,7 @@ def dithered_cube_from_rss_wrapper(files, name, size_of_grid=50,
 
 
 def dithered_cube_from_rss(ifu_list, size_of_grid=50, output_pix_size_arcsec=0.5, drop_factor=0.5,
-                           clip=True, plot=True, offsets='file', covar_mode='optimal',
+                           clip=False, do_clip_by_fibre=True, plot=True, offsets='file', covar_mode='optimal',
                            do_dar_correct=True, clip_throughput=True, update_tol=0.02):
     diagnostic_info = {}
 
@@ -722,18 +726,25 @@ def dithered_cube_from_rss(ifu_list, size_of_grid=50, output_pix_size_arcsec=0.5
                               (galaxy_data.fibre_throughputs > 1.5))
             galaxy_data.data[bad_throughput, :] = np.nan
             galaxy_data.var[bad_throughput, :] = np.nan
-    
+            #print('clipping:',bad_throughput)
+            #print(galaxy_data.fibre_throughputs)
+            
         xfibre_all[j, :] = xm
         yfibre_all[j, :] = ym
 
         data_all[j, :, :] = galaxy_data.data
         var_all[j, :, :] = galaxy_data.var
+        #for i in range(n_fibres):
+        #    print(j,i,np.count_nonzero(~np.isnan(data_all[j,i,:])))
 
         ifus_all[j] = galaxy_data.ifu
 
     # Scale these up to have a wavelength axis as well
     xfibre_all = xfibre_all.reshape(n_obs, n_fibres, 1).repeat(n_slices,2)
     yfibre_all = yfibre_all.reshape(n_obs, n_fibres, 1).repeat(n_slices,2)
+
+    #sys.exit()
+
     
     # @TODO: Rescaling between observations.
     #
@@ -755,6 +766,7 @@ def dithered_cube_from_rss(ifu_list, size_of_grid=50, output_pix_size_arcsec=0.5
     if do_dar_correct:
         dar_correct(ifu_list, xfibre_all, yfibre_all)
 
+
     # Reshape the arrays
     #
     #     What we are doing is combining the first two dimensions, which are
@@ -769,6 +781,9 @@ def dithered_cube_from_rss(ifu_list, size_of_grid=50, output_pix_size_arcsec=0.5
     yfibre_all = np.reshape(yfibre_all, (n_obs * n_fibres, n_slices) )
     data_all   = np.reshape(data_all,   (n_obs * n_fibres, n_slices) )
     var_all    = np.reshape(var_all,    (n_obs * n_fibres, n_slices) )
+    
+
+
 
     # Change the units on the input data
     #
@@ -779,6 +794,16 @@ def dithered_cube_from_rss(ifu_list, size_of_grid=50, output_pix_size_arcsec=0.5
     fibre_area_pix = np.pi * (fibre_diameter_arcsec/2.0)**2 / output_pix_size_arcsec**2
     data_all = data_all / fibre_area_pix
     var_all = var_all / (fibre_area_pix)**2
+
+    # alternative bad pixel clipping. At the moment, set the default to be not using
+    # this, but allow clipping by changing the paramete do_clip_by_fibre:
+    if (do_clip_by_fibre):
+        print('Clipping bad pixels by fibre...')
+        data_all,var_all = clip_by_fibre(xfibre_all,yfibre_all,data_all,var_all,testplot=False,verbose=False)
+        print('Clipping done.')
+
+ 
+
     
     # We must renormalise the spectra in order to sigma_clip the data.
     #
@@ -1215,10 +1240,6 @@ def create_primary_header(ifu_list,name,files,WCS_pos,WCS_flag):
     for ifu in ifu_list:
         total_exptime+=ifu.primary_header['EXPOSED']
     hdr_new['TOTALEXP'] = (total_exptime, 'Total exposure (seconds)')
-
-    # Add the mercurial changeset ID to the header
-    hdr_new['HGCUBING'] = (HG_CHANGESET, 'Hg changeset ID for cubing code')
-    # Need to implement a global version number for the database
     
     # Put the RSS files into the header
     for num in range(len(files)):
@@ -1236,7 +1257,7 @@ def create_primary_header(ifu_list,name,files,WCS_pos,WCS_flag):
                                    'GRATID','GRATTILT','GRATLPMM','ORDER','TDFCTVER','TDFCTDAT','DICHROIC',
                                    'OBSTYPE','TOPEND','AXIS','AXIS_X','AXIS_Y','TRACKING','TDFDRVER']
 
-    primary_header_conditional_keyword_list = ['HGCOORDS','COORDROT','COORDREV']
+    primary_header_conditional_keyword_list = ['COORDROT','COORDREV']
 
     for keyword in primary_header_keyword_list:
         if keyword in ifu.primary_header.keys():
@@ -1381,22 +1402,28 @@ def scale_cube_pair(file_pair, scale, **kwargs):
     for path in file_pair:
         scale_cube(path, scale, **kwargs)
 
-def scale_cube(path, scale, hdu='PRIMARY', band=None):
+def scale_cube(path, scale, hdu='PRIMARY', band=None, apply_scale=True):
     """Scale a single cube by a given value."""
     hdulist = pf.open(path, 'update')
     try:
         old_scale = hdulist[hdu].header['RESCALE']
     except KeyError:
         old_scale = 1.0
-    hdulist['PRIMARY'].data *= (scale / old_scale)
-    hdulist['VARIANCE'].data *= (scale / old_scale)**2
-    hdulist[hdu].header['RESCALE'] = (scale, 'Scaling applied to data')
+    # only apply scaling if actually requested, otherwise just calculate it:
+    if (apply_scale):
+        hdulist['PRIMARY'].data *= (scale / old_scale)
+        hdulist['VARIANCE'].data *= (scale / old_scale)**2
+        hdulist[hdu].header['RESCALED'] = (True, 'Has rescaling been applied?')
+    else:
+        hdulist[hdu].header['RESCALED'] = (False, 'Has rescaling been applied?')
+    # the rescaling value, whether we apply it or not:
+    hdulist[hdu].header['RESCALE'] = (scale, 'Scaling to apply to data')
     if band is not None:
         hdulist[hdu].header['SCALEBND'] = (band, 'Band used to scale data')
     hdulist.flush()
     hdulist.close()
 
-def scale_cube_pair_to_mag(file_pair, axis, hdu='PRIMARY', band=None):
+def scale_cube_pair_to_mag(file_pair, axis, hdu='PRIMARY', band=None,apply_scale=True):
     """
     Scale both cubes according to their pre-measured magnitude.
 
@@ -1424,7 +1451,7 @@ def scale_cube_pair_to_mag(file_pair, axis, hdu='PRIMARY', band=None):
     if measured_mag == -99999:
         # No valid magnitude found
         scale = 1.0
-    scale_cube_pair(file_pair, scale, hdu=hdu, band=band)
+    scale_cube_pair(file_pair, scale, hdu=hdu, band=band,apply_scale=apply_scale)
     return scale
 
 def wavelength_overlap(file_pair, band, axis):
@@ -1484,3 +1511,334 @@ def create_qc_hdu(file_list, name):
         columns.append(pf.Column(name=key, format='E', array=qc_data[key]))
     hdu = pf.BinTableHDU.from_columns(columns, name='QC')
     return hdu
+
+###################
+# simply linear function for curve_fit:
+def lin_func(x,a,b):
+    return a*x + b
+
+###################
+# function to clip cosmics etc from the spectra based on comparisons between spectra
+# at similar locations.  Written by Scott Croom, 2018.
+
+def clip_by_fibre(xpos,ypos,data_all,var_all,nnear=7,nsig=5.0,nsig2=3.0,medfiltsize=35,expand_bad=1,testplot=False,verbose=True):
+    """Compare fibre spectra and find outlying pixels.  Relies on adjacent spectra
+    being relatively similar.  The key issues with this approach are:
+    1) how do we adjust for the median spectrum not quite being the same as the
+       individual spectra?  Simple methods are either division or subtraction.  Here we use
+       subtraction as the divison can lead to divide by zero (or close to zero) problems
+       when low S/N.  As long as we use the measured RMS between fibres this should be okay
+    2) How do we define the variance?  Based on individual spectra variances, or from
+       scatter between spectra.  the second of these is probably safer."""
+
+    # the previous method just works on overlapping pixels in the cube and gets
+    # the median and MAD and uses this to do a 5 sigma clipping.  The problem
+    # with this is the scaling of the spectra.
+    
+    # approach:
+    # 1) find NNEAR closest spectra.
+    # 2) median filter (in spectral direction) the spectra and subtract median.
+    # 3) derive median spectrum of all subtracted spectra.
+    # 4) estimate the rms around the continuum subtracted median.
+    # 5) flag bad pixels as those more than N*rms from the continuum subtracted median version.
+
+    # get specific sizes:
+    (n_spec,n_slices) = np.shape(data_all)
+
+    if (verbose):
+        print('shape of xpos:',np.shape(xpos))
+        print('shape of data_all:',np.shape(data_all))
+
+
+    # the xpos,ypos values are taken are as a function of wavelength, so need to take a median
+    # value to do a fibre-to-fibre comparison:
+    xpos_med = np.nanmedian(xpos,axis=1)
+    ypos_med = np.nanmedian(ypos,axis=1)
+
+    # median filter all the spectra:
+    if (verbose):
+        print('Filtering input spectra...')
+    start_time = time.time()
+    med_data_all = nd.filters.generic_filter(data_all,np.nanmedian,size=[1,medfiltsize])
+    
+    if (verbose):
+        print('shape of xpos_med:',np.shape(xpos_med))
+
+    # define arrays:
+    near_spec = np.zeros((nnear,n_slices))
+    near_spec_sub = np.zeros((nnear,n_slices))
+    near_ind = np.zeros(nnear,dtype=int)
+    near_diff = np.zeros(nnear)
+    nbad_fibs = np.zeros(n_spec)
+    
+    # set up plotting:
+    if (testplot):
+        # define x axis if plotting:
+        xpix=np.arange(n_slices)
+        fig1 = py.figure(1)
+        fig2 = py.figure(2)
+        fig3 = py.figure(3)
+        
+    # loop through each spectrum and identify all  the spectra that are close to it
+    for i in range(n_spec):
+        # skip to a specific fibre (only for debugging):
+        #if (i < 90):
+        #    continue
+        
+        if (verbose):
+            print('spectrum :',i,xpos_med[i],ypos_med[i])
+            
+        # Calculate the separation of fibres:
+        diff = np.sqrt((xpos_med-xpos_med[i])**2 + (ypos_med-ypos_med[i])**2)
+
+        # find the nnear nearest spectra by getting the indices
+        # with corresponding to the lowest value of diff.
+        near_ind = np.argpartition(diff, nnear)[:nnear]
+
+        if (testplot):
+            fig3.clf()
+            ax31 = fig3.add_subplot(1,2,1)
+            ax31.plot(xpos_med,ypos_med,'o',color='b')
+            ax31.plot(xpos_med[near_ind],ypos_med[near_ind],'o',color='r')
+            ax31.plot(xpos_med[i],ypos_med[i],'o',color='g')
+            ax32 = fig3.add_subplot(1,2,2)
+            
+        if (verbose):
+            print('Index of nearest fibres: ',near_ind)
+        
+        # clear plots so we can show a new fibre (if plotting needed):
+        if (testplot):
+            fig1.clf()
+            fig2.clf()
+            ax2 = fig2.add_subplot(1,1,1)
+            ax1 = []
+            # set up axes:
+            for j in range(4):
+                ax1.append(fig1.add_subplot(4,1,j+1))
+            
+        # loop over nearby fibres, including the central one:
+        inear = 0
+        for ind in near_ind:
+
+            # store the spectra in the near_spec array:
+            near_spec[inear,:] = data_all[ind,:]
+            med_filt_spec = med_data_all[ind,:]
+
+            # subtract the median filtered spectrum from the data:
+            near_spec_sub[inear,:] = data_all[ind,:]-med_filt_spec
+            # define the central fibre that we aim to clip:
+            if (ind == i):
+                near_data0 = data_all[ind,:]
+                near_sig0 = np.sqrt(var_all[ind,:])
+                med_filt_spec0 = np.copy(med_filt_spec)
+                near_spec_sub0 = near_spec_sub[inear,:] 
+                
+            
+            if (testplot):
+                # plot the individual spectra and their medians to get a sense of what
+                # they look like:
+                if (ind == i):
+                    ax2.plot(xpix,near_spec[inear,:],label='fibre '+str(inear)+' '+str(diff[ind]))
+                    title_string = 'fib number {0:3d}, separation {1:5.1f}'.format(ind,diff[ind])
+                    ax2.set(title=title_string)
+
+            # save indices and differences:
+            near_ind[inear] = ind
+            near_diff[inear] = diff[ind]
+
+            # plot the individual spectra, again, but this time, overplot:
+            if (testplot):
+                # plot original spec:
+                ax1[0].plot(xpix,near_spec[inear,:],label='fibre '+str(inear)+' '+str(diff[ind]))
+                # plot subtracted spec:
+                ax1[1].plot(xpix,near_spec_sub[inear,:],label='fibre '+str(inear)+' '+str(diff[ind]))
+
+            # increment counter at end of loop
+            inear = inear +1
+
+        # calculate the median spectrum, with and without subtraction:
+        med_spec_sub = np.nanmedian(near_spec_sub,axis=0)
+        med_spec = np.nanmedian(near_spec,axis=0)
+        # calculate the median absolute deviation with subtraction:
+        mad_spec_sub = utils.mad(near_spec_sub,axis=0)
+
+        # do a robust fit to the median vs individual fluxes, with the aim of
+        # getting the scaling between the two.  First clean up the data and
+        # only include good points:
+        good = np.where(np.isfinite(near_data0) & np.isfinite(med_spec) & np.isfinite(near_sig0) & (near_spec_sub0 > 0) & (med_spec_sub > 0))
+        #
+        # now do the fit.  Make sure to catch it with an exception in case
+        # the fit fails for some reason.
+        try: 
+            popt, pcov = optimize.curve_fit(lin_func,med_spec_sub[good],near_spec_sub0[good],loss='soft_l1',bounds=([0.33,-0.001],[3.0,0.001]))
+            ma = popt[0]
+            mb = popt[1]
+        except:
+            ma = 1.0
+            mb = 0.0
+
+        if (verbose):
+            print('robust gradient and intercept:',popt)
+            print('covariance array for robust fit:',pcov)
+            
+        scale0 = ma
+        
+        # plot flux of median vs flux of individual fibre:
+        if (testplot):
+            ax32.plot(med_spec_sub,near_spec_sub0,'.')
+            ax32.plot(med_spec_sub[good],near_spec_sub0[good],'.')
+            low_x, high_x = ax32.get_xlim()
+            ax32.plot([low_x,high_x],[low_x,high_x],color='k')
+            ax32.plot([low_x,high_x],[ma*low_x+mb,ma*high_x+mb],color='r')
+        
+        # estimate the rms of the spectra.  For this we really want to remove outliers, as otherwise
+        # then will make the error small
+        #rms_spec_sub = np.nanstd(near_spec_sub,axis=0)
+        
+        #rms_spec_sub_orig = np.copy(rms_spec_sub)
+        # now we need to modify the RMS in a few ways:
+        # 1) in cases where the RMS is much smaller when clipping the largest outlier
+        #    then we replace with the clipped value.
+        # 2) For cases where the RMS is too low (not enough pixels or just by change
+        #    due to small number of samples), then replace by local median of RMS 
+        # now find the pixel furthest from the median and remove that from the calc of RMS.
+        #near_spec_sub_clip = np.copy(near_spec_sub)
+        #for j in range(n_slices):
+        #    idx = np.where(abs(near_spec_sub[:,j])==np.nanmax(abs(near_spec_sub[:,j])))
+        #    near_spec_sub_clip[idx,j] = np.nan
+        # do this a second time to find the small number of cases where you have
+        # two outliers:
+        #near_spec_sub_clip2 = np.copy(near_spec_sub_clip)
+        #for j in range(n_slices):
+        #    idx = np.where(abs(near_spec_sub[:,j])==np.nanmax(abs(near_spec_sub_clip[:,j])))
+        #    near_spec_sub_clip2[idx,j] = np.nan
+
+
+        # remove the largest outluer and if the rms is 1.5 times lower, then
+        # use the clipped one:
+        #rms_spec_sub_clip = np.nanstd(near_spec_sub_clip,axis=0)
+        #rms_spec_sub_clip2 = np.nanstd(near_spec_sub_clip2,axis=0)
+        #
+        # define local median filtered RMS, but of clipped version:
+        #rms_spec_sub_med = nd.filters.generic_filter(rms_spec_sub_clip,np.nanmedian,size=25)
+        #for j in range(n_slices):
+            # replace with clipped version:
+            #if (rms_spec_sub_orig[j] > 1.5 * rms_spec_sub_clip[j]):
+            #    rms_spec_sub[j] = rms_spec_sub_clip[j]
+            #if (rms_spec_sub_orig[j] > 1.5 * rms_spec_sub_clip2[j]):
+            #    rms_spec_sub[j] = rms_spec_sub_clip2[j]
+            # replace with median if too low (but this is filtered version
+            # of the clippd rms:
+            #if (rms_spec_sub[j] < rms_spec_sub_med[j]):
+            #    rms_spec_sub[j] = rms_spec_sub_med[j]
+            # replace with variance propagated value if too low:
+            # don't do this for now:
+            #if (rms_spec_sub[j] < near_sig0[j]):
+            #    rms_spec_sub[j] = near_sig0[j]
+                
+        if (testplot):
+            # plot then
+            ax1[0].plot(xpix,med_spec,label='Median',color='k')
+            ax1[1].plot(xpix,med_spec_sub,label='Median')
+            # plot the measured rms spec:
+            #ax1[2].plot(xpix,rms_spec_sub,label='RMS')
+
+                
+        # Now for the fibre in question, flag the bad pixels:
+        for ind in range(inear):
+            if (near_diff[ind] == 0.0):
+
+                # this is the difference spectrum between the spectrum of interest
+                if (testplot):
+                    # plot diff divided by sigma (from variance) or RMS: 
+                    ax1[3].plot(xpix,(near_spec_sub[ind,:]-med_spec_sub)/near_sig0,label='sigma')
+                    #ax1[3].plot(xpix,(near_spec_sub[ind,:]-med_spec_sub)/rms_spec_sub,label='RMS')
+                    #ax1[3].plot(xpix,(near_spec_sub[ind,:]-med_spec_sub)/rms_spec_sub_clip,label='RMS clipped')
+                    ax1[3].plot(xpix,(near_spec_sub[ind,:]-med_spec_sub*scale0)/mad_spec_sub,label='MAD',color='k')
+                    
+                    ax1[2].plot(xpix,near_sig0,label='sigma')
+                    #ax1[2].plot(xpix,rms_spec_sub_clip,label='RMS clipped')
+                    #ax1[2].plot(xpix,rms_spec_sub_orig,label='RMS orig')
+                    ax1[2].plot(xpix,mad_spec_sub,label='MAD',color='k')
+
+                # use the estimated RMS.  Use a regular threshold for the RMS (of nsig, typcially 5
+                # sigma, but also have a second threshold of at least nsig2 (say 3 sigma) from regular
+                # sigma from variance array so that we account for varying noise between spectra.
+                # stadard new method:
+                #bad_ind = np.where((np.abs(near_spec_sub[ind,:]-med_spec_sub)>nsig*rms_spec_sub) & (np.abs(near_spec_sub[ind,:]-med_spec_sub)>nsig2*near_sig0))
+                # equivalent to old method:
+                #bad_ind = np.where((np.abs(near_spec_sub[ind,:]-med_spec_sub*scale0)>nsig*mad_spec_sub) & (np.abs(near_spec_sub[ind,:]-med_spec_sub*scale0)>nsig2*near_sig0))
+                #
+                # also put a limit in for the ratio of spectrum flux to observed flux.  If the median flux is
+                # -ve, set it to close to zero.
+                # 
+                bad_ind = np.where((np.abs(near_spec_sub[ind,:]-med_spec_sub*scale0)>nsig*mad_spec_sub) & (np.abs(near_spec_sub[ind,:]-med_spec_sub*scale0)>nsig2*near_sig0) & (np.abs(near_spec_sub0/(med_spec_sub.clip(min=1.0e-10)*scale0)) > 10.0))
+
+                #bad_ind = np.where(np.abs(near_spec_sub[ind,:]-med_spec_sub)>nsig*np.sqrt(near_var0))
+
+                # expand the bad pixel by expand_bad: 
+                nbad = np.size(bad_ind)
+                for j in range(nbad):
+                    ibad = bad_ind[0][j]
+                    data_all[i,ibad] = np.nan
+                    var_all[i,ibad] = np.nan
+                    if (expand_bad > 0):
+                        for ie in range(expand_bad+1):
+                            data_all[i,min(ibad+ie,n_slices-1)] = np.nan 
+                            data_all[i,max(ibad-ie,0)] = np.nan 
+                            var_all[i,min(ibad+ie,n_slices-1)] = np.nan
+                            var_all[i,max(ibad-ie,0)] = np.nan
+                
+
+                if (verbose):
+                    print('number of bad pixels:',np.size(bad_ind))
+                    print('bad_ind:',bad_ind)
+                    print('flux ratio:',near_spec_sub0[bad_ind]/(med_spec_sub[bad_ind]*scale0))
+                    print('flux med sub:',med_spec_sub[bad_ind]*scale0)
+                    print('flux spec sub:',near_spec_sub0[bad_ind])
+                # plot bad pixels:
+                if (testplot):
+                    ax1[0].plot(xpix[bad_ind],np.ravel(near_spec[ind,bad_ind]),'x',color='red')
+                    ax1[3].axhline(y=nsig,ls=':',color='k')
+                    ax1[3].axhline(y=-1.0*nsig,ls=':',color='k')
+                    ax2.plot(xpix[bad_ind],np.ravel(near_spec[ind,bad_ind]),'x',color='red')
+                    ax2.plot(xpix,data_all[i,:])
+                    ax2.plot(xpix,med_filt_spec0)
+                    ax2.plot(xpix,med_filt_spec0+5*near_sig0,':')
+                    ax2.plot(xpix,med_filt_spec0-5*near_sig0,':')
+                    ax2.plot(xpix,med_filt_spec0+near_sig0,':')
+                    ax2.plot(xpix,med_filt_spec0-near_sig0,':')
+                    ax32.plot(med_spec_sub[bad_ind],near_spec_sub0[bad_ind],'x',color='red')
+
+                    
+        if (testplot):
+            # for now don't plot all legends as they get messy. 
+            #ax1[0].legend(loc=2,prop={'size':8})
+            #ax1[1].legend(loc=2,prop={'size':8})
+            ax1[2].legend(loc=2,prop={'size':8})
+            ax1[3].legend(loc=2,prop={'size':8})
+            
+        if (testplot):
+            fig1.canvas.draw_idle()
+            fig1.show()
+            fig2.canvas.draw_idle()
+            fig2.show()
+            fig3.canvas.draw_idle()
+            fig3.show()
+            py.pause(0.01)
+            # pause code so we can look at spectra:
+            #only pause if lots of bad pixels:
+            if (nbad > 20):
+                yn = input('Continue? (y/n):')
+            
+        nbad_fibs[i] = np.size(bad_ind)
+
+    if (verbose):
+        for i in range(n_spec):
+            print(i,nbad_fibs[i])
+        
+    if (verbose):
+        print(("Time taken %s sec" % (time.time() - start_time)))
+        
+    return data_all,var_all
+

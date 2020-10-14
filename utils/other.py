@@ -14,6 +14,7 @@ import os
 import subprocess
 import gzip as gz
 import warnings
+import shutil
 
 from collections import namedtuple
 
@@ -473,16 +474,6 @@ def get_probes_objects(infile, ifus='all'):
         ifu_data=IFU(infile, ifu, flag_name=False)
         print(ifu,"\t", ifu_data.name)
 
-def hg_changeset(path=__file__):
-    """Return the changeset ID for the current version of the code."""
-    try:
-        changeset = subprocess.check_output(['hg', '-q', 'id'],
-                                            cwd=os.path.dirname(path))
-        changeset = changeset.strip().decode('ascii')
-    except (subprocess.CalledProcessError, OSError):
-        changeset = ''
-    return changeset
-
 def mad(a, c=0.6745, axis=None):
     """
     Compute the median absolute deviation along the specified axis.
@@ -538,6 +529,15 @@ def find_fibre_table(hdulist):
                            "'MORE.FIBRES_IFU' both not found")
     return extno
 
+
+def ungzip(filename, leave_original=False):
+    """ ungzip a file, optionally leaving the original in place."""
+    with gz.open(filename,'rb') as f_in:
+        with open(filename[:-3],'wb') as f_out:
+            f_out.writelines(f_in)
+    if not leave_original:
+        os.remove(filename)
+    return
 
 def gzip(filename, leave_original=False):
     """gzip a file, optionally leaving the original version in place."""

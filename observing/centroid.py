@@ -665,11 +665,14 @@ def centroid_fit(x,y,data,reference=None,rssframe=None,galaxyid=None,microns=Tru
     tbl = find_peaks(img1, threshold, box_size=105)
 
    # Case1: If no peaks are found, masking is not applied. Actually I don't find any.
-    if(len(tbl) < 1): 
+    if tbl == None:
+        checkind = 'nopeak'
+
+    elif(len(tbl) < 1): 
         checkind = 'nopeak'
 
    # Case2: A single peak is found
-    if(len(tbl) == 1): 
+    elif(len(tbl) == 1): 
         checkind = 'single'
         dist = (tbl['y_peak']+np.min(x)-xc)**2+(tbl['x_peak']+np.min(y)-yc)**2    # separation between a peak and centre 
         if(dist < (310)**2): # Single peak near the centre
@@ -681,7 +684,8 @@ def centroid_fit(x,y,data,reference=None,rssframe=None,galaxyid=None,microns=Tru
                 mean, median, std = sigma_clipped_stats(img3, sigma=3.0)
                 threshold = median + std*0.1
                 tbl = find_peaks(img3, threshold, box_size=width) #find peaks
-
+                if tbl == None:
+                    continue
                 if(len(tbl)==1): # only a single peak is found until maximum iteration (=100)
                     tx,ty,trad=tbl['y_peak']+np.min(x), tbl['x_peak']+np.min(y),1000 # fibre masking is not applied (trad = 1000)
                     checkind = 'single_edge'
@@ -691,7 +695,7 @@ def centroid_fit(x,y,data,reference=None,rssframe=None,galaxyid=None,microns=Tru
                     break
 
     # Case3: When there are multiple peaks
-    if(len(tbl) > 1):
+    elif(len(tbl) > 1):
         if checkind is not 'multi_faint':
             checkind = 'multi'
         xx,yy = tbl['y_peak']+np.min(x), tbl['x_peak']+np.min(y) # y_peak is x. yes. it's right.
@@ -724,7 +728,10 @@ def centroid_fit(x,y,data,reference=None,rssframe=None,galaxyid=None,microns=Tru
     # Save the target centre of reference frame
     if reference is not None and rssframe == reference:
         ref=open(working_dir+'_centroid_fit_reference/centre_'+galaxyid+'_ref.txt','w')
-        ref.write(str(tx.data[0])+' '+str(ty.data[0]))
+        try:
+            ref.write(str(tx.data[0])+' '+str(ty.data[0]))
+        except:
+            ref.write(str(tx)+' '+str(ty))
         ref.close()
 
 #** New masking method ends ————————————————————————————————————————————————
