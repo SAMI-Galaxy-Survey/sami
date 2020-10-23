@@ -101,7 +101,8 @@ def measure_lines(path, line_info=None):
             np.outer(flux_low, (wavelength_high - wavelength[in_window]) /
                      (wavelength_high - wavelength_low))
         )
-        data_sub -= continuum
+        data_sub = data_sub - continuum
+
         flux[:, i_line] = np.sum(data_sub, 1)
         centre[:, i_line] = (
             np.sum(data_sub * wavelength[in_window], 1) / flux[:, i_line])

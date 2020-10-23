@@ -106,7 +106,6 @@ def call_2dfdr_reduce(dirname, options=None, dummy=False):
     """Call 2dfdr in pipeline reduction mode using `aaorun`"""
     # Make a temporary directory with a unique name for use as IMP_SCRATCH
     with TemporaryDirectory() as imp_scratch:
-
         command_line = [COMMAND_REDUCE]
         if options is not None:
             command_line.extend(options)
@@ -198,10 +197,8 @@ def run_2dfdr_single(fits, idx_file, options=None, dummy=False):
         task = 'reduce_object'
     else:
         raise ValueError('Unrecognised NDF_CLASS')
-    print(task) #marie
     out_dirname = fits.filename[:fits.filename.rindex('.')] + '_outdir'
     out_dirname_full = os.path.join(fits.reduced_dir, out_dirname)
-    print(out_dirname_full)#marie
     if not os.path.exists(out_dirname_full):
         os.makedirs(out_dirname_full)
     options_all = [task, fits.filename, '-idxfile', idx_file,
@@ -209,13 +206,12 @@ def run_2dfdr_single(fits, idx_file, options=None, dummy=False):
     if options is not None:
         options_all.extend(options)
     call_2dfdr_reduce(fits.reduced_dir, options=options_all, dummy=dummy)
-    print(fits.filename) #marie
     return '2dfdr Reduced file:' + fits.filename
 
 
 def run_2dfdr_combine(input_path_list, output_path, idx_file, dummy=False):
     """Run 2dfdr to combine the specified FITS files."""
-    if len(input_path_list) < 2 and not dummy: #marie add not dummy
+    if len(input_path_list) < 2:
         raise ValueError('Need at least 2 files to combine!')
     output_dir, output_filename = os.path.split(output_path)
     options = ['combine_image',

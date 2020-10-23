@@ -81,6 +81,7 @@ log.setLevel(slogging.WARNING)
 import astropy.coordinates as coord
 from astropy import units
 import astropy.io.fits as pf
+from astropy.table import Table
 from astropy import __version__ as ASTROPY_VERSION
 import numpy as np
 
@@ -1629,9 +1630,8 @@ class Manager:
                                    **kwargs)
         reduced_files = self.reduce_file_iterable(
             file_iterable, overwrite=overwrite, check='ARC')
-        if not self.dummy:
-            for fits in reduced_files:
-                bad_fibres(fits.reduced_path, save=True)
+        for fits in reduced_files:
+            bad_fibres(fits.reduced_path, save=True)
         self.next_step('reduce_arc', print_message=True)
         return
 
@@ -1697,13 +1697,13 @@ class Manager:
             file_list.extend(files)
         self.reduce_file_iterable(
             file_list, overwrite=overwrite, check='SKY')
-        
+
         # Average the throughput values in each group
         for files in groups.values():
             path_list = [fits.reduced_path for fits in files]
             make_clipped_thput_files(
                 path_list, overwrite=overwrite, edit_all=True, median=True)
-                
+
         # Send all the sky frames to the improved wavecal routine then
         # apply correction to all the blue arcs
         if  self.improve_blue_wavecorr:
@@ -1740,6 +1740,7 @@ class Manager:
                         ndf_class='MFFFF', do_not_use=False, lamp='Dome',
                         field_id=field_id, plate_id=plate_id, date=date,
                         ccd=ccd, **kwargs):
+                    print(fits)
                     fits_sky_list.append(
                         self.copy_as(fits, 'MFSKY', overwrite=overwrite))
             # Now reduce the fake sky files from all fields
@@ -1774,6 +1775,19 @@ class Manager:
             shutil.copy2(fits.raw_path, new_path)
             # Open up the file and change its NDF_CLASS
             hdulist = pf.open(new_path, 'update')
+
+
+            #- Spector dummy files do not have 'STRUCT.MORE.NDF_CLASS'. This can be removed when Spector frames properly include an extension of 'STRUCT.MORE.NDF_CLASS'
+            try:
+                hdulist['STRUCT.MORE.NDF_CLASS']
+            except KeyError:
+                warnings.warn('STRUCT.MORE.NDF_CLASS has not been found: '+str(fits.raw_path))
+                hdu = pf.BinTableHDU(Table([[ndf_class]],names=['NAME'], dtype=['S']))
+                hdu.header['EXTNAME'] = ('STRUCT.MORE.NDF_CLASS','name of this binary table extension ')
+                hdu.header['EXTTYPE'] = ('STRUCT','HDS data type of the hierarchical structure ')
+                hdulist.append(hdu)
+            #- Spector dummy 'STRUCT.MORE.NDF_CLASS' end #
+
             hdulist['STRUCT.MORE.NDF_CLASS'].data['NAME'][0] = ndf_class
             hdulist[0].header['MNGRCOPY'] = (
                 True, 'True if this is a copy created by a Manager')
@@ -1877,6 +1891,7 @@ class Manager:
         # Check how good the sky subtraction was
         for fits in reduced_files:
             self.qc_sky(fits)
+
         self.next_step('reduce_object', print_message=True)
         return
 
@@ -1916,6 +1931,7 @@ class Manager:
             if (fits.ndf_class == 'MFFFF' and tlm and not leave_reduced and os.path.exists(fits.reduced_path)):
                 os.remove(fits.reduced_path)
                 
+
         # Create dummy output if pipeline is being run in dummy mode
         if self.dummy:
             create_dummy_output(reduced_files, tlm=tlm, overwrite=overwrite)
@@ -5443,33 +5459,73 @@ def read_stellar_mags():
 def create_dummy_output(reduced_files, tlm=False, overwrite=False):
     # Loop over all reduced files and create mock
     # output for the appropriate file type and size
-    
+
     for reduced_file in reduced_files:
-        if reduced_file.ndf_class == 'BIAS' or reduced_file.ndf_class == 'DARK' or reduced_file.ndf_class == 'LFLAT' or reduced_file.ndf_class == 'MFFFF' or reduced_file.ndf_class == 'MFARC':
-        #probably we would not require above if condition
+        if reduced_file.ndf_class == 'BIAS' or reduced_file.ndf_class == 'DARK' or reduced_file.ndf_class == 'LFLAT' or reduced_file.ndf_class == 'MFFFF' or reduced_file.ndf_class == 'MFARC' or reduced_file.ndf_class == 'MFOBJECT':
+        #probably we would not require the above *if* condition
+
+            # specify a demension of each ccd
             tmpfile = pf.open(reduced_file.raw_path)
             sz1 = 4096; sz2 = 2048
             if reduced_file.ccd == 'ccd_3' or reduced_file.ccd == 'ccd_4': # Spector
                 sz2 = 4096 # Should check the dimension for Spector is really 4096x4096
-            if reduced_file.ndf_class == 'MFARC' or (reduced_file.ndf_class == 'MFFFF' and not tlm): # reduce_arc() and reduce_fflat()
+            if reduced_file.ndf_class == 'MFARC' or reduced_file.ndf_class == 'MFOBJECT' or (reduced_file.ndf_class == 'MFFFF' and not tlm): # arc, flat, object
                 sz1 = 819
                 if reduced_file.ccd == 'ccd_3' or reduced_file.ccd == 'ccd_4':
-                    sz1 = 819 # Should update the dimension of arc frame for Spector
-
+                    sz1 = 819 # Should update the dimension for Spector
             tmpfile['PRIMARY'].data = tmpfile['PRIMARY'].data[0:sz1,0:sz2]
 
-# when we require wcs in headers..
-#        if 'CRPIX1' not in tmpfile['PRIMARY'].header:
-#            tmpfile['PRIMARY'].header['CRPIX1'] = (1.024000000000E+03,'Reference pixel along axis 1')
-#            tmpfile['PRIMARY'].header['CDELT1'] = (1.050317537860E+00,'Co-ordinate increment along axis 1')
-#            tmpfile['PRIMARY'].header['CRVAL1'] = (4.724474841231E+03,'Co-ordinate value of axis 1')
+
+            # Insert Variance HDU
+            try:
+                tmpfile['VARIANCE']
+            except KeyError:
+                hdu = pf.ImageHDU(tmpfile['PRIMARY'].data)
+                hdu.header['EXTNAME'] = ('VARIANCE')
+                tmpfile.append(hdu)
+
+            # Insert essential HDUs to object frames
+            if reduced_file.ndf_class == 'MFOBJECT':
+                try: 
+                    tmpfile['SKY']
+                except KeyError:
+                    hdu = pf.ImageHDU(np.zeros(sz2))
+                    hdu.header['EXTNAME'] = ('SKY')
+                    tmpfile.append(hdu)
+
+                try: 
+                    tmpfile['REDUCTION_ARGS']
+                except KeyError:
+                    hdu = pf.BinTableHDU(Table([['THPUT_FILENAME','TPMETH'],['thput_dummy.fits','OFFSKY']],names=['ARG_NAME','ARG_VALUE'], dtype=['S','S']))
+                    hdu.header['EXTNAME'] = ('REDUCTION_ARGS')
+                    tmpfile.append(hdu)
+
+
+            #- Spector dummy files do not have 'STRUCT.MORE.NDF_CLASS'. This can be removed when Spector frames properly include an extension of 'STRUCT.MORE.NDF_CLASS'
+            try:
+                tmpfile['STRUCT.MORE.NDF_CLASS']
+            except KeyError:
+                warnings.warn('STRUCT.MORE.NDF_CLASS has not been found: '+str(reduced_file.raw_path))
+                hdu = pf.BinTableHDU(Table([[reduced_file.ndf_class]],names=['NAME'], dtype=['S']))
+                hdu.header['EXTNAME'] = ('STRUCT.MORE.NDF_CLASS','name of this binary table extension ')
+                hdu.header['EXTTYPE'] = ('STRUCT','HDS data type of the hierarchical structure ')
+                tmpfile.append(hdu)
+            #- Spector dummy 'STRUCT.MORE.NDF_CLASS' end #
+
+            # WCS is required for ARC and object frames 
+            if (reduced_file.ndf_class == 'MFARC' or reduced_file.ndf_class == 'MFOBJECT') and 'CRPIX1' not in tmpfile['PRIMARY'].header:
+                tmpfile['PRIMARY'].header['CRPIX1'] = (1.024000000000E+03,'Reference pixel along axis 1')
+                tmpfile['PRIMARY'].header['CDELT1'] = (1.050317537860E+00,'Co-ordinate increment along axis 1')
+                tmpfile['PRIMARY'].header['CRVAL1'] = (4.724474841231E+03,'Co-ordinate value of axis 1')
 
             if reduced_file.ndf_class == 'MFFFF' and tlm: # make_tlm()
                 out_path = reduced_file.tlm_path
             else:
                 out_path = reduced_file.reduced_path
+
             if os.path.exists(out_path) and overwrite:
                 os.remove(out_path)
+
             tmpfile.writeto(out_path)
             tmpfile.close()
 
@@ -5478,6 +5534,10 @@ def create_dummy_combine(input_file, output_file, class_dummy):
     # Simply copy one of the reduced calibration files to combined one
     if class_dummy == 'BIAS' or class_dummy == 'DARK' or class_dummy == 'LFLAT':
         shutil.copy2(input_file, output_file)
+
+
+#def generate_dummy_thput()
+    # generate thput_dummy.fits with full of ones
 
 
 
