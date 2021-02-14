@@ -9,6 +9,7 @@ import matplotlib.pyplot as plt
 from scipy import fftpack, interpolate, linalg, signal, optimize
 from scipy.special import erf
 from .settings_sami import _Nfib, _Rfib_arcsec, _plate_scale
+_Nfib = _Nfib[0]
 
 fwhm_2_std = 1. / (2.*np.sqrt(2*np.log(2.)))
 

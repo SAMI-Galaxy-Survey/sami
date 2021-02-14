@@ -14,8 +14,8 @@ from astropy.io import fits as pf
 import astropy.wcs as pw
 from scipy import linalg
 import yaml
-from settings_sami import _Rfib_arcsec
-from config_covar import *
+from sami.gpcubing.settings_sami import _Rfib_arcsec
+from sami.gpcubing.config_covar import *
 
 
 class Covariance():

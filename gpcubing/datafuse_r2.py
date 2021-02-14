@@ -28,6 +28,7 @@ from sami.utils.mc_adr import adr_r, DARCorrector, parallactic_angle, zenith_dis
 # The new cubesolve modul:
 from sami.gpcubing import gpcubesolve_r2 as cs
 from sami.gpcubing.settings_sami import _Nfib, _Rfib_arcsec, _plate_scale, _fov_arcsec
+_Nfib = _Nfib[0]
 
 cubing_method = 'GP_prior'
 wavelength_ref = 5000.0
@@ -999,8 +1000,9 @@ class DataFuse3D():
         # Define cube size
         flux_cube=np.zeros((Lpix, Lpix, Nbins)) * np.nan
         var_cube=np.zeros((Lpix, Lpix, Nbins)) * np.nan
+
         resp_cube=np.zeros((self._Nexp * _Nfib, Lpix*Lpix, int(Nbins * binsize/nresponse))) * np.nan
-        self.logvar_fibre = np.zeros((_Nexp * _Nfib, Nbins)) * np.nan
+        self.logvar_fibre = np.zeros((self._Nexp * _Nfib, Nbins)) * np.nan
         if self.gcovar:
             covar_cube = np.zeros((Lpix**2, Lpix**2, Nbins)) * np.nan
         else:
