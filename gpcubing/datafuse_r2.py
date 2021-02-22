@@ -922,7 +922,7 @@ class DataFuse3D():
         fibfluxerr[~np.isfinite(fibfluxerr) | ~np.isfinite(fibflux) | (fibfluxerr > 1e4) ] = 1e9
         # Calculate response matrix only every nresponse step:
         kl_approx = False
-        if wavenumber % nresponse == 0:
+        if (wavenumber % nresponse == 0) or (hasattr(self,'response') == False):
             self.response = cs.ResponseMatrix(coord, dar_cor, cs.moffat_psf, Lpix, self.pixscale, fft=True, 
                                               avgpsf=self.avgpsf,_Nexp = self._Nexp)
             model = cs.GPModel(self.response, fibflux, fibfluxerr, calcresponse = True, gpmethod = self.gpmethod, logtrans = self.logtrans)
@@ -1032,7 +1032,9 @@ class DataFuse3D():
         # replace evtl loop with map function and enable multiprocessing option
         # map(self.fuseimage, range(Nbins))
         #print("Looping over wavelength range...")
+        
         for l in range(Nbins):
+        #for l in range(0,40):
             print("wavelength slide:", self.wlow_vec[l], ' - ', self.wup_vec[l])
             if binsize > 1:
                 data_l, var_l, resp_l, covar_l, K_l, AK_l, AKA_l, logvar_l = self.fuseimage(self.wlow_vec[l], wavenumber2 = self.wup_vec[l], 
@@ -1050,7 +1052,7 @@ class DataFuse3D():
             flux_cube[:, :, l] = data_l 
             var_cube[:, :, l] = var_l 
             self.logvar_fibre[:, l] = logvar_l
-            if l * binsize % nresponse == 0:
+            if (l * binsize % nresponse == 0) or (hasattr(self,'resp0') == False):
                 resp_cube[:,:,int(l*binsize/nresponse)] = resp_l
                 self.resp0 = resp_l # use repsone matrix for runs till next interval
                 self.K0 = K_l
