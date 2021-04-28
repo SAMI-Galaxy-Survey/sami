@@ -781,3 +781,53 @@ class GPModel(SliceView):
         if gcovar:
             #self.pack_scene_cov(self.scene_cov*self._fstd**2)
             self.pack_scene_cov(self.scene_cov)
+
+class CRRModel(SliceView):
+    """
+    Implements the covariance-regularized reconstruction model of
+        Liu et al., arxiv:1906.06369 (2019)
+    This model has the advantage of being yet another local weighted co-add
+    so the variance will be easy to understand, but also has minimal ringing.
+    What we don't know is how the aliasing will hold up, but I expect this
+    will also outperform drizzle on the aliasing.
+    """
+
+    def __init__(self, response, fibflux, fibfluxerr):
+        """
+        :param response: response matrix
+        :param fibflux: fibre fluxes (np.array of shape (_Nexp, _Nfib))
+        :param fibfluxerr: standard deviations of fibre fluxes
+            (either float, or np.array of shape (_Nexp, _Nfib)
+        """
+        # Explicitly call superclass constructor to make sure it gets done
+        super(CRRModel, self).__init__(response)
+        # Initialize other class stuff
+        xrange = (np.arange(0, self.Lpix) - self.Lpix/2.0)
+        yrange = (np.arange(0, self.Lpix) - self.Lpix/2.0)
+        self._xg, self._yg = np.meshgrid(xrange, yrange)
+        self.fibflux = fibflux
+        self.fibfluxerr = fibfluxerr
+
+    def logL(self, hp):
+        # Set everything up
+        y, yerr = self.fibflux, self.fibfluxerr
+        psf_pars, _ = hp[:-1], hp[-1]
+        A = self.response(*psf_pars)
+        Nfib, Npix = A.shape
+        Lambda = 1e-3
+        # Form the weights through SVD and apply
+        U, s, V = linalg.svd(np.dot(np.diag(1.0/yerr), A))
+        s_ext = np.concatenate([s, np.zeros(Npix-Nfib)])
+        Sigma = np.diag(s_ext)
+        Sigma_Linv = np.zeros(A.shape)
+        Sigma_Linv[:Nfib,:Nfib] = np.diag(s / (s**2 + Lambda**2))
+        Q = np.dot(V.T, np.dot(Sigma, V))
+        R = Q / Q.sum(axis=1)[:,None]
+        W = np.dot(R, np.dot(V.T, np.dot(Sigma_Linv.T, U.T)))
+        self.scene = np.dot(W, y).reshape(self.Lpix, self.Lpix)
+        self.scene_cov = np.dot(np.dot(W, np.diag(yerr**2)), W.T)
+        
+    def predict(self,hp):
+        pass
+        
+

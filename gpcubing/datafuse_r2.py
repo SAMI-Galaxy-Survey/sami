@@ -783,7 +783,8 @@ class DataFuse3D():
     """
     def __init__(self, data, psf_params, coord, data_sigma = None , psf_params_sigma = None, 
         coord_sigma = None, name = None, dar_cor = None, pixscale = 0.5, avgpsf = False, 
-        gcovar = False, gpmethod = 'squared_exp', _Nexp = 7,marginalize=False, gamma2psf = 0.5, logtrans = True):
+        gcovar = False, gpmethod = 'squared_exp', _Nexp = 7,marginalize=False, gamma2psf = 0.5, 
+        logtrans = True, model_type = 'GP'):
         """
         :param data: callable accepting ndarrays of shape (N_obs, N_datapoints, N_wavelength)
         :param psf_params: Moffat parameters (alpha,beta) for each wavelength and observation. 
@@ -863,6 +864,10 @@ class DataFuse3D():
                 print("DAR correction input has wrong shape, must be same as coordinate array")
         else:
             self.dar_cor = None
+        if (model_type == 'GP' ) or (model_type == 'CRR'):
+            self.model_type = model_type
+        else:
+            raise ValueError("Model type must be either 'GP' or 'CRR'")
         self.pixscale = pixscale
         self.avgpsf = avgpsf
         self.gcovar = gcovar
@@ -922,16 +927,28 @@ class DataFuse3D():
         fibfluxerr[~np.isfinite(fibfluxerr) | ~np.isfinite(fibflux) | (fibfluxerr > 1e4) ] = 1e9
         # Calculate response matrix only every nresponse step:
         kl_approx = False
-        if (wavenumber % nresponse == 0) or (hasattr(self,'response') == False):
-            self.response = cs.ResponseMatrix(coord, dar_cor, cs.moffat_psf, Lpix, self.pixscale, fft=True, 
-                                              avgpsf=self.avgpsf,_Nexp = self._Nexp)
-            model = cs.GPModel(self.response, fibflux, fibfluxerr, calcresponse = True, gpmethod = self.gpmethod, logtrans = self.logtrans)
-        else: 
-            model = cs.GPModel(self.response, fibflux, fibfluxerr, calcresponse = False, gpmethod = self.gpmethod, logtrans = self.logtrans)
-            model._A = self.resp0
-            model._K_gv = self.K0
-            model._AK_gv = self.AK0
-            model._AKA_gv = self.AKA0
+        if self.model_type == 'GP':
+            if (wavenumber % nresponse == 0) or (hasattr(self,'response') == False):
+                self.response = cs.ResponseMatrix(coord, dar_cor, cs.moffat_psf,
+                                                Lpix, self.pixscale, fft=True,
+                                                avgpsf=self.avgpsf,_Nexp = self._Nexp)
+                model = cs.GPModel(self.response, fibflux, fibfluxerr, 
+                                    calcresponse = True, gpmethod = self.gpmethod,
+                                     logtrans = self.logtrans)
+            else: 
+                model = cs.GPModel(self.response, fibflux, fibfluxerr, calcresponse = False, 
+                                    gpmethod = self.gpmethod, logtrans = self.logtrans)
+                model._A = self.resp0
+                model._K_gv = self.K0
+                model._AK_gv = self.AK0
+                model._AKA_gv = self.AKA0
+        
+        elif self.model_type == 'CRR':
+            model = cs.CRRModel(self.response,fibflux,fibfluxerr)
+            
+        
+        else:
+            raise ValueError("Model type must be either 'GP' or 'CRR'")
 
         if self.avgpsf:
             #print('mean/std alpha , beta:', alpha.mean(), alpha.std(), beta.mean(), beta.std())
@@ -1033,8 +1050,8 @@ class DataFuse3D():
         # map(self.fuseimage, range(Nbins))
         #print("Looping over wavelength range...")
         
-        for l in range(Nbins):
-        #for l in range(0,40):
+        #for l in range(Nbins):
+        for l in range(200,240):
             print("wavelength slide:", self.wlow_vec[l], ' - ', self.wup_vec[l])
             if binsize > 1:
                 data_l, var_l, resp_l, covar_l, K_l, AK_l, AKA_l, logvar_l = self.fuseimage(self.wlow_vec[l], wavenumber2 = self.wup_vec[l], 
