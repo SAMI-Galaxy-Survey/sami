@@ -442,7 +442,7 @@ def cube_wrapper(inputs):
                                 inputs['name'], inputs['cubed_root'], inputs['overwrite'], 
                                 inputs['output_pix_size_arcsec'], inputs['size_of_grid'], 
                                 inputs['suffix'],inputs['ccd'],inputs['gamma2psf'],
-                                inputs['model_type']))
+                                inputs['model_type'])
         
         path_out = os.path.join(inputs['cubed_root'],name)
         if ccd == 'ccd_1':
