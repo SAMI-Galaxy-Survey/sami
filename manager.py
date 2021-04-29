@@ -2442,7 +2442,7 @@ class Manager:
              star_only=False, drop_factor=None, tag='', update_tol=0.02,
              size_of_grid=50, output_pix_size_arcsec=0.5,
              min_transmission=0.333, max_seeing=4.0, min_frames=6,
-             cubing_method='',gamma2psf=0.4, **kwargs):
+             cubing_method='',gamma2psf=0.4,model_type='GP', **kwargs):
         """Make datacubes from the given RSS files."""
         groups = self.group_files_by(
             ['field_id', 'ccd'], ndf_class='MFOBJECT', do_not_use=False,
@@ -2486,7 +2486,7 @@ class Manager:
                     'cubed_root': cubed_root, 'drop_factor': drop_factor, 'tag': tag,
                     'update_tol': update_tol, 'size_of_grid': size_of_grid,
                     'output_pix_size_arcsec': output_pix_size_arcsec, 'overwrite': overwrite,
-                    'cubing_method': cubing_method,'gamma2psf':gamma2psf}
+                    'cubing_method': cubing_method,'gamma2psf':gamma2psf,'model_type':model_type}
                     inputs_list.append(inputs)       
  
         with open(failed_qc_file,"w") as outfile:

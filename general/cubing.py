@@ -438,20 +438,21 @@ def cube_wrapper(inputs):
             output_pix_size_arcsec=output_pix_size_arcsec)
     elif cubing_method == 'gp':
         (path_list, name, cubed_root, overwrite, output_pix_size_arcsec, 
-         size_of_grid, suffix, ccd,gamma2psf) = (inputs['path_list'], inputs['name'], 
-                                  inputs['cubed_root'], inputs['overwrite'], 
-                                  inputs['output_pix_size_arcsec'], inputs['size_of_grid'], 
-                                  inputs['suffix'],inputs['ccd'],inputs['gamma2psf'])
+         size_of_grid, suffix, ccd,gamma2psf,model_type) = (inputs['path_list'], 
+                                inputs['name'], inputs['cubed_root'], inputs['overwrite'], 
+                                inputs['output_pix_size_arcsec'], inputs['size_of_grid'], 
+                                inputs['suffix'],inputs['ccd'],inputs['gamma2psf'],
+                                inputs['model_type']))
         
         path_out = os.path.join(inputs['cubed_root'],name)
         if ccd == 'ccd_1':
             ccd = 'blue'
         elif ccd == 'ccd_2':
             ccd = 'red'
-        return run_datafuse_r2.new_cube(path_list, name, ccdband=ccd, Lpix=size_of_grid,
-                                        pixscale=output_pix_size_arcsec,gamma2psf=gamma2psf,
-                                        path_out=path_out,filename_ext=suffix,
-                                        write_fits=True)
+        return run_datafuse_r2.new_cube(path_list, name, ccdband=ccd,
+                    Lpix=size_of_grid, pixscale=output_pix_size_arcsec,           
+                    gamma2psf=gamma2psf, path_out=path_out,filename_ext=suffix,
+                    write_fits=True,model_type=model_type)
     else:
         print('{} is not a supported cubing method'.format(cubing_method))
         return False
@@ -460,7 +461,8 @@ def cube_wrapper(inputs):
 
 def dithered_cube_from_rss_wrapper(files, name, size_of_grid=50, 
                                    output_pix_size_arcsec=0.5, drop_factor=0.5,
-                                   clip=False, do_clip_by_fibre=True, plot=True, write=True, suffix='',
+                                   clip=False, do_clip_by_fibre=True, plot=True, 
+                                   write=True, suffix='',
                                    nominal=False, root='', overwrite=False,
                                    offsets='file', covar_mode='optimal',
                                    do_dar_correct=True, clip_throughput=True,
@@ -854,7 +856,7 @@ def dithered_cube_from_rss(ifu_list, size_of_grid=50, output_pix_size_arcsec=0.5
     
     # This loops over wavelength slices (e.g., 2048).
     for l in tqdm(range(n_slices)):
-
+    
         # In this loop, we will map the RSS fluxes from individual fibres
         # onto the output grid.
         #
