@@ -824,10 +824,24 @@ class CRRModel(SliceView):
         Q = np.dot(V.T, np.dot(Sigma, V))
         R = Q / Q.sum(axis=1)[:,None]
         W = np.dot(R, np.dot(V.T, np.dot(Sigma_Linv.T, U.T)))
-        self.scene = np.dot(W, y).reshape(self.Lpix, self.Lpix)
-        self.scene_cov = np.dot(np.dot(W, np.diag(yerr**2)), W.T)
         
-    def predict(self,hp):
-        pass
+        result = np.dot(W, y).reshape(self.Lpix, self.Lpix)
+        covar = np.dot(np.dot(W, np.diag(yerr**2)), W.T)
+        var = np.diagonal(covar)
+        
+        self._K_gv, self._AK_gv, self._AKA_gv = [ ], [ ], [ ] #just fillers
+        self._A = self.response(*psf_pars)
+        self.yvar_log = np.log(yerr)
+        
+        self.scene_covar = covar        
+        self.pack_scene(result.ravel())
+        self.pack_scene_var(var)
+        
+        return result
+        
+    def predict(self, gcovar=False):
+        
+        if gcovar:
+            self.pack_scene_covar(covar)
         
 

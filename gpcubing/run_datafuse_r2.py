@@ -63,7 +63,7 @@ Specify parameters below for cubing:
 
 def new_cube(fitslist,name,ccdband='blue',Lpix=50,pixscale=0.5,wavebin=1,responsebin=32,
         path_out='/import/opus1/nscott/SAMI_Survey/new_cubes_output/',filename_ext='_50pix_05arcsec',
-        write_fits=True,gamma2psf=0.4,logtrans=True,write_covar=False):
+        write_fits=True,gamma2psf=0.4,logtrans=True,write_covar=False,model_type='GP'):
 
     # Lpix: number of pixels for x and y in final cube
     # pixscale: preferred 18/60 = 0.3
@@ -107,18 +107,22 @@ def new_cube(fitslist,name,ccdband='blue',Lpix=50,pixscale=0.5,wavebin=1,respons
 
         ######## Run the actual cubing class
         _Nexp = len(fitslist)
-        fuse = df.DataFuse3D(data, (psf_alpha, psf_beta), (xfibre, yfibre), data_sigma = np.sqrt(variance),
-                             dar_cor = (xdar, ydar), name = identifier, pixscale = pixscale, _Nexp = _Nexp,
-                             avgpsf = avgpsf, gcovar= gcovar, gpmethod=gpmethod, gamma2psf=gamma2psf, logtrans=logtrans)
+        fuse = df.DataFuse3D(data, (psf_alpha, psf_beta), (xfibre, yfibre), 
+                                data_sigma = np.sqrt(variance), dar_cor = (xdar, ydar), 
+                                name = identifier, pixscale = pixscale, _Nexp = _Nexp, 
+                                avgpsf = avgpsf, gcovar= gcovar, gpmethod=gpmethod, 
+                                gamma2psf=gamma2psf, logtrans=logtrans,model_type=model_type)
 
         ######## Return reconstructed cubes (covar_cube is zero if not explicitly called, see above):
-        data_cube, var_cube, resp_cube, covar_cube = fuse.fusecube(Lpix = Lpix, binsize=wavebin, nresponse = responsebin, marginalize=marginalize)
+        data_cube, var_cube, resp_cube, covar_cube = fuse.fusecube(Lpix = Lpix, 
+                    binsize=wavebin, nresponse = responsebin, marginalize=marginalize)
 
         ######## Write fits files for data+variance cube and one fits file for components to reconstruct covaraince :
         if write_fits:
             filename_out=identifier +'_' + ccdband + filename_ext +'_gp.fits'
             df.sami_write_file(fitslist, identifier, data_cube, var_cube, 
-                path_out = path_out, filename_out = filename_out, overwrite = True, covar_mode = None, pixscale = pixscale)
+                path_out = path_out, filename_out = filename_out, overwrite = True, 
+                covar_mode = None, pixscale = pixscale)
         if write_covar:
             filename_out_covar=identifier +'_' + ccdband + filename_ext +'_gp_covar.fits'
             df.write_response_cube(identifier, resp_cube, fuse.logvar_fibre, fuse.gamma, fuse.gp0, 

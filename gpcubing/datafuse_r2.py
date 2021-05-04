@@ -944,7 +944,11 @@ class DataFuse3D():
                 model._AKA_gv = self.AKA0
         
         elif self.model_type == 'CRR':
-            model = cs.CRRModel(self.response,fibflux,fibfluxerr)
+                if (wavenumber % nresponse == 0) or (hasattr(self,'response') == False):
+                    self.response = cs.ResponseMatrix(coord, dar_cor, cs.moffat_psf,
+                                                Lpix, self.pixscale, fft=True,
+                                                avgpsf=self.avgpsf,_Nexp = self._Nexp)
+                model = cs.CRRModel(self.response,fibflux,fibfluxerr)
             
         
         else:
@@ -963,8 +967,9 @@ class DataFuse3D():
                 logL = model.logL_marg(hp = [alpha, beta, gamma], verbose=True)
             else:
                 logL = model.logL(hp = [alpha, beta, gamma])
-        self.gp0 = np.append(self.gp0, model.gp0)
-        self.gpoffset = np.append(self.gpoffset, model.offset)
+        if self.model_type == 'GP':
+            self.gp0 = np.append(self.gp0, model.gp0)
+            self.gpoffset = np.append(self.gpoffset, model.offset)
        # print("Mean FWHM of seeing:", 2*alpha.mean()  * np.sqrt(np.power(2.,1/beta.mean()) - 1))
        # print("Std FWHM of seeing:", np.std(2*alpha  * np.sqrt(np.power(2.,1/beta) - 1)))
        # model._Kxx = model._gpkernel(model.D2, gamma)
@@ -1050,8 +1055,8 @@ class DataFuse3D():
         # map(self.fuseimage, range(Nbins))
         #print("Looping over wavelength range...")
         
-        #for l in range(Nbins):
-        for l in range(200,240):
+        for l in range(Nbins):
+        #for l in range(200,240):
             print("wavelength slide:", self.wlow_vec[l], ' - ', self.wup_vec[l])
             if binsize > 1:
                 data_l, var_l, resp_l, covar_l, K_l, AK_l, AKA_l, logvar_l = self.fuseimage(self.wlow_vec[l], wavenumber2 = self.wup_vec[l], 
