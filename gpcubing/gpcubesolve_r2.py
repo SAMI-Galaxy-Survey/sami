@@ -810,23 +810,30 @@ class CRRModel(SliceView):
 
     def logL(self, hp):
         # Set everything up
+        # RS 2021/05/04:  Added some variable names to mirror Liu+ notation
         y, yerr = self.fibflux, self.fibfluxerr
         psf_pars, _ = hp[:-1], hp[-1]
         A = self.response(*psf_pars)
         Nfib, Npix = A.shape
         Lambda = 1e-3
         # Form the weights through SVD and apply
-        U, s, V = linalg.svd(np.dot(np.diag(1.0/yerr), A))
+        N = np.diag(yerr**2)
+        Nmsqrt = np.diag(1.0/yerr)
+        U, s, VT = linalg.svd(np.dot(Nmsqrt, A))
         s_ext = np.concatenate([s, np.zeros(Npix-Nfib)])
         Sigma = np.diag(s_ext)
         Sigma_Linv = np.zeros(A.shape)
         Sigma_Linv[:Nfib,:Nfib] = np.diag(s / (s**2 + Lambda**2))
-        Q = np.dot(V.T, np.dot(Sigma, V))
+        Q = np.dot(VT.T, np.dot(Sigma, VT))
         R = Q / Q.sum(axis=1)[:,None]
-        W = np.dot(R, np.dot(V.T, np.dot(Sigma_Linv.T, U.T)))
+        # RS 2021/05/04:  Fixed missing factor of N ** -0.5 = np.diag(1/yerr).
+        # This isn't the most efficient code since N is diagonal, but it does
+        # at least now map directly to Liu+ 2019, Eqn 21.
+        W = np.dot(R, np.dot(VT.T, np.dot(Sigma_Linv.T, np.dot(U.T, Nmsqrt))))
         
+        # RS 2021/05/04:  Form solutions (Liu+ 2019, Eqns 22 and 24)
         result = np.dot(W, y).reshape(self.Lpix, self.Lpix)
-        covar = np.dot(np.dot(W, np.diag(yerr**2)), W.T)
+        covar = np.dot(np.dot(W, N), W.T)
         var = np.diagonal(covar)
         
         self._K_gv, self._AK_gv, self._AKA_gv = [ ], [ ], [ ] #just fillers
