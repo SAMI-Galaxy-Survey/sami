@@ -810,8 +810,8 @@ class CRRModel(SliceView):
 
     def logL(self, hp):
         # Set everything up
-        # RS 2021/05/04:  Changed some variable names to mirror Liu+ notation
-        f, ferr = self.fibflux, self.fibfluxerr
+        # RS 2021/05/04:  Added some variable names to mirror Liu+ notation
+        y, yerr = self.fibflux, self.fibfluxerr
         psf_pars, _ = hp[:-1], hp[-1]
         A = self.response(*psf_pars)
         Nfib, Npix = A.shape
@@ -832,7 +832,7 @@ class CRRModel(SliceView):
         W = np.dot(R, np.dot(VT.T, np.dot(Sigma_Linv.T, np.dot(U.T, Nmsqrt))))
         
         # RS 2021/05/04:  Form solutions (Liu+ 2019, Eqns 22 and 24)
-        result = np.dot(W, f).reshape(self.Lpix, self.Lpix)
+        result = np.dot(W, y).reshape(self.Lpix, self.Lpix)
         covar = np.dot(np.dot(W, N), W.T)
         var = np.diagonal(covar)
         
