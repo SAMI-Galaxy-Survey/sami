@@ -431,7 +431,7 @@ def raw(flat_file, object_file, IFU="unknown", sigma_clip=False, log=True,
     # Check each spatial slice until 819 fibres (peaks) have been found
     for cut_loc in cut_locs:
         # perform cut along spatial direction
-        flat_cut = flat_data[:,(np.shape(flat_data)[1]*cut_loc)]
+        flat_cut = flat_data[:,int(np.shape(flat_data)[1]*cut_loc)]
         flat_cut_leveled = flat_cut - 0.1*np.max(flat_cut)
         flat_cut_leveled[flat_cut_leveled < 0] = 0.
         # find peaks (fibres)
@@ -446,7 +446,10 @@ def raw(flat_file, object_file, IFU="unknown", sigma_clip=False, log=True,
     
     # If 819 fibres can't be found then exit script. At the moment this script can't cope with broken or missing fibres.
     if Npeaks != 819:
-        raise ValueError("---> Can't find 819 fibres. Check [1] Flat Field is correct [2] Flat Field is supplied as the first variable in the function. If 1+2 are ok then use the 'pix_start' variable and set it at least 10 pix beyond the previous value (see terminal for value)")
+        raise ValueError("---> Can't find 819 fibres. Check [1] Flat Field is correct "+
+            "[2] Flat Field is supplied as the first variable in the function. If 1+2"+
+            " are ok then use the 'pix_start' variable and set it at least 10 pix beyond"+
+            " the previous value (see terminal for value)")
     
     print(("---> Spatial cut at pixel number: ",int(cut_loc*2048)))
     print(("---> Number of waveband pixels: ",pix_waveband))
@@ -466,7 +469,8 @@ def raw(flat_file, object_file, IFU="unknown", sigma_clip=False, log=True,
     object_guidetab = object_guidetab[object_guidetab['TYPE']=='G']
 
     # Perform cut along spatial direction at same position as cut_loc
-    object_cut = object_data[:,(np.shape(object_data)[1]*cut_loc)-pix_waveband/2:(np.shape(object_data)[1]*cut_loc)+pix_waveband/2]
+    s = np.shape(object_data)
+    object_cut = object_data[:,int((s[1]*cut_loc)-pix_waveband/2):int((s[1]*cut_loc)+pix_waveband/2)]
     
     # "Sigma clip" to get set bad pixels as row median value
     if sigma_clip == True:
@@ -497,6 +501,10 @@ def raw(flat_file, object_file, IFU="unknown", sigma_clip=False, log=True,
             fig.suptitle("SAMI Display of raw frame: "+str(object_file),fontsize=15)
             ax = fig.add_subplot(1,1,1)
             ax.set_aspect('equal')
+            ind_all = np.where(object_fibtab.field('TYPE')=="P" and object_fibtab.field('PROBENUM')==IFU)
+            ind_one = np.where(object_fibtab.field('TYPE')=="P" and 
+                                object_fibtab.field('PROBENUM')==IFU and 
+                                object_fibtab.field('FIBNUM')==1)
             Probe_data = object_spec[np.where(object_fibtab.field('TYPE')=="P") and np.where(object_fibtab.field('PROBENUM')==IFU)]
             x = object_fibtab.field('FIB_PX')[np.where(object_fibtab.field('TYPE')=="P") and np.where(object_fibtab.field('PROBENUM')==IFU)] - object_fibtab.field('FIB_PX')[np.where(object_fibtab.field('TYPE')=="P") and np.where(object_fibtab.field('PROBENUM')==IFU) and np.where(object_fibtab.field('FIBNUM')==1)][3*(-IFU+14) - 2]
             y = -(object_fibtab.field('FIB_PY')[np.where(object_fibtab.field('TYPE')=="P") and np.where(object_fibtab.field('PROBENUM')==IFU)] - object_fibtab.field('FIB_PY')[np.where(object_fibtab.field('TYPE')=="P") and np.where(object_fibtab.field('PROBENUM')==IFU) and np.where(object_fibtab.field('FIBNUM')==1)][3*(-IFU+14) - 2])
@@ -522,6 +530,10 @@ def raw(flat_file, object_file, IFU="unknown", sigma_clip=False, log=True,
             for Probe in Probe_list:
                 ax = fig.add_subplot(4,4,Probe)
                 ax.set_aspect('equal')
+                ind_all = np.where(object_fibtab.field('TYPE')=="P" and object_fibtab.field('PROBENUM')==Probe)
+                ind_one = np.where(object_fibtab.field('TYPE')=="P" and 
+                                object_fibtab.field('PROBENUM')==Probe and 
+                                object_fibtab.field('FIBNUM')==1)
                 Probe_data = object_spec[np.where(object_fibtab.field('TYPE')=="P") and np.where(object_fibtab.field('PROBENUM')==Probe)]
                 x = object_fibtab.field('FIB_PX')[np.where(object_fibtab.field('TYPE')=="P") and np.where(object_fibtab.field('PROBENUM')==Probe)] - object_fibtab.field('FIB_PX')[np.where(object_fibtab.field('TYPE')=="P") and np.where(object_fibtab.field('PROBENUM')==Probe) and np.where(object_fibtab.field('FIBNUM')==1)][3*(-Probe+14) - 2]
                 y = -(object_fibtab.field('FIB_PY')[np.where(object_fibtab.field('TYPE')=="P") and np.where(object_fibtab.field('PROBENUM')==Probe)] - object_fibtab.field('FIB_PY')[np.where(object_fibtab.field('TYPE')=="P") and np.where(object_fibtab.field('PROBENUM')==Probe) and np.where(object_fibtab.field('FIBNUM')==1)][3*(-Probe+14) - 2])
