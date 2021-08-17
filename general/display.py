@@ -501,7 +501,8 @@ def raw(flat_file, object_file, IFU="unknown", sigma_clip=False, log=True,
             fig.suptitle("SAMI Display of raw frame: "+str(object_file),fontsize=15)
             ax = fig.add_subplot(1,1,1)
             ax.set_aspect('equal')
-            ind_all = np.where((object_fibtab.field('TYPE')=="P") & (object_fibtab.field('PROBENUM')==IFU))
+            ind_all = np.where((object_fibtab.field('TYPE')=="P") & 
+                                (object_fibtab.field('PROBENUM')==IFU))
             ind_one = np.where((object_fibtab.field('TYPE')=="P") & 
                                 (object_fibtab.field('PROBENUM')==IFU) &
                                 (object_fibtab.field('FIBNUM')==1))
@@ -530,7 +531,8 @@ def raw(flat_file, object_file, IFU="unknown", sigma_clip=False, log=True,
             for Probe in Probe_list:
                 ax = fig.add_subplot(4,4,Probe)
                 ax.set_aspect('equal')
-                ind_all = np.where((object_fibtab.field('TYPE')=="P") & (object_fibtab.field('PROBENUM')==Probe))
+                ind_all = np.where((object_fibtab.field('TYPE')=="P") & 
+                                    (object_fibtab.field('PROBENUM')==Probe))
                 ind_one = np.where((object_fibtab.field('TYPE')=="P") & 
                                 (object_fibtab.field('PROBENUM')==Probe) &
                                 (object_fibtab.field('FIBNUM')==1))
@@ -576,8 +578,10 @@ def raw(flat_file, object_file, IFU="unknown", sigma_clip=False, log=True,
         ax.add_patch(Circle((0,0), 264/2*1000, facecolor="#cccccc", edgecolor='#000000', zorder=-1))
 
         for Probe in Probe_list:
-            Probe_data = object_spec[np.where(object_fibtab.field('TYPE')=="P") and np.where(object_fibtab.field('PROBENUM')==Probe)]
-
+            ind_all = np.where((object_fibtab.field('TYPE')=="P") & 
+                                (object_fibtab.field('PROBENUM')==Probe))
+            Probe_data = object_spec[ind_all]
+            
             mask = np.logical_and(object_fibtab.field('TYPE')=="P",
                                   object_fibtab['PROBENUM']==Probe)
 
