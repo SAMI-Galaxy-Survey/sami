@@ -617,6 +617,203 @@ def raw(flat_file, object_file, IFU="unknown", sigma_clip=False, log=True,
 
 #########################################################################################
 
+def raw2(flat_file, object_file, IFU="unknown", sigma_clip=False, log=True,
+        pix_waveband=100, pix_start="unknown"):
+    """
+    #
+    # "raw"
+    #
+    #   Takes in a raw flat field and a raw object frame. Performs a cut on the flat
+    #   field along the centre of the CCD to get fibre row positions.
+    #   Collapses +/- 50 wavelength pix on the object frame at those positions
+    #   and plots them.
+    #
+    #   Function Example:
+    #
+    #       sami.display.raw("02sep20045.fits","02sep20053.fits",Probe_to_fit=2,
+    #                   sigma_clip=True)
+    #
+    #   Input Parameters:
+    #
+    #       flat_file.......File name string of the raw flat frame to find tramlines
+    #                       on (e.g. "02sep20045.fits").
+    #
+    #       object_file.....File name string of the object frame wanting to be
+    #                       displayed (e.g. "02sep20048.fits").
+    #
+    #       IFU.............Integer value to only display that IFU
+    #
+    #       sigma_clip......Switch to turn sigma clip on and off. If it is on the
+    #                       code will run ~20s slower for a pix_waveband of 100. If
+    #                       turned off there is a chance that cosmic rays/bad pixels
+    #                       will dominate the image stretch and 2D Gauss fits. It is
+    #                       strongly advised to turn this on when dealing with the
+    #                       Blue CCD as there are many bad pixels. In the Red CCD you
+    #                       can normally get away with leaving it off for the sake of
+    #                       saving time.
+    #
+    #       log.............Switch to select display in log or linear (default is log)
+    #
+    #       pix_waveband....Number of pixels in wavelength direction to bin over,
+    #                       centered at on the column of the spatial cut. 100pix is
+    #                       enough to get flux contrast for a good fit/image display.
+    #
+    #       pix_start.......This input is for times where the spatial cut finds 819
+    #                       peaks but doesn't find only fibres (e.g. 817 fibres and
+    #                       2 cosmic rays). This will be visible in the display
+    #                       output and if such a case happens, input the pixel
+    #                       location where the previous spatial cut was performed and
+    #                       the code will search for better place where 819 fibres
+    #                       are present. Keep doing this until 819 are found, and if
+    #                       none are found then something is wrong with the flat
+    #                       frame and use another.
+    #
+    """
+    
+    print("---> START")
+    print("--->")
+    print(("---> Object frame: "+str(object_file)))
+    print("--->")
+    
+    # Import flat field frame
+    flat = pf.open(flat_file)
+    flat_data = flat['Primary'].data
+
+    # Range to find spatial cut
+    if pix_start != "unknown":
+        cut_loc_start = np.float(pix_start+5)/np.float(2048)
+        cut_locs = np.linspace(cut_loc_start,0.75,201)
+    else:
+        cut_locs = np.linspace(0.25,0.75,201)
+    
+    print("---> Finding suitable cut along spatial dimension...")
+    # Check each spatial slice until 819 fibres (peaks) have been found
+    for cut_loc in cut_locs:
+        # perform cut along spatial direction
+        flat_cut = flat_data[:,int(np.shape(flat_data)[1]*cut_loc)]
+        flat_cut_leveled = flat_cut - 0.1*np.max(flat_cut)
+        flat_cut_leveled[flat_cut_leveled < 0] = 0.
+        # find peaks (fibres)
+        peaks = peakdetect(flat_cut_leveled, lookahead = 3)
+        Npeaks = np.shape(peaks[0])[0]
+        if Npeaks == 819:
+            break
+        else:
+            continue
+    
+    print("--->")
+    
+    # If 819 fibres can't be found then exit script. At the moment this script can't cope with broken or missing fibres.
+    if Npeaks != 819:
+        raise ValueError("---> Can't find 819 fibres. Check [1] Flat Field is correct "+
+            "[2] Flat Field is supplied as the first variable in the function. If 1+2"+
+            " are ok then use the 'pix_start' variable and set it at least 10 pix beyond"+
+            " the previous value (see terminal for value)")
+    
+    print(("---> Spatial cut at pixel number: ",int(cut_loc*2048)))
+    print(("---> Number of waveband pixels: ",pix_waveband))
+    print(("---> Number of fibres found: ",np.shape(peaks[0])[0]))
+    print("--->")
+    
+    # Location of fibre peaks for linear tramline
+    tram_loc=[]
+    for i in np.arange(np.shape(peaks[0])[0]):
+        tram_loc.append(peaks[0][i][0])
+    
+    # Import object frame
+    object = pf.open(object_file)
+    object_data = object['Primary'].data
+    object_fibtab = object['MORE.FIBRES_IFU'].data
+    object_guidetab = object['MORE.FIBRES_GUIDE'].data
+    object_guidetab = object_guidetab[object_guidetab['TYPE']=='G']
+
+    # Perform cut along spatial direction at same position as cut_loc
+    s = np.shape(object_data)
+    object_cut = object_data[:,int((s[1]*cut_loc)-pix_waveband/2):int((s[1]*cut_loc)+pix_waveband/2)]
+    
+    # "Sigma clip" to get set bad pixels as row median value
+    if sigma_clip == True:
+        print("---> Performing 'Sigma-clip'... (~20s)")
+        for i in np.arange(np.shape(object_cut)[0]):
+            for j in np.arange(np.shape(object_cut)[1]):
+                med = np.median(object_cut[i,:])
+                err = np.absolute((object_cut[i,j]-med)/med)
+                if err > 0.25:
+                    object_cut[i,j] = med
+        print("--->")
+    
+    # Collapse spectral dimension
+    object_cut_sum = np.nansum(object_cut,axis=1)
+    
+    # Extract intensities at fibre location and log
+    object_spec = object_cut_sum[tram_loc]
+    
+    Probe_list = [1,2,3,4,5,6,7,8,9,10,11,12,13]
+    
+    # Plot the data
+    print("---> Plotting...")
+    print("--->")
+
+    scale_factor = 18
+
+    def display_ifu(x_coords, y_coords, xcen, ycen, scaling, values):
+            bundle_patches = []
+            for x1,y1 in zip(x_coords, y_coords):
+                circle = Circle((x1*scaling+xcen,y1*scaling+ycen), 52.5*scaling)
+                bundle_patches.append(circle)
+            pcol = PatchCollection(bundle_patches, cmap=py.get_cmap('afmhot'))
+            pcol.set_array(values)
+            pcol.set_edgecolors('none')
+            return pcol
+
+    fig = py.figure(figsize=(10,10))
+    fig.suptitle("SAMI Display of raw frame: "+str(object_file),fontsize=15)
+
+    ax = fig.add_subplot(1,1,1)
+    ax.set_aspect('equal')
+
+    ax.add_patch(Circle((0,0), 264/2*1000, facecolor="#cccccc", edgecolor='#000000', zorder=-1))
+
+    for Probe in Probe_list:
+        ind_all = np.where((object_fibtab.field('TYPE')=="P") & 
+                                (object_fibtab.field('PROBENUM')==Probe))
+        Probe_data = object_spec[ind_all]
+            
+        mask = np.logical_and(object_fibtab.field('TYPE')=="P",
+                                  object_fibtab['PROBENUM']==Probe)
+
+        mean_x = np.mean(object_fibtab.field('FIBPOS_X')[mask])
+        mean_y = np.mean(object_fibtab.field('FIBPOS_Y')[mask])
+
+        x = object_fibtab.field('FIBPOS_X')[mask] - mean_x
+        y = object_fibtab.field('FIBPOS_Y')[mask] - mean_y
+
+        ax.add_collection(display_ifu(x, y, mean_x, mean_y, scale_factor, Probe_data))
+        ax.axis([-140000, 140000, -140000, 140000])
+        py.setp(ax.get_xticklabels(), visible=False)
+        py.setp(ax.get_yticklabels(), visible=False)
+            ax.text(mean_x, mean_y - scale_factor*750, "Probe " + str(Probe),
+                    verticalalignment="bottom", horizontalalignment='center')
+
+    for probe_number, x, y in zip(
+                object_guidetab['PROBENUM'], object_guidetab['CENX'], object_guidetab['CENY']):
+        ax.add_patch(Circle((x,y), scale_factor*250, edgecolor='#009900', facecolor='none'))
+        ax.text(x, y, "G" + str(probe_number),
+                    verticalalignment='center', horizontalalignment='center')
+
+    ax.arrow(100000,100000,0,15000, color="#aa0000", edgecolor='#aa0000', width=100)
+    ax.text(101000,116000, 'North', verticalalignment="bottom", horizontalalignment='left')
+
+    ax.arrow(100000,100000,15000,0, color="#aa0000", edgecolor='#aa0000', width=0)
+    ax.text(116000,101000, 'East', verticalalignment="bottom", horizontalalignment='left')
+
+    py.tight_layout()
+    fig.show()
+
+    print("---> END")
+
+#########################################################################################
+
 def peakdetect(y_axis, x_axis = None, lookahead = 300, delta=0):
     
     """
