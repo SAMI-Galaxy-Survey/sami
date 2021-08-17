@@ -501,16 +501,16 @@ def raw(flat_file, object_file, IFU="unknown", sigma_clip=False, log=True,
             fig.suptitle("SAMI Display of raw frame: "+str(object_file),fontsize=15)
             ax = fig.add_subplot(1,1,1)
             ax.set_aspect('equal')
-            ind_all = np.where(object_fibtab.field('TYPE')=="P" and object_fibtab.field('PROBENUM')==IFU)
-            ind_one = np.where(object_fibtab.field('TYPE')=="P" and 
-                                object_fibtab.field('PROBENUM')==IFU and 
-                                object_fibtab.field('FIBNUM')==1)
-            Probe_data = object_spec[np.where(object_fibtab.field('TYPE')=="P") and np.where(object_fibtab.field('PROBENUM')==IFU)]
-            x = object_fibtab.field('FIB_PX')[np.where(object_fibtab.field('TYPE')=="P") and np.where(object_fibtab.field('PROBENUM')==IFU)] - object_fibtab.field('FIB_PX')[np.where(object_fibtab.field('TYPE')=="P") and np.where(object_fibtab.field('PROBENUM')==IFU) and np.where(object_fibtab.field('FIBNUM')==1)][3*(-IFU+14) - 2]
-            y = -(object_fibtab.field('FIB_PY')[np.where(object_fibtab.field('TYPE')=="P") and np.where(object_fibtab.field('PROBENUM')==IFU)] - object_fibtab.field('FIB_PY')[np.where(object_fibtab.field('TYPE')=="P") and np.where(object_fibtab.field('PROBENUM')==IFU) and np.where(object_fibtab.field('FIBNUM')==1)][3*(-IFU+14) - 2])
+            ind_all = np.where((object_fibtab.field('TYPE')=="P") & (object_fibtab.field('PROBENUM')==IFU))
+            ind_one = np.where((object_fibtab.field('TYPE')=="P") & 
+                                (object_fibtab.field('PROBENUM')==IFU) &
+                                (object_fibtab.field('FIBNUM')==1))
+            Probe_data = object_spec[ind_all]
+            x = object_fibtab.field('FIB_PX')[ind_all] - object_fibtab.field('FIB_PX')[ind_one][3*(-IFU+14) - 2]
+            y = -(object_fibtab.field('FIB_PY')[ind_all] - object_fibtab.field('FIB_PY')[ind_one][3*(-IFU+14) - 2])
             radii = np.zeros(len(x)) + 52.5
             patches = []
-            for x1,y1,r in zip(x[0:len(x)-1], y[0:len(y)-1], radii):
+            for x1,y1,r in zip(x[0:len(x)], y[0:len(y)], radii):
                 circle = Circle((x1,y1), r)
                 patches.append(circle)
             if log:
@@ -530,16 +530,16 @@ def raw(flat_file, object_file, IFU="unknown", sigma_clip=False, log=True,
             for Probe in Probe_list:
                 ax = fig.add_subplot(4,4,Probe)
                 ax.set_aspect('equal')
-                ind_all = np.where(object_fibtab.field('TYPE')=="P" and object_fibtab.field('PROBENUM')==Probe)
-                ind_one = np.where(object_fibtab.field('TYPE')=="P" and 
-                                object_fibtab.field('PROBENUM')==Probe and 
-                                object_fibtab.field('FIBNUM')==1)
-                Probe_data = object_spec[np.where(object_fibtab.field('TYPE')=="P") and np.where(object_fibtab.field('PROBENUM')==Probe)]
-                x = object_fibtab.field('FIB_PX')[np.where(object_fibtab.field('TYPE')=="P") and np.where(object_fibtab.field('PROBENUM')==Probe)] - object_fibtab.field('FIB_PX')[np.where(object_fibtab.field('TYPE')=="P") and np.where(object_fibtab.field('PROBENUM')==Probe) and np.where(object_fibtab.field('FIBNUM')==1)][3*(-Probe+14) - 2]
-                y = -(object_fibtab.field('FIB_PY')[np.where(object_fibtab.field('TYPE')=="P") and np.where(object_fibtab.field('PROBENUM')==Probe)] - object_fibtab.field('FIB_PY')[np.where(object_fibtab.field('TYPE')=="P") and np.where(object_fibtab.field('PROBENUM')==Probe) and np.where(object_fibtab.field('FIBNUM')==1)][3*(-Probe+14) - 2])
+                ind_all = np.where((object_fibtab.field('TYPE')=="P") & (object_fibtab.field('PROBENUM')==Probe))
+                ind_one = np.where((object_fibtab.field('TYPE')=="P") & 
+                                (object_fibtab.field('PROBENUM')==Probe) &
+                                (object_fibtab.field('FIBNUM')==1))
+                Probe_data = object_spec[ind_all]
+                x = object_fibtab.field('FIB_PX')[ind_all] - object_fibtab.field('FIB_PX')[ind_one]
+                y = -(object_fibtab.field('FIB_PY')[ind_all] - object_fibtab.field('FIB_PY')[ind_one])
                 radii = np.zeros(len(x)) + 52.5
                 patches = []
-                for x1,y1,r in zip(x[0:len(x)-1], y[0:len(y)-1], radii):
+                for x1,y1,r in zip(x[0:len(x)], y[0:len(y)], radii):
                     circle = Circle((x1,y1),r)
                     patches.append(circle)
                 if log:
