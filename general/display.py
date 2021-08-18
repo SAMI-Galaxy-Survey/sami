@@ -777,12 +777,19 @@ def raw2(flat_file, object_file, IFU="unknown", sigma_clip=False, log=True,
     ax.set_aspect('equal')
 
     ax.add_patch(Circle((0,0), 264/2*1000, facecolor="#cccccc", edgecolor='#000000', zorder=-1))
+    ax.add_patch(Circle((0,0), 264*1000, facecolor="#cccccc", edgecolor='#000000', zorder=-1))
+    
+    object_fibtab = object_fibtab[np.where(object_fibtab.field('SELECTED')==1)]
 
     for Probe in Probe_list:
         ind_all = np.where((object_fibtab.field('TYPE')=="P") & 
                                 (object_fibtab.field('PROBENUM')==Probe))
-        Probe_data = object_spec[ind_all]
-            
+        try:
+            Probe_data = object_spec[ind_all]
+        except:
+            import code
+            code.interact(local=dict(globals(),**locals()))
+        
         mask = np.logical_and(object_fibtab.field('TYPE')=="P",
                                   object_fibtab['PROBENUM']==Probe)
 
@@ -793,7 +800,7 @@ def raw2(flat_file, object_file, IFU="unknown", sigma_clip=False, log=True,
         y = object_fibtab.field('FIBPOS_Y')[mask] - mean_y
 
         ax.add_collection(display_ifu(x, y, mean_x, mean_y, scale_factor, Probe_data))
-        ax.axis([-140000, 140000, -140000, 140000])
+        ax.axis([-140000*2, 140000*2, -140000*2, 140000*2])
         py.setp(ax.get_xticklabels(), visible=False)
         py.setp(ax.get_yticklabels(), visible=False)
         ax.text(mean_x, mean_y - scale_factor*750, "Probe " + str(Probe),
