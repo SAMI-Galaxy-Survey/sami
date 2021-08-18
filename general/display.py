@@ -812,11 +812,11 @@ def raw2(flat_file, object_file, IFU="unknown", sigma_clip=False, log=True,
         ax.text(x, y, "G" + str(probe_number),
                     verticalalignment='center', horizontalalignment='center')
 
-    ax.arrow(100000,100000,0,15000, color="#aa0000", edgecolor='#aa0000', width=100)
-    ax.text(101000,116000, 'North', verticalalignment="bottom", horizontalalignment='left')
+    ax.arrow(200000,200000,0,15000, color="#aa0000", edgecolor='#aa0000', width=100)
+    ax.text(201000,216000, 'North', verticalalignment="bottom", horizontalalignment='left')
 
-    ax.arrow(100000,100000,15000,0, color="#aa0000", edgecolor='#aa0000', width=0)
-    ax.text(116000,101000, 'East', verticalalignment="bottom", horizontalalignment='left')
+    ax.arrow(200000,200000,15000,0, color="#aa0000", edgecolor='#aa0000', width=0)
+    ax.text(216000,201000, 'East', verticalalignment="bottom", horizontalalignment='left')
 
     py.tight_layout()
     fig.show()
