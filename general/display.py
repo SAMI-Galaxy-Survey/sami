@@ -678,6 +678,7 @@ def raw2(flat_file, object_file, IFU="unknown", sigma_clip=False, log=True,
     # Import flat field frame
     flat = pf.open(flat_file)
     flat_data = flat['Primary'].data
+    flat_fibtab = flat['MORE.FIBRES_IFU'].data
 
     # Range to find spatial cut
     if pix_start != "unknown":
@@ -685,6 +686,8 @@ def raw2(flat_file, object_file, IFU="unknown", sigma_clip=False, log=True,
         cut_locs = np.linspace(cut_loc_start,0.75,201)
     else:
         cut_locs = np.linspace(0.25,0.75,201)
+        
+    Nfibs = sum(flat_fibtab['SELECTED'])
     
     print("---> Finding suitable cut along spatial dimension...")
     # Check each spatial slice until 819 fibres (peaks) have been found
@@ -696,7 +699,7 @@ def raw2(flat_file, object_file, IFU="unknown", sigma_clip=False, log=True,
         # find peaks (fibres)
         peaks = peakdetect(flat_cut_leveled, lookahead = 3)
         Npeaks = np.shape(peaks[0])[0]
-        if Npeaks == 819:
+        if Npeaks == Nfibs:
             break
         else:
             continue
@@ -704,8 +707,8 @@ def raw2(flat_file, object_file, IFU="unknown", sigma_clip=False, log=True,
     print("--->")
     
     # If 819 fibres can't be found then exit script. At the moment this script can't cope with broken or missing fibres.
-    if Npeaks != 819:
-        raise ValueError("---> Can't find 819 fibres. Check [1] Flat Field is correct "+
+    if Npeaks != Nfibs:
+        raise ValueError("---> Can't find {} fibres. Check [1] Flat Field is correct ".format(Nfibs)+
             "[2] Flat Field is supplied as the first variable in the function. If 1+2"+
             " are ok then use the 'pix_start' variable and set it at least 10 pix beyond"+
             " the previous value (see terminal for value)")
@@ -748,7 +751,8 @@ def raw2(flat_file, object_file, IFU="unknown", sigma_clip=False, log=True,
     # Extract intensities at fibre location and log
     object_spec = object_cut_sum[tram_loc]
     
-    Probe_list = [1,2,3,4,5,6,7,8,9,10,11,12,13]
+    Probe_list = np.unique(flat_fibtab['GROUP_N'][np.where(flat_fibtab['SELECTED']==1)])
+    Probe_list = Probe_list[Probe_list < 99]
     
     # Plot the data
     print("---> Plotting...")
@@ -792,7 +796,7 @@ def raw2(flat_file, object_file, IFU="unknown", sigma_clip=False, log=True,
         ax.axis([-140000, 140000, -140000, 140000])
         py.setp(ax.get_xticklabels(), visible=False)
         py.setp(ax.get_yticklabels(), visible=False)
-            ax.text(mean_x, mean_y - scale_factor*750, "Probe " + str(Probe),
+        ax.text(mean_x, mean_y - scale_factor*750, "Probe " + str(Probe),
                     verticalalignment="bottom", horizontalalignment='center')
 
     for probe_number, x, y in zip(
