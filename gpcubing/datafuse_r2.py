@@ -1057,7 +1057,7 @@ class DataFuse3D():
         
         for l in range(Nbins):
         #for l in range(200,240):
-            print("wavelength slide:", self.wlow_vec[l], ' - ', self.wup_vec[l])
+            #print("wavelength slide:", self.wlow_vec[l], ' - ', self.wup_vec[l])
             if binsize > 1:
                 data_l, var_l, resp_l, covar_l, K_l, AK_l, AKA_l, logvar_l = self.fuseimage(self.wlow_vec[l], wavenumber2 = self.wup_vec[l], 
                                                                                   Lpix = Lpix, plot = False, covar = False, 
