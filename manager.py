@@ -102,10 +102,10 @@ except ImportError:
 MF_BIN_DIR = '/suphys/nscott/molecfit_install/bin' # directory for molecfit binary files
 #MF_BIN_DIR = '/Users/scroom/code/molecfit/bin/' # directory for molecfit binary files
 if not os.path.exists(os.path.join(MF_BIN_DIR,'molecfit')):
-	warnings.warn('molecfit not found. Disabling improved telluric subtraction')
-	MOLECFIT_AVAILABLE = False
+        warnings.warn('molecfit not found. Disabling improved telluric subtraction')
+        MOLECFIT_AVAILABLE = False
 else:
-	MOLECFIT_AVAILABLE = True
+        MOLECFIT_AVAILABLE = True
 
 from .utils.other import find_fibre_table, gzip, ungzip
 from .utils import IFU
@@ -143,27 +143,37 @@ else:
     def ICRS(*args, **kwargs):
         return coord.SkyCoord(*args, frame='icrs', **kwargs)
 
+#below are for SAMI
+#IDX_FILES_SLOW = {'580V': 'sami580V_v1_7.idx',
+#                  '1500V': 'sami1500V_v1_5.idx',
+#                  '1000R': 'sami1000R_v1_7.idx',
+#                  'SPECTOR1':'spector1_v0.idx',
+#                  'SPECTOR2':'spector2_v0.idx'}
+#IDX_FILES_FAST = {'580V': 'sami580V.idx',
+#                  '1500V': 'sami1500V.idx',
+#                  '1000R': 'sami1000R.idx',
+#                  'SPECTOR1':'spector1_v0.idx',
+#                  'SPECTOR2':'spector2_v0.idx'}
 
-IDX_FILES_SLOW = {'580V': 'sami580V_v1_7.idx',
-                  '1500V': 'sami1500V_v1_5.idx',
-                  '1000R': 'sami1000R_v1_7.idx',
-                  'SPECTOR1':'spector1_v0.idx',
-                  'SPECTOR2':'spector2_v0.idx'}
+IDX_FILES_SLOW = {'580V': 'hector1_v1.idx',
+                  '1000R': 'hector2_v1.idx',
+                  'SPECTOR1':'hector3_v1.idx',
+                  'SPECTOR2':'hector4_v1.idx'}
 
-IDX_FILES_FAST = {'580V': 'sami580V.idx',
-                  '1500V': 'sami1500V.idx',
-                  '1000R': 'sami1000R.idx',
-                  'SPECTOR1':'spector1_v0.idx',
-                  'SPECTOR2':'spector2_v0.idx'}
+IDX_FILES_FAST = {'580V': 'hector1_v1.idx',
+                  '1000R': 'hector2_v1.idx',
+                  'SPECTOR1':'hector3_v1.idx',
+                  'SPECTOR2':'hector4_v1.idx'}
+
                   
 IDX_FILES = {'fast': IDX_FILES_FAST,
              'slow': IDX_FILES_SLOW}
 
-GRATLPMM = {'580V': 582.0,
+GRATLPMM = {'580V': 581.0,
             '1500V': 1500.0,
             '1000R': 1001.0,
-            'SPECTOR1': 0.0,
-            'SPECTOR2': 0.0}
+            'SPECTOR1': 1099.0,
+            'SPECTOR2': 1178.0}
 
 CATALOG_PATH = "./gama_catalogues/"
 
@@ -1100,6 +1110,7 @@ class Manager:
         if fits.grating not in self.idx_files:
             # Without an idx file we would have no way to reduce this file
             self.disable_files([fits])
+
         self.file_list.append(fits)
         return
 
@@ -1775,20 +1786,7 @@ class Manager:
             shutil.copy2(fits.raw_path, new_path)
             # Open up the file and change its NDF_CLASS
             hdulist = pf.open(new_path, 'update')
-
-
-            #- Spector dummy files do not have 'STRUCT.MORE.NDF_CLASS'. This can be removed when Spector frames properly include an extension of 'STRUCT.MORE.NDF_CLASS'
-            try:
-                hdulist['STRUCT.MORE.NDF_CLASS']
-            except KeyError:
-                warnings.warn('STRUCT.MORE.NDF_CLASS has not been found: '+str(fits.raw_path))
-                hdu = pf.BinTableHDU(Table([[ndf_class]],names=['NAME'], dtype=['S']))
-                hdu.header['EXTNAME'] = ('STRUCT.MORE.NDF_CLASS','name of this binary table extension ')
-                hdu.header['EXTTYPE'] = ('STRUCT','HDS data type of the hierarchical structure ')
-                hdulist.append(hdu)
-            #- Spector dummy 'STRUCT.MORE.NDF_CLASS' end #
-
-            hdulist['STRUCT.MORE.NDF_CLASS'].data['NAME'][0] = ndf_class
+            hdulist[0].header['NDFCLASS'] = (ndf_class, 'Data Reduction class name (NDFCLASS)')
             hdulist[0].header['MNGRCOPY'] = (
                 True, 'True if this is a copy created by a Manager')
             hdulist.flush()
@@ -4531,7 +4529,9 @@ class FITSFile:
 
         self.set_lamp()
         self.set_central_wavelength()
-        self.set_do_not_use()
+#        self.set_do_not_use() #marie: this should be activated when SPECTOR has the keyword of 'SPEED' in their header
+        self.do_not_use = False #marie: this should be removed when SPECTOR has the keyword of 'SPEED' in their header
+
         self.set_coords_flags()
         self.set_copy()
         self.hdulist.close()
@@ -4542,26 +4542,43 @@ class FITSFile:
 
     def set_ndf_class(self):
         """Save the NDF_CLASS of an AAT fits file."""
-        for hdu in self.hdulist:
-            if ('EXTNAME' in hdu.header.keys() and
-                    (hdu.header['EXTNAME'] == 'STRUCT.MORE.NDF_CLASS' or
-                     hdu.header['EXTNAME'] == 'NDF_CLASS')):
-                # It has a class
-                self.ndf_class = hdu.data['NAME'][0]
-                # Change DFLAT to LFLAT
-                if self.ndf_class == 'DFLAT':
-                    self.overwrite_ndf_class('LFLAT')
-                # Ask the user if SFLAT should be changed to MFSKY
-                if self.ndf_class == 'SFLAT':
-                    print('NDF_CLASS of SFLAT (OFFSET FLAT) found for ' +
-                          self.filename)
-                    print('Change to MFSKY (OFFSET SKY)? (y/n)')
-                    y_n = input(' > ')
-                    if y_n.lower()[0] == 'y':
-                        self.overwrite_ndf_class('MFSKY')
-                break
+        # Change DFLAT to LFLAT
+        if self.header['NDFCLASS'] == 'DFLAT':
+            self.header['NDFCLASS'] = 'LFLAT'
+
+        # Ask the user if SFLAT should be changed to MFSKY
+        if self.header['NDFCLASS'] == 'SFLAT':
+            print('NDF_CLASS of SFLAT (OFFSET FLAT) found for ' + self.filename)
+            print('Change to MFSKY (OFFSET SKY)? (y/n)')
+            y_n = input(' > ')
+            if y_n.lower()[0] == 'y':
+                self.header['NDFCLASS'] = 'MFSKY'
+
+        if 'NDFCLASS' in self.header:
+            self.ndf_class = self.header['NDFCLASS']
         else:
             self.ndf_class = None
+
+#        for hdu in self.hdulist:
+#            if ('EXTNAME' in hdu.header.keys() and
+#                    (hdu.header['EXTNAME'] == 'STRUCT.MORE.NDF_CLASS' or
+#                     hdu.header['EXTNAME'] == 'NDF_CLASS')):
+#                # It has a class
+#                self.ndf_class = hdu.data['NAME'][0]
+#                # Change DFLAT to LFLAT
+#                if self.ndf_class == 'DFLAT':
+#                    self.overwrite_ndf_class('LFLAT')
+#                # Ask the user if SFLAT should be changed to MFSKY
+#                if self.ndf_class == 'SFLAT':
+#                    print('NDF_CLASS of SFLAT (OFFSET FLAT) found for ' +
+#                          self.filename)
+#                    print('Change to MFSKY (OFFSET SKY)? (y/n)')
+#                    y_n = input(' > ')
+#                    if y_n.lower()[0] == 'y':
+#                        self.overwrite_ndf_class('MFSKY')
+#                break
+#        else:
+#            self.ndf_class = None
 
     def set_reduced_filename(self):
         """Set the filename for the reduced file."""
@@ -4780,7 +4797,7 @@ class FITSFile:
                 self.instrument = 'AAOMEGA-SAMI'
             elif instrument == 'AAOMEGA-HECTOR':
                 self.instrument = 'AAOMEGA-HECTOR'
-            elif instrument == 'HECTOR-STARBUGS':
+            elif instrument == 'SPECTOR':
                 self.instrument = 'SPECTOR-HECTOR'
             else:
                 self.instrument = 'unknown_instrument'
@@ -4815,6 +4832,11 @@ class FITSFile:
             self.grating = self.header['GRATID']
         else:
             self.grating = None
+        if self.grating == 3:
+            self.grating = 'SPECTOR1'
+        if self.grating == 4:
+            self.grating = 'SPECTOR2'
+
         return
 
     def set_exposure(self):
@@ -4866,7 +4888,10 @@ class FITSFile:
     def set_central_wavelength(self):
         """Set what the requested central wavelength of the observation was."""
         if self.ndf_class:
-            self.central_wavelength = self.header['LAMBDCR']
+            if 'LAMBDCR' in self.header:
+                self.central_wavelength = self.header['LAMBDCR']
+            else: # spector (ccd3 & ccd4) have different keyward for the central wavelength
+                self.central_wavelength = self.header['LAMBDAC']        
         else:
             self.central_wavelength = None
         return
@@ -5031,23 +5056,23 @@ class FITSFile:
                 self.header = hdulist[0].header
         return
 
-    def overwrite_ndf_class(self, new_ndf_class):
-        """Change the NDF_CLASS value in the FITS file and in the object."""
-        hdulist_write = pf.open(self.source_path, 'update')
-        for hdu_name in ('STRUCT.MORE.NDF_CLASS', 'NDF_CLASS'):
-            try:
-                hdu = hdulist_write[hdu_name]
-                break
-            except KeyError:
-                pass
-        else:
-            # No relevant extension found
-            raise KeyError('No NDF_CLASS extension found in file')
-        hdu.data['NAME'][0] = new_ndf_class
-        hdulist_write.flush()
-        hdulist_write.close()
-        self.ndf_class = new_ndf_class
-        return
+#    def overwrite_ndf_class(self, new_ndf_class):
+#        """Change the NDF_CLASS value in the FITS file and in the object."""
+#        hdulist_write = pf.open(self.source_path, 'update')
+#        for hdu_name in ('STRUCT.MORE.NDF_CLASS', 'NDF_CLASS'):
+#            try:
+#                hdu = hdulist_write[hdu_name]
+#                break
+#            except KeyError:
+#                pass
+#        else:
+#            # No relevant extension found
+#            raise KeyError('No NDF_CLASS extension found in file')
+#        hdu.data['NAME'][0] = new_ndf_class
+#        hdulist_write.flush()
+#        hdulist_write.close()
+#        self.ndf_class = new_ndf_class
+#        return
 
     def has_sky_lines(self):
         """Return True if there are sky lines in the wavelength range."""
@@ -5059,8 +5084,10 @@ class FITSFile:
         }
         coverage = coverage_dict[self.grating]
         wavelength_range = (
-            self.header['LAMBDCR'] - 0.5 * coverage,
-            self.header['LAMBDCR'] + 0.5 * coverage
+#            self.header['LAMBDCR'] - 0.5 * coverage, #marie: remove this when it is sure for the below modification
+#            self.header['LAMBDCR'] + 0.5 * coverage #marie
+             self.central_wavelength - 0.5 * coverage, #marie
+             self.central_wavelength + 0.5 * coverage #marie
         )
         # Highly incomplete list! May give incorrect results for high-res
         # red gratings
@@ -5499,18 +5526,6 @@ def create_dummy_output(reduced_files, tlm=False, overwrite=False):
                     hdu = pf.BinTableHDU(Table([['THPUT_FILENAME','TPMETH'],['thput_dummy.fits','OFFSKY']],names=['ARG_NAME','ARG_VALUE'], dtype=['S','S']))
                     hdu.header['EXTNAME'] = ('REDUCTION_ARGS')
                     tmpfile.append(hdu)
-
-
-            #- Spector dummy files do not have 'STRUCT.MORE.NDF_CLASS'. This can be removed when Spector frames properly include an extension of 'STRUCT.MORE.NDF_CLASS'
-            try:
-                tmpfile['STRUCT.MORE.NDF_CLASS']
-            except KeyError:
-                warnings.warn('STRUCT.MORE.NDF_CLASS has not been found: '+str(reduced_file.raw_path))
-                hdu = pf.BinTableHDU(Table([[reduced_file.ndf_class]],names=['NAME'], dtype=['S']))
-                hdu.header['EXTNAME'] = ('STRUCT.MORE.NDF_CLASS','name of this binary table extension ')
-                hdu.header['EXTTYPE'] = ('STRUCT','HDS data type of the hierarchical structure ')
-                tmpfile.append(hdu)
-            #- Spector dummy 'STRUCT.MORE.NDF_CLASS' end #
 
             # WCS is required for ARC and object frames 
             if (reduced_file.ndf_class == 'MFARC' or reduced_file.ndf_class == 'MFOBJECT') and 'CRPIX1' not in tmpfile['PRIMARY'].header:
