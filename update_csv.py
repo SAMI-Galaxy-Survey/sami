@@ -17,7 +17,7 @@ import argparse
 
 tkinter_available = True
 try:
-    import Tkinter
+    import tkinter
     import tkMessageBox
     from update_csv_frames import AllocationEntry
 except ImportError:

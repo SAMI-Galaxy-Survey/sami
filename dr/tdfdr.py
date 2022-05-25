@@ -117,6 +117,11 @@ def call_2dfdr_reduce(dirname, options=None, dummy=False):
             print('#####################')
             print()
         else:
+            print('### this printing will be removed from tdfdr.py after testing! by Sree')
+            print('2dfdr call options:')
+            print(' '.join(command_line))
+            print('#####################')
+            print()
 
             # Set up the environment:
             environment = dict(os.environ)
@@ -132,15 +137,16 @@ def call_2dfdr_reduce(dirname, options=None, dummy=False):
 
             with directory_lock(dirname):
                 # add some debug printing:
-                #print('2dfdr call options:')
-                #print(command_line)
+               # print('2dfdr call options:')
+               # print(command_line,dirname)
                 tdfdr_stdout = subprocess_call(command_line, cwd=dirname, env=environment)
-                #print(tdfdr_stdout)
+               # print(tdfdr_stdout)
 
             # @TODO: Make this work with various versions of 2dfdr.
             # Confirm that the above command ran to completion, otherwise raise an exception
             try:
                 confirm_line = tdfdr_stdout.splitlines()[-2]
+                print(confirm_line)
                 assert (
                     re.search(r"Action \"EXIT\", Task \S+, completed.*", tdfdr_stdout) is not None or  # 2dfdr v6.28
                     re.match(r"Data Reduction command \S+ completed.", confirm_line) is not None       # 2dfdr v6.14
@@ -181,6 +187,10 @@ def load_gui(dirname, idx_file=None):
 def run_2dfdr_single(fits, idx_file, options=None, dummy=False):
     """Run 2dfdr on a single FITS file."""
     print('Reducing file:', fits.filename)
+
+    import time #sree will remove this after testing
+    start_time = time.time() #sree will remove this after testing
+
     if fits.ndf_class == 'BIAS':
         task = 'reduce_bias'
     elif fits.ndf_class == 'DARK':
@@ -206,6 +216,10 @@ def run_2dfdr_single(fits, idx_file, options=None, dummy=False):
     if options is not None:
         options_all.extend(options)
     call_2dfdr_reduce(fits.reduced_dir, options=options_all, dummy=dummy)
+
+    print("-- running time %s seconds ---Sree will remove this from tdfdr.py" % (time.time() - start_time))  #sree will remove this after testing
+
+
     return '2dfdr Reduced file:' + fits.filename
 
 

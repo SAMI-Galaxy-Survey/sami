@@ -871,7 +871,7 @@ class Manager:
                  gratlpmm=GRATLPMM, n_cpu=1,demo_data_source='demo',
                  use_twilight_tlm_blue=False, use_twilight_flat_blue=False,
                  improve_blue_wavecorr=False, telluric_correct_primary=False,
-                debug=False, dummy=False):
+                debug=False, dummy=False, use_twilight_tlm_all=False, use_twilight_flat_all=False):
         if fast:
             self.speed = 'fast'
         else:
@@ -880,9 +880,19 @@ class Manager:
         # define the internal flag that allows twilights to be used for
         # making tramline maps:
         self.use_twilight_tlm_blue = use_twilight_tlm_blue
+
         # define the internal flag that allows twilights to be used for
         # fibre flat fielding:
         self.use_twilight_flat_blue = use_twilight_flat_blue
+
+        # define the internal flag that allows twilights to be used for *all* ccds
+        self.use_twilight_tlm_all = use_twilight_tlm_all
+        self.use_twilight_flat_all = use_twilight_flat_all
+        if(self.use_twilight_tlm_all):
+            self.use_twilight_tlm_blue = False
+        if(self.use_twilight_flat_all):
+            self.use_twilight_flat_blue = False
+
         # define the internal flag that specifies the improved twlight wavelength
         # calibration step should be applied
         self.improve_blue_wavecorr = improve_blue_wavecorr
@@ -921,12 +931,12 @@ class Manager:
             print('If this is because you killed a crashed manager, clean them')
             print('up using mngr.remove_directory_locks()')
 
-        if use_twilight_tlm_blue:
+        if use_twilight_tlm_blue or use_twilight_tlm_all:
             print('Using twilight frames to derive TLM and profile map')
         else:
             print('NOT using twilight frames to derive TLM and profile map')
 
-        if use_twilight_flat_blue:
+        if use_twilight_flat_blue or use_twilight_flat_all:
             print('Using twilight frames for fibre flat field')
         else:
             print('NOT using twilight frames for fibre flat field')
@@ -1043,6 +1053,10 @@ class Manager:
             pool.close()
             pool.join()
 
+        f = open(self.abs_root+'/filelist.txt', 'w')
+        f.write('#filename  ndfclass \n')
+        f.close()
+
         for fits in fits_list:
             self.import_file(fits,
                              trust_header=trust_header,
@@ -1085,7 +1099,10 @@ class Manager:
                 self.dark_exposure_str_list.append(fits.exposure_str)
                 self.dark_exposure_list.append(fits.exposure)
         self.set_raw_path(fits)
+        self.set_name(fits, trust_header=trust_header)
+
         if os.path.abspath(fits.source_path) != os.path.abspath(fits.raw_path):
+            print(os.path.abspath(fits.source_path),os.path.abspath(fits.raw_path))
             if copy_files:
                 print('Copying file:', filename)
                 self.update_copy(fits.source_path, fits.raw_path)
@@ -1096,8 +1113,12 @@ class Manager:
                 print('Warning! Adding', filename, 'in unexpected location')
                 fits.raw_path = fits.source_path
         else:
-            print('Adding file: ', filename)
-        self.set_name(fits, trust_header=trust_header)
+            print('Adding file: ', filename, fits.ndf_class, fits.name)
+            f = open(self.abs_root+'/filelist.txt', 'a')
+            f.write(filename+' '+fits.ndf_class+'\n')
+            f.close()
+            
+#        self.set_name(fits, trust_header=trust_header)
         fits.set_check_data()
         self.set_reduced_path(fits)
         if not fits.do_not_use:
@@ -1598,7 +1619,6 @@ class Manager:
         if ('ccd' in kwargs):
             if (kwargs['ccd'] == 'ccd_1'):
                 do_twilight = True
-
             else:
                 do_twilight = False
             # make a copy of the keywords, but remove the ccd flag for the
@@ -1615,14 +1635,21 @@ class Manager:
             # make a copy with file type MFFFF.  The copied files are
             # placed in the list fits_twilight_list and then can be
             # processed as normal MFFFF files.
-            # for fits in self.files(ndf_class='MFSKY',do_not_use=False,**kwargs):
-            for fits in self.files(ndf_class='MFSKY', do_not_use=False, ccd='ccd_1', **kwargs_copy):
+            for fits in self.files(ndf_class='MFSKY', do_not_use=False, ccd='ccd_1', **kwargs_copy): #marie
                 fits_twilight_list.append(self.copy_as(fits, 'MFFFF', overwrite=overwrite))
-
             # use the iterable file reducer to loop over the copied twilight list and
             # reduce them as MFFFF files to make TLMs.
             self.reduce_file_iterable(fits_twilight_list, overwrite=overwrite, tlm=True, leave_reduced=leave_reduced,
                                       check='TLM')
+
+        if self.use_twilight_tlm_all:
+            print('Processing twilight frames for *all* ccds to get TLM')
+            fits_twilight_list = []
+            for fits in self.files(ndf_class='MFSKY',do_not_use=False,**kwargs_copy): #marie
+                fits_twilight_list.append(self.copy_as(fits, 'MFFFF', overwrite=overwrite))
+            self.reduce_file_iterable(fits_twilight_list, overwrite=overwrite, tlm=True, leave_reduced=leave_reduced,
+                                      check='TLM')
+
 
         # now we will process the normal MFFFF files
         # this currently only allows TLMs to be made from MFFFF files
@@ -1653,11 +1680,12 @@ class Manager:
         # fact that it is also set for the twilight reductions (ccd1 only).
         do_twilight = True
         if ('ccd' in kwargs):
-            if (kwargs['ccd'] == 'ccd_1'):
+            if (kwargs['ccd'] == 'ccd_1' or kwargs['ccd'] == 'ccd_3'): #marie: I think this should be removed to apply to ccd_3
                 do_twilight = True
 
             else:
                 do_twilight = False
+
             # make a copy of the keywords, but remove the ccd flag for the
             # reduction of twilights, as it is set again in the call below.
             kwargs_copy = dict(kwargs)
@@ -1665,9 +1693,16 @@ class Manager:
         else:
             kwargs_copy = dict(kwargs)
 
-        if (self.use_twilight_flat_blue and do_twilight):
+
+        if ((self.use_twilight_flat_blue and do_twilight) or self.use_twilight_flat_all):
             fits_twilight_list = []
-            print('Processing twilight frames to get fibre flat field')
+            if(self.use_twilight_flat_blue and do_twilight):
+                ccdname = ['ccd_1','ccd_3']
+                print('Processing twilight frames for ccd1 and ccd3 to get fibre flat field')
+            if(self.use_twilight_flat_all):
+                ccdname = ['ccd_1','ccd_2','ccd_3','ccd_4']
+                print('Processing twilight frames for *all* ccds to get fibre flat field for testing')
+
             # The twilights should already have been copied as MFFFF
             # at the make_tlm stage, but we can do this again here without
             # any penalty (easier to sue the same code).  So for   
@@ -1675,8 +1710,8 @@ class Manager:
             # make a copy with file type MFFFF.  The copied files are
             # placed in the list fits_twilight_list and then can be
             # processed as normal MFFFF files.
-            # for fits in self.files(ndf_class='MFSKY',do_not_use=False,**kwargs):
-            for fits in self.files(ndf_class='MFSKY', do_not_use=False, ccd='ccd_1', **kwargs_copy):
+
+            for fits in self.files(ndf_class='MFSKY', do_not_use=False, ccd=nccd, **kwargs_copy):
                 fits_twilight_list.append(self.copy_as(fits, 'MFFFF', overwrite=overwrite))
 
             # use the iterable file reducer to loop over the copied twilight list and
@@ -1688,6 +1723,21 @@ class Manager:
                 path_list = [os.path.join(fits.reduced_dir, fits.copy_reduced_filename) for fits in reduced_twilights]
                 correct_bad_fibres(path_list)
 
+#marie
+#        if (self.use_twilight_flat_all):
+#            ccdname = ['ccd_1','ccd_2','ccd_3','ccd_4']
+#            fits_twilight_list = []
+#            print('Processing twilight frames for *all* ccds to get fibre flat field')
+#            for nccd in ccdname:
+#                for fits in self.files(ndf_class='MFSKY', do_not_use=False, ccd=nccd, **kwargs):
+#                    fits_twilight_list.append(self.copy_as(fits, 'MFFFF', overwrite=overwrite))
+#                reduced_twilights = self.reduce_file_iterable(fits_twilight_list, overwrite=overwrite, check='FLT')
+#                if len(reduced_twilights) >= 3:
+#                    path_list = [os.path.join(fits.reduced_dir, fits.copy_reduced_filename) for fits in reduced_twilights]
+#                    correct_bad_fibres(path_list)
+#marie
+
+
         # now we will process the normal MFFFF files
         if (not twilight_only):
             file_iterable = self.files(ndf_class='MFFFF', do_not_use=False,
@@ -1698,7 +1748,7 @@ class Manager:
         self.next_step('reduce_fflat', print_message=True)
         return
 
-    def reduce_sky(self, overwrite=False, fake_skies=True, **kwargs):
+    def reduce_sky(self, overwrite=False, fake_skies=True, fake_skies_all=False, **kwargs):
         """Reduce all offset sky frames matching given criteria."""
         groups = self.group_files_by(
             ('field_id', 'plate_id', 'date', 'ccd'),
@@ -1719,26 +1769,60 @@ class Manager:
         # apply correction to all the blue arcs
         if  self.improve_blue_wavecorr:
             file_list_tw = []
-            for f in file_list:
-                if f.ccd == 'ccd_1':
-                    file_list_tw.append(f)
-            input_list = zip(file_list_tw,[overwrite]*len(file_list_tw))
-            self.map(wavecorr_frame,input_list)
-            wavecorr_av(file_list_tw,self.root)
+            ccdname = ['ccd_1','ccd_3']
+            for nccd in ccdname:
+                for f in file_list:
+                    if f.ccd == nccd:
+                        file_list_tw.append(f)
+                input_list = zip(file_list_tw,[overwrite]*len(file_list_tw))
+                self.map(wavecorr_frame,input_list)
+                wavecorr_av(file_list_tw,self.root)
             
-            kwargs_tmp = kwargs.copy()
-            if 'ccd' in kwargs_tmp:
-                del kwargs_tmp['ccd']
+                kwargs_tmp = kwargs.copy()
+                if 'ccd' in kwargs_tmp:
+                    del kwargs_tmp['ccd']
 
-            arc_file_iterable = self.files(ndf_class='MFARC', ccd = 'ccd_1',
-                                    do_not_use=False, **kwargs_tmp)
+                arc_file_iterable = self.files(ndf_class='MFARC', ccd = nccd,
+                                        do_not_use=False, **kwargs_tmp)
+               
+                arc_paths = [fits.reduced_path for fits in arc_file_iterable]
+                for arc_path in arc_paths:
+                    apply_wavecorr(arc_path,self.root)           
+
+# marie copied aboved for ccd_3
+#            file_list_tw = []
+#            for f in file_list:
+#                if f.ccd == 'ccd_3':
+#                    file_list_tw.append(f)
+#            input_list = zip(file_list_tw,[overwrite]*len(file_list_tw))
+#            self.map(wavecorr_frame,input_list)
+#            wavecorr_av(file_list_tw,self.root)
+#
+#            kwargs_tmp = kwargs.copy()
+#            if 'ccd' in kwargs_tmp:
+#                del kwargs_tmp['ccd']
+#
+#            arc_file_iterable = self.files(ndf_class='MFARC', ccd = 'ccd_3',
+#                                    do_not_use=False, **kwargs_tmp)
+#
+#            arc_paths = [fits.reduced_path for fits in arc_file_iterable]
+#            for arc_path in arc_paths:
+#                apply_wavecorr(arc_path,self.root)
+#-------
+
             
-            arc_paths = [fits.reduced_path for fits in arc_file_iterable]
-            for arc_path in arc_paths:
-                apply_wavecorr(arc_path,self.root)           
-            
-        if fake_skies:
-            no_sky_list = self.fields_without_skies(**kwargs)
+        if fake_skies or fake_skies_all:
+            if fake_skies:
+                no_sky_list = self.fields_without_skies(**kwargs)
+
+            if fake_skies_all:
+                #make fake sky frames for *all* dome flats (MFFFF)
+                #useful to generate throughput files for all dome flat frames
+                keys = ('field_id', 'plate_id', 'date', 'ccd')
+                no_sky_list = self.group_files_by(
+                    keys, ndf_class='MFFFF', do_not_use=False,
+                    lamp='Dome', **kwargs).keys()
+
             # Certain parameters will already have been set so don't need
             # to be passed (and passing will cause duplicate kwargs)
             for key in ('field_id', 'plate_id', 'date', 'ccd'):
@@ -1755,7 +1839,7 @@ class Manager:
                     fits_sky_list.append(
                         self.copy_as(fits, 'MFSKY', overwrite=overwrite))
             # Now reduce the fake sky files from all fields
-            self.reduce_file_iterable(fits_sky_list, overwrite=overwrite)
+            self.reduce_file_iterable(fits_sky_list, overwrite=overwrite, check='SKY')
         self.next_step('reduce_sky', print_message=True)
         return
 
@@ -1775,7 +1859,12 @@ class Manager:
     def copy_as(self, fits, ndf_class, overwrite=False):
         """Copy a fits file and change its class. Return a new FITSFile."""
         old_num = int(fits.filename[6:10])
-        new_num = old_num + 1000 * (9 - (old_num // 1000))
+        key_num = 7
+        if(ndf_class == 'MFFFF'):
+            key_num = 8
+        if(ndf_class == 'MFSKY'):
+            key_num = 9
+        new_num = old_num + 1000 * (key_num - (old_num // 1000))
         new_filename = (
                 fits.filename[:6] + '{:04d}'.format(int(new_num)) + fits.filename[10:])
         new_path = os.path.join(fits.reduced_dir, new_filename)
@@ -1788,7 +1877,7 @@ class Manager:
             hdulist = pf.open(new_path, 'update')
             hdulist[0].header['NDFCLASS'] = (ndf_class, 'Data Reduction class name (NDFCLASS)')
             hdulist[0].header['MNGRCOPY'] = (
-                True, 'True if this is a copy created by a Manager')
+                True, 'True if this is a copy created by a HECTOR Manager')
             hdulist.flush()
             hdulist.close()
 
@@ -3092,7 +3181,7 @@ class Manager:
 
         # Define what the best choice is for a FFLAT, in particular
         # if we are going to use a twilight flat:
-        if (self.use_twilight_flat_blue  and (fits.ccd == 'ccd_1')):
+        if (self.use_twilight_flat_blue  and (fits.ccd == 'ccd_1' or fits.ccd == 'ccd_3')): #marie adds ccd_3
             best_fflat = 'fflat_mfsky'
         else:
             best_fflat = 'fflat'
@@ -3325,7 +3414,7 @@ class Manager:
                     # back to the normal fflat route (this is a copy of the version
                     # for the TLM above - with minor changes):
                     found = 0
-                    if (self.use_twilight_flat_blue  and (fits.ccd == 'ccd_1')):
+                    if (self.use_twilight_flat_blue) and (fits.ccd == 'ccd_1' or fits.ccd == 'ccd_3'): #marie adds ccd_3
                         filename_match = self.match_link(fits, 'fflat_mfsky')
                         if filename_match is None:
                             filename_match = self.match_link(fits, 'fflat_mfsky_loose')
@@ -4609,10 +4698,16 @@ class FITSFile:
 
     def set_copy_reduced_filename(self):
         """Set the filename for the reduced version of a copied file.
-        This will be numbered 06mar19001red.fits rather than  06mar10001red.fits"""
+        This will be numbered 06mar19001red.fits for fake flat
+        and 06mar18001red.fits for fake twilight rather than 06mar10001red.fits"""
+        key_num = 7
+        if(self.ndf_class == 'MFFFF'):
+            key_num = 8
+        if(self.ndf_class == 'MFSKY'):
+            key_num = 9
         self.copy_reduced_filename = self.filename_root + 'red.fits'
         old_num = int(self.filename_root[6:10])
-        new_num = old_num + 1000 * (9 - (old_num // 1000))
+        new_num = old_num + 1000 * (key_num - (old_num // 1000))
         new_filename_root = (self.filename_root[:6] + '{:04d}'.format(int(new_num)) + self.filename_root[10:])
         self.copy_reduced_filename = new_filename_root + 'red.fits'
 
@@ -5084,11 +5179,13 @@ class FITSFile:
         }
         coverage = coverage_dict[self.grating]
         wavelength_range = (
-#            self.header['LAMBDCR'] - 0.5 * coverage, #marie: remove this when it is sure for the below modification
-#            self.header['LAMBDCR'] + 0.5 * coverage #marie
              self.central_wavelength - 0.5 * coverage, #marie
              self.central_wavelength + 0.5 * coverage #marie
         )
+#        wavelength_range = (
+#            self.header['LAMBDCR'] - 0.5 * coverage, #marie: remove this when it is sure for the below modification
+#            self.header['LAMBDCR'] + 0.5 * coverage #marie
+#        )
         # Highly incomplete list! May give incorrect results for high-res
         # red gratings
         useful_lines = (5577.338, 6300.309, 6553.626, 6949.066, 7401.862,

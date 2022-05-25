@@ -25,6 +25,7 @@ import astropy.io.fits as pf
 import numpy as np
 from astropy.table import Table
 import os,code,warnings
+import pathlib #marie
 
 warnings.simplefilter('ignore',np.RankWarning)
 
@@ -63,7 +64,9 @@ def calculate_wavelength_offsets(twilight_hdu):
     
     # Offset is determined wrt a high-resolution solar spectrum, and has unit Angstoms
 
-    hdulist_solar = pf.open('./standards/solar/fts-atlas-interp-sami.fits')
+    path = pathlib.Path(__file__).parent.absolute()#os.path.dirname(os.path.abspath('manager.py')) #marie
+    print(path) #marie
+    hdulist_solar = pf.open(path+'/standards/solar/fts-atlas-interp-sami.fits') #marie
     solar_flux = hdulist_solar[0].data
     sh = hdulist_solar[0].header
     solar_wav = np.arange(sh['NAXIS1'])*sh['CDELT1'] + sh['CRVAL1']
