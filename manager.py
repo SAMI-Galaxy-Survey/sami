@@ -1053,9 +1053,10 @@ class Manager:
             pool.close()
             pool.join()
 
-        f = open(self.abs_root+'/filelist.txt', 'w')
-        f.write('#filename  ndfclass \n')
-        f.close()
+        if os.path.exists(self.abs_root):
+            f = open(self.abs_root+'/filelist.txt', 'w')
+            f.write('#filename  ndfclass \n')
+            f.close()
 
         for fits in fits_list:
             self.import_file(fits,
@@ -1099,10 +1100,9 @@ class Manager:
                 self.dark_exposure_str_list.append(fits.exposure_str)
                 self.dark_exposure_list.append(fits.exposure)
         self.set_raw_path(fits)
-        self.set_name(fits, trust_header=trust_header)
+#        self.set_name(fits, trust_header=trust_header)
 
         if os.path.abspath(fits.source_path) != os.path.abspath(fits.raw_path):
-            print(os.path.abspath(fits.source_path),os.path.abspath(fits.raw_path))
             if copy_files:
                 print('Copying file:', filename)
                 self.update_copy(fits.source_path, fits.raw_path)
@@ -1113,12 +1113,12 @@ class Manager:
                 print('Warning! Adding', filename, 'in unexpected location')
                 fits.raw_path = fits.source_path
         else:
-            print('Adding file: ', filename, fits.ndf_class, fits.name)
+            print('Adding file: ', filename, fits.ndf_class)
             f = open(self.abs_root+'/filelist.txt', 'a')
             f.write(filename+' '+fits.ndf_class+'\n')
             f.close()
             
-#        self.set_name(fits, trust_header=trust_header)
+        self.set_name(fits, trust_header=trust_header)
         fits.set_check_data()
         self.set_reduced_path(fits)
         if not fits.do_not_use:
@@ -1343,6 +1343,7 @@ class Manager:
         """Import the contents of a directory and all subdirectories."""
         for dirname, subdirname_list, filename_list in os.walk(source_dir):
             for filename in filename_list:
+                print(filename)
                 if self.file_filter(filename):
                     tmp_path = os.path.join(self.tmp_dir, filename)
                     self.update_copy(os.path.join(dirname, filename),
@@ -1711,17 +1712,31 @@ class Manager:
             # placed in the list fits_twilight_list and then can be
             # processed as normal MFFFF files.
 
-            for fits in self.files(ndf_class='MFSKY', do_not_use=False, ccd=nccd, **kwargs_copy):
-                fits_twilight_list.append(self.copy_as(fits, 'MFFFF', overwrite=overwrite))
+            for nccd in ccdname:
+                for fits in self.files(ndf_class='MFSKY', do_not_use=False, ccd=nccd, **kwargs):
+                    fits_twilight_list.append(self.copy_as(fits, 'MFFFF', overwrite=overwrite))
 
-            # use the iterable file reducer to loop over the copied twilight list and
-            # reduce them as MFFFF files:
-            reduced_twilights = self.reduce_file_iterable(fits_twilight_list, overwrite=overwrite, check='FLT')
+                # use the iterable file reducer to loop over the copied twilight list and
+                # reduce them as MFFFF files:
+                reduced_twilights = self.reduce_file_iterable(fits_twilight_list, overwrite=overwrite, check='FLT')
 
-            # Identify bad fibres and replace with an average over all other twilights
-            if len(reduced_twilights) >= 3:
-                path_list = [os.path.join(fits.reduced_dir, fits.copy_reduced_filename) for fits in reduced_twilights]
-                correct_bad_fibres(path_list)
+                # Identify bad fibres and replace with an average over all other twilights
+                if len(reduced_twilights) >= 3:
+                    path_list = [os.path.join(fits.reduced_dir, fits.copy_reduced_filename) for fits in reduced_twilights]
+                    correct_bad_fibres(path_list)
+
+
+#            for fits in self.files(ndf_class='MFSKY', do_not_use=False, ccd=nccd, **kwargs_copy):
+#                fits_twilight_list.append(self.copy_as(fits, 'MFFFF', overwrite=overwrite))
+#
+#            # use the iterable file reducer to loop over the copied twilight list and
+#            # reduce them as MFFFF files:
+#            reduced_twilights = self.reduce_file_iterable(fits_twilight_list, overwrite=overwrite, check='FLT')
+#
+#            # Identify bad fibres and replace with an average over all other twilights
+#            if len(reduced_twilights) >= 3:
+#                path_list = [os.path.join(fits.reduced_dir, fits.copy_reduced_filename) for fits in reduced_twilights]
+#                correct_bad_fibres(path_list)
 
 #marie
 #        if (self.use_twilight_flat_all):
