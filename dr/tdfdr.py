@@ -210,8 +210,12 @@ def run_2dfdr_single(fits, idx_file, options=None, dummy=False):
         raise ValueError('Unrecognised NDF_CLASS')
     out_dirname = fits.filename[:fits.filename.rindex('.')] + '_outdir'
     out_dirname_full = os.path.join('/tmp/', out_dirname) 
-    if socket.gethostname()[0:3] is not 'aat':
+    print(out_dirname_full)
+    if socket.gethostname()[0:3] != 'aat':
+        print(socket.gethostname()[0:3],type(socket.gethostname()[0:3]))
         out_dirname_full = os.path.join(fits.reduced_dir, out_dirname)
+
+    print(socket.gethostname()[0:3],out_dirname_full)
 
     # Originally we directly generate os.path.join(fits.reduced_dir, out_dirname)  which however makes reduce_arc() task 60 times slower when using the machine at AAT (e.g. aatlxe). 
     # The reason is that hector home is a network mounted drive and frequent comunications by 2dfdr makes is very slow. 
@@ -227,7 +231,7 @@ def run_2dfdr_single(fits, idx_file, options=None, dummy=False):
         options_all.extend(options)
     call_2dfdr_reduce(fits.reduced_dir, options=options_all, dummy=dummy)
 
-    if socket.gethostname()[0:3] is 'aat':
+    if socket.gethostname()[0:3] == 'aat':
         shutil.move(out_dirname_full,fits.reduced_dir)
 
     print("-- running time %s seconds ---Sree will remove this from tdfdr.py" % (time.time() - start_time))  #sree will remove this after testing
