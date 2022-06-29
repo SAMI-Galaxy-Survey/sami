@@ -1360,7 +1360,7 @@ class Manager:
         return
 
     def import_aat(self, username=None, password=None, date=None,
-                   server='aatlxa', path='/data_lxy/aatobs/OptDet_data'):
+                   server='aatlxa', path='/data_liu/aatobs/OptDet_data'):
         """Import from the AAT data disks."""
         if os.path.exists(path):
             # Assume we are on a machine at the AAT which has direct access to
