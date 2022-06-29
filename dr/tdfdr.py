@@ -36,6 +36,7 @@ import six
 import shutil, shlex
 import warnings
 import socket
+import glob
 
 # Set up logging
 from .. import slogging
@@ -209,26 +210,33 @@ def run_2dfdr_single(fits, idx_file, options=None, dummy=False):
     else:
         raise ValueError('Unrecognised NDF_CLASS')
     out_dirname = fits.filename[:fits.filename.rindex('.')] + '_outdir'
-    out_dirname_full = os.path.join('/tmp/', out_dirname) 
+    out_dirname_full = os.path.join(fits.reduced_dir, out_dirname)
+    out_dirname_tmp = os.path.join('/tmp/', out_dirname) 
     if socket.gethostname()[0:3] != 'aat':
-        out_dirname_full = os.path.join(fits.reduced_dir, out_dirname)
+        out_dirname_tmp = out_dirname_full
 
-    # Originally we directly generate os.path.join(fits.reduced_dir, out_dirname)  which however makes reduce_arc() task 60 times slower when using the machine at AAT (e.g. aatlxe). 
+    # Originally we directly save output files to out_dirname_full which however makes reduce_arc() task 60 times slower when using the machine at AAT (e.g. aatlxe). 
     # The reason is that hector home is a network mounted drive and frequent comunications by 2dfdr makes is very slow. 
     # Also note that at AAT machine 'export IMP_SCRATCH=/tmp' speeds up 2dfdr tasks in the same manner. Check .bashrc at aat
 
-    if not os.path.exists(out_dirname_full):  
-        os.makedirs(out_dirname_full)
+    if not os.path.exists(out_dirname_tmp):  
+        os.makedirs(out_dirname_tmp)
 
     options_all = [task, fits.filename, '-idxfile', idx_file,
-                   '-OUT_DIRNAME', out_dirname_full]
+                   '-OUT_DIRNAME', out_dirname_tmp]
 
     if options is not None:
         options_all.extend(options)
     call_2dfdr_reduce(fits.reduced_dir, options=options_all, dummy=dummy)
 
     if socket.gethostname()[0:3] == 'aat':
-        shutil.move(out_dirname_full,fits.reduced_dir)
+        files = glob.glob(out_dirname_tmp + '/*')
+        if not os.path.exists(out_dirname_full):
+            os.makedirs(out_dirname_full)
+        for file in files:
+            file_name = os.path.basename(file)
+            shutil.move(file, os.path.join(out_dirname_full,file_name))
+        shutil.rmtree(out_dirname_tmp)
 
     print("-- running time %s seconds ---Sree will remove this from tdfdr.py" % (time.time() - start_time))  #sree will remove this after testing
 
